@@ -1,0 +1,31 @@
+2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: ABC-69517, field: Finished On
+java.lang.NullPointerException: Cannot invoke "Object.toString()" because "value" is null
+	at Script42.run(Script42.groovy:17)
+	at com.onresolve.scriptrunner.customfield.GroovyCustomField.getValueFromIssue(GroovyCustomField.groovy:310)
+	at com.atlassian.jira.issue.index.DefaultIssueIndexer.reindexIssues(DefaultIssueIndexer.java:245)
+2026-10-29 02:19:41,532+0100 IssueIndexer:thread-16 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: ABC-70001, field: Finished On
+java.lang.NullPointerException: Cannot invoke "Object.toString()" because "value" is null
+	at Script42.run(Script42.groovy:17)
+	at com.onresolve.scriptrunner.customfield.GroovyCustomField.getValueFromIssue(GroovyCustomField.groovy:310)
+	at com.atlassian.jira.issue.index.DefaultIssueIndexer.reindexIssues(DefaultIssueIndexer.java:245)
+2026-10-29 02:19:42,007+0100 IssueIndexer:thread-15 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: ABC-71234, field: Finished On
+java.lang.NullPointerException: Cannot invoke "Object.toString()" because "value" is null
+	at Script42.run(Script42.groovy:17)
+	at com.onresolve.scriptrunner.customfield.GroovyCustomField.getValueFromIssue(GroovyCustomField.groovy:310)
+	at com.atlassian.jira.issue.index.DefaultIssueIndexer.reindexIssues(DefaultIssueIndexer.java:245)
+2026-10-29 02:20:00,001+0100 Caesium-1-3 INFO ServiceRunner     [c.a.jira.servicedesk.sla.SlaUpdater] Recalculated SLA for 125 issues in 842 ms
+2026-10-29 02:25:00,002+0100 Caesium-1-1 INFO ServiceRunner     [c.a.jira.servicedesk.sla.SlaUpdater] Recalculated SLA for 98 issues in 615 ms
+2026-10-29 09:01:02,345+0100 http-nio-8080-exec-7 url: /rest/api/2/issue/ABC-69517; user: jdoe WARN jdoe 541x1234x1 1abcd2e 10.20.30.40 /rest/api/2/issue/ABC-69517 [c.a.j.issue.fields.DefaultFieldManager] Field not found: customfield_10123
+2026-10-29 09:03:15,876+0100 http-nio-8080-exec-12 url: /secure/Dashboard.jspa; user: asmith ERROR asmith 543x1290x2 9xk2lm 10.20.30.41 /secure/Dashboard.jspa [c.a.j.web.dispatcher.JiraWebworkActionDispatcher] Exception thrown from action 'Dashboard', returning 404
+com.atlassian.jira.exception.DataAccessException: org.ofbiz.core.entity.GenericDataSourceException: Unable to establish a connection with the database. (Connection refused)
+	at com.atlassian.jira.ofbiz.DefaultOfBizDelegator.findByCondition(DefaultOfBizDelegator.java:112)
+	at com.atlassian.jira.portal.OfBizPortalPageStore.getPortalPage(OfBizPortalPageStore.java:154)
+Caused by: java.net.ConnectException: Connection refused
+	at java.base/sun.nio.ch.Net.connect0(Native Method)
+	at java.base/sun.nio.ch.Net.connect(Net.java:579)
+	... 42 more
+2026-10-29 09:05:00,000+0100 Caesium-1-2 WARN anonymous     [c.a.jira.mail.MailQueueImpl] Mail queue is backed up: 1532 items
+2026-10-29 09:10:44,120+0100 localhost-startStop-1 INFO      [c.a.jira.startup.JiraStartupLogger] Jira started in 95 seconds
+2026-10-29 09:12:01,999+0100 http-nio-8080-exec-3 url: /rest/api/2/search; user: jdoe ERROR jdoe 552x1301x1 1abcd2e 10.20.30.40 /rest/api/2/search [c.a.j.rest.exception.ExceptionInterceptor] Returning internal server error in response
+java.lang.IllegalStateException: Search index is being rebuilt
+	at com.atlassian.jira.issue.search.providers.LuceneSearchProvider.search(LuceneSearchProvider.java:301)

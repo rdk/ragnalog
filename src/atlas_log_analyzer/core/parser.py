@@ -2,14 +2,58 @@
 
 from __future__ import annotations
 
+import dataclasses
 from collections.abc import Iterable, Iterator
+from itertools import islice
 from pathlib import Path
 
 from atlas_log_analyzer.core.formats.base import LogFormat
-from atlas_log_analyzer.core.models import LogEntry
-from atlas_log_analyzer.core.reader import Line, SourceFile
+from atlas_log_analyzer.core.models import LogEntry, SourceRef
+from atlas_log_analyzer.core.reader import Line, SourceFile, iter_raw_lines, iter_sources
 
-__all__ = ["parse", "parse_file", "parse_lines", "parse_sources"]
+__all__ = ["ORPHAN_ERROR", "parse", "parse_file", "parse_lines", "parse_sources"]
+
+ORPHAN_ERROR = "continuation lines before the first header"
+"""``parse_error`` of the entry made of lines that precede the first header of a source."""
+
+DETECT_LINES = 200
+"""Number of leading lines handed to :func:`formats.detect`."""
+
+
+def _assemble(
+    lines: Iterable[tuple[int, int, str]], fmt: LogFormat, path: str
+) -> Iterator[LogEntry]:
+    is_header = fmt.is_header
+    parse_header = fmt.parse_header
+    build = fmt.build
+    header = None
+    header_line: str | None = None
+    source = SourceRef(path, 0, 0)
+    orphan = False
+    cont: list[str] = []
+    append = cont.append
+    for number, offset, text in lines:
+        if not is_header(text):
+            if header_line is None:
+                # leading continuation lines: the first one stands in for the header
+                header_line = text
+                source = SourceRef(path, number, offset)
+                orphan = True
+            else:
+                append(text)
+            continue
+        if header_line is not None:
+            entry = build(header, header_line, cont, source)
+            yield dataclasses.replace(entry, parse_error=ORPHAN_ERROR) if orphan else entry
+            orphan = False
+            cont = []
+            append = cont.append
+        header = parse_header(text)
+        header_line = text
+        source = SourceRef(path, number, offset)
+    if header_line is not None:
+        entry = build(header, header_line, cont, source)
+        yield dataclasses.replace(entry, parse_error=ORPHAN_ERROR) if orphan else entry
 
 
 def parse_lines(lines: Iterable[Line], fmt: LogFormat, path: str) -> Iterator[LogEntry]:
@@ -20,19 +64,42 @@ def parse_lines(lines: Iterable[Line], fmt: LogFormat, path: str) -> Iterator[Lo
     ``None`` becomes an entry with ``parse_error`` and is *not* merged into the
     previous entry.
     """
-    raise NotImplementedError
+    return _assemble(((ln.number, ln.offset, ln.text) for ln in lines), fmt, path)
 
 
 def parse_file(path: Path | str, fmt: LogFormat) -> Iterator[LogEntry]:
     """Stream entries from one file."""
-    raise NotImplementedError
+    return _assemble(iter_raw_lines(path), fmt, str(path))
 
 
 def parse_sources(sources: Iterable[SourceFile], fmt: LogFormat) -> Iterator[LogEntry]:
     """Stream entries from several sources in the given order."""
-    raise NotImplementedError
+    for source in sources:
+        yield from parse_file(source.path, fmt)
 
 
 def parse(paths: Iterable[Path | str], fmt: LogFormat | None = None) -> Iterator[LogEntry]:
-    """Convenience: discover sources, detect the format when ``None``, stream entries."""
-    raise NotImplementedError
+    """Discover sources, detect the format when ``None`` and stream entries (convenience).
+
+    Raises:
+        ValueError: When ``fmt`` is ``None`` and no format recognises the first source.
+
+    """
+    sources = iter_sources(paths)
+    if fmt is None:
+        from atlas_log_analyzer.core.formats.registry import detect
+
+        sample: list[str] = []
+        for source in sources:
+            raw_lines = iter_raw_lines(source.path)
+            try:
+                sample = [text for _, _, text in islice(raw_lines, DETECT_LINES)]
+            finally:
+                raw_lines.close()
+            if sample:
+                break
+        detected = detect(sample)
+        if detected is None:
+            raise ValueError("could not detect the log format; pass one explicitly")
+        fmt = detected
+    return parse_sources(sources, fmt)

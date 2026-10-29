@@ -1,0 +1,457 @@
+2026-10-29 00:40:52,681+0100 http-nio-8080-exec-21 url: /rest/acme/latest/debug/rollover-logs; user: user1 INFO user1 40x109522x1 11vv7yi 10.0.0.1,10.0.0.2 /rest/acme/latest/debug/rollover-logs [c.a.j.util.log.LogMarker] 
+    
+    ********
+    ROLLOVER
+    ********
+    
+2026-10-29 00:41:03,650+0100 bigbrassband-gitplugin-reindex-queue:thread - 1 ERROR      [c.b.j.g.services.gitmanager.RepositoryStatusManagerImpl] Error updating the repository 'Acme.Extension.ServiceDesk.Api' (repoId=83)
+org.eclipse.jgit.errors.TransportException: https://jira.example.com/tfs/DefaultCollection/PROJA/_git/Acme.Extension.ServiceDesk.Api: Connection time out: jira.example.com
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:752)
+	at org.eclipse.jgit.transport.TransportHttp.openFetch(TransportHttp.java:466)
+	at org.eclipse.jgit.transport.FetchProcess.executeImp(FetchProcess.java:165)
+	at org.eclipse.jgit.transport.FetchProcess.execute(FetchProcess.java:105)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1459)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1387)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.fetch(SingleGitManagerImpl.java:1397)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.callFetch(GitPluginIndexManagerImpl.java:809)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.innerUpdateIndexMainNode(GitPluginIndexManagerImpl.java:407)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.updateIndexMainNode(GitPluginIndexManagerImpl.java:357)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRepositoryUpdate(ReindexQueueReindexTask.java:468)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.visit(ReindexQueueReindexTask.java:232)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.accept(SingleGitManagerImpl.java:1953)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRun(ReindexQueueReindexTask.java:185)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueTask.run(ReindexQueueTask.java:41)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueManagerImpl$QueueTask.doRun(ReindexQueueManagerImpl.java:276)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.run1(CancellableTask.java:38)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:25)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:8)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at com.bigbrassband.jira.git.utils.concurrent.RunnableFutureWrapper.run(RunnableFutureWrapper.java:33)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at com.bigbrassband.jira.git.utils.concurrent.JiraAdaptedThreadFactory.lambda$wrap$1(JiraAdaptedThreadFactory.java:42)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableJiraAdaptedThreadFactory.lambda$wrap$0(CancellableJiraAdaptedThreadFactory.java:24)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.apache.http.conn.ConnectTimeoutException: Connect to jira.example.com:443 [jira.example.com/10.0.0.3] failed: Connect timed out
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:151)
+	at org.apache.http.impl.conn.PoolingHttpClientConnectionManager.connect(PoolingHttpClientConnectionManager.java:376)
+	at org.apache.http.impl.execchain.MainClientExec.establishRoute(MainClientExec.java:393)
+	at org.apache.http.impl.execchain.MainClientExec.execute(MainClientExec.java:236)
+	at org.apache.http.impl.execchain.ProtocolExec.execute(ProtocolExec.java:186)
+	at org.apache.http.impl.execchain.RetryExec.execute(RetryExec.java:89)
+	at org.apache.http.impl.execchain.RedirectExec.execute(RedirectExec.java:110)
+	at org.apache.http.impl.client.InternalHttpClient.doExecute(InternalHttpClient.java:185)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:83)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:56)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.execute(B3HttpClientConnection.java:296)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.getResponseCode(B3HttpClientConnection.java:262)
+	at org.eclipse.jgit.util.HttpSupport.response(HttpSupport.java:232)
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:665)
+	... 25 more
+Caused by: java.net.SocketTimeoutException: Connect timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:546)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:592)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:751)
+	at org.apache.http.conn.ssl.SSLConnectionSocketFactory.connectSocket(SSLConnectionSocketFactory.java:368)
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:142)
+	... 38 more
+2026-10-29 00:41:15,739+0100 Caesium-1-2 INFO anonymous     [c.a.j.migration.migration.MigrationRetryDetailsScheduledRunner] Migration retry details reconciliation job finished in 0s
+2026-10-29 00:41:15,754+0100 Caesium-1-1 WARN anonymous     [c.a.p.extract.repository.ExtractRepository] No extracts found in the database
+2026-10-29 00:41:15,793+0100 Caesium-1-4 WARN anonymous     [c.a.p.extract.repository.ExtractRepository] No extracts found in the database
+2026-10-29 00:41:33,830+0100 bigbrassband-gitplugin-reindex-queue:thread - 1 ERROR      [c.b.j.g.services.gitmanager.RepositoryStatusManagerImpl] Error updating the repository 'Acme.ContactHistory.Ang' (repoId=85)
+org.eclipse.jgit.errors.TransportException: https://jira.example.com/tfs/DefaultCollection/PROJB/_git/Acme.ContactHistory.Ang: Connection time out: jira.example.com
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:752)
+	at org.eclipse.jgit.transport.TransportHttp.openFetch(TransportHttp.java:466)
+	at org.eclipse.jgit.transport.FetchProcess.executeImp(FetchProcess.java:165)
+	at org.eclipse.jgit.transport.FetchProcess.execute(FetchProcess.java:105)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1459)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1387)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.fetch(SingleGitManagerImpl.java:1397)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.callFetch(GitPluginIndexManagerImpl.java:809)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.innerUpdateIndexMainNode(GitPluginIndexManagerImpl.java:407)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.updateIndexMainNode(GitPluginIndexManagerImpl.java:357)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRepositoryUpdate(ReindexQueueReindexTask.java:468)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.visit(ReindexQueueReindexTask.java:232)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.accept(SingleGitManagerImpl.java:1953)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRun(ReindexQueueReindexTask.java:185)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueTask.run(ReindexQueueTask.java:41)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueManagerImpl$QueueTask.doRun(ReindexQueueManagerImpl.java:276)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.run1(CancellableTask.java:38)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:25)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:8)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at com.bigbrassband.jira.git.utils.concurrent.RunnableFutureWrapper.run(RunnableFutureWrapper.java:33)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at com.bigbrassband.jira.git.utils.concurrent.JiraAdaptedThreadFactory.lambda$wrap$1(JiraAdaptedThreadFactory.java:42)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableJiraAdaptedThreadFactory.lambda$wrap$0(CancellableJiraAdaptedThreadFactory.java:24)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.apache.http.conn.ConnectTimeoutException: Connect to jira.example.com:443 [jira.example.com/10.0.0.3] failed: Connect timed out
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:151)
+	at org.apache.http.impl.conn.PoolingHttpClientConnectionManager.connect(PoolingHttpClientConnectionManager.java:376)
+	at org.apache.http.impl.execchain.MainClientExec.establishRoute(MainClientExec.java:393)
+	at org.apache.http.impl.execchain.MainClientExec.execute(MainClientExec.java:236)
+	at org.apache.http.impl.execchain.ProtocolExec.execute(ProtocolExec.java:186)
+	at org.apache.http.impl.execchain.RetryExec.execute(RetryExec.java:89)
+	at org.apache.http.impl.execchain.RedirectExec.execute(RedirectExec.java:110)
+	at org.apache.http.impl.client.InternalHttpClient.doExecute(InternalHttpClient.java:185)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:83)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:56)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.execute(B3HttpClientConnection.java:296)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.getResponseCode(B3HttpClientConnection.java:262)
+	at org.eclipse.jgit.util.HttpSupport.response(HttpSupport.java:232)
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:665)
+	... 25 more
+Caused by: java.net.SocketTimeoutException: Connect timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:546)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:592)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:751)
+	at org.apache.http.conn.ssl.SSLConnectionSocketFactory.connectSocket(SSLConnectionSocketFactory.java:368)
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:142)
+	... 38 more
+2026-10-29 00:41:42,954+0100 localq-reader-35 WARN      [c.a.security.serialblocklist.BlocklistFilteringFunction] Deserialize or execute step prevented for class: jdk.proxy3.$Proxy134
+2026-10-29 00:41:42,954+0100 localq-reader-35 WARN      [c.a.security.serialblocklist.BlocklistFilteringFunction] Deserialize or execute step prevented for class: java.lang.reflect.Proxy
+2026-10-29 00:41:42,954+0100 localq-reader-35 WARN      [c.a.security.serialblocklist.BlocklistFilteringFunction] Deserialize or execute step prevented for class: java.rmi.server.RemoteObjectInvocationHandler
+2026-10-29 00:41:42,954+0100 localq-reader-35 WARN      [c.a.security.serialblocklist.BlocklistFilteringFunction] Deserialize or execute step prevented for class: java.rmi.server.RemoteObject
+2026-10-29 00:41:43,749+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.w.a.admin.index.IndexAdminImpl] Re-indexing started
+2026-10-29 00:41:43,750+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.util.index.DefaultCompositeIndexLifecycleManager] Reindex All starting...
+2026-10-29 00:41:43,750+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.util.index.DefaultCompositeIndexLifecycleManager] Checking whether an index snapshot is currently in progress...
+2026-10-29 00:41:48,750+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.util.index.DefaultCompositeIndexLifecycleManager] Checking if an index snapshot operation is running. Polling attempt number: 1. Total waiting time: 5 seconds.
+2026-10-29 00:41:48,758+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.util.index.DefaultCompositeIndexLifecycleManager] No index snapshot operation is in progress. Check finished after PT5.008157164S. We can now move on with our attempt to reindex.
+2026-10-29 00:41:48,758+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.util.index.DefaultCompositeIndexLifecycleManager] Lock cluster to avoid other nodes from starting an Index snapshot...
+2026-10-29 00:41:48,764+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.index.ha.DefaultNodeReindexService] [INDEX-REPLAY] Pausing node re-index service
+com.atlassian.jira.index.ha.DefaultNodeReindexService$StackCollector
+	at com.atlassian.jira.index.ha.DefaultNodeReindexService.pause(DefaultNodeReindexService.java:286)
+	at com.atlassian.jira.util.index.DefaultCompositeIndexLifecycleManager.reIndexAll(DefaultCompositeIndexLifecycleManager.java:89)
+	at com.atlassian.jira.util.index.DefaultCompositeIndexLifecycleManager.reIndexAll(DefaultCompositeIndexLifecycleManager.java:69)
+	at com.atlassian.jira.web.action.admin.index.ReIndexAsyncIndexerCommand.doReindex(ReIndexAsyncIndexerCommand.java:27)
+	at com.atlassian.jira.web.action.admin.index.AbstractAsyncIndexerCommand.call(AbstractAsyncIndexerCommand.java:63)
+	at com.atlassian.jira.web.action.admin.index.ReIndexAsyncIndexerCommand.call(ReIndexAsyncIndexerCommand.java:18)
+	at com.atlassian.jira.web.action.admin.index.AbstractAsyncIndexerCommand.call(AbstractAsyncIndexerCommand.java:26)
+	at com.atlassian.jira.task.TaskManagerImpl$TaskCallableDecorator.call(TaskManagerImpl.java:536)
+	at com.atlassian.jira.task.TaskManagerImpl$TaskCallableDecorator.call(TaskManagerImpl.java:494)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at java.base/java.util.concurrent.Executors$RunnableAdapter.call(Executors.java:572)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at com.atlassian.jira.task.ForkedThreadExecutor$ForkedRunnableDecorator.run(ForkedThreadExecutor.java:216)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+2026-10-29 00:41:48,769+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.w.a.admin.index.IndexAdminImpl] Re-indexing is 0% complete. Current index: Issue
+2026-10-29 00:41:48,771+0100 JiraTaskExecutionThread-1 INFO user1     [c.a.j.issue.index.IndexManagerBase] ReindexAll in foreground: {indexIssues=true, indexChangeHistory=true, indexComments=true, indexWorklogs=true}
+2026-10-29 00:41:50,765+0100 automation-queue-claimer:thread-1 WARN      [c.c.j.p.automation.queue.JiraAutomationQueueExecutor] JQL search indexes are currently not available (Indexing: false, Scheduler: STANDBY). No automation items were claimed from the queue for processing on this node since most automation rules depend on JQL indexes being available.
+2026-10-29 00:41:52,236+0100 Structure-Jobs5b11d9 Queue-Thread#118 WARN anonymous     [c.a.j.structure.cluster.ExclusiveClusterJob] Full reindex is in progress (Structure cannot lock JIRA against full reindex) or index is inconsistent with the database. "SynchronizationJob" is skipped this time.
+2026-10-29 00:41:55,237+0100 Structure-Jobs5b11d9 Queue-Thread#118 WARN anonymous     [c.a.j.structure.cluster.ExclusiveClusterJob] Full reindex is in progress (Structure cannot lock JIRA against full reindex) or index is inconsistent with the database. "ApplyJob" is skipped this time.
+2026-10-29 00:42:03,547+0100 IssueIndexer:thread-16 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] *************************************************************************************
+2026-10-29 00:42:03,555+0100 IssueIndexer:thread-16 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: XYZ-32033, field: Finished On
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 8: unable to resolve class com.atlassian.sal.api.net.TrustedRequest
+ @ line 8, column 1.
+   import com.atlassian.sal.api.net.TrustedRequest
+   ^
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 9: unable to resolve class com.atlassian.sal.api.net.TrustedRequestFactory
+ @ line 9, column 1.
+   import com.atlassian.sal.api.net.TrustedRequestFactory
+   ^
+2 errors
+2026-10-29 00:42:03,741+0100 IssueIndexer:thread-18 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] *************************************************************************************
+2026-10-29 00:42:03,741+0100 IssueIndexer:thread-18 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: ABC-3912, field: Finished On
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 8: unable to resolve class com.atlassian.sal.api.net.TrustedRequest
+ @ line 8, column 1.
+   import com.atlassian.sal.api.net.TrustedRequest
+   ^
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 9: unable to resolve class com.atlassian.sal.api.net.TrustedRequestFactory
+ @ line 9, column 1.
+   import com.atlassian.sal.api.net.TrustedRequestFactory
+   ^
+2 errors
+2026-10-29 00:42:03,912+0100 IssueIndexer:thread-1 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] *************************************************************************************
+2026-10-29 00:42:03,912+0100 IssueIndexer:thread-1 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: XYZ-27549, field: Finished On
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 8: unable to resolve class com.atlassian.sal.api.net.TrustedRequest
+ @ line 8, column 1.
+   import com.atlassian.sal.api.net.TrustedRequest
+   ^
+file:/opt/jira_data/sharedhome/scripts/acmeUtils/rest/AcmeJiraRESTHelper.groovy: 9: unable to resolve class com.atlassian.sal.api.net.TrustedRequestFactory
+ @ line 9, column 1.
+   import com.atlassian.sal.api.net.TrustedRequestFactory
+   ^
+2 errors
+2026-10-29 00:42:04,110+0100 bigbrassband-gitplugin-reindex-queue:thread - 1 ERROR      [c.b.j.g.services.gitmanager.RepositoryStatusManagerImpl] Error updating the repository 'Sample Frontend Web' (repoId=87)
+org.eclipse.jgit.errors.TransportException: https://jira.example.com/tfs/PROJC/SUB/_git/Sample%20Frontend%20Web: Connection time out: jira.example.com
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:752)
+	at org.eclipse.jgit.transport.TransportHttp.openFetch(TransportHttp.java:466)
+	at org.eclipse.jgit.transport.FetchProcess.executeImp(FetchProcess.java:165)
+	at org.eclipse.jgit.transport.FetchProcess.execute(FetchProcess.java:105)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1459)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1387)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.fetch(SingleGitManagerImpl.java:1397)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.callFetch(GitPluginIndexManagerImpl.java:809)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.innerUpdateIndexMainNode(GitPluginIndexManagerImpl.java:407)
+	at com.bigbrassband.jira.git.services.indexer.revisions.GitPluginIndexManagerImpl.updateIndexMainNode(GitPluginIndexManagerImpl.java:357)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRepositoryUpdate(ReindexQueueReindexTask.java:468)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.visit(ReindexQueueReindexTask.java:232)
+	at com.bigbrassband.jira.git.services.gitmanager.SingleGitManagerImpl.accept(SingleGitManagerImpl.java:1953)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueReindexTask.doRun(ReindexQueueReindexTask.java:185)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueTask.run(ReindexQueueTask.java:41)
+	at com.bigbrassband.jira.git.services.async.ReindexQueueManagerImpl$QueueTask.doRun(ReindexQueueManagerImpl.java:276)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.run1(CancellableTask.java:38)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:25)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableTask.call(CancellableTask.java:8)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at com.bigbrassband.jira.git.utils.concurrent.RunnableFutureWrapper.run(RunnableFutureWrapper.java:33)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at com.bigbrassband.jira.git.utils.concurrent.JiraAdaptedThreadFactory.lambda$wrap$1(JiraAdaptedThreadFactory.java:42)
+	at com.bigbrassband.jira.git.utils.concurrent.cancel.CancellableJiraAdaptedThreadFactory.lambda$wrap$0(CancellableJiraAdaptedThreadFactory.java:24)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.apache.http.conn.ConnectTimeoutException: Connect to jira.example.com:443 [jira.example.com/10.0.0.3] failed: Connect timed out
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:151)
+	at org.apache.http.impl.conn.PoolingHttpClientConnectionManager.connect(PoolingHttpClientConnectionManager.java:376)
+	at org.apache.http.impl.execchain.MainClientExec.establishRoute(MainClientExec.java:393)
+	at org.apache.http.impl.execchain.MainClientExec.execute(MainClientExec.java:236)
+	at org.apache.http.impl.execchain.ProtocolExec.execute(ProtocolExec.java:186)
+	at org.apache.http.impl.execchain.RetryExec.execute(RetryExec.java:89)
+	at org.apache.http.impl.execchain.RedirectExec.execute(RedirectExec.java:110)
+	at org.apache.http.impl.client.InternalHttpClient.doExecute(InternalHttpClient.java:185)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:83)
+	at org.apache.http.impl.client.CloseableHttpClient.execute(CloseableHttpClient.java:56)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.execute(B3HttpClientConnection.java:296)
+	at org.eclipse.jgit.transport.http.apache.B3HttpClientConnection.getResponseCode(B3HttpClientConnection.java:262)
+	at org.eclipse.jgit.util.HttpSupport.response(HttpSupport.java:232)
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:665)
+	... 25 more
+Caused by: java.net.SocketTimeoutException: Connect timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:546)
+	at java.base/sun.nio.ch.NioSocketImpl.connect(NioSocketImpl.java:592)
+	at java.base/java.net.SocksSocketImpl.connect(SocksSocketImpl.java:327)
+	at java.base/java.net.Socket.connect(Socket.java:751)
+	at org.apache.http.conn.ssl.SSLConnectionSocketFactory.connectSocket(SSLConnectionSocketFactory.java:368)
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:142)
+	... 38 more
+2026-10-29 00:42:22,612+0100 JIRA-EventThread-607 ERROR      [c.a.event.internal.AsynchronousAbleEventDispatcher] There was an exception thrown trying to dispatch event [com.onresolve.scriptrunner.runner.events.ExecutionFailureEvent@302ea7c7] from the invoker [ComparableListenerInvoker{delegate=SingleParameterMethodListenerInvoker{method=public void com.atlassian.analytics.client.listener.JiraEventListener.onEvent(java.lang.Object), listener=com.atlassian.analytics.client.listener.JiraEventListener@25b15d35} (monitored), classHierarchyOrder=1, registerOrder=4198}]
+java.lang.RuntimeException: Invalid property 'stackTrace' of bean class [com.onresolve.scriptrunner.runner.events.ExecutionFailureEvent]: Getter for property 'stackTrace' threw exception. Listener: com.atlassian.analytics.client.listener.JiraEventListener event: com.onresolve.scriptrunner.runner.events.ExecutionFailureEvent
+	at com.atlassian.event.internal.SingleParameterMethodListenerInvoker.invoke(SingleParameterMethodListenerInvoker.java:52)
+	at com.atlassian.diagnostics.internal.platform.monitor.event.EventSystemMonitor.invokeMonitored(EventSystemMonitor.java:110)
+	at com.atlassian.diagnostics.internal.platform.monitor.event.MonitoredListenerInvoker.invoke(MonitoredListenerInvoker.java:38)
+	at com.atlassian.event.internal.ComparableListenerInvoker.invoke(ComparableListenerInvoker.java:48)
+	at com.atlassian.event.internal.AsynchronousAbleEventDispatcher.lambda$static$0(AsynchronousAbleEventDispatcher.java:38)
+	at com.atlassian.jira.event.JiraEventExecutorFactory$1.lambda$execute$0(JiraEventExecutorFactory.java:47)
+	at com.atlassian.jira.util.thread.JiraThreadLocalUtils.lambda$wrap$1(JiraThreadLocalUtils.java:156)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+Caused by: org.springframework.beans.InvalidPropertyException: Invalid property 'stackTrace' of bean class [com.onresolve.scriptrunner.runner.events.ExecutionFailureEvent]: Getter for property 'stackTrace' threw exception
+	at org.springframework.beans.AbstractNestablePropertyAccessor.getPropertyValue(AbstractNestablePropertyAccessor.java:721)
+	at org.springframework.beans.AbstractNestablePropertyAccessor.getPropertyValue(AbstractNestablePropertyAccessor.java:619)
+	at com.atlassian.analytics.client.extractor.OldFieldExtractor.extractEventProperties(OldFieldExtractor.java:27)
+	at com.atlassian.analytics.client.pipeline.serialize.DefaultEventSerializer.toAnalyticsEvent(DefaultEventSerializer.java:23)
+	at com.atlassian.analytics.client.pipeline.DefaultAnalyticsPipeline.processEventWithTiming(DefaultAnalyticsPipeline.java:75)
+	at com.atlassian.analytics.client.pipeline.DefaultAnalyticsPipeline.process(DefaultAnalyticsPipeline.java:67)
+	at com.atlassian.analytics.client.pipeline.SwitchingAnalyticsPipeline.process(SwitchingAnalyticsPipeline.java:25)
+	at com.atlassian.analytics.client.listener.ProductEventListener.processEvent(ProductEventListener.java:48)
+	at com.atlassian.analytics.client.listener.JiraEventListener.onEvent(JiraEventListener.java:61)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at com.atlassian.event.internal.SingleParameterMethodListenerInvoker.invoke(SingleParameterMethodListenerInvoker.java:42)
+	... 9 more
+Caused by: java.lang.reflect.InvocationTargetException
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:115)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.beans.BeanWrapperImpl$BeanPropertyHandler.getValue(BeanWrapperImpl.java:275)
+	at org.springframework.beans.AbstractNestablePropertyAccessor.getPropertyValue(AbstractNestablePropertyAccessor.java:632)
+	... 20 more
+Caused by: java.lang.NullPointerException: Cannot invoke "java.io.BufferedReader.readLine()" because "this.lineSource" is null
+	at org.codehaus.groovy.control.io.AbstractReaderSource.getLine(AbstractReaderSource.java:78)
+	at org.codehaus.groovy.control.SourceUnit.getSample(SourceUnit.java:278)
+	at org.codehaus.groovy.control.messages.SyntaxErrorMessage.write(SyntaxErrorMessage.java:55)
+	at org.codehaus.groovy.control.ErrorCollector.write(ErrorCollector.java:303)
+	at org.codehaus.groovy.control.ErrorCollector.write(ErrorCollector.java:323)
+	at org.codehaus.groovy.control.MultipleCompilationErrorsException.getMessage(MultipleCompilationErrorsException.java:60)
+	at java.base/java.lang.Throwable.getLocalizedMessage(Throwable.java:398)
+	at java.base/java.lang.Throwable.toString(Throwable.java:497)
+	at java.base/java.lang.String.valueOf(String.java:4454)
+	at java.base/java.io.PrintWriter.println(PrintWriter.java:1021)
+	at java.base/java.lang.Throwable$WrappedPrintWriter.println(Throwable.java:801)
+	at java.base/java.lang.Throwable.lockedPrintStackTrace(Throwable.java:684)
+	at java.base/java.lang.Throwable.printStackTrace(Throwable.java:673)
+	at java.base/java.lang.Throwable.printStackTrace(Throwable.java:749)
+	at org.apache.commons.lang3.exception.ExceptionUtils.getStackTrace(ExceptionUtils.java:468)
+	at org.apache.commons.lang3.exception.ExceptionUtils$getStackTrace.call(Unknown Source)
+	at com.onresolve.scriptrunner.runner.events.ExecutionFailureEvent.getStackTrace(ExecutionFailureEvent.groovy:23)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	... 23 more
+2026-10-29 00:42:43,544+0100 JFR Event Stream 1 WARN      [c.a.j.cache.request.RequestCacheRecorderImpl] Invalid use of RequestCache by thread/stack: JFR-6vn9kr. Seen 54 times in the last 3603 s (5880 since restart). To find the cause, grep the logs for the first occurrence of thread/stack id.
+2026-10-29 01:00:08,082+0100 RMI TCP Connection(1536)-10.0.0.4 ERROR      [c.a.j.cache.request.RequestCacheRecorderImpl] Invalid use of RequestCache by thread/stack: RMI--3vly61. Incorrect usage of JIRA API. You can only create/use: RequestCacheImpl inside a context (request or Jira-Thread-Local). Check JiraThreadLocalUtil and http://go/j/JRASERVER-72963 for details. This message will be logged once per thread/stacktrace. This ERROR should be fixed on the caller side (check the stack-trace or thread-name) as it is causing inconsistent data.
+com.atlassian.jira.cache.request.RequestCacheRecorderImpl$StackCollector: Stack trace of invalid RequestCache usage
+	at com.atlassian.jira.cache.request.RequestCacheRecorderImpl$ExceptionPoint.errorLogOOCThreadUsage(RequestCacheRecorderImpl.java:56)
+	at com.atlassian.jira.cache.request.RequestCacheRecorderImpl.recordRequestCacheOOCUsage(RequestCacheRecorderImpl.java:125)
+	at com.atlassian.jira.cache.request.RequestCacheImpl.get(RequestCacheImpl.java:92)
+	at com.atlassian.jira.config.feature.DefaultFeatureManager.getDarkFeatures(DefaultFeatureManager.java:231)
+	at com.atlassian.jira.config.feature.DefaultFeatureManager.isEnabled(DefaultFeatureManager.java:151)
+	at com.atlassian.jira.config.feature.DefaultFeatureManager.lambda$isEnabled$1(DefaultFeatureManager.java:167)
+	at com.atlassian.cache.ehcache.ReferenceCacheLoader.load(ReferenceCacheLoader.java:28)
+	at com.atlassian.cache.ehcache.wrapper.ValueProcessorEhcacheLoaderDecorator.load(ValueProcessorEhcacheLoaderDecorator.java:30)
+	at net.sf.ehcache.Cache.loadValueUsingLoader(Cache.java:3373)
+	at net.sf.ehcache.Cache.getWithLoader(Cache.java:1859)
+	at com.atlassian.cache.ehcache.DelegatingCache.get(DelegatingCache.java:108)
+	at com.atlassian.cache.impl.metrics.InstrumentedCache.get(InstrumentedCache.java:70)
+	at com.atlassian.jira.cache.stats.CacheWithStats.get(CacheWithStats.java:52)
+	at com.atlassian.jira.config.feature.DefaultFeatureManager.isEnabled(DefaultFeatureManager.java:161)
+	at com.atlassian.jira.config.feature.DefaultFeatureManager.isEnabled(DefaultFeatureManager.java:179)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at com.atlassian.plugin.util.ContextClassLoaderSettingInvocationHandler.invoke(ContextClassLoaderSettingInvocationHandler.java:26)
+	at jdk.proxy3/jdk.proxy3.$Proxy608.isEnabled(Unknown Source)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:360)
+	at org.eclipse.gemini.blueprint.service.importer.support.internal.aop.ServiceInvoker.doInvoke(ServiceInvoker.java:56)
+	at org.eclipse.gemini.blueprint.service.importer.support.internal.aop.ServiceInvoker.invoke(ServiceInvoker.java:60)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.doProceed(DelegatingIntroductionInterceptor.java:137)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.invoke(DelegatingIntroductionInterceptor.java:124)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.eclipse.gemini.blueprint.service.util.internal.aop.ServiceTCCLInterceptor.invokeUnprivileged(ServiceTCCLInterceptor.java:70)
+	at org.eclipse.gemini.blueprint.service.util.internal.aop.ServiceTCCLInterceptor.invoke(ServiceTCCLInterceptor.java:53)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.eclipse.gemini.blueprint.service.importer.support.LocalBundleContextAdvice.invoke(LocalBundleContextAdvice.java:57)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.doProceed(DelegatingIntroductionInterceptor.java:137)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.invoke(DelegatingIntroductionInterceptor.java:124)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:223)
+	at jdk.proxy6/jdk.proxy6.$Proxy958.isEnabled(Unknown Source)
+	at com.atlassian.servicedesk.internal.feature.ServiceDeskFeatureFlagCacheImpl.isEnabled(ServiceDeskFeatureFlagCacheImpl.java:26)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at org.springframework.aop.support.AopUtils.invokeJoinpointUsingReflection(AopUtils.java:360)
+	at org.eclipse.gemini.blueprint.service.importer.support.internal.aop.ServiceInvoker.doInvoke(ServiceInvoker.java:56)
+	at org.eclipse.gemini.blueprint.service.importer.support.internal.aop.ServiceInvoker.invoke(ServiceInvoker.java:60)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.doProceed(DelegatingIntroductionInterceptor.java:137)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.invoke(DelegatingIntroductionInterceptor.java:124)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.eclipse.gemini.blueprint.service.util.internal.aop.ServiceTCCLInterceptor.invokeUnprivileged(ServiceTCCLInterceptor.java:70)
+	at org.eclipse.gemini.blueprint.service.util.internal.aop.ServiceTCCLInterceptor.invoke(ServiceTCCLInterceptor.java:53)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.eclipse.gemini.blueprint.service.importer.support.LocalBundleContextAdvice.invoke(LocalBundleContextAdvice.java:57)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.doProceed(DelegatingIntroductionInterceptor.java:137)
+	at org.springframework.aop.support.DelegatingIntroductionInterceptor.invoke(DelegatingIntroductionInterceptor.java:124)
+	at org.springframework.aop.framework.ReflectiveMethodInvocation.proceed(ReflectiveMethodInvocation.java:184)
+	at org.springframework.aop.framework.JdkDynamicAopProxy.invoke(JdkDynamicAopProxy.java:223)
+	at jdk.proxy59/jdk.proxy59.$Proxy1718.isEnabled(Unknown Source)
+	at io.riada.insight.featureflags.ArchiveFeatureFlag$Companion.isArchivedObjectCacheEnabled(ArchiveFeatureFlag.kt:138)
+	at com.riadalabs.jira.plugins.insight.services.core.archiving.cache.ArchiveObjectCacheManagerImpl.receive(ArchiveObjectCacheManagerImpl.kt:109)
+	at io.riada.insight.index.replication.AssetsReplicationTransportManager.receive$insight_core_index(AssetsReplicationTransportManager.kt:87)
+	at io.riada.insight.index.replication.AssetsReplicationTransportManager$CacheListener.onRemove(AssetsReplicationTransportManager.kt:118)
+	at com.atlassian.cache.impl.CacheEntryNotificationSupport.lambda$notifyRemove$2(CacheEntryNotificationSupport.java:29)
+	at com.atlassian.cache.impl.CacheEntryNotificationSupport.lambda$notify$4(CacheEntryNotificationSupport.java:39)
+	at java.base/java.util.concurrent.CopyOnWriteArrayList.forEach(CopyOnWriteArrayList.java:891)
+	at java.base/java.util.concurrent.CopyOnWriteArraySet.forEach(CopyOnWriteArraySet.java:432)
+	at com.atlassian.cache.impl.CacheEntryNotificationSupport.notify(CacheEntryNotificationSupport.java:37)
+	at com.atlassian.cache.impl.CacheEntryNotificationSupport.notifyRemove(CacheEntryNotificationSupport.java:29)
+	at com.atlassian.cache.impl.DefaultCacheEntryListenerSupport.notifyRemove(DefaultCacheEntryListenerSupport.java:43)
+	at com.atlassian.cache.impl.LazyCacheEntryListenerSupport.notifyRemove(LazyCacheEntryListenerSupport.java:57)
+	at com.atlassian.cache.ehcache.DelegatingCache$DelegatingCacheEventListener.notifyElementRemoved(DelegatingCache.java:233)
+	at net.sf.ehcache.event.RegisteredEventListeners.internalNotifyElementRemoved(RegisteredEventListeners.java:156)
+	at net.sf.ehcache.event.RegisteredEventListeners.notifyElementRemoved(RegisteredEventListeners.java:136)
+	at net.sf.ehcache.Cache.notifyRemoveInternalListeners(Cache.java:2449)
+	at net.sf.ehcache.Cache.removeInternal(Cache.java:2423)
+	at net.sf.ehcache.Cache.remove(Cache.java:2325)
+	at net.sf.ehcache.Cache.remove(Cache.java:2304)
+	at com.atlassian.jira.cluster.distribution.localq.rmi.ehcache.RMICachePeer.remove(RMICachePeer.java:201)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580)
+	at java.rmi/sun.rmi.server.UnicastServerRef.dispatch(UnicastServerRef.java:360)
+	at java.rmi/sun.rmi.transport.Transport$1.run(Transport.java:200)
+	at java.rmi/sun.rmi.transport.Transport$1.run(Transport.java:197)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:714)
+	at java.rmi/sun.rmi.transport.Transport.serviceCall(Transport.java:196)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport.handleMessages(TCPTransport.java:598)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run0(TCPTransport.java:844)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.lambda$run$0(TCPTransport.java:721)
+	at java.base/java.security.AccessController.doPrivileged(AccessController.java:400)
+	at java.rmi/sun.rmi.transport.tcp.TCPTransport$ConnectionHandler.run(TCPTransport.java:720)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+2026-10-24 05:44:40,049+0200 http-nio-8080-exec-8 url: /secure/404.jspa WARN   -   [c.a.j.w.action.util.Error404] Detected anonymous access to page <https://jira.example.com/jolokia/read> redirecting to login page
+2026-10-24 05:44:41,697+0200 Caesium-1-3 WARN anonymous     [c.a.p.extract.repository.ExtractRepository] No extracts found in the database
+2026-10-24 05:44:50,049+0200 http-nio-8080-exec-62 url: /secure/404.jspa WARN   -   [c.a.j.w.action.util.Error404] Detected anonymous access to page <https://jira.example.com/jolokia/read> redirecting to login page
+2026-10-24 05:44:50,259+0200 [20Oct_10:24]JCMA-MigrationTracker-pool-2-thread-30 INFO      [c.a.j.migration.fx3.Fx3PluginClientImpl] Fx3 refresh throttle window elapsed; reading Fx3 state from DB
+2026-10-24 06:00:00,301+0200 Sending mailitem com.atlassian.jira.mail.SubscriptionSingleRecepientMailQueueItem owner: 'user2(user2)' ERROR anonymous    Mail Queue Service [c.a.jira.mail.SubscriptionSingleRecepientMailQueueItem] jqlQuery
+java.lang.NullPointerException: jqlQuery
+	at java.base/java.util.Objects.requireNonNull(Objects.java:259)
+	at com.atlassian.jira.search.issue.DocumentSearchRequest.<init>(DocumentSearchRequest.java:49)
+	at com.atlassian.jira.search.issue.DocumentSearchRequest$Builder.build(DocumentSearchRequest.java:246)
+	at com.atlassian.jira.bc.issue.search.DefaultSearchService.search(DefaultSearchService.java:145)
+	at com.atlassian.jira.bc.issue.search.DefaultSearchService.search(DefaultSearchService.java:130)
+	at com.atlassian.jira.mail.SubscriptionSingleRecepientMailQueueItem.getContextParams(SubscriptionSingleRecepientMailQueueItem.java:242)
+	at com.atlassian.jira.mail.SubscriptionSingleRecepientMailQueueItem.sendSearchRequestEmail(SubscriptionSingleRecepientMailQueueItem.java:119)
+	at com.atlassian.jira.mail.SubscriptionSingleRecepientMailQueueItem.send(SubscriptionSingleRecepientMailQueueItem.java:104)
+	at com.atlassian.jira.mail.CountingMailQueueItemWrapper.send(CountingMailQueueItemWrapper.java:26)
+	at com.atlassian.mail.queue.MailQueueImpl.sendBufferUnderLock(MailQueueImpl.java:83)
+	at com.atlassian.mail.queue.MailQueueImpl.sendBuffer(MailQueueImpl.java:47)
+	at com.atlassian.jira.mail.JiraMailQueue.lambda$sendAndUpdateIpdMetric$0(JiraMailQueue.java:154)
+	at com.atlassian.jira.util.velocity.DefaultVelocityRequestContextFactory.runWithStaticBaseUrl(DefaultVelocityRequestContextFactory.java:102)
+	at com.atlassian.jira.util.DefaultBaseUrl.runWithStaticBaseUrl(DefaultBaseUrl.java:56)
+	at com.atlassian.jira.mail.JiraMailQueue.sendAndUpdateIpdMetric(JiraMailQueue.java:153)
+	at com.atlassian.jira.mail.JiraMailQueue.sendBuffer(JiraMailQueue.java:70)
+	at com.atlassian.jira.service.services.mail.MailQueueService.run(MailQueueService.java:21)
+	at com.atlassian.jira.service.JiraServiceContainerImpl.run(JiraServiceContainerImpl.java:69)
+	at com.atlassian.jira.service.ServiceRunner.runService(ServiceRunner.java:62)
+	at com.atlassian.jira.service.ServiceRunner.runServiceId(ServiceRunner.java:44)
+	at com.atlassian.jira.service.ServiceRunner.runJob(ServiceRunner.java:32)
+	at com.atlassian.scheduler.core.JobLauncher.runJob(JobLauncher.java:145)
+	at com.atlassian.scheduler.core.JobLauncher.launchAndBuildResponse(JobLauncher.java:117)
+	at com.atlassian.scheduler.core.JobLauncher.launch(JobLauncher.java:99)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.launchJob(CaesiumSchedulerService.java:464)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.executeLocalJob(CaesiumSchedulerService.java:431)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.executeQueuedJob(CaesiumSchedulerService.java:409)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.executeJob(SchedulerQueueWorker.java:66)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.executeNextJob(SchedulerQueueWorker.java:60)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.run(SchedulerQueueWorker.java:35)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+2026-10-24 07:00:29,106+0200 automation-rule-executor:thread-8 WARN Automation Robot     [c.c.a.api.validation.AbstractComponentValidatorVisitor] Consider implementing this component validator in a more performant way. Slow validation (923ms) of component: ComponentConfigBean{id='106076', component=TRIGGER, parentId='null', conditionParentId='null', schemaVersion=1, type='jira.jql.scheduled', value=JqlScheduledTriggerConfig{jql='project=ABC AND status = "Development in progress" and issuetype = Story and issuefunction not in parentsOf("project=ABC AND resolution = Unresolved") AND issuefunction in parentsOf("project=ABC")', executionMode=jql, onlyUpdatedIssues=false, processIssuesInBulk=false}, conditions=[], children=[], optimisedIds=[]}
+2026-10-24 07:00:29,446+0200 automation-rule-executor:thread-5 WARN Automation Robot     [c.c.a.api.validation.AbstractComponentValidatorVisitor] Consider implementing this component validator in a more performant way. Slow validation (1263ms) of component: ComponentConfigBean{id='116103', component=TRIGGER, parentId='null', conditionParentId='null', schemaVersion=1, type='jira.jql.scheduled', value=JqlScheduledTriggerConfig{jql='issuetype = Task AND status = "Waiting for approval" AND status CHANGED TO "In Progress" BEFORE startOfDay(-3M)', executionMode=jql, onlyUpdatedIssues=false, processIssuesInBulk=false}, conditions=[], children=[], optimisedIds=[]}
+2026-10-24 09:00:00,779+0200 Caesium-1-2 ERROR anonymous    Example Subversion Index Update Service [c.x.j.p.ext.subversion.SubversionManagerImpl] Error retrieving changes from the repository.
+org.tmatesoft.svn.core.SVNException: svn: E160006: No such revision 1
+svn: E160013: '/svn/examplerepo/!svn/vcc/default' path not found: 404 Not Found (https://jira.example.com)
+	at org.tmatesoft.svn.core.internal.wc.SVNErrorManager.error(SVNErrorManager.java:70)
+	at org.tmatesoft.svn.core.internal.wc.SVNErrorManager.error(SVNErrorManager.java:57)
+	at org.tmatesoft.svn.core.internal.io.dav.DAVUtil.getResourceProperties(DAVUtil.java:79)
+	at org.tmatesoft.svn.core.internal.io.dav.DAVUtil.getBaselineProperties(DAVUtil.java:276)
+	at org.tmatesoft.svn.core.internal.io.dav.DAVUtil.getBaselineInfo(DAVUtil.java:201)
+	at org.tmatesoft.svn.core.internal.io.dav.DAVUtil.getStableURL(DAVUtil.java:192)
+	at org.tmatesoft.svn.core.internal.io.dav.DAVRepository.logImpl(DAVRepository.java:1012)
+	at org.tmatesoft.svn.core.io.SVNRepository.log(SVNRepository.java:1041)
+	at org.tmatesoft.svn.core.io.SVNRepository.log(SVNRepository.java:946)
+	at org.tmatesoft.svn.core.io.SVNRepository.log(SVNRepository.java:870)
+	at cz.example.jira.plugin.ext.subversion.SubversionManagerImpl.getLogEntries(SubversionManagerImpl.java:123)
+	at cz.example.jira.plugin.ext.subversion.revisions.RevisionIndexer.updateIndex(RevisionIndexer.java:240)
+	at cz.example.jira.plugin.ext.subversion.revisions.scheduling.clustersafe.UpdateSvnIndexService.run(UpdateSvnIndexService.java:40)
+	at com.atlassian.jira.service.JiraServiceContainerImpl.run(JiraServiceContainerImpl.java:69)
+	at com.atlassian.jira.service.ServiceRunner.runService(ServiceRunner.java:62)
+	at com.atlassian.jira.service.ServiceRunner.runServiceId(ServiceRunner.java:44)
+	at com.atlassian.jira.service.ServiceRunner.runJob(ServiceRunner.java:32)
+	at com.atlassian.scheduler.core.JobLauncher.runJob(JobLauncher.java:145)
+	at com.atlassian.scheduler.core.JobLauncher.launchAndBuildResponse(JobLauncher.java:117)
+	at com.atlassian.scheduler.core.JobLauncher.launch(JobLauncher.java:99)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.launchJob(CaesiumSchedulerService.java:464)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.executeClusteredJob(CaesiumSchedulerService.java:459)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.executeClusteredJobWithRecoveryGuard(CaesiumSchedulerService.java:483)
+	at com.atlassian.scheduler.caesium.impl.CaesiumSchedulerService.executeQueuedJob(CaesiumSchedulerService.java:411)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.executeJob(SchedulerQueueWorker.java:66)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.executeNextJob(SchedulerQueueWorker.java:60)
+	at com.atlassian.scheduler.caesium.impl.SchedulerQueueWorker.run(SchedulerQueueWorker.java:35)
+	at java.base/java.lang.Thread.run(Thread.java:1583)
+2026-10-28 17:59:10,104+0100 http-nio-8080-exec-11 url: /login.jsp, /plugins/servlet/login WARN anonymous 1079x68123x2 18g70q 10.0.0.5 /login.jsp [c.a.soy.impl.WebResourceTemplateSetFactory] Some module descriptors are either missing or disabled; soy compilation may fail. Missing descriptors: [com.atlassian.lookandfeel.lookandfeel-plugin:styles]
+2026-10-28 17:59:10,629+0100 http-nio-8080-exec-11 url: /login.jsp, /plugins/servlet/login WARN anonymous 1079x68123x2 18g70q 10.0.0.5 /login.jsp [c.a.soy.impl.WebResourceTemplateSetFactory] Some module descriptors are either missing or disabled; soy compilation may fail. Missing descriptors: [com.atlassian.lookandfeel.lookandfeel-plugin:styles]
+2026-10-28 17:59:24,534+0100 ThreadPoolAsyncTaskExecutor::Thread 38 WARN      [c.x.j.notes.listeners.NotesIssueListener] Registerng listener
+2026-10-28 17:59:25,652+0100 ClusterMessageHandlerServiceThread:thread-1 INFO      [c.a.plugin.util.WaitUntil] Plugins that have yet to be enabled: (6): [cz.example.acmeplugin.acme-plugin, cz.example.acmeplugin.acme-timesheets-backend, com.holydev.env.plugin.jira-holydev-env-plugin, jira-timesheet-plugin, com.onresolve.jira.groovy.groovyrunner, com.botronsoft.jira.issuematrix], 300 seconds remaining
+2026-10-28 17:59:25,652+0100 ThreadPoolAsyncTaskExecutor::Thread 40 DEBUG      [c.a.activeobjects.osgi.ActiveObjectsServiceFactory] getService bundle [com.fdu.jira.plugin.jira-timesheet-plugin]
+2026-10-28 03:24:23,940+0100 ClusterMessageHandlerServiceThread:thread-1 INFO Anonymous user     [c.a.plugin.loaders.ScanningPluginLoader] No plugins found to be installed
+2026-10-28 03:24:24,242+0100 ClusterMessageHandlerServiceThread:thread-1 INFO Anonymous user     [c.a.plugin.manager.DefaultPluginManager] To disable plugins '[cz.example.acmeplugin.acme-utils-plugin]', we need to first disable all dependent enabled plugins: [cz.example.acmeplugin.acme-timesheets-backend(MANDATORY), cz.example.acmeplugin.know-how-2(MANDATORY), plugin.jep(OPTIONAL), com.holydev.env.plugin.jira-holydev-env-plugin(OPTIONAL), jira-timesheet-plugin(OPTIONAL), com.botronsoft.jira.poweradmin(DYNAMIC), com.almworks.structure.gantt(OPTIONAL), com.almworks.testy(OPTIONAL), rw-smart-checklist-biz(OPTIONAL), com.botronsoft.jira.issuematrix(OPTIONAL), com.onresolve.jira.groovy.groovyrunner(OPTIONAL), com.botronsoft.jira.rollout.configuration-manager-core(DYNAMIC), com.xpandit.plugins.xray(OPTIONAL), com.almworks.jira.structure(OPTIONAL), cz.example.acmeplugin.acme-plugin(MANDATORY)]

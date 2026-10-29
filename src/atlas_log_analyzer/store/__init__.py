@@ -13,8 +13,21 @@ Public API::
     diff(store.open(a), store.open(b)) # DiffResult
 """
 
-from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, SourceInfo
+from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, SourceInfo, rows, to_records
 from atlas_log_analyzer.store.query import DiffResult, diff
-from atlas_log_analyzer.store.store import Store
+from atlas_log_analyzer.store.schema import SCHEMA_VERSION, schema_json
+from atlas_log_analyzer.store.store import Store, StoreError
 
-__all__ = ["DiffResult", "LogSet", "LogSetManifest", "SourceInfo", "Store", "diff"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "DiffResult",
+    "LogSet",
+    "LogSetManifest",
+    "SourceInfo",
+    "Store",
+    "StoreError",
+    "diff",
+    "rows",
+    "schema_json",
+    "to_records",
+]

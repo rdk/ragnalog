@@ -1,0 +1,44 @@
+2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: ABC-123, field: Finished On
+org.codehaus.groovy.control.MultipleCompilationErrorsException: startup failed:
+file:/opt/scripts/Helper.groovy: 8: unable to resolve class com.example.TrustedRequest
+ @ line 8, column 1.
+   import com.example.TrustedRequest
+   ^
+1 error
+2026-10-29 03:05:49,991+0100 IssueIndexer:thread-2 ERROR anonymous     [c.o.scriptrunner.customfield.GroovyCustomField] Script field failed on issue: XYZ-9, field: Finished On
+2026-10-24 05:44:40,049+0200 http-nio-8080-exec-8 url: /secure/404.jspa WARN   -   [c.a.j.w.action.util.Error404] Detected anonymous access to page <https://jira.example.com/jolokia/read> redirecting to login page
+2026-10-28 03:27:30,738+0100 http-nio-8080-exec-68 url: /login.jsp, /plugins/servlet/login WARN anonymous 207x2193299x2 dk6u2n 10.0.0.1 /login.jsp [velocity] Velocity template warning
+2026-10-29 01:00:08,082+0100 RMI TCP Connection(123)-10.0.0.2 ERROR      [c.a.j.cache.request.RequestCacheRecorderImpl] Invalid use of RequestCache by thread/stack: RMI-d6tcld. Incorrect usage of JIRA API.
+2026-10-29 00:42:43,544+0100 JFR Event Stream 1 WARN      [c.a.j.cache.request.RequestCacheRecorderImpl] Invalid use of RequestCache by thread/stack: JFR-6vn9kr. Seen 54 times
+2026-10-29 00:41:03,650+0100 bigbrassband-gitplugin-reindex-queue:thread - 1 ERROR      [c.b.j.g.services.gitmanager.RepositoryStatusManagerImpl] Error updating the repository 'Repo' (repoId=83)
+org.eclipse.jgit.errors.TransportException: https://git.example.com/repo: Connection time out: git.example.com
+	at org.eclipse.jgit.transport.TransportHttp.connect(TransportHttp.java:752)
+	at java.base/java.util.concurrent.FutureTask.run(FutureTask.java:317)
+	at jdk.internal.reflect.GeneratedMethodAccessor12.invoke(Unknown Source)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	Suppressed: java.io.IOException: close failed
+		at org.eclipse.jgit.transport.TransportHttp.close(TransportHttp.java:900)
+		Caused by: java.io.EOFException: eof
+			at org.eclipse.jgit.Foo.bar(Foo.java:1)
+	at org.eclipse.jgit.transport.Transport.fetch(Transport.java:1459)
+Caused by: org.apache.http.conn.ConnectTimeoutException: Connect to git.example.com:443 [git.example.com/10.0.0.3] failed: Connect timed out
+	at org.apache.http.impl.conn.DefaultHttpClientConnectionOperator.connect(DefaultHttpClientConnectionOperator.java:151)
+	... 24 more
+Caused by: java.net.SocketTimeoutException: Connect timed out
+	at java.base/sun.nio.ch.NioSocketImpl.timedFinishConnect(NioSocketImpl.java:546)
+	... 38 more
+2026-10-28 05:18:07,477+0100 ThreadPoolAsyncTaskExecutor::Thread 12 WARN      [o.s.core.annotation.AnnotationTypeMapping] Support for convention-based annotation attribute overrides is deprecated
+2026-10-28 03:24:23,940+0100 ClusterMessageHandlerServiceThread:thread-1 INFO Anonymous user     [c.a.plugin.loaders.ScanningPluginLoader] No plugins found to be installed
+2026-10-28 09:12:00,001+0100 http-nio-8080-exec-3 url: /rest/api/2/issue; user: jdoe INFO jdoe 40x109522x1 11vv7yi 10.0.0.4,10.0.0.5 /rest/api/2/issue [c.a.j.util.log.LogMarker]
+
+    ********
+    ROLLOVER
+    ********
+2026-10-28 09:13:00,000+0100 JiraTaskExecutionThread-1 INFO e_user1     [c.a.j.w.a.admin.index.IndexAdminImpl] Re-indexing started
+2026-10-24 06:00:00,301+0200 Sending mailitem com.atlassian.jira.mail.SubscriptionSingleRecepientMailQueueItem owner: 'user2(user2)' ERROR anonymous    Mail Queue Service [c.a.jira.mail.SubscriptionSingleRecepientMailQueueItem] jqlQuery
+java.lang.NullPointerException: jqlQuery
+	at java.base/java.util.Objects.requireNonNull(Objects.java:259)
+2026-10-24 07:00:29,106+0200 automation-rule-executor:thread-8 WARN Automation Robot     [c.c.a.api.validation.AbstractComponentValidatorVisitor] Slow validation (923ms) of component
+2026-10-28 10:00:00,000+0100 Caesium-1-4 INFO -     [c.a.j.mail.MailQueueImpl] Mail queue dump follows
+2026-10-28 09:59:59,123+0100 Sending mailitem queued without level or logger
+2026-10-28 10:00:01,500+0100 Caesium-1-4 DEBUG      [c.a.j.mail.MailQueueImpl]
