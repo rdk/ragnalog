@@ -1,0 +1,61 @@
+[project]
+name = "atlas-log-analyzer"
+version = "0.1.0"
+description = "Parse, group and compare application log files (Jira Data Center first)."
+readme = "README.md"
+authors = [{ name = "Radoslav Krivak" }]
+requires-python = ">=3.14"
+license = "Apache-2.0"
+dependencies = [
+    "xxhash>=3.5",
+    "polars>=2,<3",
+    "pyarrow>=21",
+    "duckdb>=1.3",
+    "cyclopts>=4",
+    "msgspec>=0.19",
+    "rich>=14",
+]
+
+[project.optional-dependencies]
+mine = ["drain3>=0.9.11"]
+
+[project.scripts]
+atlas-log = "atlas_log_analyzer.cli.app:main"
+
+[project.entry-points."atlas_log_analyzer.formats"]
+jira = "atlas_log_analyzer.core.formats.jira:JiraFormat"
+
+[dependency-groups]
+dev = [
+    "pytest>=8",
+    "pytest-cov>=6",
+    "ruff>=0.12",
+    "mypy>=1.17",
+    "drain3>=0.9.11",
+]
+
+[build-system]
+requires = ["uv_build>=0.9.28,<0.10.0"]
+build-backend = "uv_build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py314"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "ANN", "D"]
+ignore = ["D100", "D104", "D105", "D107", "D203", "D213", "ANN401", "RUF012"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D", "ANN", "S101"]
+
+[tool.mypy]
+python_version = "3.14"
+strict = true
+packages = ["atlas_log_analyzer"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"
