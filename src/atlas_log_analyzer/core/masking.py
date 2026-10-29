@@ -50,11 +50,21 @@ GENERIC_RULES: Sequence[MaskRule] = (
     MaskRule.make("email", r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b"),
     MaskRule.make("ip", r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w.])"),
     MaskRule.make("hex", r"\b(?:0x[0-9a-fA-F]+|(?=[0-9a-fA-F]*\d)[0-9a-fA-F]{8,})\b"),
+    MaskRule.make(
+        "user",
+        r"(?i:(?<=\buid: )|(?<=\buid=)|(?<=samaccountname: )|(?<=samaccountname=)"
+        r"|(?<=\busername: )|(?<=\busername=)|(?<=\buser name: )|(?<=\buser: )|(?<=\buser=)"
+        r"|(?<=\blogin: )|(?<=\blogin=))"
+        r"[A-Za-z][\w.@-]*",
+    ),
     MaskRule.make("id", r"\b(?=[A-Za-z_])(?=\w*\d{3})\w+\b"),
     MaskRule.make("num", r"(?<![\w.$-])-?\d+(?:[.,]\d+)?|(?<=[\w.$-])\d+(?:[.,]\d+)?(?![\w.])"),
 )
 """Built-in, format-independent rules (timestamps, UUIDs, IPs, hex ids, numbers …), in order.
 
+``user`` masks the identifier that follows a user-naming key (``uid:``, ``user=``,
+``userName:``, ``sAMAccountName:``, ``login:``; case-insensitive), since account names
+otherwise look like ordinary words (``LDAP UID: JDOEXAMP``).
 ``id`` masks identifiers that start with a letter or ``_`` and contain a run of at least
 three digits (``KB001_0000687992_5_1``, ``JIRAUSER12345``). ``num`` masks standalone
 numbers (``42``, ``-1``, ``3.5``) and numbers that end a token (``thread-8``, ``id=42``)

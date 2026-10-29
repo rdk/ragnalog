@@ -1,7 +1,8 @@
 # Design
 
-Status: proposal 2026-10-29. See `requirements.md` for the why and
-`research.md` for the library choices.
+Status: implemented 2026-10-29 (v0.1). See `requirements.md` for the why,
+`research.md` for the library choices and section 11 for where the
+implementation deviates from the original proposal.
 
 ## 1. Layout
 
@@ -253,3 +254,34 @@ in `core`/`store` may import from `cli` or `webapp`.
   fixtures (`tests/fixtures/jira/*.log`) and a throughput smoke test.
 - GitHub Actions: lint, type-check, tests on `windows-latest` and
   `ubuntu-latest`, Python 3.14.
+
+## 11. Implementation notes and deviations (v0.1)
+
+- **Jira header context.** Besides the request context, Jira writes a
+  scheduled-service name after the user (`anonymous    Mail Queue Service`);
+  it is stored under the context key `service` (`CTX_SERVICE` in
+  `formats/jira.py`). `url:` segments may carry `; user: X`, which is stripped;
+  the IP field may be a comma-separated list; `-` means no user.
+- **`is_header` is the full regex.** Message bodies can start with a timestamp,
+  so a timestamp-only pre-check would create false headers. The full match is
+  still ~40 MB/s on the sample data; parse + sign + group runs at ~16 MB/s and
+  ingest to Parquet end to end at ~10 MB/s (712k entries from 191 MB in 18 s).
+- **Signatures.** Hashes are over UTF-8 bytes (`xxhash` 4 no longer hashes
+  `str`). When an exception message's first line ends with `:` (Groovy
+  `startup failed:`), the next non-empty line joins the signature so different
+  compile errors stay apart. `Suppressed:` blocks are skipped; only the first
+  exception chain in a body is parsed.
+- **Masking.** A generic `user` rule masks the identifier after
+  `uid:`/`user=`/`userName:`/`sAMAccountName:`/`login:`; without it a custom
+  LDAP-sync plugin produced 4,000 single-user groups. `Masker` caches results
+  (`cache_size`).
+- **Store.** `regroup` rewrites `entries.parquet` as well as `groups.parquet`
+  (signature, template and variables change) and drops `merges.parquet`.
+  `ingest` recomputes groups from the stored entries if the grouper's counts do
+  not add up to the deduplicated entry count. `ingest` with an existing id
+  returns the existing set without consuming the input iterator.
+- **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
+  reports sniff confidence per format; `parse` always emits JSONL; an empty
+  listing exits 0.
+- **Windows.** `tzdata` is a dependency on `win32`; polars/pyarrow cannot
+  convert UTC timestamps to Python objects without it.

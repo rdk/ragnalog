@@ -63,6 +63,22 @@ def test_docstring_example(masker: Masker) -> None:
             ("8",),
         ),
         ("UTF-8 is not an issue key", "UTF-<NUM> is not an issue key", ("8",)),
+        (
+            "add 1 ldap userName = sAMAccountName: E_MPEKA2",
+            "add <NUM> ldap userName = sAMAccountName: <USER>",
+            ("1", "E_MPEKA2"),
+        ),
+        (
+            "ERROR WITH USER LDAP UID: AP_DMT_SQ : NO LDAP ELEMENTS",
+            "ERROR WITH USER LDAP UID: <USER> : NO LDAP ELEMENTS",
+            ("AP_DMT_SQ",),
+        ),
+        (
+            "login failed for user=jdoe (user: jdoe)",
+            "login failed for user=<USER> (user: <USER>)",
+            ("jdoe", "jdoe"),
+        ),
+        ("user: 'quoted' stays", "user: 'quoted' stays", ()),
         ("no variables here", "no variables here", ()),
         ("", "", ()),
     ],
