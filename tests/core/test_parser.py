@@ -151,3 +151,29 @@ def test_memory_bounded(tmp_path: Path, jira: JiraFormat, monkeypatch: pytest.Mo
     tracemalloc.stop()
     assert count == 20000
     assert peak < path.stat().st_size // 2
+
+
+def test_identical_entries_in_one_millisecond_get_distinct_ids() -> None:
+    from atlas_log_analyzer.core import formats
+    from atlas_log_analyzer.core.parser import parse_lines
+    from atlas_log_analyzer.core.reader import Line
+
+    fmt = formats.get("jira")
+    text = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] *****"
+    lines = [Line(i + 1, i * 100, text) for i in range(3)]
+    lines.append(Line(4, 400, text.replace(",415", ",416")))
+    ids = [e.id for e in parse_lines(lines, fmt, "a.log")]
+    assert len(set(ids)) == 4
+    # numbering is by order within the millisecond, so it is reproducible
+    assert ids == [e.id for e in parse_lines(lines, fmt, "b.log")]
+    assert ids[0] == next(parse_lines(lines[:1], fmt, "a.log")).id
+
+
+def test_parse_file_gives_same_millisecond_duplicates_distinct_ids(tmp_path: Path) -> None:
+    from atlas_log_analyzer.core import formats
+    from atlas_log_analyzer.core.parser import parse_file
+
+    text = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] *****\n"
+    p = tmp_path / "a.log"
+    p.write_text(text * 3, encoding="utf-8")
+    assert len({e.id for e in parse_file(p, formats.get("jira"))}) == 3

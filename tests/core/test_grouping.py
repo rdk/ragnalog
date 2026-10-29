@@ -42,7 +42,7 @@ def test_group_stats(jira: JiraFormat, masker: Masker) -> None:
     assert top.users == {"jdoe": 2}
     assert top.threads == {"IssueIndexer:thread-1": 2, "IssueIndexer:thread-2": 1}
     assert top.sources == {"a.log": 3}
-    assert top.examples == [entries[0].id, entries[1].id]
+    assert top.examples == [entries[0].id, entries[2].id]  # first ones plus the latest
     assert top.coarse_signature == signed[0].coarse.hash
 
     by_first = grouper.sorted_groups("first_seen")

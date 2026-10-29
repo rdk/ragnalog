@@ -19,6 +19,7 @@ COMMANDS = [
     "diff",
     "parse",
     "regroup",
+    "report",
     "formats",
     "schema",
     "remove",

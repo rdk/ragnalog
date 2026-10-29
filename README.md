@@ -39,6 +39,19 @@ atlas-log diff prod-1029 prod-1030 --level ERROR               # new / vanished 
 Log sets live in `./.atlas-log` (override with `--store DIR` or
 `ATLAS_LOG_STORE`). A set can be referred to by id, name or unique id prefix.
 
+### HTML report
+
+```sh
+atlas-log report prod-1030 --compare prod-1029 --out prod-1030.html --open
+```
+
+writes one self-contained HTML file (no network access needed; open it from a
+file share or send it by e-mail): timeline by level, filterable group table,
+per-group drawer with example entries, stack traces and the matching CLI
+commands, and — with `--compare` — new / vanished / changed groups against a
+baseline. The view (filters, selected group) is kept in the URL, so a link
+with its `#…` part reopens the same view. See `docs/report.md`.
+
 ## Quick start (agents)
 
 - Output is JSON whenever stdout is not a terminal; force it with

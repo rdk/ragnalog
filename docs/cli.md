@@ -184,6 +184,34 @@ count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (+ `ratio` in
 `changed`). Exit: 0; 1 sets signed differently (signature/mask-rule version or
 spec) without `--force`; 3.
 
+### `report SET [--out FILE] [--compare SET_B] [--min-level L] [--examples 3] [--max-raw 4000] [--max-groups 0] [--open]`
+
+Writes a single self-contained HTML file (CSS, JS and data inlined; no network
+requests, works from `file://`, light and dark theme): overview tiles, a
+per-hour timeline by level (drag to filter groups to a time window), the
+filterable group table (search incl. `sig:` prefix, level chips, logger
+prefix tree, exception type, coarse / Drain3-merged views) and a detail drawer
+per group with example entries and the equivalent `show`/`entries` commands.
+The view state lives in the URL hash. The embedded data is the `report.v1`
+payload ([`formats/report.v1.md`](formats/report.v1.md)); design in
+[`report.md`](report.md).
+
+`--out` defaults to `<name or id>.html` in the current directory.
+`--compare SET_B` adds the comparison of SET against the baseline SET_B (as
+`diff SET_B SET`; no `--force`). `--min-level` restricts the groups (and the
+comparison); the overview always covers the whole set. `--examples` example
+entries per group (0 = none), `--max-raw` characters of raw text per example
+(0 = no limit), `--max-groups` only the N largest groups (0 = all). `--open`
+opens the file in the default browser.
+
+```json
+{"schema": "report-file.v1", "path": "C:/…/prod.html", "bytes": 9913581, "groups": 2953, "entries": 5529, "compare": true}
+```
+
+`groups`: groups in the report; `entries`: embedded example entries. Table mode
+prints one line (`wrote <path> (…)`). Exit: 0; 1 bad option, invalid level, or
+the sets were signed differently; 2 output directory does not exist; 3.
+
 ### `parse PATH... [--format F] [--limit 0]`
 
 Streams entries as JSON Lines to stdout without a store; `--output` is ignored.

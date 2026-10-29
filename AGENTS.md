@@ -10,6 +10,7 @@ src/atlas_log_analyzer/
   core/      pure library: models, formats (registry, jira), reader, parser,
              java stack traces, masking, signatures, grouping, mining (drain3, optional)
   store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff
+  report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
   cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes)
   webapp/    future FastAPI app
 tests/

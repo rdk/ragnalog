@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="atlas-log report">
+<title>__REPORT_TITLE__</title>
+<script>
+/* Theme before first paint: #theme=dark|light override, then localStorage, else the OS. */
+(function () {
+  var t = null;
+  var m = /(?:^#|&)theme=(dark|light)(?:&|$)/.exec(location.hash);
+  if (m) { t = m[1]; } else { try { t = localStorage.getItem("atlas-log-report-theme"); } catch (e) { t = null; } }
+  if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+})();
+</script>
+<style>
+/*__REPORT_CSS__*/
+</style>
+</head>
+<body>
+<header class="top" id="top">
+  <div class="top-id">
+    <h1 id="set-name">atlas-log report</h1>
+    <span class="muted mono" id="set-id"></span>
+  </div>
+  <div class="top-meta" id="set-meta"></div>
+  <div class="top-actions">
+    <button type="button" class="btn" id="btn-help" title="Keyboard shortcuts (?)">?</button>
+    <button type="button" class="btn" id="btn-theme" title="Toggle light/dark theme">Theme</button>
+    <button type="button" class="btn" id="btn-data" title="Download the report.v1 payload as JSON">Data</button>
+  </div>
+</header>
+
+<main id="app">
+  <section class="overview" aria-label="Overview">
+    <div class="tiles" id="tiles"></div>
+    <div class="card timeline-card">
+      <div class="card-head">
+        <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
+        <div class="legend" id="tl-legend"></div>
+        <div class="tl-window" id="tl-window"></div>
+      </div>
+      <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window"></div>
+    </div>
+  </section>
+
+  <section class="filters" id="filters" aria-label="Filters">
+    <input type="search" id="f-search" placeholder="Search template, logger, exception — sig:abc" aria-label="Search" autocomplete="off" spellcheck="false">
+    <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
+    <div class="facet" id="f-logger-wrap">
+      <button type="button" class="btn facet-btn" id="f-logger" aria-haspopup="true">Logger</button>
+      <div class="pop" id="f-logger-pop" hidden></div>
+    </div>
+    <div class="facet" id="f-exc-wrap">
+      <button type="button" class="btn facet-btn" id="f-exc" aria-haspopup="true">Exception</button>
+      <div class="pop" id="f-exc-pop" hidden></div>
+    </div>
+    <button type="button" class="btn toggle" id="f-hasexc" aria-pressed="false">Has exception</button>
+    <label class="sel"><span>Sort</span>
+      <select id="f-sort" aria-label="Sort"></select>
+    </label>
+    <button type="button" class="btn toggle" id="f-coarse" aria-pressed="false" title="Group by coarse signature (exception chain ignored)">Coarse</button>
+    <button type="button" class="btn toggle" id="f-merged" aria-pressed="false" title="Apply Drain3 merge proposals" hidden>Merged</button>
+    <div class="seg" id="f-compare" role="group" aria-label="Compare class" hidden></div>
+    <button type="button" class="btn link" id="f-reset">Reset</button>
+  </section>
+
+  <section class="body" id="body">
+    <div class="table-wrap" id="table-wrap">
+      <div class="table-head-line">
+        <span id="t-summary" class="muted"></span>
+        <span class="pager" id="pager-top"></span>
+      </div>
+      <table class="groups" id="groups">
+        <thead id="t-head"></thead>
+        <tbody id="t-body"></tbody>
+      </table>
+      <div class="empty" id="t-empty" hidden></div>
+      <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
+    </div>
+    <aside class="drawer" id="drawer" hidden aria-label="Group detail">
+      <div class="drawer-bar">
+        <button type="button" class="btn" id="d-prev" title="Previous group (k)">↑</button>
+        <button type="button" class="btn" id="d-next" title="Next group (j)">↓</button>
+        <span class="grow"></span>
+        <button type="button" class="btn" id="d-close" title="Close (Esc)">Close</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+  </section>
+</main>
+
+<footer class="foot" id="foot"></footer>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<dialog id="help">
+  <h2>Keyboard</h2>
+  <dl class="keys">
+    <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Open the selected group</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
+    <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
+    <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page</dd>
+    <dt><kbd>?</kbd></dt><dd>This help</dd>
+  </dl>
+  <p class="muted">Timeline: drag to filter groups to a time window, click to clear.
+  The view (filters, sort, page, selection) is kept in the URL — bookmark or paste it.</p>
+  <form method="dialog"><button class="btn">Close</button></form>
+</dialog>
+<pre id="fatal" hidden></pre>
+<script type="application/json" id="report-data">__REPORT_DATA__</script>
+<script>
+/*__REPORT_JS__*/
+</script>
+</body>
+</html>

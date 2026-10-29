@@ -498,7 +498,12 @@ def groups_from_entries(entries_path: Path, out_path: Path, *, max_examples: int
         pl.col("user").drop_nulls().n_unique().cast(pl.Int32).alias("user_count"),
         pl.col("thread").drop_nulls().n_unique().cast(pl.Int32).alias("thread_count"),
         pl.col("source_path").drop_nulls().n_unique().cast(pl.Int32).alias("source_count"),
-        pl.col("id").head(max_examples).alias("examples"),
+        # first max_examples - 1 ids plus the last one, as Grouper does
+        pl.col("id")
+        .head(max_examples - 1)
+        .append(pl.col("id").tail(1))
+        .unique(maintain_order=True)
+        .alias("examples"),
     )
     for src, name, limit in (
         ("user", "top_users", TOP_N),

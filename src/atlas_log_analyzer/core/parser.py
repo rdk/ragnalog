@@ -7,6 +7,8 @@ from collections.abc import Iterable, Iterator
 from itertools import islice
 from pathlib import Path
 
+import xxhash
+
 from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.models import LogEntry, SourceRef
 from atlas_log_analyzer.core.reader import Line, SourceFile, iter_raw_lines, iter_sources
@@ -56,20 +58,46 @@ def _assemble(
         yield dataclasses.replace(entry, parse_error=ORPHAN_ERROR) if orphan else entry
 
 
+def _distinct_ids(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
+    """Make ids unique within one millisecond without remembering the entries.
+
+    Entry ids hash ``(format, timestamp, thread, logger, raw)``, so a line that
+    Jira writes twice in the same millisecond (separator banners, repeated
+    warnings) would collapse into one entry when the store deduplicates. Every
+    entry after the first in a millisecond is re-hashed with its ordinal ``k``
+    in that millisecond: ``xxh3(id, k)``. The ordinal depends only on the file
+    content before the entry, so the same entry keeps the same id when the file
+    shows up again in another snapshot, and the state is one counter.
+    """
+    last_ts = None
+    k = 0
+    for entry in entries:
+        if entry.timestamp != last_ts:
+            last_ts = entry.timestamp
+            k = 0
+        else:
+            k += 1
+            entry = dataclasses.replace(
+                entry, id=xxhash.xxh3_64_hexdigest(f"{entry.id}{k}".encode())
+            )
+        yield entry
+
+
 def parse_lines(lines: Iterable[Line], fmt: LogFormat, path: str) -> Iterator[LogEntry]:
     """Assemble entries from already-read lines (first-line / continuation state machine).
 
     Lines before the first header become one entry with ``parse_error``.
     A line for which ``fmt.is_header`` is true but ``fmt.parse_header`` returns
     ``None`` becomes an entry with ``parse_error`` and is *not* merged into the
-    previous entry.
+    previous entry. Entries after the first in a millisecond get ids re-hashed
+    with their ordinal (see :func:`_distinct_ids`).
     """
-    return _assemble(((ln.number, ln.offset, ln.text) for ln in lines), fmt, path)
+    return _distinct_ids(_assemble(((ln.number, ln.offset, ln.text) for ln in lines), fmt, path))
 
 
 def parse_file(path: Path | str, fmt: LogFormat) -> Iterator[LogEntry]:
     """Stream entries from one file."""
-    return _assemble(iter_raw_lines(path), fmt, str(path))
+    return _distinct_ids(_assemble(iter_raw_lines(path), fmt, str(path)))
 
 
 def parse_sources(sources: Iterable[SourceFile], fmt: LogFormat) -> Iterator[LogEntry]:

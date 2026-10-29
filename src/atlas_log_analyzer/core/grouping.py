@@ -40,7 +40,11 @@ class Group:
     threads: Counter[str] = field(default_factory=Counter)
     sources: Counter[str] = field(default_factory=Counter)
     examples: list[str] = field(default_factory=list)
-    """Entry ids of up to ``Grouper.max_examples`` representative entries."""
+    """Entry ids of up to ``Grouper.max_examples`` representative entries.
+
+    The first ``max_examples - 1`` entries seen plus the latest one, so the
+    examples span the group's lifetime instead of its first millisecond.
+    """
 
 
 _SORT_KEYS = ("count", "first_seen", "last_seen")
@@ -91,8 +95,11 @@ class Grouper:
         if entry.thread:
             group.threads[entry.thread] += 1
         group.sources[entry.source.path] += 1
-        if len(group.examples) < self.max_examples:
-            group.examples.append(entry.id)
+        examples = group.examples
+        if len(examples) < self.max_examples:
+            examples.append(entry.id)
+        else:
+            examples[-1] = entry.id
 
     def sorted_groups(self, key: str = "count") -> list[Group]:
         """Return groups sorted by ``count`` (desc), ``first_seen`` (asc) or ``last_seen`` (desc).

@@ -12,6 +12,7 @@ import dataclasses
 import importlib
 import io
 import os
+import re
 import sys
 import time
 from collections.abc import Callable, Iterable, Iterator, Sequence
@@ -725,6 +726,102 @@ def diff(
         console.print(f"unchanged: {result.unchanged_count}")
 
     _out().emit("diff.v1", doc, items=None, jsonl_rows=jsonl, table=render)
+
+
+def _report_filename(logset: LogSet) -> Path:
+    stem = re.sub(r"[^\w.-]+", "_", logset.manifest.name or logset.manifest.id).strip("._")
+    return Path((stem or logset.manifest.id) + ".html")
+
+
+@app.command
+def report(
+    logset: str,
+    /,
+    *,
+    out: Path | None = None,
+    compare: str | None = None,
+    min_level: str | None = None,
+    examples: int = 3,
+    max_raw: int = 4000,
+    max_groups: int = 0,
+    open_: Annotated[bool, Parameter(name="--open")] = False,
+) -> None:
+    """Write a self-contained HTML report of a log set (optionally compared with another).
+
+    The page needs no network access (CSS, JS and data are inlined) and works
+    from a file share or an e-mail attachment: overview tiles, a per-hour
+    timeline by level (drag to select a time window), the filterable group
+    table and a detail drawer per group with example entries and the
+    equivalent CLI commands. The embedded data is the "report.v1" payload
+    (docs/formats/report.v1.md). With --compare SET_B the report shows the
+    groups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).
+
+    Output (json):
+      {"schema": "report-file.v1", "path": str, "bytes": int, "groups": int,
+       "entries": int, "compare": bool}
+    "groups" is the number of groups in the report, "entries" the number of
+    embedded example entries. Table mode prints one line.
+
+    Exit codes: 0 ok; 1 bad option, invalid level, or the sets were built with
+    different signature/mask-rule versions or specs; 2 the output directory
+    does not exist; 3 unknown set or store error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+        out: Output file; default <name or id>.html in the current directory.
+        compare: Baseline log set to compare with (id, id prefix or name).
+        min_level: Only groups of this level or more severe (e.g. WARN); the
+            overview always covers the whole set.
+        examples: Example entries per group; 0 = none.
+        max_raw: Truncate each example's raw text to this many characters; 0 = no limit.
+        max_groups: Only the N largest groups; 0 = all.
+        open_: Open the report in the default web browser.
+
+    """
+    from atlas_log_analyzer.report import write_report
+
+    min_lvl = _level(min_level)
+    for flag, value in (
+        ("--examples", examples),
+        ("--max-raw", max_raw),
+        ("--max-groups", max_groups),
+    ):
+        if value < 0:
+            raise CliError("invalid_value", f"{flag} must be >= 0")
+    ls = _open(logset)
+    baseline = _open(compare) if compare is not None else None
+    path = out if out is not None else _report_filename(ls)
+    info = write_report(
+        ls,
+        path,
+        compare=baseline,
+        min_level=min_lvl,
+        examples=examples,
+        max_raw=max_raw,
+        max_groups=max_groups or None,
+    )
+    resolved = info.path.resolve()
+    doc = {
+        "path": resolved.as_posix(),
+        "bytes": info.bytes,
+        "groups": info.groups,
+        "entries": info.entries,
+        "compare": info.compare,
+    }
+    output = _out()
+
+    def render(console: Console) -> None:
+        extra = f", compared with {compare}" if compare is not None else ""
+        output.write_line(
+            f"wrote {resolved} ({info.bytes:,} bytes, {info.groups:,} groups, "
+            f"{info.entries:,} example entries{extra})"
+        )
+
+    output.emit("report-file.v1", doc, items=None, table=render)
+    if open_:
+        import webbrowser
+
+        webbrowser.open(resolved.as_uri())
 
 
 @app.command
