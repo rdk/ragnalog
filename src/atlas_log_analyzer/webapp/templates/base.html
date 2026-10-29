@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{% block title %}atlas-log{% endblock %}</title>
+<script>
+(function () {
+  var t = null;
+  try { t = localStorage.getItem("atlas-log-report-theme"); } catch (e) { t = null; }
+  if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+})();
+</script>
+<link rel="stylesheet" href="/assets/report/report.css">
+<link rel="stylesheet" href="/static/webapp.css">
+<script defer src="/static/webapp.js"></script>
+</head>
+<body class="app">
+<nav class="shell" aria-label="atlas-log">
+  <a class="shell-home" href="/">atlas-log</a>
+  {% block nav %}{% endblock %}
+  <span class="shell-gap"></span>
+  <a href="/#upload">Ingest</a>
+  <a href="/docs">API</a>
+  <button type="button" class="btn small" id="shell-theme" title="Toggle theme">Theme</button>
+</nav>
+<main class="page">
+{% block main %}{% endblock %}
+</main>
+<footer class="foot muted">atlas-log {{ tool_version }} · JSON for every page under <a href="/docs">/api</a></footer>
+</body>
+</html>

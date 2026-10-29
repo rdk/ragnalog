@@ -12,5 +12,5 @@ dist/
 coverage.xml
 htmlcov/
 *.html
-!src/atlas_log_analyzer/report/assets/*.html
+!src/**/*.html
 logs_*/

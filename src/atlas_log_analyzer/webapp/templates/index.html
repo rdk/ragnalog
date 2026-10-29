@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Log sets · atlas-log{% endblock %}
+{% block main %}
+<header class="page-head">
+  <div>
+    <h1>Log sets</h1>
+    <p class="muted">Store <span class="mono">{{ store }}</span> · {{ sets|length }} set{{ "" if sets|length == 1 else "s" }}</p>
+  </div>
+</header>
+
+{% if sets %}
+<div class="card table-wrap">
+<table class="sets">
+  <thead>
+    <tr>
+      <th>Set</th>
+      <th>Log time range</th>
+      <th class="num">Entries</th>
+      <th class="num">Groups</th>
+      <th class="num">Errors</th>
+      <th class="num">Warnings</th>
+      <th>vs previous set</th>
+      <th class="actions"><span class="sr-only">Actions</span></th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for s in sets %}
+    <tr data-set="{{ s.id }}">
+      <td>
+        <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
+        <div class="muted mono small">{{ s.id }} · {{ s.format }} · {{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }} · {{ s.bytes|size }}</div>
+      </td>
+      <td class="nowrap">{{ s.first_ts|ts }} <span class="muted">→</span> {{ s.last_ts|ts }}</td>
+      <td class="num">{{ s.entry_count|num }}</td>
+      <td class="num">{{ s.group_count|num }}</td>
+      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
+      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-WARN"></span>{{ s.summary.warnings|num }}{% else %}–{% endif %}</td>
+      <td class="triage" data-triage="{{ s.id }}"><span class="muted">checking…</span></td>
+      <td class="actions">
+        <a class="btn small" href="/sets/{{ s.id }}">Report</a>
+        <a class="btn small" href="/sets/{{ s.id }}/triage">Triage</a>
+        <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the store">Delete</button>
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<section class="card empty">
+  <h2>No log sets yet</h2>
+  <p class="muted">Upload Jira <span class="mono">atlassian-jira.log*</span> files below, or ingest from a shell:</p>
+  <pre class="cmd">atlas-log --store {{ store }} ingest path/to/logs --name prod-2026-10-29</pre>
+</section>
+{% endif %}
+
+<section class="card upload" id="upload">
+  <h2>Ingest log files</h2>
+  <form id="upload-form" enctype="multipart/form-data">
+    <label class="drop" id="drop">
+      <input type="file" name="files" id="files" multiple required>
+      <span class="drop-text"><strong>Choose files</strong> or drop them here. Rotated files (<span class="mono">.log.1</span>, <span class="mono">.gz</span>) are fine.</span>
+      <span class="drop-list muted" id="drop-list"></span>
+    </label>
+    <div class="upload-row">
+      <label class="sel">Name <input type="text" name="name" placeholder="e.g. prod-2026-10-29" maxlength="128"></label>
+      <label class="sel"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
+      <label class="sel"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
+      <span class="grow"></span>
+      <button class="btn primary" type="submit">Upload &amp; ingest</button>
+    </div>
+  </form>
+  <div class="job" id="job" hidden>
+    <div class="job-head"><strong id="job-state">queued</strong> <span class="muted" id="job-detail"></span>
+      <button type="button" class="btn small link" id="job-cancel">Cancel</button></div>
+    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="job-bar"></span></div>
+  </div>
+</section>
+{% endblock %}

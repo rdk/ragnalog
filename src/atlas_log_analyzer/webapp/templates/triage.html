@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+{% set me = t.set %}
+{% block title %}Triage {{ me.name or me.id }} · atlas-log{% endblock %}
+{% block nav %}<span class="muted">/</span><a href="/sets/{{ me.id }}">{{ me.name or me.id }}</a><span class="muted">/ triage</span>{% endblock %}
+{% macro row(r, kind) %}
+<tr>
+  <td><span class="lv lv-{{ 'ERROR' if r.level_name in ('ERROR', 'FATAL') else r.level_name if r.level_name in ('WARN', 'INFO', 'DEBUG') else 'OTHER' }}">{{ r.level_name }}</span></td>
+  <td class="tpl">
+    <a href="{{ r.report_url or ('/sets/' ~ me.id ~ '#sig=' ~ r.signature) }}">{{ r.template or '(empty message)' }}</a>
+    <div class="muted small mono">{{ r.logger }}{% if r.exception_type %} · {{ r.exception_type }}{% endif %}</div>
+  </td>
+  {% if kind == 'new' %}
+  <td class="num">{{ r.count_b|num }}</td>
+  <td class="num muted">{{ '%.1f'|format(r.rate_per_hour) if r.rate_per_hour is not none else '–' }}</td>
+  <td class="nowrap">{{ r.first_seen_b|ts }}</td>
+  {% elif kind == 'grew' %}
+  <td class="num">{{ r.count_a|num }} → {{ r.count_b|num }}</td>
+  <td class="num"><span class="delta up">↑ ×{{ '%.1f'|format(r.rate_ratio) }}</span></td>
+  <td class="nowrap">{{ r.last_seen_b|ts }}</td>
+  {% else %}
+  <td class="num">{{ r.count_a|num }}</td>
+  <td></td>
+  <td class="nowrap">{{ r.last_seen_a|ts }}</td>
+  {% endif %}
+</tr>
+{% endmacro %}
+{% block main %}
+<header class="page-head">
+  <div>
+    <h1>Triage · {{ me.name or me.id }}</h1>
+    <p class="muted">{{ me.first_ts|ts }} → {{ me.last_ts|ts }} · {{ me.entries|num }} entries · level ≥ {{ t.min_level or 'any' }}</p>
+  </div>
+  <form class="page-tools" method="get">
+    <label class="sel">Baseline
+      <select name="baseline" onchange="this.form.submit()">
+        <option value="auto"{% if baseline_param == 'auto' %} selected{% endif %}>auto (previous set)</option>
+        {% for m in sets %}<option value="{{ m.id }}"{% if baseline_param == m.id %} selected{% endif %}>{{ m.name or m.id }}</option>{% endfor %}
+      </select></label>
+    <label class="sel">Level ≥
+      <select name="min_level" onchange="this.form.submit()">
+        {% for l in ('ERROR', 'WARN', 'INFO', 'DEBUG') %}<option{% if min_level == l %} selected{% endif %}>{{ l }}</option>{% endfor %}
+      </select></label>
+  </form>
+</header>
+
+{% if t.verdict == 'no_baseline' %}
+<section class="card verdict v-none">
+  <h2>No baseline yet</h2>
+  <p class="muted">This is the only set that could serve as its own baseline. Ingest an earlier snapshot to see what changed, or open the <a href="/sets/{{ me.id }}">report</a> to browse its groups.</p>
+</section>
+{% else %}
+{% set s = t.summary %}
+<section class="card verdict v-{{ t.verdict }}">
+  <div class="verdict-line">
+    {% if t.verdict == 'new_errors' %}<span class="verdict-badge bad">New errors</span>
+    {% elif t.verdict == 'new_warnings' %}<span class="verdict-badge warn">New warnings</span>
+    {% else %}<span class="verdict-badge ok">No new types</span>{% endif %}
+    <span>compared with <a href="/sets/{{ t.baseline.id }}">{{ t.baseline.name or t.baseline.id }}</a>
+    <span class="muted">({{ t.baseline.first_ts|ts }} → {{ t.baseline.last_ts|ts }}, {{ t.baseline.resolved_by }})</span></span>
+    <span class="grow"></span>
+    <a class="btn small" href="/sets/{{ me.id }}?compare={{ t.baseline.id }}">Open comparison report</a>
+  </div>
+  <div class="tiles mini">
+    <div class="tile"><div class="label">New types</div><div class="value">{{ s.new|num }}</div>
+      <div class="note">{% for k, v in s.new_by_level.items() %}{{ v }} {{ k }}{% if not loop.last %} · {% endif %}{% endfor %}</div></div>
+    <div class="tile"><div class="label">Grew ≥ ×2 per hour</div><div class="value">{{ s.grew|num }}</div><div class="note">of {{ s.changed|num }} changed</div></div>
+    <div class="tile"><div class="label">Vanished</div><div class="value">{{ s.vanished|num }}</div></div>
+    <div class="tile"><div class="label">Unchanged</div><div class="value">{{ s.unchanged|num }}</div></div>
+  </div>
+</section>
+
+{% for kind, title, rows, cols in [('new', 'New types', t.new, ('Count', 'Per hour', 'First seen')), ('grew', 'Grew', t.grew, ('Count', 'Rate', 'Last seen')), ('vanished', 'Vanished', t.vanished, ('Count before', '', 'Last seen before'))] %}
+<section class="card">
+  <h2>{{ title }} <span class="muted">{{ rows|length }}</span></h2>
+  {% if rows %}
+  <div class="table-wrap">
+  <table class="sets triage-table">
+    <thead><tr><th>Level</th><th>Template</th>{% for c in cols %}<th class="{{ 'num' if loop.index < 3 else '' }}">{{ c }}</th>{% endfor %}</tr></thead>
+    <tbody>{% for r in rows %}{{ row(r, kind) }}{% endfor %}</tbody>
+  </table>
+  </div>
+  {% else %}<p class="muted">None.</p>{% endif %}
+</section>
+{% endfor %}
+{% endif %}
+{% endblock %}
