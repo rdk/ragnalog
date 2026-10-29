@@ -20,6 +20,7 @@ COMMANDS = [
     "parse",
     "regroup",
     "report",
+    "serve",
     "formats",
     "schema",
     "remove",

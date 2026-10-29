@@ -1141,6 +1141,64 @@ def remove(logset: str, /) -> None:
 
 
 @app.command
+def serve(
+    *,
+    host: str = "127.0.0.1",
+    port: int = 8321,
+    token: str | None = None,
+    max_upload_mb: int = 2048,
+    reload: bool = False,
+) -> None:
+    """Run the web app over the store: browse, compare and triage sets, upload new logs.
+
+    Pages: / (sets with triage verdicts and upload), /sets/SET (interactive
+    report, ?compare=auto|SET), /sets/SET/triage. JSON API under /api with
+    the same documents as this CLI (OpenAPI at /docs). Needs the `web` extra.
+
+    Output: server log on stderr until interrupted (Ctrl+C); nothing on stdout
+    ("schema": none).
+
+    Exit codes: 0 stopped normally; 1 the `web` extra is not installed or bad
+    option; 3 store error.
+
+    Args:
+        host: Interface to bind; use 0.0.0.0 to serve the network (set --token then).
+        port: TCP port.
+        token: Require `Authorization: Bearer TOKEN` on /api (env ATLAS_LOG_TOKEN).
+        max_upload_mb: Largest accepted upload in MiB.
+        reload: Restart on code changes (development).
+
+    """
+    try:
+        import uvicorn
+
+        from atlas_log_analyzer.webapp import Settings, create_app
+    except ImportError as exc:
+        raise CliError(
+            "missing_dependency",
+            f"the web app needs the 'web' extra ({exc.name or exc}); "
+            "install it with: uv sync --extra web  (or pip install 'atlas-log-analyzer[web]')",
+        ) from exc
+    if not 0 < port < 65536:
+        raise CliError("invalid_value", "--port must be between 1 and 65535")
+    settings = Settings.from_env(store=_ctx().store, max_upload_mb=max_upload_mb, token=token)
+    _out().info(f"serving {settings.store.as_posix()} at http://{host}:{port}/")
+    if reload:
+        import os
+
+        os.environ["ATLAS_LOG_STORE"] = str(settings.store)
+        uvicorn.run(
+            "atlas_log_analyzer.webapp.app:create_app",
+            factory=True,
+            host=host,
+            port=port,
+            reload=True,
+        )
+        return
+    uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+
+
+@app.command
 def version() -> None:
     """Print tool, schema and signature versions.
 

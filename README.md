@@ -16,6 +16,8 @@ Parse, group and compare application log files — Jira Data Center first.
 - **SQL on Parquet** — `query` runs DuckDB over the stored entries and groups.
 - **One-file HTML report** and a **JSON-first CLI** with documented schemas
   and exit codes for scripts and agents.
+- **Web app** — `atlas-log serve` lists the sets with a verdict against the
+  previous one ("160 new error types"), opens the report, and ingests uploads.
 
 `atlas-log` turns `atlassian-jira.log` files (including rotated ones and Java
 stack traces) into a **log set**: Parquet tables of entries and of *groups*,
@@ -35,6 +37,7 @@ Requires Python 3.14 and [uv](https://docs.astral.sh/uv/).
 ```sh
 uv tool install .           # install the `atlas-log` command
 uv tool install '.[mine]'   # with the optional Drain3 template mining
+uv tool install '.[web]'    # with the web app (atlas-log serve)
 atlas-log --help
 
 uv sync --all-extras --dev  # development environment (.venv)
@@ -72,6 +75,20 @@ with its `#…` part reopens the same view. See `docs/report.md`.
 
 <!-- Screenshot placeholder: docs/img/report.png must be made from a fixture
      (e.g. tests/fixtures/jira/sample.log), never from real logs. -->
+
+## Web app
+
+```sh
+atlas-log --store ./.atlas-log serve        # http://127.0.0.1:8321/
+```
+
+The start page lists every set with its error counts and a triage verdict
+against the previous set. **Triage** shows the new types first (ERROR before
+WARN), then groups whose hourly rate grew, then vanished ones, each linking into
+the report with the group open. **Upload** ingests log files in the background
+with a progress bar. Everything is also JSON under `/api` (OpenAPI at `/docs`);
+`GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call. See
+`docs/webapp.md`.
 
 ## Agent workflow
 
@@ -121,6 +138,8 @@ The Parquet files can be read directly with DuckDB, polars or pandas.
 ## Documentation
 
 - [`docs/cli.md`](docs/cli.md) — command reference: options, JSON output, exit codes
+- [`docs/webapp.md`](docs/webapp.md) — web app pages and HTTP API
+- [`docs/report.md`](docs/report.md) — HTML report and its `report.v1` payload
 - [`docs/design.md`](docs/design.md) — architecture, models, storage format
 - [`docs/requirements.md`](docs/requirements.md), [`docs/research.md`](docs/research.md)
 - [`AGENTS.md`](AGENTS.md) — guide for coding agents working on this repository

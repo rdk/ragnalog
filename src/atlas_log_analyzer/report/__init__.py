@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from atlas_log_analyzer.report.payload import REPORT_SCHEMA, build_payload
+from atlas_log_analyzer.report.payload import REPORT_SCHEMA, build_payload, example_entries
 from atlas_log_analyzer.report.render import asset_text, render_html
 from atlas_log_analyzer.store.logset import LogSet
 
@@ -26,6 +26,7 @@ __all__ = [
     "asset_text",
     "build_payload",
     "build_report",
+    "example_entries",
     "render_html",
     "write_report",
 ]

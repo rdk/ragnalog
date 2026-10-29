@@ -12,9 +12,10 @@ src/atlas_log_analyzer/
   store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
   cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes)
-  webapp/    future FastAPI app
+  webapp/    FastAPI app (`atlas-log serve`): api.py (/api JSON), pages.py + templates/
+             (HTML), jobs.py (background ingest), state.py (store lock, caches)
 tests/
-  core/  store/  cli/        one directory per package
+  core/  store/  cli/  report/  webapp/   one directory per package
   fixtures/jira/*.log        masked Jira log excerpts shared by all tests
   cli/data/mini.log          10-entry Jira log used by the CLI end-to-end tests
 docs/        requirements, research, design, cli reference, formats/*.v1.md
@@ -61,6 +62,7 @@ ubuntu-latest and windows-latest.
   `cli.output.jsonable_rows`.
 - Tests: pytest, no network. CLI tests run the app in-process via
   `atlas_log_analyzer.cli.app.run(argv)` (fixtures in `tests/cli/conftest.py`).
+  Web app tests use FastAPI's `TestClient` over a temp store (`tests/webapp/conftest.py`).
 
 ## Data hygiene
 

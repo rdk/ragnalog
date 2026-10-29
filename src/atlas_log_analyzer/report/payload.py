@@ -16,7 +16,7 @@ from atlas_log_analyzer import __version__
 from atlas_log_analyzer.store.logset import LogSet, to_records
 from atlas_log_analyzer.store.query import diff
 
-__all__ = ["LEVEL_BUCKETS", "REPORT_SCHEMA", "build_payload"]
+__all__ = ["LEVEL_BUCKETS", "REPORT_SCHEMA", "build_payload", "example_entries"]
 
 REPORT_SCHEMA = "report.v1"
 LEVEL_BUCKETS = ("ERROR", "WARN", "INFO", "DEBUG", "OTHER")
@@ -147,6 +147,21 @@ def _entries(
                 rec.pop(key, None)
         out[entry_id] = rec
     return out
+
+
+def example_entries(
+    logset: LogSet, ids: list[str], *, max_raw: int = 4000
+) -> dict[str, dict[str, Any]]:
+    """Entries by id in the ``report.v1`` ``entries`` shape (for lazy loading by the web app).
+
+    Args:
+        logset: The log set holding the entries.
+        ids: Entry ids; unknown ids are skipped.
+        max_raw: Truncate ``raw`` to this many characters; 0 = no limit.
+
+    """
+    source_index = {src.path: i for i, src in enumerate(logset.manifest.sources)}
+    return _entries(logset, ids, max_raw, source_index)
 
 
 def _merges(logset: LogSet, present: set[str]) -> list[dict[str, Any]]:

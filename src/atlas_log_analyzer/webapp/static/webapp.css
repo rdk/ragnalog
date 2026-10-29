@@ -1,0 +1,111 @@
+/* Web app chrome. Colours come from report.css tokens (loaded first) so the pages
+   and the report share one visual language in light and dark mode. */
+
+.shell {
+  display: flex; align-items: center; gap: 14px;
+  height: 40px; padding: 0 20px;
+  background: var(--page); border-bottom: 1px solid var(--border);
+  font-size: 13px; color: var(--ink-2);
+}
+.shell a { color: var(--ink-2); text-decoration: none; }
+.shell a:hover { color: var(--ink); text-decoration: underline; }
+.shell .shell-home { font-weight: 700; color: var(--ink); letter-spacing: 0.01em; }
+.shell .shell-gap { flex: 1 1 auto; }
+.shell-switch { display: inline-flex; align-items: center; gap: 6px; }
+.shell-switch select { height: 26px; }
+
+body.app { min-height: 100vh; display: flex; flex-direction: column; }
+.page { width: 100%; max-width: 1320px; margin: 0 auto; padding: 20px 20px 40px; flex: 1 0 auto; }
+.page-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 24px; margin-bottom: 16px; }
+.page-head h1 { font-size: 22px; }
+.page-head p { margin: 4px 0 0; }
+.page-tools { display: flex; gap: 12px; margin-left: auto; }
+.foot { text-align: center; padding: 16px; font-size: 12px; }
+.foot a, .page a { color: var(--blue); }
+.page a.btn { color: var(--ink); text-decoration: none; }
+.small { font-size: 12px; }
+.nowrap { white-space: nowrap; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+
+.card {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  padding: 16px 18px; margin-bottom: 16px;
+}
+.card h2 { font-size: 15px; margin-bottom: 10px; }
+.card.table-wrap { padding: 0; }
+.table-wrap { overflow-x: auto; }
+.empty { text-align: center; padding: 36px 18px; }
+.empty h2 { font-size: 18px; }
+pre.cmd {
+  display: inline-block; margin: 8px 0 0; padding: 8px 12px; border-radius: 6px;
+  background: var(--code-bg); font: 12px/1.5 var(--mono); text-align: left; white-space: pre-wrap;
+}
+
+table.sets { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+table.sets th {
+  text-align: left; font-weight: 600; font-size: 12px; color: var(--ink-2);
+  padding: 8px 12px; background: var(--page); border-bottom: 1px solid var(--grid);
+}
+table.sets td { padding: 10px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+table.sets tbody tr:last-child td { border-bottom: 0; }
+table.sets tbody tr:hover { background: var(--hover); }
+table.sets .num { text-align: right; white-space: nowrap; }
+table.sets .actions { text-align: right; white-space: nowrap; }
+table.sets .actions .btn { margin-left: 4px; }
+.set-name { font-weight: 600; font-size: 15px; color: var(--ink) !important; text-decoration: none; }
+.set-name:hover { text-decoration: underline; }
+.tpl a { color: var(--ink) !important; text-decoration: none; overflow-wrap: anywhere; }
+.tpl a:hover { text-decoration: underline; }
+.lv-dot { display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 6px; vertical-align: 1px; }
+.lv-dot-ERROR { background: var(--lv-error); }
+.lv-dot-WARN { background: var(--lv-warn); }
+.btn.danger:hover { color: var(--lv-error); }
+.btn.primary { background: var(--blue); border-color: var(--blue); color: #fff; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); background: var(--blue); }
+.btn[disabled] { opacity: 0.5; cursor: default; }
+
+.verdict-badge {
+  display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px;
+  border-radius: 12px; font-weight: 600; font-size: 12px; white-space: nowrap;
+}
+.verdict-badge::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.verdict-badge.bad { background: color-mix(in srgb, var(--lv-error) 14%, transparent); color: var(--lv-error); }
+.verdict-badge.warn { background: color-mix(in srgb, var(--lv-warn) 22%, transparent); color: var(--ink); }
+.verdict-badge.warn::before { background: var(--lv-warn); }
+.verdict-badge.ok { background: var(--blue-wash); color: var(--ink-2); }
+.verdict-badge.ok::before { background: var(--neutral); }
+.verdict-badge.none { background: var(--chip-bg); color: var(--ink-2); }
+.verdict-badge.none::before { background: var(--neutral); }
+.verdict-line { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 12px; }
+.triage a { text-decoration: none; }
+.triage .counts { color: var(--muted); font-size: 12px; margin-left: 6px; }
+.tiles.mini { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; padding: 0; }
+.delta.up { color: var(--up); font-weight: 600; white-space: nowrap; }
+
+.upload form { display: flex; flex-direction: column; gap: 12px; }
+.drop {
+  display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 22px;
+  border: 1.5px dashed var(--grid); border-radius: 10px; cursor: pointer; text-align: center;
+  background: var(--page);
+}
+.drop.over { border-color: var(--blue); background: var(--blue-wash); }
+.drop input[type="file"] { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.drop:focus-within { outline: 2px solid var(--blue); outline-offset: 2px; }
+.upload-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 18px; }
+.upload-row input[type="text"] {
+  height: 30px; padding: 0 10px; width: 240px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 6px;
+}
+.job { margin-top: 14px; }
+.job-head { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+.progress { height: 8px; border-radius: 4px; background: var(--chip-bg); overflow: hidden; }
+.progress span { display: block; height: 100%; width: 0; background: var(--blue); border-radius: 4px; transition: width 0.3s; }
+.job.failed .progress span { background: var(--lv-error); }
+
+@media (max-width: 720px) {
+  .shell { padding: 0 16px; gap: 10px; }
+  .page { padding: 16px; }
+  .page-tools { margin-left: 0; flex-wrap: wrap; }
+  table.sets th:nth-child(2), table.sets td:nth-child(2) { display: none; }
+}
+@media print { .shell, .upload, .foot { display: none; } }

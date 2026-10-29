@@ -37,7 +37,7 @@ atlas-log-analyzer/
 │   ├── cli/
 │   │   ├── app.py                 cyclopts app, one function per command
 │   │   └── output.py              json / jsonl / table rendering, exit codes
-│   └── webapp/                    (future) FastAPI; depends on core + store only
+│   └── webapp/                    FastAPI app (docs/webapp.md); depends on core, store, report
 └── tests/
     ├── fixtures/jira/             masked excerpts of real logs
     └── ...
@@ -245,11 +245,12 @@ MCP later: each command maps 1:1 onto a tool with the same JSON schema; the
 CLI functions are thin wrappers over `store`/`core` calls that the MCP server
 will reuse directly.
 
-## 9. Future web app
+## 9. Web app
 
-`src/atlas_log_analyzer/webapp/` (optional extra `[web]`) will expose the same
-store over FastAPI (pydantic models generated from the Arrow schemas). Nothing
-in `core`/`store` may import from `cli` or `webapp`.
+`src/atlas_log_analyzer/webapp/` (optional extra `[web]`, `atlas-log serve`)
+exposes the store over FastAPI with the CLI's JSON documents; see
+`docs/webapp.md`. Nothing in `core`/`store`/`report` may import from `cli` or
+`webapp`.
 
 The web app uses only the stable read API: `Store.list()`, `Store.open(ref)`
 (raises `LogSetNotFound` / `AmbiguousLogSet`, both `StoreError`; manifests are

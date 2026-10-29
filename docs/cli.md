@@ -283,6 +283,17 @@ All four without an argument. Table mode prints the same JSON indented. Exit: 0;
 
 Exit: 0; 3.
 
+### `serve [--host 127.0.0.1] [--port 8321] [--token T] [--max-upload-mb 2048] [--reload]`
+
+Runs the web app over the store until interrupted (needs the `web` extra). Pages:
+`/` (sets with triage verdicts and upload), `/sets/SET` (report, `?compare=auto|SET`),
+`/sets/SET/triage`; JSON API under `/api` with the same documents as this CLI and
+OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
+`Authorization: Bearer T` on `/api`. Nothing is printed to stdout; the server
+logs to stderr. See `docs/webapp.md`.
+
+Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3.
+
 ### `version`
 
 ```json

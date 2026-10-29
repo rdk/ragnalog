@@ -90,3 +90,4 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 addopts = "-q -m 'not slow'"
 markers = ["slow: long-running scale tests (run with `pytest -m slow`)"]
+filterwarnings = ["ignore:Using `httpx` with `starlette.testclient`"]
