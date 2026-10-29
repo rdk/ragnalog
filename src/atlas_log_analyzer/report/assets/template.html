@@ -26,8 +26,8 @@
   </div>
   <div class="top-meta" id="set-meta"></div>
   <div class="top-actions">
-    <button type="button" class="btn" id="btn-help" title="Keyboard shortcuts (?)">?</button>
-    <button type="button" class="btn" id="btn-theme" title="Toggle light/dark theme">Theme</button>
+    <button type="button" class="btn" id="btn-help" title="Keyboard shortcuts (?)">? Shortcuts</button>
+    <button type="button" class="btn" id="btn-theme" title="Switch theme">Theme</button>
     <button type="button" class="btn" id="btn-data" title="Download the report.v1 payload as JSON">Data</button>
   </div>
 </header>
@@ -40,12 +40,14 @@
         <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
         <div class="legend" id="tl-legend"></div>
         <div class="tl-window" id="tl-window"></div>
+        <div class="tl-clip" id="tl-clip"></div>
       </div>
       <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window"></div>
     </div>
   </section>
 
   <section class="filters" id="filters" aria-label="Filters">
+   <div class="f-row">
     <input type="search" id="f-search" placeholder="Search template, logger, exception — sig:abc" aria-label="Search" autocomplete="off" spellcheck="false">
     <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
     <div class="facet" id="f-logger-wrap">
@@ -57,13 +59,17 @@
       <div class="pop" id="f-exc-pop" hidden></div>
     </div>
     <button type="button" class="btn toggle" id="f-hasexc" aria-pressed="false">Has exception</button>
-    <label class="sel"><span>Sort</span>
-      <select id="f-sort" aria-label="Sort"></select>
-    </label>
+   </div>
+   <div class="f-row">
     <button type="button" class="btn toggle" id="f-coarse" aria-pressed="false" title="Group by coarse signature (exception chain ignored)">Coarse</button>
     <button type="button" class="btn toggle" id="f-merged" aria-pressed="false" title="Apply Drain3 merge proposals" hidden>Merged</button>
     <div class="seg" id="f-compare" role="group" aria-label="Compare class" hidden></div>
-    <button type="button" class="btn link" id="f-reset">Reset</button>
+    <label class="sel f-end"><span>Sort</span>
+      <select id="f-sort" aria-label="Sort"></select>
+    </label>
+    <button type="button" class="btn link" id="f-reset" title="Reset all filters, sort and view">Reset</button>
+   </div>
+   <div class="print-only" id="f-print"></div>
   </section>
 
   <section class="body" id="body">
@@ -81,8 +87,12 @@
     </div>
     <aside class="drawer" id="drawer" hidden aria-label="Group detail">
       <div class="drawer-bar">
-        <button type="button" class="btn" id="d-prev" title="Previous group (k)">↑</button>
-        <button type="button" class="btn" id="d-next" title="Next group (j)">↓</button>
+        <button type="button" class="btn" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <span class="d-pos muted" id="d-pos" aria-live="polite"></span>
+        <button type="button" class="btn" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
+        <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
+          <button type="button" data-jump="d-s-stats">Stats</button><button type="button" data-jump="d-s-examples">Examples</button><button type="button" data-jump="d-s-hourly">Hourly</button><button type="button" data-jump="d-s-who">Who</button><button type="button" data-jump="d-s-cli">CLI</button>
+        </nav>
         <span class="grow"></span>
         <button type="button" class="btn" id="d-close" title="Close (Esc)">Close</button>
       </div>

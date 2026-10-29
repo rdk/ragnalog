@@ -3,6 +3,8 @@ from __future__ import annotations
 import time
 from pathlib import Path
 
+import pytest
+
 from atlas_log_analyzer.core.signature import SignatureSpec
 from atlas_log_analyzer.store import Store
 
@@ -11,6 +13,7 @@ from .synth import WEIGHTS_A, FakeFormat, MiniGrouper, generate, source_files
 N = 200_000
 
 
+@pytest.mark.slow
 def test_ingest_200k(tmp_path: Path) -> None:
     sources = source_files(["big.log.2", "big.log.1", "big.log"])
     per_source = N // len(sources) + 1

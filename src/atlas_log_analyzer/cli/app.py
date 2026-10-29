@@ -14,19 +14,20 @@ import io
 import os
 import re
 import sys
-import time
-from collections.abc import Callable, Iterable, Iterator, Sequence
-from datetime import UTC, datetime
+from collections.abc import Iterable, Sequence
+from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
 from cyclopts import App, CycloptsError, Group, Parameter
 from rich.console import Console
+from rich.text import Text
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.cli.output import (
     CliError,
+    ColorMode,
     ExitCode,
     Output,
     OutputMode,
@@ -35,18 +36,20 @@ from atlas_log_analyzer.cli.output import (
     entry_to_dict,
     error_from_exception,
     jsonable_rows,
+    mapping_tables,
     rows_table,
 )
+from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-from atlas_log_analyzer.core.grouping import Grouper, SignedEntry
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import SourceFile, iter_lines, iter_sources
-from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec, Signer
+from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
 from atlas_log_analyzer.store import LogSet, Store
+from atlas_log_analyzer.store.pipeline import IngestProgress, ingest_sources
+from atlas_log_analyzer.store.store import StoreError
 
 __all__ = ["app", "main", "run"]
 
@@ -137,7 +140,49 @@ def _store() -> Store:
 
 
 def _open(ref: str) -> LogSet:
-    return _store().open(ref)
+    store = _store()
+    try:
+        return store.open(ref)
+    except StoreError as exc:
+        if not str(exc).startswith("no log set"):
+            raise
+        names = [m.name or m.id for m in store.list()]
+        hint = (
+            f"available sets: {', '.join(names)}"
+            if names
+            else "the store is empty; create a set with `atlas-log ingest PATH`"
+        )
+        raise CliError(
+            "store_error",
+            f"no log set {ref!r}",
+            ExitCode.STORE,
+            hint=hint,
+            extra={"store": _ctx().store.as_posix()},
+        ) from exc
+
+
+_RELATIVE_RE = re.compile(r"^(\d+)\s*([smhd])$")
+_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+
+
+def _when(value: str | None, flag: str, anchor: datetime | None) -> datetime | None:
+    """Parse a --since/--until value: ISO 8601, YYYY-MM-DD, or Nm/Nh/Nd before ``anchor``."""
+    if value is None:
+        return None
+    text = value.strip()
+    if m := _RELATIVE_RE.match(text.lower()):
+        base = anchor if anchor is not None else datetime.now(UTC)
+        base = base if base.tzinfo is not None else base.replace(tzinfo=UTC)
+        return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
+    try:
+        return _aware(datetime.fromisoformat(text))
+    except ValueError:
+        raise CliError(
+            "invalid_value",
+            f"{flag} {value!r} is not a time; use ISO 8601 (2026-10-29T09:00, naive = UTC), "
+            "a date (2026-10-29) or a duration before the last entry of the set "
+            "(30m, 2h, 1d)",
+        ) from None
 
 
 def _level(value: str | None) -> str | None:
@@ -207,24 +252,6 @@ def _format_spec(format_name: str) -> SignatureSpec:
     return spec
 
 
-@dataclasses.dataclass
-class _Counter:
-    entries: int = 0
-    parse_errors: int = 0
-
-
-def _counted(
-    signed: Iterable[SignedEntry], counter: _Counter, progress: Callable[[int], None] | None
-) -> Iterator[SignedEntry]:
-    for item in signed:
-        counter.entries += 1
-        if item.entry.parse_error is not None:
-            counter.parse_errors += 1
-        if progress is not None and counter.entries % 100_000 == 0:
-            progress(counter.entries)
-        yield item
-
-
 # --- meta app
 
 
@@ -234,6 +261,8 @@ def _meta(
     output: Annotated[OutputMode | None, Parameter(group=GLOBAL)] = None,
     store: Annotated[Path, Parameter(group=GLOBAL, env_var=STORE_ENV)] = DEFAULT_STORE,
     quiet: Annotated[bool, Parameter(group=GLOBAL, negative="")] = False,
+    width: Annotated[int | None, Parameter(group=GLOBAL)] = None,
+    color: Annotated[ColorMode, Parameter(group=GLOBAL)] = "auto",
 ) -> int:
     """Run a command with global options applied.
 
@@ -242,10 +271,16 @@ def _meta(
         output: Output mode. Default: table when stdout is a terminal, json otherwise.
         store: Store directory holding log sets (env ATLAS_LOG_STORE; default ./.atlas-log).
         quiet: Suppress progress and diagnostics on stderr (warnings and errors still shown).
+        width: Table width; default: the terminal width, else $COLUMNS, else 160.
+        color: Colour tables and raw entries: auto (terminal and no $NO_COLOR), always, never.
 
     """
     global _CTX
-    out = Output(output or default_mode(), quiet=quiet)
+    if width is not None and width < 40:
+        return Output(output or default_mode()).error(
+            CliError("invalid_value", "--width must be >= 40")
+        )
+    out = Output(output or default_mode(), quiet=quiet, width=width, color_mode=color)
     _CTX = _Context(out, store)
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
@@ -306,42 +341,33 @@ def ingest(
         raise CliError("invalid_value", "--frames must be >= 0")
     sources = _sources(paths)
     fmt = _resolve_format(format, sources)
-    spec = fmt.signature_spec
-    if frames is not None:
-        spec = dataclasses.replace(spec, frames=frames)
-    grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), spec))
-    counter = _Counter()
     total = sum(s.size for s in sources)
     out.info(f"ingesting {len(sources)} file(s), {total / 1e6:.1f} MB, format {fmt.name}")
-    started = time.perf_counter()
 
-    def progress(n: int) -> None:
-        out.info(f"  {n:,} entries")
+    def progress(p: IngestProgress) -> None:
+        if p.entries % 100_000 == 0:
+            out.info(f"  {p.entries:,} entries")
 
-    signed = _counted(grouper.sign(parse_sources(sources, fmt)), counter, progress)
-    logset = _store().ingest(
-        signed, grouper.sorted_groups, sources, fmt, name=name, spec=spec, overwrite=overwrite
+    result = ingest_sources(
+        _store(), sources, fmt, name=name, frames=frames, overwrite=overwrite, progress=progress
     )
-    elapsed = time.perf_counter() - started
+    logset = result.logset
     doc = _manifest_dict(logset)
-    doc["ingest"] = {
-        "parsed_entries": counter.entries,
-        "parse_errors": counter.parse_errors,
-        "elapsed_s": round(elapsed, 3),
-        "existing": counter.entries == 0 and logset.manifest.entry_count > 0,
-    }
-    if doc["ingest"]["existing"]:
+    doc["ingest"] = result.ingest_dict()
+    if result.existing:
         out.info(f"log set {logset.manifest.id} already exists; use --overwrite to rebuild it")
     else:
         out.info(
-            f"ingested {counter.entries:,} entries into {logset.manifest.id} "
-            f"({logset.manifest.group_count:,} groups) in {elapsed:.1f} s"
+            f"ingested {result.parsed_entries:,} entries into {logset.manifest.id} "
+            f"({logset.manifest.group_count:,} groups) in {result.elapsed_s:.1f} s"
         )
-    if counter.parse_errors:
-        out.warn(f"{counter.parse_errors:,} entries could not be parsed (parse_error is set)")
+    if result.parse_errors:
+        out.warn(f"{result.parse_errors:,} entries could not be parsed (parse_error is set)")
     if mine:
         doc["merges"] = _mine(logset)
     out.emit("logset.v1", doc, items=None, title=f"log set {logset.manifest.id}")
+    if out.mode == "table" and logset.manifest.entry_count:
+        out.info(f"next: atlas-log groups {logset.manifest.name or logset.manifest.id}")
     if logset.manifest.entry_count == 0:
         out.warn("no entries were parsed")
         return int(ExitCode.NOT_FOUND)
@@ -408,8 +434,8 @@ def groups(
     level: str | None = None,
     min_level: str | None = None,
     logger: str | None = None,
-    since: datetime | None = None,
-    until: datetime | None = None,
+    since: str | None = None,
+    until: str | None = None,
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: int = 50,
     coarse: bool = False,
@@ -421,15 +447,17 @@ def groups(
     sets, so it can be used with `show`, `entries --signature` and `diff`.
 
     Output (json):
-      {"schema": "groups.v1", "logset": id, "count": int, "items": [
+      {"schema": "groups.v1", "logset": id, "count": int, "total": int,
+       "truncated": bool, "items": [
         {"signature", "coarse_signature", "template", "level", "logger",
          "level_name", "exception_type", "count", "first_seen", "last_seen",
          ...}, ...]}
     "level" is numeric (ERROR=50), "level_name" the name. "items" holds the
     groups.v1 columns (`atlas-log schema groups`: also user_count, thread_count,
     source_count, top_users, top_threads, sources, examples), at most --limit
-    rows. With --coarse, "signature" is the coarse signature and "signatures"
-    lists the member signatures.
+    rows. "total" is the number of matching groups before --limit, "truncated"
+    is true when items were cut by --limit. With --coarse, "signature" is the
+    coarse signature and "signatures" lists the member signatures.
 
     Exit codes: 0 ok (also when no group matches); 1 bad option; 3 unknown set
     or store error.
@@ -439,8 +467,9 @@ def groups(
         level: Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL).
         min_level: Only this level or more severe, e.g. WARN.
         logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
-        since: Only groups last seen at/after this ISO 8601 time (naive = UTC).
-        until: Only groups first seen before this ISO 8601 time (naive = UTC).
+        since: Only groups with an entry at/after this time (last_seen >= since): ISO 8601
+            (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry.
+        until: Only groups first seen before this time (same forms as --since).
         sort: count, last_seen (newest first), first_seen (oldest first), signature, template.
         limit: Maximum number of rows; 0 = all.
         coarse: Group by coarse signature (level + logger + masked message; no exceptions).
@@ -448,20 +477,27 @@ def groups(
     """
     lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
     ls = _open(logset)
+    last = ls.manifest.last_ts
     df = ls.groups(
         level=lvl,
         min_level=min_lvl,
         logger=logger,
-        since=_aware(since),
-        until=_aware(until),
+        since=_when(since, "--since", last),
+        until=_when(until, "--until", last),
         sort=sort,
-        limit=lim,
         coarse=coarse,
     )
-    items = jsonable_rows(df)
+    total = df.height
+    items = jsonable_rows(df if lim is None else df.head(lim))
     _out().emit(
         "groups.v1",
-        {"logset": ls.manifest.id, "count": len(items), "items": items},
+        {
+            "logset": ls.manifest.id,
+            "count": len(items),
+            "total": total,
+            "truncated": len(items) < total,
+            "items": items,
+        },
         columns=GROUP_COLUMNS,
         title=f"groups of {ls.manifest.id}",
     )
@@ -480,7 +516,8 @@ def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) 
     "variables" lists the values that masking replaced in the template, in
     order (issue keys, numbers, ids ...). Entries are ordered by time.
     With --raw the original log text of each entry is printed instead (any
-    --output mode), entries separated by a blank line.
+    --output mode), entries separated by a blank line (or, when colour is on,
+    highlighted and separated by a source:line rule).
 
     Exit codes: 0 ok; 2 no entries with this signature; 3 unknown set or store
     error.
@@ -489,7 +526,7 @@ def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) 
         logset: Log set id, unique id prefix or name.
         signature: Group signature (from `groups`).
         limit: Maximum number of entries; 0 = all.
-        raw: Print the raw log text of the entries.
+        raw: Print the raw log text of the entries (highlighted when colour is on).
 
     """
     lim = _limit(limit)
@@ -500,26 +537,42 @@ def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) 
             "not_found",
             f"no entries with signature {signature!r} in log set {ls.manifest.id}",
             ExitCode.NOT_FOUND,
+            hint=f"list signatures with `atlas-log groups {ls.manifest.name or ls.manifest.id}`",
         )
     out = _out()
     if raw:
-        out.out.write("\n\n".join(str(r) for r in df.get_column("raw").to_list()) + "\n")
+        out.raw_entries(_raw_pairs(df))
         return 0
     import polars as pl
 
     group_rows = jsonable_rows(ls.groups_lazy().filter(pl.col("signature") == signature).collect())
     items = jsonable_rows(df)
+    group = group_rows[0] if group_rows else None
+
+    def render(console: Console) -> None:
+        if group is not None:
+            exc = f"  exception {group['exception_type']}" if group.get("exception_type") else ""
+            console.print(Text(str(group.get("template", "")), style="bold"))
+            console.print(f"logger {group.get('logger')}  level {group.get('level_name')}{exc}")
+            console.print(
+                f"count {group.get('count')}  first {_cell(group.get('first_seen'))}"
+                f"  last {_cell(group.get('last_seen'))}"
+            )
+        cols = [c for c in ENTRY_COLUMNS if not items or c in items[0]]
+        console.print(rows_table(items, cols, title=f"entries of {signature}", color=out.color))
+
     out.emit(
         "entries.v1",
         {
             "logset": ls.manifest.id,
             "signature": signature,
-            "group": group_rows[0] if group_rows else None,
+            "group": group,
             "count": len(items),
             "items": items,
         },
         columns=ENTRY_COLUMNS,
         title=f"entries of {signature}",
+        table=render,
     )
     return 0
 
@@ -535,16 +588,21 @@ def entries(
     logger: str | None = None,
     user: str | None = None,
     thread: str | None = None,
-    since: datetime | None = None,
-    until: datetime | None = None,
+    since: str | None = None,
+    until: str | None = None,
     contains: str | None = None,
     columns: list[str] | None = None,
     limit: int = 100,
+    raw: bool = False,
 ) -> None:
     """List entries of a log set, filtered, ordered by time.
 
     Output (json):
-      {"schema": "entries.v1", "logset": id, "count": int, "items": [<entries.v1 row>, ...]}
+      {"schema": "entries.v1", "logset": id, "count": int, "total": int,
+       "truncated": bool, "items": [<entries.v1 row>, ...]}
+    "total" counts the matching entries before --limit; "truncated" is true
+    when items were cut by --limit. With --raw the raw log text of the
+    entries is printed instead (as `show --raw`).
     Rows hold all entries.v1 columns (`atlas-log schema entries`) unless
     --columns is given: id, ts (UTC), tz_offset, level (numeric), level_name,
     thread, logger, message, body, user, request_id, session, ip, url,
@@ -563,32 +621,45 @@ def entries(
         logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
         user: Only this user (exact).
         thread: Only this thread (exact).
-        since: Only entries at/after this ISO 8601 time (naive = UTC).
-        until: Only entries before this ISO 8601 time (naive = UTC).
+        since: Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or
+            30m/2h/1d before the set's last entry.
+        until: Only entries before this time (same forms as --since).
         contains: Only entries whose raw text contains this text (case-insensitive).
         columns: Columns to return (repeat the option or separate by spaces).
         limit: Maximum number of rows; 0 = all.
+        raw: Print the raw log text of the entries (highlighted when colour is on).
 
     """
     lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
     ls = _open(logset)
-    df = ls.entries(
-        signature=signature,
-        level=lvl,
-        min_level=min_lvl,
-        logger=logger,
-        user=user,
-        thread=thread,
-        since=_aware(since),
-        until=_aware(until),
-        contains=contains,
-        limit=lim,
-        columns=columns,
-    )
+    last = ls.manifest.last_ts
+    filters: dict[str, Any] = {
+        "signature": signature,
+        "level": lvl,
+        "min_level": min_lvl,
+        "logger": logger,
+        "user": user,
+        "thread": thread,
+        "since": _when(since, "--since", last),
+        "until": _when(until, "--until", last),
+        "contains": contains,
+    }
+    if raw:
+        cols = ["raw", "source_path", "source_line"]
+        _out().raw_entries(_raw_pairs(ls.entries(**filters, limit=lim, columns=cols)))
+        return
+    df = ls.entries(**filters, limit=lim, columns=columns)
+    total = df.height if lim is None or df.height < lim else _count_entries(ls, filters)
     items = jsonable_rows(df)
     _out().emit(
         "entries.v1",
-        {"logset": ls.manifest.id, "count": len(items), "items": items},
+        {
+            "logset": ls.manifest.id,
+            "count": len(items),
+            "total": total,
+            "truncated": len(items) < total,
+            "items": items,
+        },
         columns=columns or ENTRY_COLUMNS,
         title=f"entries of {ls.manifest.id}",
     )
@@ -610,7 +681,8 @@ def query(logset: str, sql: str, /) -> None:
 
     Output (json):
       {"schema": "query.v1", "logset": id, "columns": [str, ...], "count": int,
-       "items": [{<column>: value, ...}, ...]}
+       "total": int, "truncated": false, "items": [{<column>: value, ...}, ...]}
+    The CLI never truncates query results ("total" = "count"); use LIMIT in SQL.
 
     Exit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or
     store error.
@@ -635,6 +707,8 @@ def query(logset: str, sql: str, /) -> None:
             "logset": ls.manifest.id,
             "columns": list(df.columns),
             "count": len(items),
+            "total": len(items),
+            "truncated": False,
             "items": items,
         },
         title="query result",
@@ -649,6 +723,8 @@ def stats(logset: str, /) -> None:
     sources, as computed by the store.
 
     Output (json): {"schema": "stats.v1", "logset": id, <store statistics...>}
+    Table mode shows the hours as one row per day with a sparkline of the
+    hourly counts; JSON keeps the full "hours" list.
 
     Exit codes: 0 ok; 3 unknown set or store error.
 
@@ -659,9 +735,62 @@ def stats(logset: str, /) -> None:
     ls = _open(logset)
     data = dict(ls.stats())
     data.pop("schema", None)
-    _out().emit(
-        "stats.v1", {"logset": ls.manifest.id, **data}, items=None, title=f"stats {ls.manifest.id}"
-    )
+    doc = {"logset": ls.manifest.id, **data}
+    out = _out()
+
+    def render(console: Console) -> None:
+        compact = {k: v for k, v in doc.items() if k != "hours"}
+        for tbl in mapping_tables(compact, title=f"stats {ls.manifest.id}"):
+            console.print(tbl)
+        days = _hour_days(data.get("hours") or [])
+        if days:
+            console.print(rows_table(days, ("day", "count", "max/h", "hours 00-23"), title="hours"))
+
+    out.emit("stats.v1", doc, items=None, title=f"stats {ls.manifest.id}", table=render)
+
+
+SPARK = " ▁▂▃▄▅▆▇█"
+
+
+def _hour_days(hours: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Per-day rows (day, count, max/h, 24-character sparkline) from ``stats`` hours."""
+    by_day: dict[str, list[int]] = {}
+    for h in hours:
+        stamp = str(h.get("hour") or "")
+        if len(stamp) < 13:
+            continue
+        by_day.setdefault(stamp[:10], [0] * 24)[int(stamp[11:13])] += int(h["count"])
+    peak = max((max(c) for c in by_day.values()), default=0) or 1
+    return [
+        {
+            "day": day,
+            "count": sum(counts),
+            "max/h": max(counts),
+            "hours 00-23": "".join(
+                SPARK[0] if c == 0 else SPARK[max(1, round(c / peak * 8))] for c in counts
+            ),
+        }
+        for day, counts in sorted(by_day.items())
+    ]
+
+
+def _raw_pairs(df: Any) -> list[tuple[str, str | None]]:
+    """``(raw, "source:line")`` pairs of an entries frame."""
+    pairs = []
+    cols = [c for c in ("raw", "source_path", "source_line") if c in df.columns]
+    for row in df.select(cols).iter_rows(named=True):
+        path, line = row.get("source_path"), row.get("source_line")
+        label = f"{Path(path).name}:{line}" if path else None
+        pairs.append((str(row["raw"]), label))
+    return pairs
+
+
+def _count_entries(ls: LogSet, filters: dict[str, Any]) -> int:
+    """Count the entries matching ``filters`` (no limit)."""
+    count = getattr(ls, "count_entries", None)
+    if callable(count):
+        return int(count(**filters))
+    return int(ls.entries(**filters, columns=["id"]).height)
 
 
 @app.command
@@ -683,7 +812,10 @@ def diff(
 
     Output (json):
       {"schema": "diff.v1", "a": id_a, "b": id_b,
-       "new": [row], "vanished": [row], "changed": [row], "unchanged_count": int}
+       "new": [row], "vanished": [row], "changed": [row], "unchanged_count": int,
+       "totals": {"new": int, "vanished": int, "changed": int}, "truncated": bool}
+    "totals" are the section sizes before --limit; "truncated" is true when
+    any section was cut by --limit.
     Each row has signature, template, level, level_name, logger,
     exception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b,
     last_seen_b (counts are 0 on the missing side); "changed" rows also have
@@ -716,16 +848,33 @@ def diff(
             ("changed", result.changed),
         )
     }
-    doc = {"a": result.a, "b": result.b, **sections, "unchanged_count": result.unchanged_count}
+    totals = {
+        "new": result.new.height,
+        "vanished": result.vanished.height,
+        "changed": result.changed.height,
+    }
+    doc = {
+        "a": result.a,
+        "b": result.b,
+        **sections,
+        "unchanged_count": result.unchanged_count,
+        "totals": totals,
+        "truncated": any(len(sections[k]) < totals[k] for k in totals),
+    }
+    out = _out()
     jsonl = [{"change": name, **row} for name, rows in sections.items() for row in rows]
 
     def render(console: Console) -> None:
         for name, rows in sections.items():
-            cols = [c for c in DIFF_COLUMNS if not rows or c in rows[0]]
-            console.print(rows_table(rows, cols, title=f"{name} ({len(rows)})"))
+            if not rows:
+                console.print(f"{name}: none")
+                continue
+            cols = [c for c in DIFF_COLUMNS if c in rows[0]]
+            shown = f"{len(rows)} of {totals[name]}" if len(rows) < totals[name] else len(rows)
+            console.print(rows_table(rows, cols, title=f"{name} ({shown})", color=out.color))
         console.print(f"unchanged: {result.unchanged_count}")
 
-    _out().emit("diff.v1", doc, items=None, jsonl_rows=jsonl, table=render)
+    out.emit("diff.v1", doc, items=None, jsonl_rows=jsonl, table=render)
 
 
 def _report_filename(logset: LogSet) -> Path:

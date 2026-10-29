@@ -138,3 +138,23 @@ def test_groovy_message_key(jira: JiraFormat, masker: Masker) -> None:
     assert exception_message_key(exc) == (
         "startup failed: file:/opt/A.groovy: 8: unable to resolve class X"
     )
+
+
+def test_sign_and_sign_both_agree(jira: JiraFormat, masker: Masker) -> None:
+    header = "2026-10-29 03:05:57,395+0100 t ERROR      [l] "
+    entries = [
+        _entry(jira, header, "java.lang.IllegalStateException: bad id 42"),
+        _entry(jira, header),
+        _dispatch(
+            jira, n=1, user="u", issue="ABC-1", obj="1a", root="java.lang.X", ts="2026-10-29"
+        ),
+    ]
+    for spec in (DEFAULT_SPEC, COARSE_SPEC, SignatureSpec(frames=2)):
+        signer = Signer(masker, spec)
+        for entry in entries:
+            full, coarse = signer.sign_both(entry)
+            assert signer.sign(entry) == full
+            assert coarse == Signer(masker, COARSE_SPEC).sign(entry)
+    coarse_only = Signer(masker, COARSE_SPEC).sign(entries[0])
+    assert coarse_only.template == "java.lang.IllegalStateException: bad id <NUM>"
+    assert "java.lang.IllegalStateException" not in coarse_only.parts

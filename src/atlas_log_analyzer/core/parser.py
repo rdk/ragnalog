@@ -11,7 +11,7 @@ import xxhash
 
 from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.models import LogEntry, SourceRef
-from atlas_log_analyzer.core.reader import Line, SourceFile, iter_raw_lines, iter_sources
+from atlas_log_analyzer.core.reader import Line, SourceFile, discover_sources, iter_raw_lines
 
 __all__ = ["ORPHAN_ERROR", "parse", "parse_file", "parse_lines", "parse_sources"]
 
@@ -113,7 +113,7 @@ def parse(paths: Iterable[Path | str], fmt: LogFormat | None = None) -> Iterator
         ValueError: When ``fmt`` is ``None`` and no format recognises the first source.
 
     """
-    sources = iter_sources(paths)
+    sources = discover_sources(paths)
     if fmt is None:
         from atlas_log_analyzer.core.formats.registry import detect
 

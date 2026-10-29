@@ -13,24 +13,27 @@ atlas-log-analyzer/
 │   └── formats/                   entries.v1.md, groups.v1.md, logset.v1.md
 ├── src/atlas_log_analyzer/
 │   ├── core/                      pure library — no I/O policy, no CLI, no web
-│   │   ├── models.py              LogEntry, LogLevel, ExceptionInfo, Frame, SourceRef, Group
+│   │   ├── models.py              LogEntry, LogLevel, ExceptionInfo, Frame, SourceRef
 │   │   ├── formats/               LogFormat protocol + registry
 │   │   │   ├── base.py
-│   │   │   ├── jira.py            Jira DC `atlassian-jira.log`
-│   │   │   └── log4j.py           generic log4j/logback (later)
+│   │   │   ├── registry.py        get/detect/register formats
+│   │   │   └── jira.py            Jira DC `atlassian-jira.log`
 │   │   ├── java.py                Java stack-trace / Caused-by chain parsing (shared)
-│   │   ├── reader.py              file/dir discovery, rotation order, bytes → lines
+│   │   ├── reader.py              discover_sources (rotation order, digests), bytes → lines
 │   │   ├── parser.py              lines → LogEntry (multi-line assembly)
 │   │   ├── masking.py             MaskRule, Masker: message → (template, variables)
 │   │   ├── signature.py           entry → Signature (hash + canonical text)
-│   │   ├── grouping.py            Grouper: entries → Group stats (streaming)
+│   │   ├── grouping.py            SignedEntry, Group, Grouper: entries → group stats (streaming)
 │   │   └── mining.py              optional Drain3 adapter proposing merges
 │   ├── store/                     persistence of log sets
 │   │   ├── schema.py              Arrow schemas + SCHEMA_VERSION
-│   │   ├── logset.py              LogSet manifest, directory conventions, ids
-│   │   ├── writer.py              batches of entries/groups → Parquet
-│   │   ├── reader.py              Parquet → polars frames / entries
-│   │   └── query.py               DuckDB connection over a log set, diff()
+│   │   ├── logset.py              manifest, directory conventions, LogSet read API
+│   │   │                          (groups/entries/counts/group/histogram/stats/sql)
+│   │   ├── store.py               Store: list/open (typed errors), ingest, regroup, remove
+│   │   ├── pipeline.py            ingest_paths/ingest_sources: discover → parse → sign → store
+│   │   ├── writer.py              batches of entries/groups/merges → Parquet; Parquet → entries
+│   │   └── query.py               diff() of two log sets
+│   ├── report/                    self-contained HTML report (payload.py, render.py, assets/)
 │   ├── cli/
 │   │   ├── app.py                 cyclopts app, one function per command
 │   │   └── output.py              json / jsonl / table rendering, exit codes
@@ -247,6 +250,17 @@ will reuse directly.
 `src/atlas_log_analyzer/webapp/` (optional extra `[web]`) will expose the same
 store over FastAPI (pydantic models generated from the Arrow schemas). Nothing
 in `core`/`store` may import from `cli` or `webapp`.
+
+The web app uses only the stable read API: `Store.list()`, `Store.open(ref)`
+(raises `LogSetNotFound` / `AmbiguousLogSet`, both `StoreError`; manifests are
+cached per `Store` instance and re-read when their file changes) and on `LogSet`:
+`groups(..., limit, offset)`, `count_groups(...)`, `group(signature, coarse=)`,
+`entries(..., limit, offset)`, `count_entries(...)`, `entry(id)`,
+`histogram(bucket, ...)` (epoch-aligned integer buckets, no tz database),
+`stats()` and `sql(query, max_rows=)` (file access limited to the set's Parquet
+files, configuration locked). `level`/`min_level` accept a `LogLevel`, a name,
+a comma-separated string or an iterable. Uploads go through
+`store.pipeline.ingest_paths(..., progress=)`, which reports `IngestProgress`.
 
 ## 10. Quality
 

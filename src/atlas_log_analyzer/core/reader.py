@@ -9,7 +9,15 @@ from pathlib import Path
 
 import xxhash
 
-__all__ = ["Line", "SourceFile", "file_digest", "iter_lines", "iter_raw_lines", "iter_sources"]
+__all__ = [
+    "Line",
+    "SourceFile",
+    "discover_sources",
+    "file_digest",
+    "iter_lines",
+    "iter_raw_lines",
+    "iter_sources",
+]
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
 _CHUNK = 1 << 18
@@ -57,7 +65,7 @@ def _rotation(path: Path) -> tuple[str, int]:
     return m.group("base"), int(m.group("n"))
 
 
-def iter_sources(paths: Iterable[Path | str], *, glob: str = "*.log*") -> list[SourceFile]:
+def discover_sources(paths: Iterable[Path | str], *, glob: str = "*.log*") -> list[SourceFile]:
     """Expand files and directories into sources, ordered oldest-first.
 
     Directories are searched (non-recursively) with ``glob``. Rotated files
@@ -97,6 +105,10 @@ def iter_sources(paths: Iterable[Path | str], *, glob: str = "*.log*") -> list[S
             size, digest = file_digest(path)
             ordered.append(SourceFile(path, size, digest, n))
     return ordered
+
+
+iter_sources = discover_sources
+"""Former name of :func:`discover_sources` (it returns a list, not an iterator)."""
 
 
 def iter_raw_lines(path: Path | str, *, encoding: str = "utf-8") -> Generator[tuple[int, int, str]]:

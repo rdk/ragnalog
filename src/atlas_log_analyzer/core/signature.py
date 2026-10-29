@@ -108,18 +108,24 @@ class Signer:
     def sign(self, entry: LogEntry) -> Signature:
         """Compute the signature of ``entry``."""
         template, variables = self.masker.apply(entry.message)
-        exc_parts = self._exception_parts(entry) if self.spec.include_exceptions else ()
-        return self._make(entry, self.spec, template, variables, exc_parts)
+        return self._make(entry, self.spec, template, variables, self._exception_parts(entry))
 
     def sign_both(self, entry: LogEntry) -> tuple[Signature, Signature]:
         """Return ``(signature, coarse_signature)`` sharing one masking pass."""
         template, variables = self.masker.apply(entry.message)
-        exc_parts = self._exception_parts(entry) if entry.exceptions else ()
+        exc_parts = self._exception_parts(entry)
         full = self._make(entry, self.spec, template, variables, exc_parts)
         coarse = self._make(entry, COARSE_SPEC, template, variables, exc_parts)
         return full, coarse
 
     def _exception_parts(self, entry: LogEntry) -> tuple[tuple[str, str], ...]:
+        """Return ``(type, masked message key)`` per exception.
+
+        Hashed only when the spec includes exceptions, but always used for the
+        display template of entries with an empty message.
+        """
+        if not entry.exceptions:
+            return ()
         mask = self.masker.template
         return tuple((exc.type, mask(exception_message_key(exc))) for exc in entry.exceptions)
 

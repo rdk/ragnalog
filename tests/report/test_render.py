@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from atlas_log_analyzer.report import build_payload, build_report, render_html, write_report
-from atlas_log_analyzer.report.render import embed_json
+from atlas_log_analyzer.report.render import asset_text, embed_json
 from atlas_log_analyzer.store import Store
 
 from .conftest import report_data
@@ -36,9 +36,9 @@ def test_assets_are_inlined(html: str) -> None:
         "__REPORT_TITLE__",
         "/*__REPORT_CSS__*/",
         "/*__REPORT_JS__*/",
-        "__REPORT_DATA__",
     ):
         assert marker not in html
+    assert 'id="report-data">__REPORT_DATA__' not in html  # report.js may mention the marker
     assert "--lv-error: #d03b3b" in html  # CSS
     assert '"use strict"' in html and '$("report-data")' in html  # JS
     assert "<title>sample · atlas-log report</title>" in html
@@ -126,3 +126,38 @@ def test_inline_script_parses_with_node(html: str, tmp_path: Path) -> None:
         ["node", "--check", str(js)], capture_output=True, text=True, timeout=60, check=False
     )
     assert proc.returncode == 0, proc.stderr
+
+
+def test_render_shell_with_data_url() -> None:
+    page = render_html(data_url='/api/sets/a"b/report?x=1&y=2', inline_assets=False)
+    assert '<html data-report-url="/api/sets/a&quot;b/report?x=1&amp;y=2"' in page
+    assert '<script type="application/json" id="report-data"></script>' in page
+    assert '<link rel="stylesheet" href="/static/report.css">' in page
+    assert '<script src="/static/report.js"></script>' in page
+    assert "--lv-error" not in page and '"use strict"' not in page
+    for marker in (
+        "__REPORT_TITLE__",
+        "/*__REPORT_CSS__*/",
+        "/*__REPORT_JS__*/",
+        "__REPORT_DATA__",
+    ):
+        assert marker not in page  # assets are linked, not inlined
+
+
+def test_render_linked_assets_with_payload(payload: dict[str, Any]) -> None:
+    page = render_html(payload, inline_assets=False, asset_base="/assets/v1/")
+    assert '<script src="/assets/v1/report.js"></script>' in page
+    assert "data-report-url" not in page
+    assert report_data(page) == payload
+
+
+def test_render_needs_payload_or_url() -> None:
+    with pytest.raises(ValueError):
+        render_html()
+
+
+def test_asset_text() -> None:
+    assert "__REPORT_DATA__" in asset_text("template.html")
+    assert asset_text("report.js") and asset_text("report.css")
+    with pytest.raises(ValueError):
+        asset_text("../__init__.py")

@@ -12,12 +12,33 @@ the front-end is written against the payload, never against the store.
 ## 1. Payload (`report.v1`)
 
 Built by `report.payload.build_payload(logset, *, compare=None, min_level=None,
-examples=3, max_raw=4000, max_groups=None)` from a `LogSet` (and `store.diff`
-for the comparison). JSON-serialisable; timestamps ISO 8601 UTC; sizes bounded
-by the options (the 712k-entry sample set yields ~10 MB with 3 examples per
-group; `examples`, `max_raw` and `max_groups` trade detail for size). The
-build options are echoed under `"options"`; `min_level` filters both the groups
-and the comparison, while `stats`/`timeline` always cover the whole set.
+examples=3, max_raw=4000, max_groups=None, entries_url=None)` from a `LogSet`
+(and `store.diff` for the comparison). JSON-serialisable; timestamps ISO 8601 UTC;
+sizes bounded by the options (the 712k-entry sample set with a comparison yields
+~6.6 MB with 3 examples per group, down from ~9.9 MB before the compaction below;
+`examples`, `max_raw` and `max_groups` trade detail for size). The build options
+are echoed under `"options"` (plus `truncated_groups`, the number of groups cut
+by `max_groups`); `min_level` filters both the groups and the comparison, while
+`stats`/`timeline` always cover the whole set.
+
+Size-driven conventions (2026-10-29, still `report.v1`):
+
+- Repeated values are indices or tuples: `entries[id].source` and
+  `groups[].sources` index `logset.sources`; `top_users`/`top_threads`/`sources`
+  are `[[value, count], ...]`; `compare.new` is `[[signature, count_b], ...]`
+  and `compare.changed` `[[signature, count_a, count_b], ...]` (template, level
+  etc. come from the group row).
+- Empty values are omitted: entry keys `user, ip, url, request_id, variables,
+  raw_truncated` only appear when non-null/non-empty/true; `coarse_signature`
+  only when it differs from `signature`. Readers must default them.
+- Entries carry no exception data (`exception_chain`/`exception_type` were
+  dropped; the stack trace is in `raw`, the outermost type on the group).
+- `compare.new`/`changed` list only signatures present in `groups`;
+  `compare.counts` holds the true diff totals (`new, changed, vanished,
+  unchanged`), so "shown vs total" is visible when `max_groups` trims.
+  `compare.vanished` keeps full diff rows (those groups are not in `groups`).
+- `entries_url` (only when given; the web app passes
+  `/api/sets/ID/groups/{sig}/entries`) lets the page fetch more entries of a group.
 
 ```jsonc
 {
@@ -32,31 +53,35 @@ and the comparison, while `stats`/`timeline` always cover the whole set.
   },
   "groups": [                                 // groups.v1 rows, sorted by count desc, at most max_groups
     {
-      "signature": "83d1828c6afb2ead", "coarse_signature": "...",
+      "signature": "83d1828c6afb2ead", "coarse_signature": "...",   // only when != signature
       "template": "Script field failed on issue: <ISSUE>, field: Finished On",
       "level": 50, "level_name": "ERROR", "logger": "c.o.scriptrunner.customfield.GroovyCustomField",
       "exception_type": "org.codehaus.groovy.control.MultipleCompilationErrorsException",
       "count": 68180, "first_seen": "...", "last_seen": "...",
       "user_count": 12, "thread_count": 40, "source_count": 11,
-      "top_users": [{"value": "user1", "count": 10}], "top_threads": [...], "sources": [...],
+      "top_users": [["user1", 10]], "top_threads": [["thread", 5]], "sources": [[0, 40], [1, 2]],
       "examples": ["<entry id>", ...],        // ids present in "entries"
       "hourly": [[hour_index, count], ...]    // sparse, index into timeline.hours
     }
   ],
   "entries": {                                // example entries only (<= examples per group)
     "<entry id>": {
-      "ts": "...", "level_name": "ERROR", "thread": "...", "logger": "...", "user": "...",
-      "request_id": "...", "ip": "...", "url": "...", "message": "...", "variables": ["ABC-69517"],
-      "exception_type": "...", "exception_chain": [{"type": "...", "message": "...", "frames": n, "omitted_frames": n}],
-      "raw": "...",                           // truncated to max_raw chars; "raw_truncated": true when cut
-      "source_path": "...", "source_line": 123
+      "ts": "...", "level_name": "ERROR", "thread": "...", "logger": "...", "message": "...",
+      "user": "...", "request_id": "...", "ip": "...", "url": "...", "variables": ["ABC-123"],
+                                              // ^ each omitted when null / empty
+      "raw": "...",                           // truncated to max_raw chars; "raw_truncated": true only when cut
+      "source": 0, "source_line": 123         // source = index into logset.sources
     }
   },
   "merges": [{"cluster_id": 1, "drain_template": "...", "signatures": ["..."]}],   // [] when none
   "compare": null | {
     "other": { /* logset.v1 manifest of the baseline, without sources */ },
-    "min_level": null, "new": [ /* diff rows */ ], "vanished": [...], "changed": [...], "unchanged_count": n
-  }
+    "min_level": null,
+    "counts": {"new": n, "changed": n, "vanished": n, "unchanged": n},   // true diff totals
+    "new": [["<sig>", count_b], ...], "changed": [["<sig>", count_a, count_b], ...],   // shown groups only
+    "vanished": [ /* diff rows */ ]
+  },
+  "entries_url": "/api/sets/ID/groups/{sig}/entries"   // optional
 }
 ```
 
@@ -138,7 +163,7 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 src/atlas_log_analyzer/report/
 ├── __init__.py       build_report(logset, ...) -> str, write_report(logset, path, ...) -> ReportInfo
 ├── payload.py        build_payload(...)  (polars/duckdb over the LogSet)
-├── render.py         render_html(payload) — inline assets, escape, embed
+├── render.py         render_html(payload=None, *, data_url, inline_assets, asset_base), asset_text(name)
 └── assets/
     ├── template.html
     ├── report.css
@@ -146,8 +171,11 @@ src/atlas_log_analyzer/report/
 ```
 
 Dependency direction unchanged: `report` → `store` → `core`; `cli` → `report`.
-The future `webapp` serves `assets/` statically and `payload.py` output from
-an API route.
+The future `webapp` serves `assets/` statically (`asset_text(name)`) and
+`payload.py` output from an API route; its page is
+`render_html(data_url=..., inline_assets=False)`: an empty `#report-data`
+element, `data-report-url` on `<html>` and `<link>`/`<script src>` under
+`asset_base` (default `/static/`).
 
 ## 4. CLI
 

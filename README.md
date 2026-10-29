@@ -2,6 +2,21 @@
 
 Parse, group and compare application log files — Jira Data Center first.
 
+**Status:** 0.1 — Jira Data Center format.
+
+## What you get
+
+- **Groups instead of lines** — every entry gets a stable signature (level,
+  logger, masked message, exception chain); millions of lines become a few
+  hundred groups with counts, time span, users and threads.
+- **Variables kept** — issue keys, numbers, ids and URLs are masked out of the
+  template but stored per entry, so you can ask *which* values occur.
+- **Before/after diffs** — `diff` shows new, vanished and changed groups
+  between two log sets (upgrade, node, day) without the raw logs.
+- **SQL on Parquet** — `query` runs DuckDB over the stored entries and groups.
+- **One-file HTML report** and a **JSON-first CLI** with documented schemas
+  and exit codes for scripts and agents.
+
 `atlas-log` turns `atlassian-jira.log` files (including rotated ones and Java
 stack traces) into a **log set**: Parquet tables of entries and of *groups*,
 where a group collects all entries with the same level, logger, masked message
@@ -18,11 +33,12 @@ prints JSON when piped, with documented schemas and exit codes.
 Requires Python 3.14 and [uv](https://docs.astral.sh/uv/).
 
 ```sh
-uv sync                     # development environment (.venv)
-uv run atlas-log --help
-
-uv tool install .           # or: install the `atlas-log` command globally
+uv tool install .           # install the `atlas-log` command
 uv tool install '.[mine]'   # with the optional Drain3 template mining
+atlas-log --help
+
+uv sync --all-extras --dev  # development environment (.venv)
+uv run atlas-log --help
 ```
 
 ## Quick start (humans)
@@ -39,7 +55,7 @@ atlas-log diff prod-1029 prod-1030 --level ERROR               # new / vanished 
 Log sets live in `./.atlas-log` (override with `--store DIR` or
 `ATLAS_LOG_STORE`). A set can be referred to by id, name or unique id prefix.
 
-### HTML report
+## Report
 
 ```sh
 atlas-log report prod-1030 --compare prod-1029 --out prod-1030.html --open
@@ -51,6 +67,22 @@ per-group drawer with example entries, stack traces and the matching CLI
 commands, and — with `--compare` — new / vanished / changed groups against a
 baseline. The view (filters, selected group) is kept in the URL, so a link
 with its `#…` part reopens the same view. See `docs/report.md`.
+
+![HTML report](docs/img/report.png)
+
+<!-- Screenshot placeholder: docs/img/report.png must be made from a fixture
+     (e.g. tests/fixtures/jira/sample.log), never from real logs. -->
+
+## Agent workflow
+
+```sh
+atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
+atlas-log groups today --min-level ERROR --limit 20         # 2. triage: check "total"/"truncated"
+atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
+atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text
+```
+
+Repeat 2–4; on an error, read `error.hint` for the next step.
 
 ## Quick start (agents)
 

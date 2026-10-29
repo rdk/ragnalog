@@ -16,9 +16,12 @@ Sanitisation (applied to the whole excerpt):
   case-insensitively;
 * IPv4 addresses → ``10.0.0.N``;
 * host names ``*.corp.example`` → ``jira.example.com``;
-* e-mail addresses → ``userN@example.com``.
+* e-mail addresses → ``userN@example.com``;
+* issue keys ``PROJ-123`` → ``ABC-123`` (project key replaced, number kept;
+  ``JRASERVER`` keys, which are public Atlassian bugs, are kept);
+* SVN repository names ``/svn/<name>/`` → ``/svn/examplerepo/``.
 
-Issue keys are kept. Always review the output before committing it.
+Always review the output before committing it.
 """
 
 from __future__ import annotations
@@ -36,6 +39,9 @@ EMAIL_RE = re.compile(r"\b[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b")
 URL_USER_RE = re.compile(r"; user: (\S+)")
 OWNER_RE = re.compile(r"owner: '([^'(]+)\(([^')]+)\)'")
 SPACES_RE = re.compile(r"\s{2,}")
+ISSUE_RE = re.compile(r"\b(?!JRASERVER-|ABC-|XYZ-)[A-Z][A-Z0-9]{1,9}-(\d+)\b")
+SVN_RE = re.compile(r"/svn/[^/\s'\"]+/")
+KEEP_KEYS = frozenset({"UTF", "ISO", "SHA", "HTTP", "TLS", "SSL"})
 
 
 def read_window(path: Path, line: int, count: int) -> list[str]:
@@ -99,6 +105,10 @@ def sanitise(lines: list[str]) -> list[str]:
         return ips.setdefault(m.group(), f"10.0.0.{len(ips) + 1}")
 
     text = IP_RE.sub(ip, text)
+    text = ISSUE_RE.sub(
+        lambda m: m.group() if m.group().split("-")[0] in KEEP_KEYS else f"ABC-{m.group(1)}", text
+    )
+    text = SVN_RE.sub("/svn/examplerepo/", text)
     return text.split("\n")
 
 

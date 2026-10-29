@@ -1,4 +1,5 @@
-/* atlas-log report: renders the embedded report.v1 payload. Vanilla ES2022, no network access. */
+/* atlas-log report: renders a report.v1 payload, embedded in #report-data or fetched from
+   <html data-report-url> (webapp). Vanilla ES2022; the standalone file makes no network requests. */
 "use strict";
 (() => {
   const T0 = performance.now();
@@ -12,6 +13,8 @@
   }
   window.addEventListener("error", (e) => fatal(e.error || e.message));
   window.addEventListener("unhandledrejection", (e) => fatal(e.reason));
+
+  function boot(D) {
 
   // ---------------------------------------------------------------- formatting
   const NF = new Intl.NumberFormat("en-US");
@@ -49,7 +52,11 @@
     return r.toPrecision(2);
   }
   const PH = /&lt;([A-Z][A-Z0-9_]*|\*)&gt;/g;
-  const tplHtml = (t) => esc(t).replace(PH, (m, n) => `<span class="ph">${n}</span>`);
+  const REPEATED = /^\s*([^\w\s]){2,}\s*$|^\s*[^\w\s]{6,}\s*$/;
+  const tplHtml = (t) =>
+    t && REPEATED.test(t)
+      ? `<span class="rep" title="${esc(t)}">(repeated characters)</span>`
+      : esc(t).replace(PH, (m, n) => `<span class="ph">${n.toLowerCase()}</span>`);
   function shortLogger(l) {
     if (!l) return "";
     const parts = l.split(".");
@@ -67,12 +74,12 @@
   const badge = (name, level) => `<span class="lv lv-${bucketOf(level)}">${esc(name || "?")}</span>`;
 
   // ---------------------------------------------------------------- data
-  const D = JSON.parse($("report-data").textContent);
   if (!D || D.schema !== "report.v1") throw new Error("unsupported payload schema: " + (D && D.schema));
   const HOURS = (D.timeline && D.timeline.hours) || [];
   const NH = HOURS.length;
   const H0 = NH ? Number(HOURS[0].slice(11, 13)) : 0;
-  const ENTRIES = D.entries || {};
+  const ENTRIES = D.entries || (D.entries = {});
+  const ENTRIES_URL = D.entries_url || "";
   const MERGES = D.merges || [];
   const LS = D.logset || {};
   const SETREF = shellArg(LS.name || LS.id || "SET");
@@ -81,12 +88,29 @@
   const OTHERREF = OTHER ? shellArg(OTHER.name || OTHER.id || "SET_A") : "";
   const OTHERNAME = OTHER ? OTHER.name || OTHER.id : "";
   const PAGE = 100;
+  const SRC_PATHS = (LS.sources || []).map((s) => (s && typeof s === "object" ? s.path : s));
+  const srcPath = (i) => (typeof i === "number" ? SRC_PATHS[i] ?? "#" + i : i == null ? "" : String(i));
+  const pairs = (list) => (list || []).map((x) => (Array.isArray(x) ? { value: x[0], count: x[1] } : x));
 
   const CMP = CMPD ? new Map() : null;
   if (CMPD) {
-    for (const d of CMPD.new || []) CMP.set(d.signature, { cls: "new", a: 0, b: d.count_b, d });
-    for (const d of CMPD.changed || []) CMP.set(d.signature, { cls: "changed", a: d.count_a, b: d.count_b, d });
+    for (const d of CMPD.new || []) {
+      if (Array.isArray(d)) CMP.set(d[0], { cls: "new", a: 0, b: d[1] });
+      else CMP.set(d.signature, { cls: "new", a: 0, b: d.count_b, d });
+    }
+    for (const d of CMPD.changed || []) {
+      if (Array.isArray(d)) CMP.set(d[0], { cls: "changed", a: d[1], b: d[2] });
+      else CMP.set(d.signature, { cls: "changed", a: d.count_a, b: d.count_b, d });
+    }
   }
+  const CMPN = (() => {
+    const c = (CMPD && CMPD.counts) || {};
+    const len = (k) => (CMPD && CMPD[k] ? CMPD[k].length : 0);
+    return {
+      new: c.new ?? len("new"), changed: c.changed ?? len("changed"), vanished: c.vanished ?? len("vanished"),
+      unchanged: c.unchanged ?? (CMPD ? CMPD.unchanged_count || 0 : 0),
+    };
+  })();
 
   function finish(r) {
     r.key = (r.tpl + "\n" + r.logger + "\n" + r.exc).toLowerCase();
@@ -194,10 +218,14 @@
       rows = BASE.slice();
     }
     rows = rows.concat(GONE);
-    let max = 1;
-    for (const r of rows) if (r.count > max) max = r.count;
+    let max = 1, min = Infinity;
+    for (const r of rows) {
+      if (r.count > max) max = r.count;
+      if (r.count > 0 && r.count < min) min = r.count;
+    }
+    if (!(min < Infinity)) min = 1;
     const byId = new Map(rows.map((r) => [r.id, r]));
-    return (VIEWS[name] = { rows, byId, max });
+    return (VIEWS[name] = { rows, byId, max, min });
   }
   const lookup = (id) => view(S.view).byId.get(id) || BASE_BY.get(id) || null;
 
@@ -265,8 +293,11 @@
     }
     update();
   }
+  let qTimer = 0;
   function onNav() {
+    clearTimeout(qTimer);
     S = parseHash();
+    $("f-search").value = S.q;
     update();
   }
   window.addEventListener("popstate", onNav);
@@ -351,8 +382,8 @@
   function drawColumns(el, series, opts) {
     const W = Math.max(200, Math.floor(el.clientWidth || 600));
     const H = opts.height;
-    const padL = 42, padR = 6, padT = 8, padB = 22;
-    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const padL = 42, padR = 6, padB = 22;
+    const plotW = W - padL - padR;
     const k = chooseBin(NH, plotW);
     const nb = Math.ceil(NH / k);
     const binned = series.map((s) => {
@@ -364,7 +395,13 @@
     for (const arr of binned) for (let b = 0; b < nb; b++) totals[b] += arr[b];
     let maxT = 0;
     for (let b = 0; b < nb; b++) if (totals[b] > maxT) maxT = totals[b];
-    const ticks = niceTicks(maxT);
+    const nz = [...totals].filter((x) => x > 0).sort((x, y) => x - y);
+    const p95 = nz.length ? nz[Math.floor(0.95 * (nz.length - 1))] : 0;
+    const spiky = p95 > 0 && maxT > 4 * p95;
+    const clip = spiky && CLIP !== false;
+    const padT = clip ? 18 : 8;
+    const plotH = H - padT - padB;
+    const ticks = niceTicks(clip ? p95 : maxT);
     const yMax = ticks[ticks.length - 1];
     const slot = plotW / nb;
     const bw = Math.min(24, Math.max(3, slot - GAP));
@@ -381,7 +418,8 @@
         if (!v) continue;
         const hpx = (plotH * v) / yMax;
         const bottom = firstSeg ? y : y - GAP;
-        let top = y - hpx;
+        if (bottom <= padT) break;
+        let top = Math.max(padT, y - hpx);
         if (bottom - top < 1) top = bottom - 1;
         paths[s].push(s === topIdx ? roundTopPath(x, top, bw, bottom) : rectPath(x, top, bw, bottom));
         y -= hpx;
@@ -390,7 +428,9 @@
     }
     const parts = [];
     parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">`);
-    parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
+    if (series.some((s) => s.key === "OTHER")) {
+      parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
+    }
     for (const t of ticks) {
       const y = r1(bottom0 - (plotH * t) / yMax) + 0.5;
       if (t > 0) parts.push(`<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`);
@@ -412,13 +452,28 @@
     for (let s = 0; s < series.length; s++) {
       if (paths[s].length) parts.push(`<path class="${series[s].cls}" d="${paths[s].join("")}"/>`);
     }
+    if (clip) {
+      // one label per run of adjacent clipped bins (the run's maximum), so labels never overlap
+      let lastX = -Infinity;
+      for (let b = 0; b < nb; b++) {
+        if (totals[b] <= yMax) continue;
+        let e = b, top = totals[b];
+        while (e + 1 < nb && totals[e + 1] > yMax) top = Math.max(top, totals[++e]);
+        const cx = r1(padL + ((b + e + 1) / 2) * slot);
+        if (cx - lastX >= 40) {
+          parts.push(`<text class="clip-lbl" x="${Math.min(cx, W - padR - 18)}" y="${padT - 5}" text-anchor="middle">↑ ${compact(top)}</text>`);
+          lastX = cx;
+        }
+        b = e;
+      }
+    }
     parts.push(`<line class="base" x1="${padL}" x2="${W - padR}" y1="${bottom0 + 0.5}" y2="${bottom0 + 0.5}"/>`);
     parts.push(`<rect class="brush" x="0" y="${padT}" width="0" height="${plotH}" visibility="hidden"/>`);
     parts.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/>`);
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -439,6 +494,8 @@
     tip.style.left = x + "px";
     tip.style.top = y + "px";
   }
+  window.addEventListener("scroll", () => { tip.hidden = true; }, { passive: true, capture: true });
+  document.addEventListener("pointerdown", () => { tip.hidden = true; });
   function attachHover(geo) {
     const hit = geo.svg.querySelector(".hit");
     hit.addEventListener("pointermove", (e) => {
@@ -476,6 +533,11 @@
   }
 
   let TL = null;
+  let CLIP = null; // null: automatic (clip when max > 4 × p95)
+  const clipBtn = (geo) =>
+    geo && geo.spiky
+      ? `<button type="button" class="btn small toggle" data-clip aria-pressed="${geo.clip}" title="Clip the y-axis to the 95th percentile so spikes do not flatten the rest; clipped bars are labelled with their value">Clip spikes</button>`
+      : "";
   const TL_TOTALS = {};
   function renderTimeline() {
     const el = $("timeline");
@@ -490,6 +552,7 @@
     TL = drawColumns(el, series, { height: 190, label: "Entries per hour by level" });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
+    $("tl-clip").innerHTML = clipBtn(TL);
     const hit = TL.svg.querySelector(".hit");
     const geo = TL;
     hit.addEventListener("pointerdown", (e) => {
@@ -563,8 +626,8 @@
   function deltaChip(c) {
     if (!c) return "";
     let k, t;
-    if (c.cls === "new") [k, t] = ["up", "new"];
-    else if (c.cls === "vanished") [k, t] = ["down", "gone"];
+    if (c.cls === "new") [k, t] = ["new", "new"];
+    else if (c.cls === "vanished") [k, t] = ["gone", "gone"];
     else if (c.cls === "unchanged" || c.a === c.b) [k, t] = ["same", "="];
     else {
       const r = c.b / c.a;
@@ -573,7 +636,13 @@
     return `<span class="dchip d-${k}"><i></i>${t}</span>`;
   }
   const abText = (c) =>
-    `${c.cls === "new" ? "—" : fmt(c.a)} → ${c.cls === "vanished" ? "—" : fmt(c.b)}`;
+    c.cls === "new" ? fmt(c.b) : c.cls === "vanished" ? fmt(c.a) : `${fmt(c.a)} → ${fmt(c.b)}`;
+  const OTHER_SPAN = OTHER && OTHER.first_ts ? duration(OTHER.first_ts, OTHER.last_ts) : "";
+  const MOSTLY_NEW = !!CMPD && CMPN.new > 0.8 * Math.max(1, (D.groups || []).length + CMPN.vanished) && !!OTHER_SPAN;
+  const baselineNote = () =>
+    MOSTLY_NEW
+      ? `<span class="b-note" title="Most groups are new: the baseline ${esc(OTHERNAME)} may simply cover a shorter or different period">baseline covers ${esc(OTHER_SPAN)}</span>`
+      : "";
   const COLS = [
     ["c-count", "Count", "count"],
     ["c-lv", "Level", "level"],
@@ -582,26 +651,28 @@
     ["c-exc", "Exception", null],
     ["c-spark", "Per hour", null],
     ["c-last", "Last seen", "last_seen"],
-    ["c-ut", "Users / thr.", "users"],
+    ["c-ut", "Users / threads", "users", "Distinct users / distinct threads"],
   ];
   if (CMP) COLS.push(["c-delta", "vs " + OTHERNAME, "delta"]);
 
   function renderHead() {
-    $("t-head").innerHTML = "<tr>" + COLS.map(([c, label, key]) => {
+    $("t-head").innerHTML = "<tr>" + COLS.map(([c, label, key, tip]) => {
       const sorted = key && S.sort === key ? ` aria-sort="${key === "template" || key === "logger" || key === "first_seen" ? "ascending" : "descending"}"` : "";
-      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted} title="${esc(label)}">${esc(label)}</th>`;
+      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted} title="${esc(tip || label)}">${esc(label)}</th>`;
     }).join("") + "</tr>";
   }
-  function rowHtml(r, max) {
-    const w = r.count > 0 ? Math.max(2, (Math.log10(r.count + 1) / Math.log10(max + 1)) * 100) : 0;
+  function rowHtml(r, v) {
+    const lmin = Math.log10(v.min), span = Math.log10(v.max) - lmin;
+    const w = r.count > 0 ? Math.max(2, span > 0 ? ((Math.log10(r.count) - lmin) / span) * 100 : 100) : 0;
+    const track = v.max >= 1000 ? `<span class="track"><i style="width:${r1(w)}%"></i></span>` : "";
     const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone" : "");
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
     return `<tr data-id="${esc(r.id)}" class="${cls}">` +
-      `<td class="c-count"><div class="cnt"><span class="num">${fmt(r.count)}</span><span class="track"><i style="width:${r1(w)}%"></i></span></div></td>` +
+      `<td class="c-count"><div class="cnt"><span class="num">${fmt(r.count)}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-logger" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</td>` +
       `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
-      `<td class="c-exc" title="${esc(r.exc)}">${esc(shortExc(r.exc))}</td>` +
+      `<td class="c-exc" title="${esc(r.exc)}">${r.exc ? `<span class="xc"><span class="xp">${esc(r.exc.slice(0, r.exc.lastIndexOf(".") + 1))}</span><span class="xs">${esc(shortExc(r.exc))}</span></span>` : ""}</td>` +
       `<td class="c-spark">${spark(r)}</td>` +
       `<td class="c-last">${esc(tsShort(r.last))}</td>` +
       `<td class="c-ut">${r.gone ? "" : fmt(r.users) + " / " + fmt(r.threads)}</td>` +
@@ -620,11 +691,19 @@
     const start = S.p * PAGE;
     const page = LIST.slice(start, start + PAGE);
     renderHead();
-    $("t-body").innerHTML = page.map((r) => rowHtml(r, v.max)).join("");
+    $("t-body").innerHTML = page.map((r) => rowHtml(r, v)).join("");
     const empty = $("t-empty");
     empty.hidden = page.length > 0;
+    $("t-head").hidden = !page.length;
     if (!page.length) {
-      empty.textContent = v.rows.length ? "No groups match the filters." : "This report has no groups.";
+      if (!v.rows.length) empty.textContent = "This report has no groups.";
+      else {
+        const chips = activeFilters().map(([k, label]) =>
+          `<button type="button" class="fchip" data-clear="${k}" title="Remove this filter">${esc(label)} <span aria-hidden="true">×</span></button>`).join("");
+        empty.innerHTML = `<div>No groups match the filters.</div>` +
+          (chips ? `<div class="fchips">${chips}</div>` : "") +
+          `<button type="button" class="btn" data-clear="all">Reset filters</button>`;
+      }
     }
     let entries = 0;
     for (const r of LIST) entries += r.count;
@@ -637,6 +716,29 @@
   }
 
   // ---------------------------------------------------------------- filter bar
+  function activeFilters() {
+    const out = [];
+    if (S.q) out.push(["q", `Search: ${S.q}`]);
+    if (!sameSet(S.lv, DEFAULT_LV)) out.push(["lv", `Levels: ${[...S.lv].join(", ") || "none"}`]);
+    if (S.lg) out.push(["lg", `Logger: ${S.lg}.*`]);
+    if (S.ex) out.push(["ex", `Exception: ${shortExc(S.ex)}`]);
+    if (S.hx) out.push(["hx", "Has exception"]);
+    if (S.cmp !== "all") out.push(["cmp", `Compare: ${S.cmp}`]);
+    if (S.t) out.push(["t", `Window: ${tsShort(HOURS[S.t[0]])} (${S.t[1] - S.t[0] + 1} h)`]);
+    return out;
+  }
+  const CLEAR = { q: { q: "" }, lv: null, lg: { lg: "" }, ex: { ex: "" }, hx: { hx: false }, cmp: { cmp: "all" }, t: { t: null } };
+  function resetAll() {
+    clearTimeout(qTimer);
+    $("f-search").value = "";
+    commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, sig: "" });
+  }
+  function clearFilter(k) {
+    if (k === "all") return resetAll();
+    if (k === "lv") return commit({ lv: new Set(DEFAULT_LV) });
+    if (k === "q") $("f-search").value = "";
+    if (CLEAR[k]) commit(CLEAR[k]);
+  }
   function renderControls(v) {
     const lvCounts = {}, cmpCounts = { all: 0, new: 0, vanished: 0, changed: 0 };
     for (const r of v.rows) {
@@ -652,7 +754,7 @@
     if (CMP) {
       const seg = $("f-compare");
       seg.hidden = false;
-      seg.innerHTML = `<span class="lbl">vs ${esc(OTHERNAME)}</span>` + CMP_NAMES.map((c) =>
+      seg.innerHTML = `<span class="lbl">vs ${esc(OTHERNAME)}${baselineNote()}</span>` + CMP_NAMES.map((c) =>
         `<button type="button" data-cmp="${c}" aria-pressed="${S.cmp === c}">${c}<span class="n">${fmt(cmpCounts[c])}</span></button>`).join("");
     }
     const sq = $("f-search");
@@ -666,6 +768,8 @@
     ex.innerHTML = S.ex ? `<span>Exception: ${esc(shortExc(S.ex))}</span>` : "Exception ▾";
     ex.title = S.ex ? "Exception filter: " + S.ex : "Filter by exception type";
     $("f-hasexc").setAttribute("aria-pressed", String(S.hx));
+    const af = activeFilters();
+    $("f-print").textContent = af.length ? "Filters: " + af.map((x) => x[1]).join(" · ") : "";
     $("f-coarse").setAttribute("aria-pressed", String(S.view === "coarse"));
     $("f-merged").setAttribute("aria-pressed", String(S.view === "merged"));
     $("f-sort").value = S.sort;
@@ -792,15 +896,32 @@
   let drawnKey = null;
   let DCHART = null;
   const sec = (title, body) => `<section class="d-sec"><h3>${esc(title)}</h3>${body}</section>`;
+  const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${esc(title)}</h3>${body}</section>`;
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   function mergeTops(rows, key) {
     const m = new Map();
-    for (const r of rows) if (r.g) for (const vc of r.g[key] || []) m.set(vc.value, (m.get(vc.value) || 0) + vc.count);
+    for (const r of rows) {
+      if (!r.g) continue;
+      for (const vc of pairs(r.g[key])) {
+        const v = key === "sources" ? srcPath(vc.value) : vc.value;
+        m.set(v, (m.get(v) || 0) + vc.count);
+      }
+    }
     return [...m].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 10);
   }
-  function barList(items, labelFn) {
+  function barList(items, labelFn, total, noun) {
     if (!items || !items.length) return `<div class="muted">—</div>`;
     const max = Math.max(...items.map((x) => x.count));
+    const min = Math.min(...items.map((x) => x.count));
+    const list = barRows(items, labelFn, max);
+    if (items.length >= 3 && (max - min) / max < 0.1) {
+      const first = items[0].value == null ? "(none)" : String(items[0].value);
+      return `<details class="flat"><summary>${fmt(Math.max(total || 0, items.length))} ${esc(noun || "values")}, evenly spread, e.g. ` +
+        `<span title="${esc(first)}">${esc(labelFn ? labelFn(first) : first)}</span></summary>${list}</details>`;
+    }
+    return list;
+  }
+  function barRows(items, labelFn, max) {
     return `<div class="blist">` + items.map((x) => {
       const full = x.value == null ? "(none)" : String(x.value);
       return `<span class="l" title="${esc(full)}">${esc(labelFn ? labelFn(full) : full)}</span>` +
@@ -824,19 +945,49 @@
     }
     return out + esc(message.slice(pos));
   }
-  const FRAME = /^\s+(at\s|\.\.\.\s*\d+\s+(more|common frames omitted))/;
-  function bodyHtml(lines) {
-    let html = "", run = [];
+  // Java stack traces: tokenize the plain text, escape each piece.
+  const T_FRAME = /^(\s*)at\s+(.+?)\((.*)\)\s*$/;
+  const T_MORE = /^\s*\.\.\.\s*\d+\s+(more|common frames omitted)\b/;
+  const T_HEAD = /^(\s*)((?:Caused by|Suppressed):\s*)?([A-Za-z_$][\w$]*(?:\.[\w$]+)*\.[A-Z][\w$]*|[A-Z][\w$]*(?:Exception|Error|Throwable))(?::\s?(.*))?$/;
+  const LIB = /^(?:[\w.]*\/\/?)?(?:java\.|javax\.|jakarta\.|jdk\.|sun\.|com\.sun\.|org\.springframework\.|org\.apache\.)/;
+  const FOLD_KEEP = 4;
+  function frameHtml(ln) {
+    const m = T_FRAME.exec(ln);
+    const q = m[2];
+    const parts = q.split(".");
+    const tail = parts.length > 2 ? parts.slice(-2).join(".") : q;
+    const pkg = parts.length > 2 ? parts.slice(0, -2).join(".") + "." : "";
+    const app = !LIB.test(q);
+    const html = `<div class="fr${app ? " fr-app" : ""}">${esc(m[1])}<span class="t-at">at </span>` +
+      `<span class="t-pkg">${esc(pkg)}</span><span class="t-cm">${esc(tail)}</span>` +
+      `<span class="t-loc">(<span class="t-fl">${esc(m[3])}</span>)</span></div>`;
+    return { html, app };
+  }
+  function traceHtml(lines) {
+    let html = "", frames = [];
     const flush = () => {
-      if (!run.length) return;
-      const n = run.filter((l) => /^\s+at\s/.test(l)).length;
-      html += `<details class="frames"><summary>${fmt(n)} frame${n === 1 ? "" : "s"}</summary><pre>${esc(run.join("\n"))}</pre></details>`;
-      run = [];
+      if (!frames.length) return;
+      const hidden = frames.filter((f, i) => i >= FOLD_KEEP && !f.app).length;
+      const body = frames.map((f, i) => (i >= FOLD_KEEP && !f.app ? f.html.replace('class="fr', 'class="fr fr-x') : f.html)).join("");
+      html += hidden
+        ? `<div class="fold">${body}<button type="button" class="unfold" data-unfold="${hidden}">show ${fmt(hidden)} more frame${hidden === 1 ? "" : "s"}</button></div>`
+        : body;
+      frames = [];
     };
     for (const ln of lines) {
-      if (FRAME.test(ln)) { run.push(ln); continue; }
+      if (T_FRAME.test(ln)) { frames.push(frameHtml(ln)); continue; }
+      if (T_MORE.test(ln)) {
+        frames.push({ html: `<div class="fr t-more">${esc(ln)}</div>`, app: true });
+        continue;
+      }
       flush();
-      html += `<div class="ln${/^\s*Caused by:/.test(ln) ? " cause" : ""}">${esc(ln) || "&nbsp;"}</div>`;
+      const h = T_HEAD.exec(ln);
+      if (h) {
+        html += `<div class="t-head">${esc(h[1])}${h[2] ? `<span class="t-kw">${esc(h[2])}</span>` : ""}` +
+          `<span class="t-exc">${esc(h[3])}</span>${h[4] != null ? `<span class="t-msg">: ${esc(h[4])}</span>` : ""}</div>`;
+      } else {
+        html += `<div class="ln">${esc(ln) || "&nbsp;"}</div>`;
+      }
     }
     flush();
     return html;
@@ -847,52 +998,83 @@
     const body = nl < 0 ? [] : raw.slice(nl + 1).replace(/\s+$/, "").split("\n");
     const meta = [["", tsFull(e.ts) + " UTC"], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
       .filter((x) => x[1]);
-    return `<article class="entry"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
+    return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
       `</div><div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
-      (body.length && body.some((l) => l.trim()) ? `<div class="e-body">${bodyHtml(body)}</div>` : "") +
-      `<div class="e-foot"><span class="mono" title="${esc(e.source_path)}">${esc(basename(e.source_path))}:${esc(e.source_line)}</span>` +
+      (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
+      `<div class="e-foot"><span class="mono" title="${esc(srcPath(e.source ?? e.source_path))}">${esc(basename(srcPath(e.source ?? e.source_path)))}:${esc(e.source_line)}</span>` +
       (e.raw_truncated ? `<span class="muted">raw truncated to ${fmt(raw.length)} characters</span>` : "") +
       `<span class="grow"></span><button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
   const LEVEL_NUM = { TRACE: 10, DEBUG: 20, INFO: 30, WARN: 40, ERROR: 50, FATAL: 60 };
   const levelNum = (name) => LEVEL_NUM[name] || 0;
 
-  function drawerHtml(r) {
+  const LAZY = new Set();
+  function exampleIds(r) {
+    return r.g ? r.g.examples || [] : (r.members || []).flatMap((m) => (m.g && m.g.examples ? m.g.examples.slice(0, 1) : [])).slice(0, 5);
+  }
+  /** Webapp: fetch examples missing from the payload (entries.v1), then redraw the drawer once. */
+  function loadExamples(r) {
+    if (!ENTRIES_URL) return;
+    const sigs = (r.members || [r]).filter((m) => m.g && (m.g.examples || []).some((id) => !ENTRIES[id])).map((m) => m.sig);
+    const todo = sigs.filter((s) => !LAZY.has(s));
+    if (!todo.length) return;
+    for (const s of todo) LAZY.add(s);
+    Promise.all(todo.map((s) =>
+      fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(s)), { headers: { Accept: "application/json" } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((doc) => { if (doc && doc.items) Object.assign(ENTRIES, doc.items); })
+        .catch(() => null)))
+      .then(() => {
+        drawnKey = null;
+        renderDrawer();
+      });
+  }
+  const iconCopy = (text, what) =>
+    `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
+  function drawerHtml(r, inList) {
     const out = [];
+    if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
     const what = r.kind === "merged" ? `Drain3 cluster ${r.cluster ? r.cluster.cluster_id : ""}` : r.kind === "coarse" ? "Coarse group" : "";
     out.push(`<div class="d-head">${badge(r.lvl, r.level)}${r.cmp ? deltaChip(r.cmp) : ""}` +
       (r.members ? `<span class="muted">${esc(what)} · ${r.members.length} signatures</span>` : "") +
       (r.gone ? `<span class="muted">only in ${esc(OTHERNAME)}</span>` : "") + `</div>`);
-    out.push(`<h2 class="d-tpl">${tplHtml(r.tpl)}</h2>`);
+    out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
     if (r.logger) out.push(`<div class="d-sub mono">${esc(r.logger)}</div>`);
     if (r.exc) out.push(`<div class="d-sub mono">${esc(r.exc)}</div>`);
     const ids = [];
-    if (r.kind === "sig") ids.push(["Signature", r.sig]);
-    if (r.kind !== "merged" && !r.gone) ids.push(["Coarse signature", r.coarse]);
+    if (r.kind === "sig") ids.push(["sig", r.sig, "signature"]);
+    if (r.kind !== "merged" && !r.gone && r.coarse !== r.sig) ids.push(["coarse", r.coarse, "coarse signature"]);
     if (ids.length) {
-      out.push(`<dl class="ids">` + ids.map(([k, v]) => `<dt>${k}</dt><dd>${esc(v)}</dd><dd>${copyBtn(v)}</dd>`).join("") + `</dl>`);
+      out.push(`<div class="d-ids mono">` + ids.map(([k, v, w]) => `<span><span class="k">${k}</span> ${esc(v)}${iconCopy(v, w)}</span>`).join("") + `</div>`);
     }
+    let stats = "";
     if (!r.gone) {
       const st = [["Entries", fmt(r.count)], ["First seen", ts16(r.first)], ["Last seen", ts16(r.last)],
         [r.members ? "Users (≥)" : "Users", fmt(r.users)], [r.members ? "Threads (≥)" : "Threads", fmt(r.threads)], ["Sources", fmt(r.nsrc)]];
-      out.push(`<section class="d-sec"><dl class="stats">` + st.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl></section>`);
+      stats += `<dl class="stats">` + st.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl>`;
     }
     if (r.cmp) {
       const d = r.cmp.d;
       let note = "";
       if (d && d.first_seen_a) note = `<div class="muted">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} UTC</div>`;
-      out.push(sec(`Compared with ${OTHERNAME}`, `<div class="cmp-row"><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}<span class="muted">${esc(OTHERNAME)} → ${esc(LS.name || LS.id)}</span></div>${note}`));
+      stats += `<div class="cmp-row"><span class="muted">vs ${esc(OTHERNAME)}</span><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</div>${note}`;
     }
+    out.push(`<section class="d-sec" id="d-s-stats">${stats}</section>`);
+    const exIds = exampleIds(r);
+    const ex = exIds.filter((id) => ENTRIES[id]);
+    const pending = ENTRIES_URL && ex.length < exIds.length;
+    if (ex.length) out.push(secId("d-s-examples", `Example entries (${ex.length})`, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
+    else if (!r.gone) out.push(secId("d-s-examples", "Example entries", `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
     if (!r.gone) {
-      out.push(sec("Entries per hour" + (S.t ? " (window shaded)" : ""), `<div class="d-chart" id="d-hourly"></div>`));
+      out.push(secId("d-s-hourly", "Entries per hour" + (S.t ? " (window shaded)" : ""), `<div class="d-chart" id="d-hourly"></div>`));
       const src = r.members || [r];
       const tops = [
-        ["Top users", mergeTops(src, "top_users"), null],
-        ["Top threads", mergeTops(src, "top_threads"), null],
-        ["Sources", mergeTops(src, "sources"), basename],
+        ["Top users", mergeTops(src, "top_users"), null, r.users, "users"],
+        ["Top threads", mergeTops(src, "top_threads"), null, r.threads, "threads"],
+        ["Sources", mergeTops(src, "sources"), basename, r.nsrc, "sources"],
       ];
-      out.push(`<section class="d-sec tops">` + tops.map(([t, items, fn]) => `<div><h3>${t}</h3>${barList(items, fn)}</div>`).join("") + `</section>`);
+      out.push(`<section class="d-sec tops" id="d-s-who">` + tops.map(([t, items, fn, total, noun]) => `<div><h3>${t}</h3>${barList(items, fn, total, noun)}</div>`).join("") + `</section>`);
     }
     if (r.members) {
       out.push(sec(r.kind === "merged" ? "Merged signatures" : "Member signatures", memberList(r.members)));
@@ -902,16 +1084,12 @@
       out.push(sec(`Merge proposal (Drain3 cluster ${m.cluster_id})`,
         `<div class="d-sub mono" style="margin-bottom:6px">${tplHtml(m.drain_template || "")}</div>${memberList(sibs)}`));
     }
-    const exIds = r.g ? r.g.examples || [] : (r.members || []).flatMap((m) => (m.g && m.g.examples ? m.g.examples.slice(0, 1) : [])).slice(0, 5);
-    const ex = exIds.filter((id) => ENTRIES[id]);
-    if (ex.length) out.push(sec(`Example entries (${ex.length})`, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
-    else if (!r.gone) out.push(sec("Example entries", `<div class="muted">No examples in this report.</div>`));
     const set = r.gone ? OTHERREF : SETREF;
     const sig = r.members ? r.members[0].sig : r.sig;
     const cmds = [`atlas-log show ${set} ${sig}`, `atlas-log entries ${set} --signature ${sig} --limit 50`];
     if (r.kind === "coarse") cmds.push(`atlas-log query ${set} "select signature, count, template from groups where coarse_signature = '${r.coarse}' order by count desc"`);
     if (r.kind === "merged") cmds.push(`atlas-log query ${set} "select signature, count, template from groups where signature in (${r.sigs.map((s) => `'${s}'`).join(", ")}) order by count desc"`);
-    out.push(sec("CLI", `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`));
+    out.push(secId("d-s-cli", "CLI", `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`));
     return out.join("");
   }
   function drawHourly(r) {
@@ -922,7 +1100,7 @@
     DCHART = drawColumns(el, [{ key: "blue", name: "entries", cls: "s-blue", data: dense }], { height: 150, label: "Entries per hour" });
     const h3 = el.parentElement && el.parentElement.querySelector("h3");
     const k = DCHART.k;
-    if (h3) h3.textContent = "Entries per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours") + (S.t ? " (window shaded)" : "");
+    if (h3) h3.innerHTML = esc("Entries per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours") + (S.t ? " (window shaded)" : "")) + clipBtn(DCHART);
   }
   function renderDrawer() {
     const dr = $("drawer");
@@ -935,14 +1113,19 @@
     }
     dr.hidden = false;
     document.body.classList.add("drawer-open");
-    const key = S.view + "|" + S.sig + "|" + (S.t || "");
+    const idx = LIST.findIndex((x) => x.id === S.sig);
+    $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
+    const key = S.view + "|" + S.sig + "|" + (S.t || "") + "|" + (idx >= 0);
     if (key === drawnKey) return;
+    const sameGroup = drawnKey && drawnKey.split("|")[1] === S.sig;
     drawnKey = key;
     const r = lookup(S.sig);
     const body = $("drawer-body");
-    body.innerHTML = r ? drawerHtml(r) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
-    body.scrollTop = 0;
+    const top = body.scrollTop;
+    body.innerHTML = r ? drawerHtml(r, idx >= 0) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
+    body.scrollTop = sameGroup ? top : 0;
     if (r && !r.gone) drawHourly(r);
+    if (r) loadExamples(r);
   }
 
   // ---------------------------------------------------------------- overview
@@ -953,30 +1136,37 @@
     $("set-name").textContent = LS.name || LS.id || "log set";
     $("set-id").textContent = LS.name ? LS.id : "";
     const nsrc = (LS.sources || []).length;
+    const opts = D.options || {};
+    const total = st.group_count ?? BASE.length;
     $("set-meta").textContent = [
       LS.format,
       tr.first ? `${ts16(tr.first)} → ${tsShort(tr.last)} UTC (${duration(tr.first, tr.last)})` : "no entries",
       `${fmt(nsrc)} source file${nsrc === 1 ? "" : "s"}`,
+      st.parse_errors ? "" : "0 unparsed",
+      opts.truncated_groups > 0 ? `showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups` : "",
     ].filter(Boolean).join(" · ");
-    const opts = D.options || {};
-    const groupsNote = BASE.length !== (st.group_count ?? BASE.length)
+    const groupsNote = BASE.length !== total
       ? `${fmt(BASE.length)} in this report` + (opts.min_level ? ` (${opts.min_level}+)` : "")
       : "";
     const tiles = [
       ["Entries", fmt(st.entry_count ?? LS.entry_count ?? 0), ""],
-      ["Groups", fmt(st.group_count ?? BASE.length), groupsNote],
+      ["Groups", fmt(total), groupsNote],
       ["Errors", fmt((lv.ERROR || 0) + (lv.FATAL || 0)), lv.FATAL ? `incl. ${fmt(lv.FATAL)} FATAL` : ""],
       ["Warnings", fmt(lv.WARN || 0), ""],
-      ["Unparsed", fmt(st.parse_errors || 0), ""],
     ];
+    if (st.parse_errors) tiles.push(["Unparsed", fmt(st.parse_errors), ""]);
     let html = tiles.map(([l, v, n]) => `<div class="tile"><div class="label">${l}</div><div class="value">${esc(v)}</div>${n ? `<div class="note">${esc(n)}</div>` : ""}</div>`).join("");
     if (CMPD) {
-      html += `<div class="tile wide"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}</div>` +
-        `<div class="value">${fmt((CMPD.new || []).length)} new · ${fmt((CMPD.vanished || []).length)} gone · ${fmt((CMPD.changed || []).length)} changed · ${fmt(CMPD.unchanged_count || 0)} same</div></div>`;
+      const mini = [["new", CMPN.new, (CMPD.new || []).length], ["changed", CMPN.changed, (CMPD.changed || []).length],
+        ["vanished", CMPN.vanished, (CMPD.vanished || []).length]];
+      const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k}: shown ${fmt(shown)} of ${fmt(n)}`);
+      html += `<div class="tile wide cmp-tile"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</div>` +
+        `<div class="minis">` + mini.map(([k, n]) => `<div><div class="value">${fmt(n)}</div><div class="note">${k}</div></div>`).join("") + `</div>` +
+        `<div class="note">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
     }
     $("tiles").innerHTML = html;
     for (const b of BUCKETS) {
-      const arr = (D.timeline.levels || {})[b] || [];
+      const arr = ((D.timeline || {}).levels || {})[b] || [];
       let t = 0;
       for (const v of arr) t += v;
       TL_TOTALS[b] = t;
@@ -1022,23 +1212,47 @@
     } catch {
       /* fall back below */
     }
+    const prev = document.activeElement;
     const ta = document.createElement("textarea");
     ta.value = text;
+    ta.readOnly = true;
     ta.style.position = "fixed";
     ta.style.opacity = "0";
     document.body.appendChild(ta);
     ta.select();
-    try {
-      document.execCommand("copy");
-      toast("Copied");
-    } catch {
-      toast("Copy failed");
-    }
+    let ok = false;
+    try { ok = document.execCommand("copy"); } catch { ok = false; }
+    toast(ok ? "Copied" : "Copy failed");
     ta.remove();
+    if (prev && prev.focus) prev.focus();
+  }
+  const isDark = () => {
+    const cur = document.documentElement.getAttribute("data-theme");
+    return cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  };
+  function renderThemeBtn() {
+    const b = $("btn-theme");
+    b.innerHTML = isDark() ? `<span aria-hidden="true">☀</span> Light` : `<span aria-hidden="true">☾</span> Dark`;
+    b.title = isDark() ? "Switch to the light theme" : "Switch to the dark theme";
+  }
+  function toggleTheme() {
+    const next = isDark() ? "light" : "dark";
+    document.documentElement.setAttribute("data-theme", next);
+    try { localStorage.setItem("atlas-log-report-theme", next); } catch { /* storage unavailable */ }
+    renderThemeBtn();
+    if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
+  }
+  function toggleClip(geo) {
+    CLIP = !(geo && geo.clip);
+    renderTimeline();
+    const r = S.sig && lookup(S.sig);
+    if (r && !r.gone) drawHourly(r);
   }
   function open(id) {
     CUR = id;
+    const was = !!S.sig;
     commit({ sig: id }, { keepPage: true });
+    if (!was) $("d-close").focus({ preventScroll: true });
   }
   function move(d) {
     if (!LIST.length) return;
@@ -1056,7 +1270,6 @@
   }
 
   function bind() {
-    let qTimer = 0;
     $("f-search").addEventListener("input", (e) => {
       clearTimeout(qTimer);
       const value = e.target.value;
@@ -1082,10 +1295,11 @@
     $("f-coarse").onclick = () => commit({ view: S.view === "coarse" ? "sig" : "coarse", sig: "" });
     $("f-merged").onclick = () => commit({ view: S.view === "merged" ? "sig" : "merged", sig: "" });
     $("f-sort").onchange = (e) => commit({ sort: e.target.value });
-    $("f-reset").onclick = () => {
-      $("f-search").value = "";
-      commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, sig: "" });
-    };
+    $("f-reset").onclick = resetAll;
+    $("t-empty").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-clear]");
+      if (b) clearFilter(b.dataset.clear);
+    });
     $("f-logger").onclick = () => togglePop("f-logger-pop", renderLoggerPop);
     $("f-exc").onclick = () => togglePop("f-exc-pop", renderExcPop);
     for (const id of ["f-logger-pop", "f-exc-pop"]) {
@@ -1139,22 +1353,29 @@
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold]");
       if (!t) return;
-      if (t.dataset.copy != null) copy(t.dataset.copy);
+      if (t.dataset.unfold != null) {
+        const f = t.closest(".fold");
+        const opened = f.classList.toggle("open");
+        const n = +t.dataset.unfold;
+        t.textContent = opened ? "hide frames" : `show ${fmt(n)} more frame${n === 1 ? "" : "s"}`;
+      } else if (t.dataset.clip != null) toggleClip(DCHART);
+      else if (t.dataset.copy != null) copy(t.dataset.copy);
       else if (t.dataset.copyRaw != null) copy((ENTRIES[t.dataset.copyRaw] || {}).raw || "");
       else if (t.dataset.open != null) open(t.dataset.open);
     });
-    $("btn-theme").onclick = () => {
-      const cur = document.documentElement.getAttribute("data-theme");
-      const dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
-      const next = dark ? "light" : "dark";
-      document.documentElement.setAttribute("data-theme", next);
-      try { localStorage.setItem("atlas-log-report-theme", next); } catch { /* storage unavailable */ }
-      if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
-    };
+    $("btn-theme").onclick = toggleTheme;
+    $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL); });
+    window.atlasTheme = toggleTheme;
+    renderThemeBtn();
+    $("d-nav").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-jump]");
+      const t = b && document.getElementById(b.dataset.jump);
+      if (t) t.scrollIntoView({ block: "start", behavior: "smooth" });
+    });
     $("btn-data").onclick = () => {
-      const blob = new Blob([$("report-data").textContent], { type: "application/json" });
+      const blob = new Blob([JSON.stringify(D)], { type: "application/json" });
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       a.download = (LS.name || LS.id || "report") + ".report.json";
@@ -1168,6 +1389,7 @@
       const t = e.target;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
       if (e.key === "Escape") {
+        if (help.open) return;
         if (closePops()) return;
         if (typing) { t.blur(); return; }
         if (S.sig) commit({ sig: "" }, { keepPage: true });
@@ -1225,4 +1447,22 @@
     foot.dataset.script = String(Math.round(T1 - T0));
     foot.dataset.paint = String(Math.round(t2));
   }, 0));
+  }
+
+  // ---------------------------------------------------------------- loader
+  const embedded = $("report-data");
+  const text = embedded ? embedded.textContent : "";
+  if (text && text.trim().startsWith("{")) {
+    boot(JSON.parse(text));
+  } else {
+    const url = document.documentElement.dataset.reportUrl;
+    if (!url) {
+      fatal("no report data: #report-data is empty and <html data-report-url> is not set");
+    } else {
+      fetch(url, { headers: { Accept: "application/json" } })
+        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`GET ${url}: HTTP ${r.status}`))))
+        .then(boot)
+        .catch(fatal);
+    }
+  }
 })();

@@ -15,6 +15,8 @@ Global options may appear before or after the command name.
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
 | `--store DIR` | env `ATLAS_LOG_STORE`, else `./.atlas-log` | Store directory holding log sets. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
+| `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
+| `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
 | `--help`, `-h` | | Help for the app or a command. |
 | `--version` | | Print the tool version. |
 
@@ -23,12 +25,23 @@ Global options may appear before or after the command name.
 - **json** — exactly one JSON document on stdout. Every document is an object
   with a `"schema": "<name>.v1"` key. Listings put their rows under `"items"`
   and add `"count"`. Compact on a pipe, indented on a terminal.
+  Listings cut by `--limit` (`groups`, `entries`) also carry `"total"` (rows
+  matching the filters before `--limit`) and `"truncated"` (`count < total`);
+  `count` is always `len(items)`. `query` has `"total" == "count"` and
+  `"truncated": false` (use `LIMIT` in the SQL); `diff` has
+  `"totals": {"new", "vanished", "changed"}` and one `"truncated"` flag.
 - **jsonl** — listings: one row per line, without the envelope (`diff`: one row
   per line with an extra `"change"` key). Single documents (`stats`, `ingest`,
   …): the document on one line.
 - **table** — rich tables on stdout; long cells are truncated with `…`,
-  timestamps shown to the second (`Z` = UTC). No ANSI codes unless stdout is a
-  terminal. Scalar metadata of listings (`logset=… count=…`) goes to stderr.
+  timestamps shown to the second (`Z` = UTC). Ids, levels, counts and
+  timestamps never wrap; numbers are right-aligned; `level_name` is coloured
+  (ERROR red, WARN yellow) when colour is on. No ANSI codes unless colour is on
+  (see `--color`). Scalar metadata of listings (`logset=… count=… total=…
+  truncated=…`) goes to stderr. `show --raw` / `entries --raw` with colour on
+  highlight the header (timestamp, level, logger), exception class names,
+  `Caused by:`, stack frames (application frames in bold) and separate entries
+  with a `file:line` rule.
 
 Values: timestamps are ISO 8601 strings; stored timestamps are UTC
 (`…+00:00`), `parse` keeps the original offset. `level` is numeric in stored
@@ -47,10 +60,14 @@ name in `level_name`; `parse` emits the name in `level`.
 In `json`/`jsonl` mode errors are written to **stdout** as
 
 ```json
-{"schema": "error.v1", "error": {"code": "store_error", "message": "no log set 'x' in .atlas-log"}}
+{"schema": "error.v1", "error": {"code": "store_error", "message": "no log set 'x'",
+ "hint": "available sets: prod-1029, prod-1030", "store": ".atlas-log"}}
 ```
 
-In `table` mode they go to stderr as `error: <message> [<code>]`. Error codes:
+`"hint"` (optional) suggests the next step (available set names for an unknown
+set; `atlas-log groups SET` for an unknown signature); other optional keys
+carry context such as `"store"`. In `table` mode errors go to stderr as
+`error: <message> [<code>]` followed by `hint: …`. Error codes:
 `usage`, `invalid_value`, `invalid_level`, `unknown_format`, `sql_error`,
 `missing_dependency`, `file_not_found`, `no_sources`, `format_not_detected`,
 `no_entries`, `not_found`, `store_error`, `internal_error` (unexpected
@@ -70,7 +87,7 @@ unique id prefix (resolved in that order).
 | `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. |
 | `--min-level L` | This level or more severe. |
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
-| `--since T` / `--until T` | ISO 8601; naive times are UTC. `since` inclusive, `until` exclusive. For groups: `last_seen >= since`, `first_seen < until`. |
+| `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
 | `--limit N` | Maximum rows; `0` = all. |
 
 ## Commands
@@ -113,7 +130,7 @@ signature (exception chain ignored); `signature` then holds the coarse
 signature and `signatures` lists the members.
 
 ```json
-{"schema": "groups.v1", "logset": "…", "count": 2, "items": [
+{"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "truncated": true, "items": [
   {"signature", "coarse_signature", "template", "level", "level_name", "logger",
    "exception_type", "count", "first_seen", "last_seen", "user_count", "thread_count",
    "source_count", "top_users", "top_threads", "sources", "examples"}]}
@@ -125,7 +142,9 @@ Exit: 0 (also empty); 1; 3.
 
 Entries of one group, ordered by time, with `variables` (the values masking
 replaced, in order). `--raw` prints the original log text of each entry,
-separated by blank lines, in any output mode.
+separated by blank lines, in any output mode (highlighted, with `file:line`
+rules, when colour is on). The table starts with a three-line group header:
+template; logger, level and exception; count, first and last seen.
 
 ```json
 {"schema": "entries.v1", "logset": "…", "signature": "…", "group": {<groups.v1 row>} | null,
@@ -134,13 +153,15 @@ separated by blank lines, in any output mode.
 
 Exit: 0; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C]... [--limit 100]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C]... [--limit 100] [--raw]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
-`raw`; `--columns` (repeatable) selects columns.
+`raw`; `--columns` (repeatable) selects columns; `--raw` prints the raw text
+like `show --raw`.
 
 ```json
-{"schema": "entries.v1", "logset": "…", "count": 10, "items": [<entries.v1 row>]}
+{"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "truncated": true,
+ "items": [<entries.v1 row>]}
 ```
 
 entries.v1 columns: `id, ts, tz_offset, level, level_name, thread, logger,
@@ -154,7 +175,7 @@ source_offset, raw, parse_error`. Exit: 0 (also empty); 1; 3.
 DuckDB SQL over the views `entries`, `groups` and (when present) `merges`.
 
 ```json
-{"schema": "query.v1", "logset": "…", "columns": ["level_name", "n"], "count": 4, "items": [{"level_name": "WARN", "n": 18}]}
+{"schema": "query.v1", "logset": "…", "columns": ["level_name", "n"], "count": 4, "total": 4, "truncated": false, "items": [{"level_name": "WARN", "n": 18}]}
 ```
 
 Exit: 0 (also empty); 1 SQL error; 3.
@@ -167,6 +188,9 @@ Exit: 0 (also empty); 1 SQL error; 3.
  "hours": [{"hour", "count"}], "time_range": {"first", "last"}, "sources": [...]}
 ```
 
+The table shows `hours` compactly: one row per day with the day total, the
+busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
+
 Exit: 0; 3.
 
 ### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 0]`
@@ -176,8 +200,11 @@ Compares stored group tables: `new` (only in B), `vanished` (only in A),
 
 ```json
 {"schema": "diff.v1", "a": "<id>", "b": "<id>", "new": [row], "vanished": [row],
- "changed": [row], "unchanged_count": 1}
+ "changed": [row], "unchanged_count": 1,
+ "totals": {"new": 3, "vanished": 0, "changed": 5}, "truncated": false}
 ```
+
+The table prints `vanished: none` (etc.) instead of an empty table.
 
 Rows: `signature, template, level, level_name, logger, exception_type, count_a,
 count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (+ `ratio` in
@@ -260,4 +287,26 @@ Exit: 0; 3.
 
 ```json
 {"schema": "version.v1", "version": "0.1.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 1, "python": "3.14.2"}
+```
+
+## Recipes
+
+```sh
+# Upgrade comparison: what is new or louder after the upgrade?
+atlas-log ingest logs-before/ --name before
+atlas-log ingest logs-after/ --name after
+atlas-log diff before after --min-level WARN --limit 20
+
+# Who triggers a group? (users and request URLs of one signature)
+atlas-log query after "select user, count(*) n from entries
+  where signature = '0123456789abcdef' group by 1 order by 2 desc"
+
+# Hourly error rate
+atlas-log query after "select date_trunc('hour', ts) h,
+  count(*) filter (where level >= 50) errors, count(*) total,
+  round(100.0 * errors / total, 1) pct from entries group by 1 order by 1"
+
+# The last 2 hours of the log (relative to its last entry)
+atlas-log groups after --since 2h --min-level ERROR
+atlas-log entries after --since 2h --level ERROR --raw
 ```

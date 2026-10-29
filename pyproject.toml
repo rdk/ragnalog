@@ -6,6 +6,20 @@ readme = "README.md"
 authors = [{ name = "Radoslav Krivak" }]
 requires-python = ">=3.14"
 license = "Apache-2.0"
+license-files = ["LICENSE"]
+keywords = ["logs", "log-analysis", "jira", "atlassian", "cli", "parquet", "duckdb"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: System :: Logging",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
 dependencies = [
     "xxhash>=3.5",
     "polars>=2,<3",
@@ -17,8 +31,20 @@ dependencies = [
     "tzdata>=2026.6 ; sys_platform == 'win32'",
 ]
 
+[project.urls]
+Homepage = "https://github.com/rdk/atlas-log-analyzer"
+Repository = "https://github.com/rdk/atlas-log-analyzer"
+Issues = "https://github.com/rdk/atlas-log-analyzer/issues"
+Documentation = "https://github.com/rdk/atlas-log-analyzer/blob/main/docs/cli.md"
+
 [project.optional-dependencies]
 mine = ["drain3>=0.9.11"]
+web = [
+    "fastapi>=0.115,<1",
+    "jinja2>=3.1",
+    "python-multipart>=0.0.20",
+    "uvicorn[standard]>=0.35",
+]
 
 [project.scripts]
 atlas-log = "atlas_log_analyzer.cli.app:main"
@@ -33,6 +59,7 @@ dev = [
     "ruff>=0.12",
     "mypy>=1.17",
     "drain3>=0.9.11",
+    "httpx>=0.28",
 ]
 
 [build-system]
@@ -61,4 +88,5 @@ ignore_missing_imports = true
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-q"
+addopts = "-q -m 'not slow'"
+markers = ["slow: long-running scale tests (run with `pytest -m slow`)"]

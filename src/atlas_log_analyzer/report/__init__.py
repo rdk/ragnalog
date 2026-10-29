@@ -17,12 +17,13 @@ from pathlib import Path
 from typing import Any
 
 from atlas_log_analyzer.report.payload import REPORT_SCHEMA, build_payload
-from atlas_log_analyzer.report.render import render_html
+from atlas_log_analyzer.report.render import asset_text, render_html
 from atlas_log_analyzer.store.logset import LogSet
 
 __all__ = [
     "REPORT_SCHEMA",
     "ReportInfo",
+    "asset_text",
     "build_payload",
     "build_report",
     "render_html",

@@ -36,7 +36,7 @@ from atlas_log_analyzer.store.writer import (
     write_groups,
 )
 
-__all__ = ["MIN_PREFIX", "Store", "StoreError", "logset_id"]
+__all__ = ["MIN_PREFIX", "AmbiguousLogSet", "LogSetNotFound", "Store", "StoreError", "logset_id"]
 
 MIN_PREFIX = 4
 """Minimum length of an id prefix accepted by :meth:`Store.open`."""
@@ -44,6 +44,14 @@ MIN_PREFIX = 4
 
 class StoreError(Exception):
     """Any store-level failure (missing set, corrupt manifest, version mismatch)."""
+
+
+class LogSetNotFound(StoreError):
+    """:meth:`Store.open` found no log set for the reference."""
+
+
+class AmbiguousLogSet(StoreError):
+    """:meth:`Store.open` found several log sets for a name or id prefix."""
 
 
 def logset_id(digests: Iterable[str]) -> str:
@@ -91,6 +99,25 @@ class Store:
 
     def __init__(self, root: Path) -> None:
         self.root = root
+        self._index: dict[Path, tuple[int, int, LogSet | None]] = {}
+        """Manifest cache: set dir → (manifest mtime_ns, size, loaded set or None if invalid)."""
+
+    def _cached(self, d: Path) -> LogSet | None:
+        """Load ``d`` through the manifest cache; ``None`` when unreadable or invalid."""
+        try:
+            st = (d / MANIFEST_FILE).stat()
+        except OSError:
+            self._index.pop(d, None)
+            return None
+        hit = self._index.get(d)
+        if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
+            return hit[2]
+        try:
+            ls: LogSet | None = LogSet.load(d)
+        except OSError, ValueError:
+            ls = None
+        self._index[d] = (st.st_mtime_ns, st.st_size, ls)
+        return ls
 
     def _set_dirs(self) -> list[Path]:
         if not self.root.is_dir():
@@ -102,13 +129,12 @@ class Store:
         ]
 
     def _load_all(self) -> list[LogSet]:
-        out = []
-        for d in self._set_dirs():
-            try:
-                out.append(LogSet.load(d))
-            except OSError, ValueError:
-                continue  # corrupt or newer-schema sets are skipped by listings
-        return out
+        dirs = self._set_dirs()
+        live = set(dirs)
+        for stale in [d for d in self._index if d not in live]:
+            del self._index[stale]
+        # corrupt or newer-schema sets are skipped by listings
+        return [ls for d in dirs if (ls := self._cached(d)) is not None]
 
     def list(self) -> list[LogSetManifest]:
         """Manifests of all log sets, newest first.
@@ -119,29 +145,39 @@ class Store:
         return sorted(manifests, key=lambda m: m.created_at, reverse=True)
 
     def open(self, ref: str) -> LogSet:
-        """Open a log set by id, unique id prefix, or name; raise :class:`StoreError`.
+        """Open a log set by id, unique id prefix, or name.
 
         Resolution order: exact id, then exact name, then id prefix of at least
         :data:`MIN_PREFIX` characters. Several matches at the same step are an error.
+        Manifests are cached per :class:`Store` instance and re-read when their
+        file changes, so repeated calls do not reparse every manifest.
+
+        Raises:
+            LogSetNotFound: Nothing matches ``ref``.
+            AmbiguousLogSet: Several sets share the name or id prefix.
+            StoreError: The set with id ``ref`` exists but cannot be opened.
+
         """
         exact = self.root / ref
-        if ref and not ref.startswith(".") and (exact / MANIFEST_FILE).is_file():
-            return self._load(exact)
+        plain = ref and not ref.startswith(".") and "/" not in ref and "\\" not in ref
+        if plain and (exact / MANIFEST_FILE).is_file():
+            ls = self._cached(exact)
+            return ls if ls is not None else self._load(exact)
         sets = self._load_all()
         by_name = [ls for ls in sets if ls.manifest.name == ref]
         if len(by_name) == 1:
             return by_name[0]
         if len(by_name) > 1:
             ids = ", ".join(ls.manifest.id for ls in by_name)
-            raise StoreError(f"name {ref!r} is ambiguous: {ids}")
+            raise AmbiguousLogSet(f"name {ref!r} is ambiguous: {ids}")
         if len(ref) >= MIN_PREFIX:
             by_prefix = [ls for ls in sets if ls.manifest.id.startswith(ref.lower())]
             if len(by_prefix) == 1:
                 return by_prefix[0]
             if len(by_prefix) > 1:
                 ids = ", ".join(ls.manifest.id for ls in by_prefix)
-                raise StoreError(f"id prefix {ref!r} is ambiguous: {ids}")
-        raise StoreError(f"no log set {ref!r} in {self.root}")
+                raise AmbiguousLogSet(f"id prefix {ref!r} is ambiguous: {ids}")
+        raise LogSetNotFound(f"no log set {ref!r} in {self.root}")
 
     @staticmethod
     def _load(path: Path) -> LogSet:

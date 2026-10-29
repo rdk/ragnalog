@@ -2,7 +2,7 @@
 
 Payload of the HTML report (`atlas-log report`), built by
 `atlas_log_analyzer.report.payload.build_payload(logset, *, compare=None, min_level=None,
-examples=3, max_raw=4000, max_groups=None)`. It is embedded in the page as
+examples=3, max_raw=4000, max_groups=None, entries_url=None)`. It is embedded in the page as
 `<script type="application/json" id="report-data">` (compact JSON; `</` written as
 `<\/` and `<!--` as `<!--`, both plain JSON string escapes) and is the contract
 between the store and the front-end: the page reads only this document. The "Data"
@@ -19,7 +19,7 @@ All values are JSON types: timestamps are ISO 8601 UTC strings, counts integers,
 | `schema` | string | Always `"report.v1"`. |
 | `generated_at` | string | Build time, `YYYY-MM-DDTHH:MM:SSZ`. |
 | `tool_version` | string | atlas-log-analyzer version that built the payload. |
-| `options` | object | The build options: `min_level` (normalised level name or null), `examples`, `max_raw` (0 = no limit), `max_groups` (null = all). |
+| `options` | object | The build options: `min_level` (normalised level name or null), `examples`, `max_raw` (0 = no limit), `max_groups` (null = all), and `truncated_groups` (groups cut by `max_groups`; 0 when none). |
 | `logset` | object | The set's `logset.v1` manifest, including `sources`. |
 | `stats` | object | `LogSet.stats()` without `sources`: `id, name, format, entry_count, group_count, parse_errors, levels {name: count}, loggers [{logger, count}]` (top 20), `hours [{hour, count}], time_range {first, last}`. Always the whole set. |
 | `timeline` | object | Per-hour counts by level, see below. Always the whole set. |
@@ -27,6 +27,7 @@ All values are JSON types: timestamps are ISO 8601 UTC strings, counts integers,
 | `entries` | object | Example entries keyed by entry id, see below: exactly the ids referenced by `groups[*].examples`. |
 | `merges` | list | Drain3 merge proposals (`merges.parquet`, `{cluster_id, drain_template, signatures}`) restricted to the signatures in `groups`; clusters left with fewer than two members are dropped. `[]` when the set has none. |
 | `compare` | object or null | Comparison with a baseline set, see below; `null` without `--compare`. |
+| `entries_url` | string, optional | URL template for fetching more entries of a group (`{sig}` = signature). Present only when passed to `build_payload` (web app). |
 
 ## `timeline`
 
@@ -39,18 +40,20 @@ The sum over all series equals `stats.entry_count`.
 
 ## `groups[*]`
 
-All `groups.v1` columns (`atlas-log schema groups`) plus `hourly`:
+All `groups.v1` columns (`atlas-log schema groups`) plus `hourly`, in a compact form:
 
 | Key | Type | Description |
 |---|---|---|
-| `signature`, `coarse_signature` | string | As in groups.v1. |
+| `signature` | string | As in groups.v1. |
+| `coarse_signature` | string, optional | Omitted when equal to `signature`. |
 | `template` | string | Masked template with `<PLACEHOLDER>` tokens. |
 | `level`, `level_name` | int, string | Numeric level and its name. |
 | `logger`, `exception_type` | string or null | |
 | `count` | int | Entries in the group. |
 | `first_seen`, `last_seen` | string | ISO 8601 UTC with milliseconds (`…+00:00`). |
 | `user_count`, `thread_count`, `source_count` | int | |
-| `top_users`, `top_threads`, `sources` | list<{value, count}> | As in groups.v1 (`sources` values are the ingested file paths). |
+| `top_users`, `top_threads` | list<[string, int]> | `[value, count]` pairs, as in groups.v1. |
+| `sources` | list<[int, int]> | `[source_index, count]`; `source_index` indexes `logset.sources`. |
 | `examples` | list<string> | At most `options.examples` entry ids taken from groups.v1 `examples`; all present in `entries`. |
 | `hourly` | list<[int, int]> | Sparse `[hour_index, count]` pairs, ascending; `hour_index` indexes `timeline.hours`; the counts sum to `count`. |
 
@@ -59,14 +62,16 @@ All `groups.v1` columns (`atlas-log schema groups`) plus `hourly`:
 | Key | Type | Description |
 |---|---|---|
 | `ts` | string | ISO 8601 UTC with milliseconds. |
-| `level_name`, `thread`, `logger`, `user`, `request_id`, `ip`, `url` | string or null | As in entries.v1. |
+| `level_name`, `thread`, `logger` | string or null | As in entries.v1. |
+| `user`, `request_id`, `ip`, `url` | string, optional | As in entries.v1; omitted when null or empty. |
 | `message` | string or null | First message line (unmasked). |
-| `variables` | list<string> | Values masking replaced in the template, in order. |
-| `exception_type` | string or null | Outermost exception type. |
-| `exception_chain` | list<{type, message, frames, omitted_frames}> | Outermost first; `frames` is the number of parsed stack frames, not the frames. |
-| `raw` | string | Original text (header and continuation lines), cut to `options.max_raw` characters. |
-| `raw_truncated` | bool | `true` when `raw` was cut. Always present. |
-| `source_path`, `source_line` | string, int | File and 1-based line of the header. |
+| `variables` | list<string>, optional | Values masking replaced in the template, in order; omitted when empty. |
+| `raw` | string | Original text (header, continuation lines and stack trace), cut to `options.max_raw` characters. |
+| `raw_truncated` | `true`, optional | Present (and `true`) only when `raw` was cut. |
+| `source`, `source_line` | int, int | Index of the file in `logset.sources`, and 1-based line of the header. |
+
+Entries carry no parsed exception data; the outermost type is on the group
+(`exception_type`) and the trace is in `raw`.
 
 ## `compare`
 
@@ -77,11 +82,12 @@ signature/mask-rule versions and specs must match (no force); otherwise the buil
 |---|---|---|
 | `other` | object | The baseline's `logset.v1` manifest without `sources`. |
 | `min_level` | string or null | Level filter applied to both sides. |
-| `new` | list<row> | Signatures only in this set (`count_a` = 0), by `count_b` desc. |
-| `vanished` | list<row> | Signatures only in the baseline (`count_b` = 0), by `count_a` desc. |
-| `changed` | list<row> | In both with different counts; adds `ratio = count_b / count_a`; by `abs(log(ratio))` desc. |
-| `unchanged_count` | int | Signatures in both with equal counts. |
+| `counts` | object | True diff totals before trimming: `new`, `changed`, `vanished`, `unchanged` (ints). |
+| `new` | list<[string, int]> | `[signature, count_b]` for signatures only in this set, by `count_b` desc; only signatures present in `groups`. |
+| `changed` | list<[string, int, int]> | `[signature, count_a, count_b]` for signatures in both with different counts, by `abs(log(count_b / count_a))` desc; only signatures present in `groups`. |
+| `vanished` | list<row> | Signatures only in the baseline (`count_b` = 0), by `count_a` desc; full diff.v1 rows, not limited by `max_groups`. |
 
-Rows are diff.v1 rows: `signature, template, level, level_name, logger, exception_type,
-count_a, count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (timestamps
-null on the missing side). The lists are not limited by `max_groups`.
+`vanished` rows are diff.v1 rows: `signature, template, level, level_name, logger,
+exception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b`
+(timestamps null on the missing side). With `max_groups`, compare
+`len(new)`/`len(changed)` with `counts` to tell how many are shown.

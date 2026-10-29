@@ -12,6 +12,7 @@ Directory layout::
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -24,7 +25,7 @@ import polars as pl
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION, schema_major
 
-__all__ = ["LogSet", "LogSetManifest", "SourceInfo", "rows", "to_records"]
+__all__ = ["LevelSpec", "LogSet", "LogSetManifest", "SourceInfo", "rows", "to_records"]
 
 MANIFEST_FILE = "manifest.json"
 ENTRIES_FILE = "entries.parquet"
@@ -35,6 +36,14 @@ MANIFEST_SCHEMA = "logset.v1"
 GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
 """Values accepted by ``LogSet.groups(sort=...)``."""
 TOP_LOGGERS = 20
+
+type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
+"""A level filter: a :class:`LogLevel`, a name or comma-separated names, or an iterable."""
+
+_BUCKET_UNITS_MS = {"s": 1_000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
+_BUCKET_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
+MAX_HISTOGRAM_BUCKETS = 100_000
+"""Upper bound on the number of (zero-filled) buckets :meth:`LogSet.histogram` returns."""
 
 
 def _iso(ts: datetime | None) -> str | None:
@@ -201,12 +210,26 @@ def _levels(spec: str) -> list[int]:
     return out
 
 
-def _level_filters(level: str | None, min_level: str | None) -> list[pl.Expr]:
+def _level_values(spec: LevelSpec) -> list[int]:
+    """Normalise a :data:`LevelSpec` to level values; ``ValueError`` if unknown or empty."""
+    if isinstance(spec, LogLevel):
+        return [int(spec)]
+    if isinstance(spec, str):
+        return _levels(spec)
+    out: list[int] = []
+    for item in spec:
+        out.extend([int(item)] if isinstance(item, LogLevel) else _levels(item))
+    if not out:
+        raise ValueError("empty level filter")
+    return out
+
+
+def _level_filters(level: LevelSpec | None, min_level: LevelSpec | None) -> list[pl.Expr]:
     out: list[pl.Expr] = []
     if level is not None:
-        out.append(pl.col("level").is_in(_levels(level)))
+        out.append(pl.col("level").is_in(_level_values(level)))
     if min_level is not None:
-        lv = _levels(min_level)
+        lv = _level_values(min_level)
         if len(lv) != 1:
             raise ValueError("min_level takes a single level")
         out.append((pl.col("level") >= lv[0]) & (pl.col("level") != int(LogLevel.UNKNOWN)))
@@ -226,6 +249,71 @@ def _and(exprs: Iterable[pl.Expr]) -> pl.Expr | None:
     return result
 
 
+def _entry_predicate(
+    *,
+    signature: str | None = None,
+    coarse_signature: str | None = None,
+    level: LevelSpec | None = None,
+    min_level: LevelSpec | None = None,
+    logger: str | None = None,
+    user: str | None = None,
+    thread: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+    contains: str | None = None,
+) -> pl.Expr | None:
+    """Conjunction of the entry filters of :meth:`LogSet.entries`, or ``None`` when none."""
+    filters = _level_filters(level, min_level)
+    if signature is not None:
+        filters.append(pl.col("signature") == signature)
+    if coarse_signature is not None:
+        filters.append(pl.col("coarse_signature") == coarse_signature)
+    if logger is not None:
+        filters.append(_logger_filter(logger))
+    if user is not None:
+        filters.append(pl.col("user") == user)
+    if thread is not None:
+        filters.append(pl.col("thread") == thread)
+    if since is not None:
+        filters.append(pl.col("ts") >= _utc(since))
+    if until is not None:
+        filters.append(pl.col("ts") < _utc(until))
+    if contains is not None:
+        filters.append(pl.col("raw").str.contains(f"(?i){re.escape(contains)}"))
+    return _and(filters)
+
+
+def _group_predicate(
+    *,
+    level: LevelSpec | None = None,
+    min_level: LevelSpec | None = None,
+    logger: str | None = None,
+    since: datetime | None = None,
+    until: datetime | None = None,
+) -> pl.Expr | None:
+    """Conjunction of the group filters of :meth:`LogSet.groups`, or ``None`` when none."""
+    filters = _level_filters(level, min_level)
+    if logger is not None:
+        filters.append(_logger_filter(logger))
+    if since is not None:
+        filters.append(pl.col("last_seen") >= _utc(since))
+    if until is not None:
+        filters.append(pl.col("first_seen") < _utc(until))
+    return _and(filters)
+
+
+def _bucket_ms(bucket: str) -> int:
+    """``"15m"``, ``"1h"``, ``"1d"`` … as milliseconds; ``ValueError`` when malformed."""
+    m = _BUCKET_RE.match(bucket)
+    if m is None or int(m.group(1)) <= 0:
+        raise ValueError(f"invalid bucket {bucket!r}; expected e.g. '5m', '1h', '1d'")
+    return int(m.group(1)) * _BUCKET_UNITS_MS[m.group(2)]
+
+
+def _bucket_iso(start_ms: int) -> str:
+    return datetime.fromtimestamp(start_ms / 1000, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
 def _sql_path(path: Path) -> str:
     return path.resolve().as_posix().replace("'", "''")
 
@@ -236,6 +324,25 @@ def _tz_columns(df: pl.DataFrame) -> list[str]:
         for name, dtype in df.schema.items()
         if isinstance(dtype, pl.Datetime) and dtype.time_zone is not None
     ]
+
+
+def _kv_columns(df: pl.DataFrame) -> list[str]:
+    """Map columns, which polars reads back as ``list[struct{key, value}]``."""
+    out = []
+    for name, dtype in df.schema.items():
+        inner = dtype.inner if isinstance(dtype, pl.List) else None
+        if isinstance(inner, pl.Struct) and [f.name for f in inner.fields] == ["key", "value"]:
+            out.append(name)
+    return out
+
+
+def _kv_to_dicts(out: list[dict[str, Any]], kv_cols: list[str]) -> list[dict[str, Any]]:
+    for row in out:
+        for c in kv_cols:
+            v = row[c]
+            if isinstance(v, list):
+                row[c] = {kv["key"]: kv["value"] for kv in v}
+    return out
 
 
 def rows(df: pl.DataFrame) -> list[dict[str, Any]]:
@@ -255,11 +362,14 @@ def rows(df: pl.DataFrame) -> list[dict[str, Any]]:
             v = row[c]
             if v is not None:
                 row[c] = v.replace(tzinfo=UTC)
-    return out
+    return _kv_to_dicts(out, _kv_columns(df))
 
 
 def to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
-    """JSON-serialisable rows: datetimes become ISO 8601 strings (UTC, ms), maps dicts."""
+    """JSON-serialisable rows: datetimes become ISO 8601 strings (UTC, ms), maps dicts.
+
+    Map columns (``context``) become dicts here and in :func:`rows`.
+    """
     exprs = []
     for name, dtype in df.schema.items():
         if isinstance(dtype, pl.Datetime):
@@ -271,7 +381,7 @@ def to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
             exprs.append(pl.col(name).dt.strftime("%Y-%m-%d").alias(name))
     if exprs:
         df = df.with_columns(exprs)
-    return df.to_dicts()
+    return _kv_to_dicts(df.to_dicts(), _kv_columns(df))
 
 
 class LogSet:
@@ -330,26 +440,30 @@ class LogSet:
     def groups(
         self,
         *,
-        level: str | None = None,
-        min_level: str | None = None,
+        level: LevelSpec | None = None,
+        min_level: LevelSpec | None = None,
         logger: str | None = None,
         since: datetime | None = None,
         until: datetime | None = None,
         sort: str = "count",
         limit: int | None = None,
+        offset: int = 0,
         coarse: bool = False,
     ) -> pl.DataFrame:
         """Return filtered, sorted groups; ``coarse=True`` aggregates by ``coarse_signature``.
 
         Args:
-            level: Level name or comma-separated names (``"ERROR"``, ``"WARN,ERROR"``).
-            min_level: Lowest level to include (``"WARN"`` → WARN, ERROR, FATAL).
+            level: Level, level name, comma-separated names (``"WARN,ERROR"``) or an
+                iterable of levels/names.
+            min_level: Lowest level to include (``"WARN"`` or ``LogLevel.WARN`` → WARN,
+                ERROR, FATAL).
             logger: Logger name; also matches loggers below it (``com.foo`` → ``com.foo.Bar``).
             since: Keep groups seen at or after this time (``last_seen >= since``).
             until: Keep groups seen before this time (``first_seen < until``).
             sort: One of ``count`` (desc), ``last_seen`` (desc), ``first_seen`` (asc),
                 ``signature``, ``template``.
             limit: Maximum number of rows.
+            offset: Number of rows to skip (after sorting).
             coarse: Aggregate by ``coarse_signature``. The result keeps the groups.v1
                 columns (``signature`` then equals ``coarse_signature``) and adds
                 ``signatures`` (member signatures). ``count``/``first_seen``/``last_seen``/
@@ -365,14 +479,9 @@ class LogSet:
         if sort not in GROUP_SORTS:
             raise ValueError(f"unknown sort {sort!r}; expected one of {', '.join(GROUP_SORTS)}")
         lf = self.groups_lazy()
-        filters = _level_filters(level, min_level)
-        if logger is not None:
-            filters.append(_logger_filter(logger))
-        if since is not None:
-            filters.append(pl.col("last_seen") >= _utc(since))
-        if until is not None:
-            filters.append(pl.col("first_seen") < _utc(until))
-        cond = _and(filters)
+        cond = _group_predicate(
+            level=level, min_level=min_level, logger=logger, since=since, until=until
+        )
         if cond is not None:
             lf = lf.filter(cond)
         if coarse:
@@ -386,16 +495,57 @@ class LogSet:
                 lf = lf.sort(["first_seen", "signature"], nulls_last=True)
             case _:
                 lf = lf.sort([sort, "signature"])
-        if limit is not None:
-            lf = lf.head(limit)
+        if offset or limit is not None:
+            lf = lf.slice(offset, limit)
         return lf.collect()
+
+    def count_groups(
+        self,
+        *,
+        level: LevelSpec | None = None,
+        min_level: LevelSpec | None = None,
+        logger: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        coarse: bool = False,
+    ) -> int:
+        """Count the groups :meth:`groups` would return with the same filters (no limit).
+
+        With ``coarse=True`` this counts distinct ``coarse_signature`` values among
+        the matching groups.
+
+        Raises:
+            ValueError: Unknown level name.
+
+        """
+        lf = self.groups_lazy()
+        cond = _group_predicate(
+            level=level, min_level=min_level, logger=logger, since=since, until=until
+        )
+        if cond is not None:
+            lf = lf.filter(cond)
+        agg = pl.col("coarse_signature").n_unique() if coarse else pl.len()
+        return int(lf.select(agg).collect().item())
+
+    def group(self, signature: str, *, coarse: bool = False) -> dict[str, Any] | None:
+        """One group as a JSON-ready dict (see :func:`to_records`), or ``None`` when absent.
+
+        With ``coarse=True``, ``signature`` is a coarse signature and the row is the
+        aggregate described in :meth:`groups` (it has an extra ``signatures`` list).
+        """
+        if coarse:
+            lf = _coarse_groups(self.groups_lazy().filter(pl.col("coarse_signature") == signature))
+        else:
+            lf = self.groups_lazy().filter(pl.col("signature") == signature)
+        df = lf.head(1).collect()
+        return to_records(df)[0] if df.height else None
 
     def entries(
         self,
         *,
         signature: str | None = None,
-        level: str | None = None,
-        min_level: str | None = None,
+        level: LevelSpec | None = None,
+        min_level: LevelSpec | None = None,
         logger: str | None = None,
         user: str | None = None,
         thread: str | None = None,
@@ -403,6 +553,7 @@ class LogSet:
         until: datetime | None = None,
         contains: str | None = None,
         limit: int | None = None,
+        offset: int = 0,
         columns: list[str] | None = None,
         coarse_signature: str | None = None,
     ) -> pl.DataFrame:
@@ -410,7 +561,7 @@ class LogSet:
 
         Args:
             signature: Primary signature (exact).
-            level: Level name or comma-separated names.
+            level: Level, level name, comma-separated names or an iterable (see :meth:`groups`).
             min_level: Lowest level to include.
             logger: Logger name or package prefix (see :meth:`groups`).
             user: User (exact).
@@ -418,7 +569,8 @@ class LogSet:
             since: Inclusive lower bound on ``ts`` (naive = UTC).
             until: Exclusive upper bound on ``ts`` (naive = UTC).
             contains: Case-insensitive literal substring of ``raw``.
-            limit: Maximum number of rows (the earliest ones).
+            limit: Maximum number of rows.
+            offset: Number of rows to skip (in timestamp order) before ``limit`` applies.
             columns: Columns to return (default: all entries.v1 columns).
             coarse_signature: Coarse signature (exact).
 
@@ -426,35 +578,121 @@ class LogSet:
             ValueError: Unknown level name.
 
         """
-        filters = _level_filters(level, min_level)
-        if signature is not None:
-            filters.append(pl.col("signature") == signature)
-        if coarse_signature is not None:
-            filters.append(pl.col("coarse_signature") == coarse_signature)
-        if logger is not None:
-            filters.append(_logger_filter(logger))
-        if user is not None:
-            filters.append(pl.col("user") == user)
-        if thread is not None:
-            filters.append(pl.col("thread") == thread)
-        if since is not None:
-            filters.append(pl.col("ts") >= _utc(since))
-        if until is not None:
-            filters.append(pl.col("ts") < _utc(until))
-        if contains is not None:
-            filters.append(
-                pl.col("raw").str.to_lowercase().str.contains(contains.lower(), literal=True)
-            )
+        cond = _entry_predicate(
+            signature=signature,
+            coarse_signature=coarse_signature,
+            level=level,
+            min_level=min_level,
+            logger=logger,
+            user=user,
+            thread=thread,
+            since=since,
+            until=until,
+            contains=contains,
+        )
         lf = self.entries_lazy()
-        cond = _and(filters)
         if cond is not None:
             lf = lf.filter(cond)
         lf = lf.sort("ts", maintain_order=True)
-        if limit is not None:
-            lf = lf.head(limit)
+        if offset or limit is not None:
+            lf = lf.slice(offset, limit)
         if columns is not None:
             lf = lf.select(columns)
         return lf.collect()
+
+    def count_entries(
+        self,
+        *,
+        signature: str | None = None,
+        level: LevelSpec | None = None,
+        min_level: LevelSpec | None = None,
+        logger: str | None = None,
+        user: str | None = None,
+        thread: str | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+        contains: str | None = None,
+        coarse_signature: str | None = None,
+    ) -> int:
+        """Count the entries :meth:`entries` would return with the same filters (no limit).
+
+        Raises:
+            ValueError: Unknown level name.
+
+        """
+        cond = _entry_predicate(
+            signature=signature,
+            coarse_signature=coarse_signature,
+            level=level,
+            min_level=min_level,
+            logger=logger,
+            user=user,
+            thread=thread,
+            since=since,
+            until=until,
+            contains=contains,
+        )
+        lf = self.entries_lazy()
+        if cond is not None:
+            lf = lf.filter(cond)
+        return int(lf.select(pl.len()).collect().item())
+
+    def histogram(
+        self,
+        bucket: str = "1h",
+        *,
+        signature: str | None = None,
+        level: LevelSpec | None = None,
+        min_level: LevelSpec | None = None,
+        since: datetime | None = None,
+        until: datetime | None = None,
+    ) -> list[dict[str, Any]]:
+        """Entry counts per time bucket, contiguous from the first to the last non-empty one.
+
+        Buckets are aligned to the Unix epoch in UTC (``"1d"`` starts at midnight UTC)
+        and computed on integer epoch milliseconds, so no time-zone database is needed.
+        Entries without a timestamp are not counted.
+
+        Args:
+            bucket: ``<n><unit>`` with unit ``s``, ``m``, ``h`` or ``d`` (``"5m"``, ``"1h"``).
+            signature: Primary signature (exact).
+            level: Level filter (see :meth:`entries`).
+            min_level: Lowest level to include.
+            since: Inclusive lower bound on ``ts``.
+            until: Exclusive upper bound on ``ts``.
+
+        Returns:
+            ``[{"bucket": "2026-10-29T13:00:00Z", "count": int}, ...]`` (empty buckets
+            have count 0).
+
+        Raises:
+            ValueError: Malformed bucket, unknown level, or more than
+                :data:`MAX_HISTOGRAM_BUCKETS` buckets.
+
+        """
+        size = _bucket_ms(bucket)
+        cond = _entry_predicate(
+            signature=signature, level=level, min_level=min_level, since=since, until=until
+        )
+        lf = self.entries_lazy().filter(pl.col("ts").is_not_null())
+        if cond is not None:
+            lf = lf.filter(cond)
+        df = (
+            lf.select((pl.col("ts").dt.epoch("ms") // size).alias("b"))
+            .group_by("b")
+            .agg(pl.len().alias("count"))
+            .collect()
+        )
+        if df.height == 0:
+            return []
+        counts = {int(b): int(n) for b, n in df.iter_rows()}
+        first, last = min(counts), max(counts)
+        if last - first + 1 > MAX_HISTOGRAM_BUCKETS:
+            raise ValueError(f"bucket {bucket!r} gives too many buckets; use a larger one")
+        return [
+            {"bucket": _bucket_iso(b * size), "count": counts.get(b, 0)}
+            for b in range(first, last + 1)
+        ]
 
     def entry(self, entry_id: str) -> dict[str, Any] | None:
         """One entry as a dict (all columns), or ``None``.
@@ -463,13 +701,7 @@ class LogSet:
         ``exception_chain`` a list of dicts.
         """
         df = self.entries_lazy().filter(pl.col("id") == entry_id).head(1).collect()
-        if df.height == 0:
-            return None
-        row = rows(df)[0]
-        ctx = row.get("context")
-        if isinstance(ctx, list):  # map read back as list of {key, value}
-            row["context"] = {kv["key"]: kv["value"] for kv in ctx}
-        return row
+        return rows(df)[0] if df.height else None
 
     def stats(self) -> dict[str, Any]:
         """Summarise the set: counts per level, logger (top 20) and hour; time range; sources.
@@ -482,27 +714,23 @@ class LogSet:
 
         """
         lf = self.entries_lazy()
-        totals = lf.select(
-            pl.len().alias("n"),
-            pl.col("parse_error").is_not_null().sum().alias("parse_errors"),
-            pl.col("ts").min().alias("first"),
-            pl.col("ts").max().alias("last"),
-        ).collect()
-        levels = (
-            lf.group_by("level", "level_name").agg(pl.len().alias("count")).sort("level").collect()
-        )
-        loggers = (
-            lf.group_by(pl.col("logger").cast(pl.String))
-            .agg(pl.len().alias("count"))
-            .sort(["count", "logger"], descending=[True, False])
-            .head(TOP_LOGGERS)
-            .collect()
-        )
-        hours = (
-            lf.group_by(pl.col("ts").dt.truncate("1h").alias("hour"))
-            .agg(pl.len().alias("count"))
-            .sort("hour")
-            .collect()
+        totals, levels, loggers, hours = pl.collect_all(
+            [
+                lf.select(
+                    pl.len().alias("n"),
+                    pl.col("parse_error").is_not_null().sum().alias("parse_errors"),
+                    pl.col("ts").min().alias("first"),
+                    pl.col("ts").max().alias("last"),
+                ),
+                lf.group_by("level", "level_name").agg(pl.len().alias("count")).sort("level"),
+                lf.group_by(pl.col("logger").cast(pl.String))
+                .agg(pl.len().alias("count"))
+                .sort(["count", "logger"], descending=[True, False])
+                .head(TOP_LOGGERS),
+                lf.group_by(pl.col("ts").dt.truncate("1h").alias("hour"))
+                .agg(pl.len().alias("count"))
+                .sort("hour"),
+            ]
         )
         t = rows(totals)[0]
         m = self.manifest
@@ -523,11 +751,21 @@ class LogSet:
             "sources": [s.to_dict() for s in m.sources],
         }
 
-    def sql(self, query: str) -> pl.DataFrame:
+    def sql(self, query: str, *, max_rows: int | None = None) -> pl.DataFrame:
         """Run DuckDB SQL with views ``entries`` and ``groups`` (and ``merges`` when present).
 
+        The connection is an in-memory database meant for reading: after the views
+        are created, file-system access is restricted to this set's Parquet files
+        (``enable_external_access=false``) and the configuration is locked, so a
+        query cannot read or write other files. Tables created by the query live
+        only for the duration of the call.
+
+        Args:
+            query: SQL text; the last statement's result is returned.
+            max_rows: Return at most this many rows (``None`` = all).
+
         Raises:
-            duckdb.Error: The query is invalid.
+            duckdb.Error: The query is invalid or tries to access other files.
 
         """
         con = duckdb.connect(":memory:")
@@ -539,7 +777,16 @@ class LogSet:
                 con.execute(
                     f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{_sql_path(path)}')"
                 )
-            result: pl.DataFrame = con.sql(query).pl()
+            allowed = ", ".join(f"'{_sql_path(p)}'" for p in views.values())
+            con.execute(f"SET allowed_paths = [{allowed}]")
+            con.execute("SET enable_external_access = false")
+            con.execute("SET lock_configuration = true")
+            rel = con.sql(query)
+            if rel is None:
+                return pl.DataFrame()
+            if max_rows is not None:
+                rel = rel.limit(max_rows)
+            result: pl.DataFrame = rel.pl()
             return result
         finally:
             con.close()

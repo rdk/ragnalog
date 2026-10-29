@@ -11,6 +11,7 @@ in ``table`` mode they go to stderr. Diagnostics always go to stderr.
 from __future__ import annotations
 
 import dataclasses
+import os
 import re
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
@@ -22,7 +23,9 @@ from typing import Any, Literal, TextIO
 import msgspec
 import polars as pl
 from rich.console import Console
+from rich.markup import escape
 from rich.table import Table
+from rich.text import Text
 
 from atlas_log_analyzer.core.models import LogEntry
 
@@ -35,11 +38,14 @@ __all__ = [
     "encode_json",
     "entry_to_dict",
     "error_from_exception",
+    "highlight_entry",
     "iso_timestamp",
     "jsonable_rows",
     "mapping_tables",
     "rows_table",
 ]
+
+type ColorMode = Literal["auto", "always", "never"]
 
 type OutputMode = Literal["table", "json", "jsonl"]
 
@@ -50,7 +56,35 @@ ISO_FORMAT = "%Y-%m-%dT%H:%M:%S%.f%:z"
 """chrono format for timezone-aware datetime columns (ISO 8601 with offset)."""
 
 _ISO_RE = re.compile(r"^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)?$")
-"""Table cells longer than this are truncated with an ellipsis."""
+
+DEFAULT_WIDTH = 160
+"""Table width when stdout is not a terminal and neither ``--width`` nor ``COLUMNS`` is set."""
+
+NO_WRAP_COLUMNS: Mapping[str, int] = {
+    "signature": 16,
+    "coarse_signature": 16,
+    "level_name": 5,
+    "level": 5,
+    "count": 5,
+    "count_a": 7,
+    "count_b": 7,
+    "ratio": 5,
+    "ts": 20,
+    "first_seen": 20,
+    "last_seen": 20,
+    "first_ts": 20,
+    "last_ts": 20,
+    "created_at": 20,
+    "entry_count": 11,
+    "group_count": 11,
+}
+"""Columns that are never wrapped, with their minimum width."""
+
+WIDE_COLUMNS = frozenset({"template", "logger", "message", "drain_template"})
+"""Columns that get a larger share of the free width (``ratio=2``)."""
+
+LEVEL_STYLES: Mapping[str, str] = {"FATAL": "bold red", "ERROR": "red", "WARN": "yellow"}
+"""Styles of ``level_name`` cells when stdout is a terminal."""
 
 
 class ExitCode(IntEnum):
@@ -68,11 +102,31 @@ class ExitCode(IntEnum):
 class CliError(Exception):
     """A failure reported to the user as an error envelope plus an exit code."""
 
-    def __init__(self, code: str, message: str, exit_code: ExitCode = ExitCode.USAGE) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        exit_code: ExitCode = ExitCode.USAGE,
+        *,
+        hint: str | None = None,
+        extra: Mapping[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.exit_code = exit_code
+        self.hint = hint
+        """Optional suggestion for the next step (``"hint"`` in ``error.v1``)."""
+        self.extra = dict(extra or {})
+        """Extra keys of the ``error`` object, e.g. ``{"store": path}``."""
+
+    def envelope(self) -> dict[str, Any]:
+        """Return the ``error.v1`` document."""
+        error: dict[str, Any] = {"code": self.code, "message": self.message}
+        if self.hint is not None:
+            error["hint"] = self.hint
+        error.update(self.extra)
+        return {"schema": "error.v1", "error": error}
 
 
 def error_from_exception(exc: BaseException) -> CliError | None:
@@ -262,8 +316,13 @@ def rows_table(
     *,
     title: str | None = None,
     max_len: int = MAX_CELL,
+    color: bool = False,
 ) -> Table:
-    """Build a rich table from rows; ``columns`` restricts and orders the columns shown."""
+    """Build a rich table from rows; ``columns`` restricts and orders the columns shown.
+
+    Numeric columns are right-aligned; ids, levels, counts and timestamps are
+    never wrapped. With ``color`` the ``level_name`` cells are coloured.
+    """
     if columns is None:
         seen: dict[str, None] = {}
         for row in rows[:100]:
@@ -271,9 +330,27 @@ def rows_table(
         columns = list(seen)
     table = Table(title=title, title_justify="left")
     for col in columns:
-        table.add_column(col, overflow="fold")
+        sample = next((row.get(col) for row in rows[:100] if row.get(col) is not None), None)
+        numeric = isinstance(sample, (int, float)) and not isinstance(sample, bool)
+        justify: Literal["left", "right"] = "right" if numeric else "left"
+        if col in NO_WRAP_COLUMNS:
+            table.add_column(col, no_wrap=True, min_width=NO_WRAP_COLUMNS[col], justify=justify)
+        else:
+            wide = col in WIDE_COLUMNS
+            table.add_column(
+                col,
+                overflow="fold",
+                ratio=2 if wide else 1,
+                min_width=8 if wide else 5,
+                justify=justify,
+            )
     for row in rows:
-        table.add_row(*(_cell(row.get(col), max_len) for col in columns))
+        cells = []
+        for col in columns:
+            text = escape(_cell(row.get(col), max_len))
+            style = LEVEL_STYLES.get(text) if color and col == "level_name" else None
+            cells.append(f"[{style}]{text}[/]" if style else text)
+        table.add_row(*cells)
     return table
 
 
@@ -316,6 +393,103 @@ def _present_columns(
     return chosen or None
 
 
+# --- raw entry highlighting
+
+_HEADER_RE = re.compile(
+    r"^(?P<ts>\d{4}-\d\d-\d\d[ T]\d\d:\d\d:\d\d(?:[,.]\d+)?(?:Z|[+-]\d\d:?\d\d)?)"
+    r"(?P<mid>.*?)\b(?P<level>TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\b"
+    r"(?P<ctx>[^\[]*)(?:\[(?P<logger>[^\]\s]+)\])?(?P<msg>.*)$"
+)
+_EXC_RE = re.compile(
+    r"^(?P<indent>\s*)(?P<prefix>(?:Caused by|Suppressed): )?"
+    r"(?P<cls>(?:[A-Za-z_$][\w$]*\.)+[A-Z][\w$]*)(?P<rest>(?::\s.*|:)?)$"
+)
+_FRAME_RE = re.compile(
+    r"^(?P<indent>\s*)at (?P<module>[\w$.@-]+/)?(?P<pkg>(?:[\w$]+\.)*?)"
+    r"(?P<meth>[\w$]+\.[\w$<>]+)(?P<loc>\(.*\))\s*$"
+)
+_MORE_RE = re.compile(r"^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$")
+
+LIBRARY_PACKAGES = (
+    "java.",
+    "javax.",
+    "jdk.",
+    "sun.",
+    "com.sun.",
+    "kotlin.",
+    "scala.",
+    "groovy.",
+    "org.codehaus.groovy.",
+    "org.springframework.",
+    "org.apache.",
+    "org.eclipse.",
+)
+"""Frames in these packages are rendered normally; other (application) frames in bold."""
+
+HEADER_LEVEL_STYLES: Mapping[str, str] = {
+    "FATAL": "bold red",
+    "ERROR": "bold red",
+    "WARN": "yellow",
+    "WARNING": "yellow",
+    "DEBUG": "dim",
+    "TRACE": "dim",
+}
+
+
+def highlight_entry(raw: str) -> Text:
+    """Return the raw text of one log entry as a styled :class:`rich.text.Text`.
+
+    Header line: timestamp dim, level coloured (ERROR/FATAL bold red, WARN
+    yellow, DEBUG/TRACE dim), logger cyan. Exception lines: class name bold,
+    ``Caused by:``/``Suppressed:`` magenta. Stack frames: package dim,
+    ``(File.java:12)`` cyan, application frames (outside :data:`LIBRARY_PACKAGES`)
+    bold. ``... N more`` dim italic. Unrecognised lines are unstyled.
+    """
+    text = Text()
+    for i, line in enumerate(raw.replace("\r", "").split("\n")):
+        if i:
+            text.append("\n")
+        if i == 0 and (m := _HEADER_RE.match(line)):
+            text.append(m["ts"], "dim")
+            text.append(m["mid"])
+            text.append(m["level"], HEADER_LEVEL_STYLES.get(m["level"], ""))
+            text.append(m["ctx"])
+            if m["logger"] is not None:
+                text.append("[")
+                text.append(m["logger"], "cyan")
+                text.append("]")
+            text.append(m["msg"])
+        elif m := _FRAME_RE.match(line):
+            name = m["pkg"] + m["meth"]
+            app_frame = not name.startswith(LIBRARY_PACKAGES)
+            text.append(m["indent"] + "at ", "dim")
+            if m["module"]:
+                text.append(m["module"], "dim")
+            text.append(m["pkg"], "dim")
+            text.append(m["meth"], "bold" if app_frame else "")
+            text.append(m["loc"], "cyan")
+        elif _MORE_RE.match(line):
+            text.append(line, "dim italic")
+        elif m := _EXC_RE.match(line):
+            text.append(m["indent"])
+            if m["prefix"]:
+                text.append(m["prefix"], "magenta")
+            text.append(m["cls"], "bold")
+            text.append(m["rest"])
+        else:
+            text.append(line)
+    return text
+
+
+def resolve_color(mode: ColorMode, tty: bool) -> bool:
+    """Whether to colour output: ``always``/``never``, or ``auto`` = a tty and no ``NO_COLOR``."""
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+    return tty and not os.environ.get("NO_COLOR")
+
+
 # --- Output
 
 
@@ -329,6 +503,10 @@ class Output:
 
     mode: OutputMode = "json"
     quiet: bool = False
+    width: int | None = None
+    color_mode: ColorMode = "auto"
+    """``--color``: ``auto`` colours a terminal unless ``NO_COLOR`` is set."""
+    """Table width (``--width``); default: the terminal, else ``COLUMNS``, else 160."""
     stdout: TextIO | None = None
     stderr: TextIO | None = None
 
@@ -349,17 +527,49 @@ class Output:
         except AttributeError, ValueError:
             return False
 
+    @property
+    def color(self) -> bool:
+        """Whether table/raw output is coloured (see :func:`resolve_color`)."""
+        return resolve_color(self.color_mode, self.is_tty())
+
     def console(self) -> Console:
-        """Return a rich console on stdout; plain text (no ANSI) unless stdout is a terminal."""
-        tty = self.is_tty()
+        """Return a rich console on stdout; plain text (no ANSI) unless colour is enabled."""
+        color = self.color
         return Console(
             file=self.out,
-            force_terminal=tty,
-            no_color=not tty,
+            force_terminal=color,
+            no_color=not color,
             highlight=False,
             soft_wrap=False,
-            width=None if tty else 160,
+            width=self.table_width(),
         )
+
+    def table_width(self) -> int | None:
+        """Explicit ``--width``, else ``None`` on a terminal, else ``COLUMNS`` or 160."""
+        if self.width is not None:
+            return self.width
+        if self.is_tty():
+            return None
+        try:
+            columns = int(os.environ.get("COLUMNS", ""))
+        except ValueError:
+            columns = 0
+        return columns if columns > 0 else DEFAULT_WIDTH
+
+    def raw_entries(self, entries: Iterable[tuple[str, str | None]]) -> None:
+        """Print raw entry texts; coloured, with a ``source:line`` rule, when colour is on.
+
+        Args:
+            entries: ``(raw, label)`` pairs; ``label`` (e.g. ``"app.log:12"``) titles the rule.
+
+        """
+        if not self.color:
+            self.out.write("\n\n".join(raw for raw, _ in entries) + "\n")
+            return
+        console = self.console()
+        for raw, label in entries:
+            console.rule(Text(label or "", style="dim"), style="dim", align="left")
+            console.print(highlight_entry(raw), soft_wrap=True)
 
     def write_line(self, text: str) -> None:
         """Write one line to stdout."""
@@ -418,7 +628,14 @@ class Output:
             return
         if items is not None and items in doc:
             rows_list = list(doc[items])
-            console.print(rows_table(rows_list, _present_columns(rows_list, columns), title=title))
+            console.print(
+                rows_table(
+                    rows_list,
+                    _present_columns(rows_list, columns),
+                    title=title,
+                    color=self.color,
+                )
+            )
             meta = {k: v for k, v in doc.items() if k != items and _is_scalar(v)}
             if meta:
                 self.info("  ".join(f"{k}={_cell(v)}" for k, v in meta.items()))
@@ -429,10 +646,11 @@ class Output:
     def error(self, err: CliError) -> int:
         """Report ``err`` (stdout envelope in json/jsonl mode, stderr in table mode)."""
         if self.mode in ("json", "jsonl"):
-            envelope = {"schema": "error.v1", "error": {"code": err.code, "message": err.message}}
-            self.write_line(encode_json(envelope))
+            self.write_line(encode_json(err.envelope()))
             self.out.flush()
         else:
             self.err.write(f"error: {err.message} [{err.code}]\n")
+            if err.hint is not None:
+                self.err.write(f"hint: {err.hint}\n")
             self.err.flush()
         return int(err.exit_code)

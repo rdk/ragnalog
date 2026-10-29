@@ -30,7 +30,7 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies
-        run: uv sync --all-extras --dev
+        run: uv sync --locked --all-extras --dev
 
       - name: Lint
         run: uv run ruff check .
@@ -41,5 +41,27 @@ jobs:
       - name: Type check
         run: uv run mypy
 
+      - name: Report script syntax
+        run: node --check src/atlas_log_analyzer/report/assets/report.js
+
       - name: Tests
         run: uv run pytest
+
+      - name: Slow tests
+        if: runner.os == 'Linux'
+        run: uv run pytest -m slow
+
+      - name: Wheel smoke test
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          uv build --wheel --out-dir "$RUNNER_TEMP/dist"
+          uv venv "$RUNNER_TEMP/smoke"
+          VIRTUAL_ENV="$RUNNER_TEMP/smoke" uv pip install "$RUNNER_TEMP"/dist/*.whl
+          BIN="$RUNNER_TEMP/smoke/bin"
+          "$BIN/atlas-log" --version
+          cd "$RUNNER_TEMP"
+          "$BIN/atlas-log" --store "$RUNNER_TEMP/store" --quiet ingest \
+            "$GITHUB_WORKSPACE/tests/cli/data/mini.log" --name mini > /dev/null
+          "$BIN/atlas-log" --store "$RUNNER_TEMP/store" --output json groups mini \
+            | python3 -c 'import json, sys; d = json.load(sys.stdin); assert d["schema"] == "groups.v1" and d["count"] > 0, d'
