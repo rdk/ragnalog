@@ -61,6 +61,7 @@ from atlas_log_analyzer.store.views import (
     cap_texts,
     diff_warning,
     frames_view,
+    resolve_signature,
     set_item,
     set_summary,
 )
@@ -760,6 +761,9 @@ def show(
                   template, variables, source_path, source_line, raw, ...>}, ...]}
     "variables" lists the values that masking replaced in the template, in
     order (issue keys, numbers, ids ...). Entries are ordered by time.
+    SIGNATURE may be a unique prefix of at least 4 hex characters (resolved
+    via the groups table; "signature" echoes the full one); a prefix that
+    matches several groups is error "ambiguous" listing up to 5 "candidates".
     "raw" and "body" are cut to --max-raw characters (default 4000 in json/jsonl,
     no limit in table and --raw mode); a cut text ends with
     "… [truncated: N chars total, use --max-raw 0]" and its row gets
@@ -774,12 +778,13 @@ def show(
     to signature,template,level_name,logger,exception_type,count,first_seen,
     last_seen; --brief with --columns is a usage error.
 
-    Exit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;
-    2 no entries with this signature; 3 unknown set or store error.
+    Exit codes: 0 ok; 1 bad option, unknown column, --brief with --columns, or
+    ambiguous signature prefix; 2 no entries with this signature; 3 unknown set
+    or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
-        signature: Group signature (from `groups`).
+        signature: Group signature (from `groups`) or a unique prefix of it (4+ hex chars).
         limit: Maximum number of entries; 0 = all.
         raw: Print the raw log text of the entries (highlighted when colour is on).
         max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
@@ -793,6 +798,7 @@ def show(
     cap = _max_raw(max_raw, text=raw)
     columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = _open(logset)
+    signature = resolve_signature(ls, signature)
     df = ls.entries(signature=signature, limit=lim, columns=None if raw else columns)
     if df.height == 0:
         raise CliError(
@@ -895,11 +901,12 @@ def entries(
     when raw is not among --columns); both keys appear only on cut rows.
 
     Exit codes: 0 ok (also when nothing matches); 1 bad option, unknown
-    column, or --brief with --columns; 3 unknown set or store error.
+    column, --brief with --columns, or ambiguous --signature prefix; 3
+    unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
-        signature: Only entries of this group signature.
+        signature: Only entries of this group signature (or unique prefix, 4+ hex chars).
         level: Only these levels, e.g. ERROR or WARN,ERROR.
         min_level: Only this level or more severe.
         logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
@@ -928,7 +935,7 @@ def entries(
     ls = _open(logset)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
-        "signature": signature,
+        "signature": resolve_signature(ls, signature) if signature else signature,
         "level": lvl,
         "min_level": min_lvl,
         "logger": logger,
@@ -1074,7 +1081,8 @@ def frames(
     """Show the exception chain of one entry with its application frames first.
 
     REF is an entry id or a group signature (16 hex chars; entry ids are tried
-    first). For a signature the group's first example entry is used. Each
+    first), or a unique signature prefix of at least 4 hex characters. For a
+    signature the group's first example entry is used. Each
     exception of the chain (outermost first, then each "Caused by:") lists its
     first --limit application frames: frames whose class is outside the
     library packages (JDK, Groovy, Jira platform: com.atlassian., org.ofbiz.,
@@ -1101,12 +1109,13 @@ def frames(
     "app_packages" echoes ATLAS_LOG_APP_PACKAGES. In jsonl mode one exception
     per line; the table prints each exception and its frames as text.
 
-    Exit codes: 0 ok (also when the entry has no exception); 1 bad option; 2 no
+    Exit codes: 0 ok (also when the entry has no exception); 1 bad option or
+    ambiguous signature prefix (error "ambiguous" with "candidates"); 2 no
     entry or group REF; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
-        ref: Entry id, or group signature (its first example entry is used).
+        ref: Entry id, or group signature or unique prefix (its first example entry is used).
         limit: Application frames per exception; 0 = all.
         all_: Return every frame (with an "app" flag) and all application frames.
 

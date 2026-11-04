@@ -9,6 +9,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.responses import Response
 
 from atlas_log_analyzer.store.store import AmbiguousLogSet, StoreError
+from atlas_log_analyzer.store.views import AmbiguousSignature
 from atlas_log_analyzer.webapp.responses import JSON
 
 __all__ = ["ApiError", "error_doc", "install_handlers"]
@@ -17,25 +18,42 @@ __all__ = ["ApiError", "error_doc", "install_handlers"]
 class ApiError(Exception):
     """An error with an ``error.v1`` code, an HTTP status and an optional next-step hint."""
 
-    def __init__(self, code: str, message: str, status: int = 400, hint: str | None = None) -> None:
-        """Create the error."""
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        status: int = 400,
+        hint: str | None = None,
+        extra: dict[str, Any] | None = None,
+    ) -> None:
+        """Create the error; ``extra`` adds keys to the ``error`` object (e.g. candidates)."""
         super().__init__(message)
         self.code = code
         self.message = message
         self.status = status
         self.hint = hint
+        self.extra = dict(extra or {})
 
 
-def error_doc(code: str, message: str, hint: str | None = None) -> dict[str, Any]:
+def error_doc(
+    code: str, message: str, hint: str | None = None, extra: dict[str, Any] | None = None
+) -> dict[str, Any]:
     """Build the ``error.v1`` document."""
     error: dict[str, Any] = {"code": code, "message": message}
     if hint:
         error["hint"] = hint
+    error.update(extra or {})
     return {"schema": "error.v1", "error": error}
 
 
-def _respond(status: int, code: str, message: str, hint: str | None = None) -> Response:
-    return JSON(error_doc(code, message, hint), status_code=status)
+def _respond(
+    status: int,
+    code: str,
+    message: str,
+    hint: str | None = None,
+    extra: dict[str, Any] | None = None,
+) -> Response:
+    return JSON(error_doc(code, message, hint, extra), status_code=status)
 
 
 def install_handlers(app: FastAPI) -> None:
@@ -46,7 +64,12 @@ def install_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(ApiError)
     async def _api(_: Request, exc: ApiError) -> Response:
-        return _respond(exc.status, exc.code, exc.message, exc.hint)
+        return _respond(exc.status, exc.code, exc.message, exc.hint, exc.extra)
+
+    @app.exception_handler(AmbiguousSignature)
+    async def _ambiguous_signature(_: Request, exc: AmbiguousSignature) -> Response:
+        hint = "pass more characters of the signature, or the full one"
+        return _respond(409, "ambiguous", str(exc), hint, {"candidates": exc.candidates})
 
     @app.exception_handler(AmbiguousLogSet)
     async def _ambiguous(_: Request, exc: AmbiguousLogSet) -> Response:

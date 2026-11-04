@@ -72,7 +72,7 @@ name in `level_name`; `parse` emits the name in `level`.
 | Code | Meaning |
 |---|---|
 | 0 | OK (an empty listing is OK). |
-| 1 | Usage error: bad option/argument, unknown format, invalid level, SQL error, incompatible sets in `diff` without `--force`, missing optional dependency. |
+| 1 | Usage error: bad option/argument, unknown format, invalid level, SQL error, incompatible sets in `diff` without `--force`, ambiguous signature prefix, missing optional dependency. |
 | 2 | Nothing found / parse failure: no input files, format not detected, no entries parsed, no entries for a signature, file not found. |
 | 3 | Store error: unknown log set, ambiguous reference, corrupt manifest, unsupported schema version, default store refused inside a git work tree. |
 
@@ -92,7 +92,8 @@ such as `"store"`. An argument a command does not take is reported as, e.g.,
 `error: <message> [<code>]` followed by `hint: …`. Error codes:
 `usage`, `invalid_value`, `invalid_level`, `unknown_format`, `sql_error`,
 `missing_dependency`, `file_not_found`, `no_sources`, `format_not_detected`,
-`no_entries`, `not_found`, `store_error`, `internal_error` (unexpected
+`no_entries`, `not_found`, `ambiguous` (signature prefix; the error has
+`"candidates"`), `store_error`, `internal_error` (unexpected
 exception; set `ATLAS_LOG_DEBUG=1` for the traceback).
 
 When the reader of stdout goes away early (`| head`), the command stops
@@ -104,6 +105,17 @@ Diagnostics and progress always go to stderr.
 
 Wherever a command takes `SET`, it accepts the log-set id, its `--name`, or a
 unique id prefix (resolved in that order).
+
+### Signature prefixes
+
+`show SET SIGNATURE`, `frames SET REF` and `entries --signature` (and the API's
+`/groups/{sig}`, `/frames/{item}` and `entries?signature=`) accept a group
+signature or a unique prefix of it of at least 4 hex characters, resolved via
+the set's groups table; documents echo the full signature. A prefix that
+matches several groups is error `ambiguous` (exit 1; HTTP 409) with up to 5
+sorted `"candidates"`; one that matches nothing is "not found" as for any
+unknown signature. Prefixes shorter than 4 characters are not looked up.
+`frames` tries entry ids (full ids only) before signatures.
 
 ### Filters
 
@@ -196,7 +208,8 @@ Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with `--columns`; 
 ### `show SET SIGNATURE [--limit 20] [--raw] [--max-raw N] [--columns C[,C…]]... [--brief]`
 
 Entries of one group, ordered by time, with `variables` (the values masking
-replaced, in order). `--raw` prints the original log text of each entry,
+replaced, in order). `SIGNATURE` may be a unique prefix (see
+[Signature prefixes](#signature-prefixes)). `--raw` prints the original log text of each entry,
 separated by blank lines, in any output mode (highlighted, with `file:line`
 rules, when colour is on). The table starts with a three-line group header:
 template; logger, level and exception; count, first and last seen.
@@ -276,8 +289,9 @@ with this id (`not_found`, with a hint); 3.
 
 The exception chain of one entry with its application frames (see
 [Application frames](#application-frames)). `REF` is an entry id or a group
-signature (16 hex chars); entry ids are tried first, and for a signature the
-group's first example entry is used.
+signature (16 hex chars) or a unique signature prefix (see
+[Signature prefixes](#signature-prefixes)); entry ids are tried first, and
+for a signature the group's first example entry is used.
 
 ```json
 {"schema": "frames.v1", "logset": "…", "entry": "<entry id>", "signature": "…",

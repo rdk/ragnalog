@@ -35,6 +35,7 @@ from atlas_log_analyzer.store.views import (
     cap_texts,
     diff_warning,
     frames_view,
+    resolve_signature,
     select_columns,
     set_item,
 )
@@ -296,6 +297,9 @@ def group(
 ) -> dict[str, Any]:
     """One group with its hourly histogram and first entries (``group.v1``).
 
+    ``signature`` may be a unique prefix of at least 4 hex characters (``ambiguous``,
+    409, lists candidates when several groups match).
+
     ``raw`` and ``body`` of the entries are cut to ``max_raw`` characters (0 = all),
     marked as in ``entries``. ``columns`` or ``brief`` select the entry columns as
     ``atlas-log show --columns/--brief``; ``brief`` also cuts ``group`` to the
@@ -303,6 +307,7 @@ def group(
     """
     cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = state.open(ref)
+    signature = resolve_signature(ls, signature, coarse=coarse)
     row = ls.group(signature, coarse=coarse)
     if row is None:
         raise ApiError(
@@ -378,7 +383,8 @@ def entries(
     """Entries of a set (``entries.v1``), paged with ``offset``/``next_offset``.
 
     Filters as ``atlas-log entries`` (``request_id`` exact, ``with_exception`` /
-    ``exception`` on ``exception_type``). ``raw`` and ``body`` are cut to
+    ``exception`` on ``exception_type``; ``signature`` may be a unique prefix of at
+    least 4 hex characters). ``raw`` and ``body`` are cut to
     ``max_raw`` characters (default 4000, 0 = all); a cut row gets
     ``body_truncated`` and ``raw_chars``.
     """
@@ -386,7 +392,7 @@ def entries(
     ls = state.open(ref)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
-        "signature": signature,
+        "signature": resolve_signature(ls, signature) if signature else signature,
         "coarse_signature": coarse_signature,
         "level": _levels(level, "level"),
         "min_level": _levels(min_level, "min_level"),
@@ -470,10 +476,10 @@ def frames(
 ) -> dict[str, Any]:
     """Return an entry's or group's exception chain, application frames first (``frames.v1``).
 
-    ``item`` is an entry id or a group signature (its first example entry), as
-    ``atlas-log frames``; ``limit`` application frames per exception (0 = all),
-    ``all`` adds every frame with an ``app`` flag. ``ATLAS_LOG_APP_PACKAGES`` of the
-    server process defines application code when set.
+    ``item`` is an entry id or a group signature or unique signature prefix (its
+    first example entry), as ``atlas-log frames``; ``limit`` application frames per
+    exception (0 = all), ``all`` adds every frame with an ``app`` flag.
+    ``ATLAS_LOG_APP_PACKAGES`` of the server process defines application code when set.
     """
     ls = state.open(ref)
     doc = frames_view(

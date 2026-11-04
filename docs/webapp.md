@@ -50,7 +50,7 @@ from `/api/sets/{id}/groups/{sig}/examples`.
 
 All responses carry `"schema": "<name>.v1"`; listings put rows under `"items"`.
 Errors are `{"schema": "error.v1", "error": {"code", "message", "hint"?}}` with
-the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
+the CLI's codes (an ambiguous signature prefix adds `"candidates"`). Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 401 `unauthorized`, 404 `not_found`, 409 `ambiguous`/`incompatible_sets`,
 413 `payload_too_large`, 500 `store_error`.
 
@@ -77,6 +77,10 @@ the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |
+
+`{sig}` in `/groups/{sig}`, `{id-or-sig}` in `/frames/…` and `entries?signature=`
+accept a unique signature prefix of at least 4 hex characters (409 `ambiguous`
+with up to 5 `candidates` when several groups match), as in the CLI.
 
 `since` and `until` accept ISO 8601 (naive = UTC), `YYYY-MM-DD`, or `30m`/`2h`/`1d`
 before the set's last entry; blank means unset. `level` and `min_level` take

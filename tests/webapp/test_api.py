@@ -424,3 +424,31 @@ def test_group_and_context_columns_and_brief(client: TestClient, store_dir: Path
     assert bad["error"]["code"] == "invalid_value"
     both = _json(client, f"/api/sets/mini/groups/{sig}?brief=true&columns=ts", 400)
     assert both["error"]["code"] == "usage"
+
+
+def test_signature_prefixes(store_dir: Path, tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from atlas_log_analyzer.store.store import Store
+    from tests.cli.synth import write_log
+    from tests.cli.test_diff_rate import wide
+
+    ingest_paths(Store(store_dir), [write_log(tmp_path / "c" / "a.log", wide(1500))], name="many")
+    with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))) as client:
+        sig = _json(client, "/api/sets/mini/groups?exception=DataAccess")["items"][0]["signature"]
+        group = _json(client, f"/api/sets/mini/groups/{sig[:6]}")
+        assert group["group"]["signature"] == sig
+        assert _json(client, f"/api/sets/mini/frames/{sig[:5]}")["signature"] == sig
+        assert _json(client, f"/api/sets/mini/entries?signature={sig[:4]}")["total"] == 1
+        pairs = _json(client, "/api/sets/many/groups?limit=0&columns=signature")["items"]
+        heads = [s["signature"][:4] for s in pairs]
+        prefix = next(h for h in sorted(heads) if heads.count(h) > 1)
+        for url in (
+            f"/api/sets/many/groups/{prefix}",
+            f"/api/sets/many/frames/{prefix}",
+            f"/api/sets/many/entries?signature={prefix}",
+        ):
+            err = _json(client, url, 409)["error"]
+            assert err["code"] == "ambiguous" and 2 <= len(err["candidates"]) <= 5, url
+            assert all(c.startswith(prefix) for c in err["candidates"])
+    cli = _cli_json(store_dir, "show", "many", prefix)
+    assert cli["error"]["candidates"] == err["candidates"]

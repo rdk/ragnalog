@@ -148,9 +148,18 @@ def error_from_exception(exc: BaseException) -> CliError | None:
 
     from atlas_log_analyzer.core.formats.registry import UnknownFormatError
     from atlas_log_analyzer.store.store import StoreError
+    from atlas_log_analyzer.store.views import AmbiguousSignature
 
     if isinstance(exc, CliError):
         return exc
+    if isinstance(exc, AmbiguousSignature):
+        return CliError(
+            "ambiguous",
+            str(exc),
+            ExitCode.USAGE,
+            hint="pass more characters of the signature, or the full one",
+            extra={"candidates": exc.candidates},
+        )
     if isinstance(exc, StoreError):
         return CliError("store_error", str(exc), ExitCode.STORE)
     if isinstance(exc, UnknownFormatError):

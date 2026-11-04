@@ -28,10 +28,13 @@ __all__ = [
     "GROUP_BRIEF",
     "GROUP_FIELDS",
     "SET_BRIEF",
+    "SIGNATURE_PREFIX_MIN",
+    "AmbiguousSignature",
     "cap_text",
     "cap_texts",
     "diff_warning",
     "frames_view",
+    "resolve_signature",
     "select_columns",
     "set_item",
     "set_summary",
@@ -179,9 +182,66 @@ def cap_texts(
 _HEX16 = re.compile(r"^[0-9a-f]{16}$")
 _FRAME_HEAD = ["id", "ts", "level_name", "logger", "message", "signature", "exception_chain"]
 
+SIGNATURE_PREFIX_MIN = 4
+"""Shortest signature prefix that is resolved via the groups table."""
+MAX_CANDIDATES = 5
+"""Candidate signatures listed by :class:`AmbiguousSignature`."""
+_PREFIX = re.compile(rf"^[0-9a-f]{{{SIGNATURE_PREFIX_MIN},15}}$")
+
+
+class AmbiguousSignature(LookupError):
+    """A signature prefix matches more than one group."""
+
+    def __init__(self, prefix: str, logset: str, candidates: Sequence[str], total: int) -> None:
+        """Record the prefix, the set id and the first matching signatures (sorted)."""
+        self.prefix = prefix
+        self.logset = logset
+        self.candidates = list(candidates[:MAX_CANDIDATES])
+        self.total = total
+        more = f", … ({total} in all)" if total > len(self.candidates) else ""
+        super().__init__(
+            f"signature prefix {prefix!r} is ambiguous in log set {logset}: "
+            f"{', '.join(self.candidates)}{more}"
+        )
+
+
+def resolve_signature(ls: LogSet, ref: str, *, coarse: bool = False) -> str:
+    """Return the signature that ``ref`` stands for: itself, or the group of a unique prefix.
+
+    ``ref`` of 4 to 15 hex characters is looked up as a prefix of ``signature``
+    (``coarse_signature`` with ``coarse``) in the groups table; anything else,
+    including a full 16-character signature, is returned unchanged, as is a
+    prefix that matches nothing (callers report "not found" as for any unknown
+    signature).
+
+    Raises:
+        AmbiguousSignature: The prefix matches several groups.
+
+    """
+    if not _PREFIX.match(ref):
+        return ref
+    import polars as pl
+
+    column = "coarse_signature" if coarse else "signature"
+    found = (
+        ls.groups_lazy()
+        .select(pl.col(column))
+        .filter(pl.col(column).str.starts_with(ref))
+        .unique()
+        .sort(column)
+        .collect()[column]
+        .to_list()
+    )
+    if len(found) > 1:
+        raise AmbiguousSignature(ref, ls.manifest.id, found, len(found))
+    return str(found[0]) if found else ref
+
 
 def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
-    """Return the entry ``ref`` (an entry id), else the first example of the group ``ref``."""
+    """Return the entry ``ref`` (an entry id), else the first example of the group ``ref``.
+
+    A group may be given by a unique signature prefix (:func:`resolve_signature`).
+    """
     import polars as pl
 
     from atlas_log_analyzer.store.logset import to_records
@@ -192,8 +252,11 @@ def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
         return rows[0] if rows else None
 
     found = by_id(ref)
-    if found is not None or not _HEX16.match(ref):
+    if found is not None:
         return found
+    ref = resolve_signature(ls, ref)
+    if not _HEX16.match(ref):
+        return None
     group = ls.group(ref)
     if group is None:
         return None
@@ -218,8 +281,9 @@ def frames_view(
 ) -> dict[str, Any] | None:
     """Return the ``frames.v1`` document (without ``schema``) of an entry or group.
 
-    ``ref`` is an entry id or a group signature (entry ids are tried first; for a
-    signature the group's first example entry is used). Each exception of the chain
+    ``ref`` is an entry id or a group signature or unique signature prefix of at
+    least 4 hex characters (entry ids are tried first; for a signature the group's
+    first example entry is used). Each exception of the chain
     lists its first ``limit`` application frames (``None`` = all): frames outside
     :data:`~atlas_log_analyzer.core.java.LIBRARY_PACKAGES`, or inside
     ``app_packages`` when given. ``all_frames`` adds every frame with an ``app``

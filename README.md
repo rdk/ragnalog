@@ -153,7 +153,8 @@ views; a misspelt column gets the candidate columns in `error.hint`.
 
 Five common questions and the commands that answer them. `before`/`after` are
 set names given at `ingest --name`; `SIG` is a 16-hex group signature from
-`groups`, `ENTRY` an entry id from `entries`/`show`, `REQ` a Jira request id.
+`groups` (or a unique prefix of 4+ characters), `ENTRY` an entry id from
+`entries`/`show`, `REQ` a Jira request id.
 
 **1. What broke after the deploy?**
 
