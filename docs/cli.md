@@ -13,7 +13,7 @@ Global options may appear before or after the command name.
 | Option | Default | Meaning |
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
-| `--store DIR` | env `ATLAS_LOG_STORE`, else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
+| `--store DIR` | env `ATLAS_LOG_STORE` (ignored when blank), else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -91,6 +91,9 @@ carry context such as `"store"`. In `table` mode errors go to stderr as
 `missing_dependency`, `file_not_found`, `no_sources`, `format_not_detected`,
 `no_entries`, `not_found`, `store_error`, `internal_error` (unexpected
 exception; set `ATLAS_LOG_DEBUG=1` for the traceback).
+
+When the reader of stdout goes away early (`| head`), the command stops
+quietly with exit code 1 and no message, on Windows as well as POSIX.
 
 Diagnostics and progress always go to stderr.
 

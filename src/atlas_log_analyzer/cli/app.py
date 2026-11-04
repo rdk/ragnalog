@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import dataclasses
 import difflib
+import errno
 import importlib
 import io
 import os
@@ -183,10 +184,20 @@ class _Context:
 _CTX: _Context | None = None
 
 
+def _env_store() -> Path | None:
+    """Return the store named by ``ATLAS_LOG_STORE``; ``None`` when unset or blank.
+
+    A blank value counts as unset: ``Path("")`` would silently make the current
+    directory the store.
+    """
+    value = os.environ.get(STORE_ENV, "").strip()
+    return Path(value) if value else None
+
+
 def _ctx() -> _Context:
     if _CTX is None:  # only when a command function is called outside the CLI
-        env = os.environ.get(STORE_ENV)
-        return _Context(Output(default_mode()), Path(env or DEFAULT_STORE), not env)
+        env = _env_store()
+        return _Context(Output(default_mode()), env or DEFAULT_STORE, env is None)
     return _CTX
 
 
@@ -446,7 +457,7 @@ def _format_spec(format_name: str) -> SignatureSpec:
 def _meta(
     *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     output: Annotated[OutputMode | None, Parameter(group=GLOBAL)] = None,
-    store: Annotated[Path | None, Parameter(group=GLOBAL, env_var=STORE_ENV)] = None,
+    store: Annotated[Path | None, Parameter(group=GLOBAL)] = None,
     quiet: Annotated[bool, Parameter(group=GLOBAL, negative="")] = False,
     width: Annotated[int | None, Parameter(group=GLOBAL)] = None,
     color: Annotated[ColorMode, Parameter(group=GLOBAL)] = "auto",
@@ -456,8 +467,8 @@ def _meta(
     Args:
         tokens: Command and its arguments.
         output: Output mode. Default: table when stdout is a terminal, json otherwise.
-        store: Store directory holding log sets (env ATLAS_LOG_STORE; default ./.atlas-log,
-            which ingest/serve do not create inside a git work tree).
+        store: Store directory holding log sets (env ATLAS_LOG_STORE, ignored when empty;
+            default ./.atlas-log, which ingest/serve do not create inside a git work tree).
         quiet: Suppress progress and diagnostics on stderr (warnings and errors still shown).
         width: Table width; default: the terminal width, else $COLUMNS, else 160.
         color: Colour tables and raw entries: auto (terminal and no $NO_COLOR), always, never.
@@ -469,6 +480,8 @@ def _meta(
             CliError("invalid_value", "--width must be >= 40")
         )
     out = Output(output or default_mode(), quiet=quiet, width=width, color_mode=color)
+    if store is None:
+        store = _env_store()
     _CTX = _Context(out, store or DEFAULT_STORE, store is None)
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
@@ -1987,6 +2000,25 @@ def _utf8_streams() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def _stdout_closed(exc: BaseException) -> bool:
+    """Tell whether ``exc`` means that the reader of stdout has gone (e.g. ``| head``).
+
+    POSIX raises :class:`BrokenPipeError`. Windows raises ``OSError(EINVAL)`` from
+    the write or flush instead; it is told apart from other EINVAL errors (such as
+    an invalid file name) by flushing stdout again, which fails the same way while
+    the unwritten data is still buffered.
+    """
+    if isinstance(exc, BrokenPipeError):
+        return True
+    if not isinstance(exc, OSError) or exc.errno != errno.EINVAL:
+        return False
+    try:
+        sys.stdout.flush()
+    except OSError:
+        return True
+    return False
+
+
 def main() -> None:
     """Console-script entry point (``atlas-log``)."""
     _utf8_streams()
@@ -1995,12 +2027,12 @@ def main() -> None:
         code = run(tokens)
     except KeyboardInterrupt:
         code = 130
-    except BrokenPipeError:
-        # Downstream closed the pipe (e.g. `| head`); silence the flush at exit.
-        devnull = os.open(os.devnull, os.O_WRONLY)
-        os.dup2(devnull, sys.stdout.fileno())
-        code = 1
     except Exception as exc:
+        if _stdout_closed(exc):
+            # Downstream closed the pipe; silence the flush at exit.
+            devnull = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull, sys.stdout.fileno())
+            sys.exit(1)
         if os.environ.get("ATLAS_LOG_DEBUG"):
             raise
         out = _CTX.output if _CTX is not None else Output(_sniff_mode(tokens))

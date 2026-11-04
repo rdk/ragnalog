@@ -57,6 +57,19 @@ def test_explicit_store_or_env_is_allowed_in_repo(
     assert (tmp_path / "s2").is_dir() and not Path(".atlas-log").exists()
 
 
+@pytest.mark.parametrize("blank", ["", "  "])
+def test_blank_env_counts_as_unset(
+    cli: Invoke, repo: Path, monkeypatch: pytest.MonkeyPatch, blank: str
+) -> None:
+    """``ATLAS_LOG_STORE=`` must not make the current directory the store."""
+    monkeypatch.setenv("ATLAS_LOG_STORE", blank)
+    res = cli("--output", "json", "ingest", MINI_LOG)
+    assert res.code == 3 and res.json()["error"]["code"] == "store_error"
+    assert list(Path.cwd().iterdir()) == []
+    listing = cli("--output", "json", "sets").json()
+    assert listing["store"] == ".atlas-log"
+
+
 def test_existing_default_store_keeps_working(cli: Invoke, repo: Path) -> None:
     made = cli("--output", "json", "--store", ".atlas-log", "ingest", MINI_LOG, "--name", "m")
     assert made.code == 0 and Path(".atlas-log").is_dir()
