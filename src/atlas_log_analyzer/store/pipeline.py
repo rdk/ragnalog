@@ -30,12 +30,14 @@ from atlas_log_analyzer.store.store import Store, StoreError
 from atlas_log_analyzer.store.writer import unique_entries, write_merges
 
 __all__ = [
+    "MAX_FOREIGN_BYTES",
     "PROGRESS_EVERY",
     "SNIFF_LINES",
     "FormatNotDetected",
     "IngestProgress",
     "IngestResult",
     "NoSourcesFound",
+    "NotInFormat",
     "SourceSelection",
     "detect_format",
     "ingest_paths",
@@ -47,6 +49,8 @@ PROGRESS_EVERY = 50_000
 """Default number of entries between two progress callbacks."""
 SNIFF_LINES = 200
 """Lines of the first source used to detect the format."""
+MAX_FOREIGN_BYTES = 64 << 20
+"""Size above which a file named explicitly must be in the format (see :func:`select_sources`)."""
 
 
 class NoSourcesFound(StoreError):
@@ -55,6 +59,10 @@ class NoSourcesFound(StoreError):
 
 class FormatNotDetected(StoreError):
     """No registered format recognises the first source."""
+
+
+class NotInFormat(StoreError):
+    """A file named explicitly is larger than :data:`MAX_FOREIGN_BYTES` and not in the format."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,19 +148,22 @@ class SourceSelection:
 
 
 def select_sources(
-    paths: Iterable[Path | str], fmt: str | LogFormat | None = None
+    paths: Iterable[Path | str], fmt: str | LogFormat | None = None, *, force: bool = False
 ) -> SourceSelection:
     """Discover the files in ``paths``, resolve the format and drop foreign files.
 
     A Jira log directory also holds access, GC and JSON logs that ``*.log*``
     matches; parsed as Jira they would become one huge ``parse_error`` entry.
     Files found by scanning a directory are therefore kept only when the format
-    recognises at least one of their first :data:`SNIFF_LINES` lines; files named
-    explicitly are always kept.
+    recognises at least one of their first :data:`SNIFF_LINES` lines. Files named
+    explicitly are kept, except one larger than :data:`MAX_FOREIGN_BYTES` that
+    the format does not recognise at all (a wrong file or ``--format``), unless
+    ``force`` is true.
 
     Raises:
         NoSourcesFound: ``paths`` holds no log files, or none in the format.
         FormatNotDetected: ``fmt`` is ``None`` and detection failed.
+        NotInFormat: A large file named explicitly is not in the format.
         FileNotFoundError: A path does not exist.
         LookupError: Unknown format name (``UnknownFormatError``).
 
@@ -173,7 +184,14 @@ def select_sources(
     sources: list[SourceFile] = []
     skipped: list[SourceFile] = []
     for source in found:
-        if source.path in named or fmt.sniff(_head(source)) > 0:
+        if source.path in named:
+            if not force and source.size > MAX_FOREIGN_BYTES and fmt.sniff(_head(source)) == 0:
+                raise NotInFormat(
+                    f"{source.path.name} ({source.size / 1e6:.0f} MB) is not a {fmt.name} log: "
+                    f"none of its first {SNIFF_LINES} lines is a {fmt.name} header"
+                )
+            sources.append(source)
+        elif fmt.sniff(_head(source)) > 0:
             sources.append(source)
         else:
             skipped.append(source)
@@ -314,6 +332,7 @@ def ingest_paths(
     frames: int | None = None,
     overwrite: bool = False,
     mine: bool = False,
+    force: bool = False,
     progress: Callable[[IngestProgress], None] | None = None,
     progress_every: int = PROGRESS_EVERY,
 ) -> IngestResult:
@@ -332,18 +351,20 @@ def ingest_paths(
         frames: Override ``spec.frames``.
         overwrite: Rebuild an existing set with the same id.
         mine: Propose Drain3 merges (see :func:`ingest_sources`).
+        force: Read large named files that are not in the format (see :func:`select_sources`).
         progress: Progress callback (see :class:`IngestProgress`).
         progress_every: Entries between progress callbacks.
 
     Raises:
         NoSourcesFound: ``paths`` holds no log files.
         FormatNotDetected: ``fmt`` is ``None`` and detection failed.
+        NotInFormat: A large named file is not in the format and ``force`` is false.
         FileNotFoundError: A path does not exist.
         LookupError: Unknown format name (``UnknownFormatError``).
         StoreError: See :meth:`Store.ingest`.
 
     """
-    selection = select_sources(paths, fmt)
+    selection = select_sources(paths, fmt, force=force)
     result = ingest_sources(
         store,
         selection.sources,

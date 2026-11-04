@@ -125,11 +125,22 @@ group `atlas_log_analyzer.formats` so external packages can add formats.
   rotation (`x.log`, `x.log.1` … oldest first by numeric suffix, falling back
   to mtime), computes size + xxh3 of each file for the manifest.
 - `iter_lines(source) -> Iterator[Line]`: binary read, UTF-8 `replace`
-  decode, yields `(line_no, offset, text)`.
+  decode, yields `(line_no, offset, text)`. A line over `max_line_bytes`
+  (1 MiB) is cut and the rest skipped up to the next newline; the newline
+  search never rescans a carried line, so input without line breaks reads in
+  linear time and bounded memory (32 MiB: 0.79 s before, 0.01 s now).
 - `parse(source, fmt) -> Iterator[LogEntry]`: first-line/continuation state
   machine. A line that looks like a header but fails `parse_header` becomes an
   entry with `parse_error` rather than being dropped. Leading continuation
-  lines before the first header become one `parse_error` entry.
+  lines before the first header become one `parse_error` entry. An entry keeps
+  at most 4 Mi characters and 100,000 lines (whole lines); later lines are
+  only counted and `parse_error` reads `entry truncated: N lines, M bytes`.
+  Its id then also hashes N and M (deterministic; entries under the caps keep
+  their ids). A `pa.string()` column cannot hold more than 2 GiB per batch, and
+  one 66 MB entry used to cost 66M characters twice (`body` and `raw`).
+- `select_sources` refuses a file named explicitly that is over 64 MiB and
+  that the format does not recognise in its first 200 lines (`NotInFormat`,
+  overridable with `force`): such a file would become one giant entry.
 - `parse_many(sources, fmt)` chains sources in rotation order.
 
 Throughput target: ≥ 50 MB/s for parsing alone on the sample data; ingest to

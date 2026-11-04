@@ -73,7 +73,7 @@ the CLI's codes (an ambiguous signature prefix adds `"candidates"`). Status code
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto` or a set), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
 | `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
-| `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `mine`, `overwrite` as form fields or query | `job.v1`, status 202 and `Location` |
+| `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `mine`, `overwrite`, `force` as form fields or query | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |
@@ -131,7 +131,11 @@ Uploads stream to `<store>/.uploads/<job>/` in 1 MiB chunks and are rejected wit
 413 above `--max-upload-mb`. Jobs run one at a time in a worker thread. The job
 reports parsed entries, bytes read and the current file, and `fraction` goes
 from 0 to 1. A successful job's `result` is the `logset.v1` manifest with the
-`ingest` block, the same as `atlas-log ingest` prints. Cancelling stops the job
+`ingest` block, the same as `atlas-log ingest` prints. A failed job's `error`
+holds `code` and `message` (`no_sources`, `format_not_detected`,
+`unknown_format`, `not_in_format`, `store_error`, `invalid_value`,
+`missing_dependency`) and, for `not_in_format` (an upload over 64 MiB that is
+not in the format), a `hint`: send `force=true` to ingest it anyway. Cancelling stops the job
 at its next progress callback; the store discards the partial set. Upload
 directories are removed when the job ends, when the server stops (jobs still
 queued are cancelled) and, for spools left by a crashed server, when the next

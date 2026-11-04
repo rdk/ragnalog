@@ -666,18 +666,22 @@ async def ingest(
     format: str | None = None,
     mine: bool = False,
     overwrite: bool = False,
+    force: bool = False,
 ) -> Response:
     """Upload log files and ingest them in the background; returns ``job.v1`` (202).
 
     Poll ``GET /api/jobs/{id}`` until ``state`` is ``succeeded`` (``result`` holds the
     ``logset.v1`` manifest) or ``failed``/``cancelled``. Options may also be sent as
-    form fields ``name``, ``format``, ``mine``, ``overwrite``.
+    form fields ``name``, ``format``, ``mine``, ``overwrite``, ``force`` (ingest a file
+    over 64 MiB that is not in the format; otherwise the job fails with
+    ``not_in_format``).
     """
     form = await request.form()
     name = name or _form_str(form.get("name"))
     format = format or _form_str(form.get("format"))
     mine = mine or _form_str(form.get("mine")) in ("1", "true", "on", "yes")
     overwrite = overwrite or _form_str(form.get("overwrite")) in ("1", "true", "on", "yes")
+    force = force or _form_str(form.get("force")) in ("1", "true", "on", "yes")
     if not files:
         raise ApiError("usage", "send one or more log files as multipart field 'files'")
     limit = state.settings.max_upload_mb * 1024 * 1024
@@ -711,6 +715,7 @@ async def ingest(
         format=format,
         mine=mine,
         overwrite=overwrite,
+        force=force,
     )
     return JSON(job.to_dict(), status_code=202, headers={"Location": f"/api/jobs/{job.id}"})
 

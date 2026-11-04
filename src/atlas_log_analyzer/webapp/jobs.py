@@ -216,6 +216,8 @@ class JobManager:
             return
         except (StoreError, OSError, ValueError, LookupError) as exc:
             job.error = {"code": _code(exc), "message": str(exc)}
+            if job.error["code"] == "not_in_format":
+                job.error["hint"] = "upload the right file or format, or send force=true"
             self._finish(job, "failed")
             return
         manifest = dict(result.logset.manifest.to_dict())
@@ -242,6 +244,7 @@ class JobManager:
             frames=opts.get("frames"),
             overwrite=bool(opts.get("overwrite")),
             mine=bool(opts.get("mine")),
+            force=bool(opts.get("force")),
             progress=progress,
             progress_every=20_000,
         )
@@ -252,6 +255,7 @@ def _code(exc: Exception) -> str:
     known = {
         "NoSourcesFound": "no_sources",
         "FormatNotDetected": "format_not_detected",
+        "NotInFormat": "not_in_format",
         "UnknownFormatError": "unknown_format",
     }
     if name in known:

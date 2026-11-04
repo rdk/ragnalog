@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+import pytest
 from fastapi.testclient import TestClient
 
 from atlas_log_analyzer.webapp import Settings, create_app
@@ -452,3 +453,19 @@ def test_signature_prefixes(store_dir: Path, tmp_path: Path) -> None:
             assert all(c.startswith(prefix) for c in err["candidates"])
     cli = _cli_json(store_dir, "show", "many", prefix)
     assert cli["error"]["candidates"] == err["candidates"]
+
+
+def test_ingest_large_foreign_file_needs_force(
+    empty_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import atlas_log_analyzer.store.pipeline as pipeline
+
+    monkeypatch.setattr(pipeline, "MAX_FOREIGN_BYTES", 100)
+    blob = {"files": ("dump.log", b"no line breaks here " * 20)}
+    job = empty_client.post("/api/ingest", files=blob, data={"format": "jira"}).json()
+    assert job["state"] == "failed", job
+    assert job["error"]["code"] == "not_in_format" and "force" in job["error"]["hint"]
+    forced = empty_client.post("/api/ingest?force=true&format=jira", files=blob).json()
+    assert forced["state"] == "succeeded", forced
+    assert forced["options"]["force"] is True
+    assert forced["result"]["ingest"]["parse_errors"] == 1

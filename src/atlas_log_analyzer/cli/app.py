@@ -371,18 +371,30 @@ def _selection(
     return list(preset) if brief else _columns(columns, valid)
 
 
-def _select(paths: Sequence[Path], name: str | None) -> SourceSelection:
+def _select(paths: Sequence[Path], name: str | None, *, force: bool = False) -> SourceSelection:
     """Files and format of `ingest`/`parse`; foreign files found in directories are skipped."""
-    from atlas_log_analyzer.store.pipeline import FormatNotDetected, NoSourcesFound, select_sources
+    from atlas_log_analyzer.store.pipeline import (
+        FormatNotDetected,
+        NoSourcesFound,
+        NotInFormat,
+        select_sources,
+    )
 
     if not paths:
         raise CliError("usage", "at least one PATH is required")
     try:
-        selection = select_sources(paths, name)
+        selection = select_sources(paths, name, force=force)
     except NoSourcesFound as exc:
         raise CliError("no_sources", str(exc), ExitCode.NOT_FOUND) from exc
     except FormatNotDetected as exc:
         raise CliError("format_not_detected", str(exc), ExitCode.NOT_FOUND) from exc
+    except NotInFormat as exc:
+        raise CliError(
+            "not_in_format",
+            str(exc),
+            ExitCode.NOT_FOUND,
+            hint="name the right file or --format, or pass --force to read it anyway",
+        ) from exc
     if selection.skipped:
         names = ", ".join(s.path.name for s in selection.skipped[:5])
         more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
@@ -463,6 +475,7 @@ def ingest(
     frames: int | None = None,
     overwrite: bool = False,
     mine: bool = False,
+    force: bool = False,
 ) -> int:
     """Parse log files into a stored log set and print its manifest.
 
@@ -470,10 +483,13 @@ def ingest(
     *.log*; rotated files x.log.N are read oldest first). Files found in a
     directory that the format does not recognise in their first 200 lines
     (access, GC or JSON logs next to atlassian-jira.log) are skipped and
-    listed in "ingest.skipped"; files named explicitly are always read. The
-    log-set id is derived from the file digests, so ingesting the same files
-    again is a no-op that prints the existing manifest (use --overwrite to
-    rebuild it). Progress goes to stderr.
+    listed in "ingest.skipped"; files named explicitly are read, except one over
+    64 MiB that the format does not recognise at all (error "not_in_format";
+    --force reads it). Lines over 1 MiB are cut, and an entry keeps at most
+    4 Mi characters and 100,000 lines ("parse_error": "entry truncated: N
+    lines, M bytes"). The log-set id is derived from the file digests, so
+    ingesting the same files again is a no-op that prints the existing
+    manifest (use --overwrite to rebuild it). Progress goes to stderr.
 
     Output (json): the manifest, schema "logset.v1":
       {"schema": "logset.v1", "id", "name", "format",
@@ -493,8 +509,9 @@ def ingest(
     committed), but an existing ./.atlas-log is used.
 
     Exit codes: 0 ok; 1 unknown --format or bad option; 2 no files found, format
-    not detected, or no entries parsed (manifest still printed); 3 store error
-    (including a refused default store inside a git work tree).
+    not detected, a large named file not in the format, or no entries parsed
+    (manifest still printed); 3 store error (including a refused default store
+    inside a git work tree).
 
     Args:
         paths: Log files and/or directories.
@@ -504,6 +521,8 @@ def ingest(
         frames: Add the top N stack frames to signatures (finer groups); default 0.
         overwrite: Rebuild the set if one with the same id already exists.
         mine: Propose group merges with Drain3 (needs extra "mine": uv sync --extra mine).
+        force: Read a named file over 64 MiB even if none of its first 200 lines is
+            in the format.
 
     """
     from atlas_log_analyzer.store.pipeline import ingest_sources
@@ -511,7 +530,7 @@ def ingest(
     out = _out()
     if frames is not None and frames < 0:
         raise CliError("invalid_value", "--frames must be >= 0")
-    selection = _select(paths, format)
+    selection = _select(paths, format, force=force)
     sources, fmt = selection.sources, selection.fmt
     store = _store(create=True)
     total = sum(s.size for s in sources)
@@ -1686,7 +1705,7 @@ def report(
 
 
 @app.command
-def parse(*paths: Path, format: str | None = None, limit: int = 0) -> int:
+def parse(*paths: Path, format: str | None = None, limit: int = 0, force: bool = False) -> int:
     """Parse log files and stream the entries as JSON Lines to stdout (no store).
 
     Always writes JSONL, one entry per line, regardless of --output:
@@ -1697,21 +1716,23 @@ def parse(*paths: Path, format: str | None = None, limit: int = 0) -> int:
        "context": {"user", "request_id", "session", "ip", "url", "request_url", ...},
        "source": {"path", "line", "offset"}, "raw", "parse_error"}
     Entries whose header could not be parsed have "parse_error" set. Files
-    found in a directory that are not in the format are skipped (as `ingest`).
+    found in a directory that are not in the format are skipped, and a large
+    named file not in the format is refused (as `ingest`).
 
-    Exit codes: 0 ok; 1 unknown --format; 2 no files, format not detected or no
-    entries.
+    Exit codes: 0 ok; 1 unknown --format; 2 no files, format not detected, a
+    large named file not in the format, or no entries.
 
     Args:
         paths: Log files and/or directories.
         format: Format name; detected from the first 200 lines when omitted.
         limit: Stop after this many entries; 0 = all.
+        force: Read a named file over 64 MiB even if it is not in the format.
 
     """
     import msgspec
 
     lim = _limit(limit)
-    selection = _select(paths, format)
+    selection = _select(paths, format, force=force)
     sources, fmt = selection.sources, selection.fmt
     encoder = msgspec.json.Encoder()
     stream = _out().out

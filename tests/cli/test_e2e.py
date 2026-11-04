@@ -413,3 +413,23 @@ def test_sample_fixture_roundtrip(jcli: Invoke) -> None:
     groups = jcli("groups", "sample", "--limit", "0").json()
     assert sum(g["count"] for g in groups["items"]) == doc["entry_count"]
     assert jcli("stats", "sample").code == 0
+
+
+def test_ingest_refuses_large_named_file_not_in_format(
+    jcli: Invoke, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import atlas_log_analyzer.store.pipeline as pipeline
+
+    blob = tmp_path / "dump.log"
+    blob.write_bytes(b'{"minified": "json without a line break"}' * 100)
+    monkeypatch.setattr(pipeline, "MAX_FOREIGN_BYTES", 1000)
+    for command in ("ingest", "parse"):
+        refused = jcli(command, blob, "--format", "jira")
+        assert refused.code == 2, refused.stdout
+        error = refused.json()["error"]
+        assert error["code"] == "not_in_format" and "--force" in error["hint"]
+        assert error["message"].startswith("dump.log (0 MB) is not a jira log")
+    forced = jcli("ingest", blob, "--format", "jira", "--force")
+    assert forced.code == 0, forced.stdout
+    assert forced.json()["ingest"]["parse_errors"] == 1
+    assert jcli("parse", blob, "--format", "jira", "--force").code == 0

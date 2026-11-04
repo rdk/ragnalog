@@ -86,7 +86,7 @@ name in `level_name`; `parse` emits the name in `level`.
 |---|---|
 | 0 | OK (an empty listing is OK). |
 | 1 | Usage error: bad option/argument, unknown format, invalid level, SQL error, incompatible sets in `diff` without `--force`, ambiguous signature prefix, missing optional dependency. |
-| 2 | Nothing found / parse failure: no input files, format not detected, no entries parsed, no entries for a signature, file not found. |
+| 2 | Nothing found / parse failure: no input files, format not detected, a large named file not in the format, no entries parsed, no entries for a signature, file not found. |
 | 3 | Store error: unknown log set, ambiguous reference, corrupt manifest, unsupported schema version, default store refused inside a git work tree. |
 
 In `json`/`jsonl` mode errors are written to **stdout** as
@@ -105,7 +105,7 @@ such as `"store"`. An argument a command does not take is reported as, e.g.,
 `error: <message> [<code>]` followed by `hint: …`. Error codes:
 `usage`, `invalid_value`, `invalid_level`, `unknown_format`, `sql_error`,
 `missing_dependency`, `file_not_found`, `no_sources`, `format_not_detected`,
-`no_entries`, `not_found`, `ambiguous` (signature prefix; the error has
+`not_in_format`, `no_entries`, `not_found`, `ambiguous` (signature prefix; the error has
 `"candidates"`), `store_error`, `internal_error` (unexpected
 exception; set `ATLAS_LOG_DEBUG=1` for the traceback).
 
@@ -146,7 +146,7 @@ unknown signature. Prefixes shorter than 4 characters are not looked up.
 
 ## Commands
 
-### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine]`
+### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine] [--force]`
 
 Parse files/directories (directories: non-recursive `*.log*`; rotated `x.log.N`
 read oldest first) into a log set. The id is derived from the file digests:
@@ -156,9 +156,18 @@ first 200 lines of each file (named files first) until a format recognises
 one. Files found in a directory whose first 200 lines contain no line of that
 format (the access, GC and JSON logs next to `atlassian-jira.log`) are skipped
 and listed in `ingest.skipped` (and on stderr); files named explicitly are
-always read. `--frames N` adds the top N stack frames to signatures. `--mine`
+read, except a file over 64 MiB none of whose first 200 lines is in the format
+(a wrong file or `--format`): that fails with `not_in_format` (exit 2) unless
+`--force`. `--frames N` adds the top N stack frames to signatures. `--mine`
 runs Drain3 over the group templates (needs the `mine` extra) and stores
 proposals in `merges.parquet`.
+
+Input is bounded: a line over 1 MiB keeps its first 1 MiB (the rest up to the
+next line break is skipped), and an entry keeps at most 4 Mi characters and
+100,000 lines. The lines after the cap are counted but not stored, and the
+entry's `parse_error` is `entry truncated: N lines, M bytes` (the whole entry;
+M in UTF-8 without line-break characters other than `\n`); it counts in
+`ingest.parse_errors`.
 
 ```json
 {"schema": "logset.v1", "id": "99ee29398877dcd3", "name": "prod", "format": "jira",
@@ -170,7 +179,8 @@ proposals in `merges.parquet`.
 ```
 
 `merges` only with `--mine`. Exit: 0; 1 unknown format / missing drain3; 2 no
-files, format not detected, or zero entries (manifest still printed); 3.
+files, format not detected, a large named file not in the format
+(`not_in_format`), or zero entries (manifest still printed); 3.
 
 ### `sets [--brief]`
 
@@ -486,9 +496,10 @@ opens the file in the default browser.
 prints one line (`wrote <path> (…)`). Exit: 0; 1 bad option, invalid level, or
 the sets were signed differently; 2 output directory does not exist; 3.
 
-### `parse PATH... [--format F] [--limit 0]`
+### `parse PATH... [--format F] [--limit 0] [--force]`
 
 Streams entries as JSON Lines to stdout without a store; `--output` is ignored.
+Files are selected and bounded as by `ingest` (`--force` likewise).
 
 ```json
 {"id", "format", "timestamp": "2026-10-29T02:19:41.415+01:00", "level": "ERROR", "thread",
@@ -498,7 +509,7 @@ Streams entries as JSON Lines to stdout without a store; `--output` is ignored.
  "source": {"path", "line", "offset"}, "raw", "parse_error"}
 ```
 
-Exit: 0; 1 unknown format; 2 no files / not detected / no entries.
+Exit: 0; 1 unknown format; 2 no files / not detected / `not_in_format` / no entries.
 
 ### `regroup SET [--frames N] [--no-exceptions]`
 
@@ -539,9 +550,11 @@ OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
 `Authorization: Bearer T` on `/api`; `--max-upload-mb` defaults to env
 `ATLAS_LOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
 reloading process through these environment variables. Nothing is printed to
-stdout; the server logs to stderr. See `docs/webapp.md`.
+stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
+second `serve` on a store that is being served fails with `store_error`.
 
-Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3.
+Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3
+(also: the store is served already).
 
 ### `version`
 

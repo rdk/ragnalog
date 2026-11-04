@@ -281,3 +281,26 @@ def test_select_sources_without_format_files(tmp_path: Path) -> None:
     (folder / "access.log").write_text(ACCESS_LINE * 3, encoding="utf-8")
     with pytest.raises(NoSourcesFound, match="no jira log files"):
         select_sources([folder], "jira")
+
+
+def test_large_named_file_not_in_format_is_refused(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import atlas_log_analyzer.store.pipeline as pipeline
+
+    folder = mixed_dir(tmp_path)
+    access = folder / "atlassian-jira-http-access.log"
+    jira_log = folder / "atlassian-jira.log"
+    monkeypatch.setattr(pipeline, "MAX_FOREIGN_BYTES", jira_log.stat().st_size - 1)
+    with pytest.raises(pipeline.NotInFormat, match=r"atlassian-jira-http-access.log \(0 MB\)"):
+        pipeline.select_sources([jira_log, access])
+    with pytest.raises(pipeline.NotInFormat, match="none of its first 200 lines"):
+        ingest_paths(Store(tmp_path / "store"), [access], fmt="jira")
+    assert not (tmp_path / "store").exists()
+    # in the format, found in a directory, or forced: no refusal
+    assert [s.path.name for s in pipeline.select_sources([jira_log]).sources] == [jira_log.name]
+    assert len(pipeline.select_sources([folder]).skipped) == 2
+    forced = pipeline.select_sources([jira_log, access], force=True)
+    assert len(forced.sources) == 2
+    result = ingest_paths(Store(tmp_path / "store"), [access], fmt="jira", force=True)
+    assert result.parse_errors == 1
