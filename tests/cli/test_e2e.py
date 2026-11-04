@@ -433,3 +433,13 @@ def test_ingest_refuses_large_named_file_not_in_format(
     assert forced.code == 0, forced.stdout
     assert forced.json()["ingest"]["parse_errors"] == 1
     assert jcli("parse", blob, "--format", "jira", "--force").code == 0
+
+
+def test_ingest_warns_when_name_is_ignored(jcli: Invoke) -> None:
+    assert jcli("ingest", MINI_LOG, "--name", "night").json()["ingest"]["warnings"] == []
+    again = jcli("ingest", MINI_LOG, "--name", "tonight")
+    assert again.code == 0
+    doc = again.json()
+    assert doc["name"] == "night" and doc["ingest"]["existing"] is True
+    assert doc["ingest"]["warnings"] == ["--name tonight ignored: set exists as 'night'"]
+    assert "--name tonight ignored: set exists as 'night'" in again.stderr

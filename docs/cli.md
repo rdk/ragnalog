@@ -174,9 +174,15 @@ M in UTF-8 without line-break characters other than `\n`); it counts in
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path]},
+ "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
+            "warnings": [str]},
  "merges": [{"cluster_id", "signatures": [], "drain_template"}]}
 ```
+
+`ingest.warnings` lists requests that were not honoured, also printed on stderr:
+re-ingesting existing files with another `--name` keeps the set's name and
+warns `--name tonight ignored: set exists as 'night'` (use `--overwrite` to
+rebuild it under the new name).
 
 `merges` only with `--mine`. Exit: 0; 1 unknown format / missing drain3; 2 no
 files, format not detected, a large named file not in the format

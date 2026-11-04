@@ -498,11 +498,12 @@ def ingest(
        "tool_version", "schema_version", "signature_version",
        "mask_rules_version", "signature_spec",
        "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing",
-                  "skipped": [path, ...]},
+                  "skipped": [path, ...], "warnings": [str, ...]},
        "merges": [{"cluster_id", "signatures": [str], "drain_template"}]}
     "merges" is present only with --mine; the proposals are also stored in
     merges.parquet (the "merges" view of `query`).
-    "ingest.existing" is true when the set already existed and was reused.
+    "ingest.existing" is true when the set already existed and was reused;
+    "ingest.warnings" then says when --name was ignored (also on stderr).
 
     Without --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git
     work tree it is not created (error "store_error": real logs could be
@@ -554,6 +555,8 @@ def ingest(
             f"ingested {result.parsed_entries:,} entries into {logset.manifest.id} "
             f"({logset.manifest.group_count:,} groups) in {result.elapsed_s:.1f} s"
         )
+    for warning in result.warnings:
+        out.warn(warning)
     if result.parse_errors:
         out.warn(f"{result.parse_errors:,} entries could not be parsed (parse_error is set)")
     if mine:

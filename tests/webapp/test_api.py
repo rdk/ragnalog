@@ -485,3 +485,12 @@ def test_ingest_frames_option(empty_client: TestClient) -> None:
     bad = empty_client.post("/api/ingest?frames=-1", files=upload)
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "usage"
     assert not any((empty_client.app.state.atlas.store.root / ".uploads").glob("*/*"))
+
+
+def test_ingest_job_reports_ignored_name(client: TestClient) -> None:
+    job = client.post(
+        "/api/ingest", files={"files": ("mini.log", MINI.read_bytes())}, data={"name": "again"}
+    ).json()
+    assert job["state"] == "succeeded" and job["name"] == "again"
+    assert job["result"]["name"] == "mini" and job["result"]["ingest"]["existing"] is True
+    assert job["result"]["ingest"]["warnings"] == ["--name again ignored: set exists as 'mini'"]

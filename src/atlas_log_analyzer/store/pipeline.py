@@ -95,6 +95,8 @@ class IngestResult:
     """Merge proposals (``{"cluster_id", "signatures", "drain_template"}``) when mined."""
     skipped: tuple[str, ...] = ()
     """Paths of files found in directories but not in the format (see :func:`select_sources`)."""
+    warnings: tuple[str, ...] = ()
+    """Requests that were not honoured, e.g. a ``name`` ignored because the set existed."""
 
     def ingest_dict(self) -> dict[str, Any]:
         """Return the ``"ingest"`` object of the CLI's logset.v1 output."""
@@ -104,7 +106,17 @@ class IngestResult:
             "elapsed_s": round(self.elapsed_s, 3),
             "existing": self.existing,
             "skipped": list(self.skipped),
+            "warnings": list(self.warnings),
         }
+
+
+def _name_warning(name: str | None, logset: LogSet) -> tuple[str, ...]:
+    """Warn when ``name`` was not applied because the set already existed under another one."""
+    m = logset.manifest
+    if name is None or m.name == name:
+        return ()
+    shown = repr(m.name) if m.name is not None else f"{m.id} (unnamed)"
+    return (f"--name {name} ignored: set exists as {shown}",)
 
 
 def _head(source: SourceFile) -> list[str]:
@@ -319,6 +331,7 @@ def ingest_sources(
         elapsed_s=elapsed,
         existing=counter.entries == 0 and logset.manifest.entry_count > 0,
         merges=merges,
+        warnings=_name_warning(name, logset),
     )
 
 

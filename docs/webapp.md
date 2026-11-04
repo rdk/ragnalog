@@ -131,7 +131,8 @@ Uploads stream to `<store>/.uploads/<job>/` in 1 MiB chunks and are rejected wit
 413 above `--max-upload-mb`. Jobs run one at a time in a worker thread. The job
 reports parsed entries, bytes read and the current file, and `fraction` goes
 from 0 to 1. A successful job's `result` is the `logset.v1` manifest with the
-`ingest` block, the same as `atlas-log ingest` prints. A failed job's `error`
+`ingest` block, the same as `atlas-log ingest` prints (`ingest.warnings` says
+when `name` was ignored because the set existed already). A failed job's `error`
 holds `code` and `message` (`no_sources`, `format_not_detected`,
 `unknown_format`, `not_in_format`, `store_error`, `invalid_value`,
 `missing_dependency`) and, for `not_in_format` (an upload over 64 MiB that is

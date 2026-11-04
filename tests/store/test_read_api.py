@@ -304,3 +304,22 @@ def test_large_named_file_not_in_format_is_refused(
     assert len(forced.sources) == 2
     result = ingest_paths(Store(tmp_path / "store"), [access], fmt="jira", force=True)
     assert result.parse_errors == 1
+
+
+def test_reingest_under_another_name_warns(tmp_path: Path) -> None:
+    store = Store(tmp_path / "store")
+    first = ingest_paths(store, [MINI], name="night")
+    assert first.warnings == () and first.ingest_dict()["warnings"] == []
+    again = ingest_paths(store, [MINI], name="tonight")
+    assert again.existing and again.logset.manifest.name == "night"
+    assert again.warnings == ("--name tonight ignored: set exists as 'night'",)
+    assert again.ingest_dict()["warnings"] == list(again.warnings)
+    assert ingest_paths(store, [MINI], name="night").warnings == ()
+    assert ingest_paths(store, [MINI]).warnings == ()
+    renamed = ingest_paths(store, [MINI], name="tonight", overwrite=True)
+    assert renamed.warnings == () and renamed.logset.manifest.name == "tonight"
+    unnamed = Store(tmp_path / "other")
+    set_id = ingest_paths(unnamed, [MINI]).logset.manifest.id
+    assert ingest_paths(unnamed, [MINI], name="x").warnings == (
+        f"--name x ignored: set exists as {set_id} (unnamed)",
+    )
