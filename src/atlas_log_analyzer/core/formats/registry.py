@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import importlib.metadata
 import warnings
 from collections.abc import Sequence
 
@@ -32,6 +31,8 @@ def _load() -> None:
     if _loaded:
         return
     _loaded = True
+    import importlib.metadata  # ~70 ms; only commands that look up a format pay it
+
     found: dict[str, LogFormat] = {fmt.name: fmt for fmt in _builtin_formats()}
     try:
         entry_points = list(importlib.metadata.entry_points(group=ENTRY_POINT_GROUP))

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.metadata
 from collections.abc import Sequence
 
 import pytest
@@ -50,7 +51,7 @@ def test_broken_entry_point(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(registry, "_formats", {})
     monkeypatch.setattr(registry, "_loaded", False)
-    monkeypatch.setattr(registry.importlib.metadata, "entry_points", lambda group: [_EP()])
+    monkeypatch.setattr(importlib.metadata, "entry_points", lambda group: [_EP()])
     with pytest.warns(RuntimeWarning, match="broken"):
         names = formats.names()
     assert names == ["jira"]
