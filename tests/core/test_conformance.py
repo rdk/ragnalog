@@ -86,7 +86,7 @@ def test_every_format_has_fixtures() -> None:
 
 @pytest.mark.parametrize(("name", "path"), OWN, ids=_id)
 def test_raw_is_lossless(name: str, path: Path) -> None:
-    """Joined ``raw`` texts give back the file: the reader drops ``\r`` before ``\n``
+    """Joined ``raw`` texts give back the file: the reader drops a CR before each LF
     and the final newline; nothing else is lost or reordered."""
     text = path.read_bytes().decode("utf-8").replace("\r\n", "\n")
     text = text.removesuffix("\n")
