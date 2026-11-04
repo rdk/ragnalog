@@ -94,6 +94,8 @@ def set_summary(ls: LogSet) -> dict[str, int]:
     ``error_groups`` the groups at ERROR or above. The ``summary`` of ``sets`` /
     ``set`` items and of ``GET /api/sets`` (the web app caches it per set version).
     """
+    import polars as pl
+
     df = (
         ls.groups_lazy()
         .select(

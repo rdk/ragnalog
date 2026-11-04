@@ -83,7 +83,6 @@ CASES: list[Case] = [
         ["set", "edge"],
         "/api/sets/edge",
         frozenset({"summary"}),  # as in "sets"
-        drift="one set: the API has GET /api/sets/{ref}, the CLI no `set` command",
     ),
     Case("version", ["version"], "/api/version"),
     Case(
@@ -200,7 +199,7 @@ CASES: list[Case] = [
         "entries-level-unknown",
         ["entries", "edge", "--level", "UNKNOWN"],
         "/api/sets/edge/entries?level=UNKNOWN",
-        drift="level=UNKNOWN (parse_error rows): the CLI accepts it, the API says invalid_level",
+        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-empty-since",
