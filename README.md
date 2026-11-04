@@ -94,7 +94,9 @@ The start page lists every set with its error counts and a triage verdict
 against the previous set. **Triage** shows the new types first (ERROR before
 WARN), then groups whose hourly rate grew, then vanished ones, each linking into
 the report with the group open. **Upload** ingests log files in the background
-with a progress bar. Everything is also JSON under `/api` (OpenAPI at `/docs`);
+with a progress bar; the pages keep answering meanwhile. One server per store:
+a second `serve` on the same store exits with code 3, while CLI commands may run
+next to it. Everything is also JSON under `/api` (OpenAPI at `/docs`);
 `GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call — the
 same `triage.v1` document as `atlas-log triage SET`. See `docs/webapp.md`.
 

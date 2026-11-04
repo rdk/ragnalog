@@ -165,9 +165,9 @@ proposals in `merges.parquet`.
 Input is bounded: a line over 1 MiB keeps its first 1 MiB (the rest up to the
 next line break is skipped), and an entry keeps at most 4 Mi characters and
 100,000 lines. The lines after the cap are counted but not stored, and the
-entry's `parse_error` is `entry truncated: N lines, M bytes` (the whole entry;
-M in UTF-8 without line-break characters other than `\n`); it counts in
-`ingest.parse_errors`.
+entry's `parse_error` is `entry truncated: N lines, M bytes`, where N and M
+describe the whole entry (M: UTF-8 bytes of its lines joined with `\n`). Such
+entries count in `ingest.parse_errors`.
 
 ```json
 {"schema": "logset.v1", "id": "99ee29398877dcd3", "name": "prod", "format": "jira",
