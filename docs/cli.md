@@ -234,7 +234,7 @@ busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
 
-### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 0]`
+### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 0] [--rate]`
 
 Compares stored group tables: `new` (only in B), `vanished` (only in A),
 `changed` (both, different count; `ratio = count_b / count_a`).
@@ -242,14 +242,26 @@ Compares stored group tables: `new` (only in B), `vanished` (only in A),
 ```json
 {"schema": "diff.v1", "a": "<id>", "b": "<id>", "new": [row], "vanished": [row],
  "changed": [row], "unchanged_count": 1,
- "totals": {"new": 3, "vanished": 0, "changed": 5}, "truncated": false}
+ "totals": {"new": 3, "vanished": 0, "changed": 5}, "truncated": false,
+ "warnings": ["Set B (night) covers 30 min but set A (day) covers 6.9 h (13.7x shorter): …"]}
 ```
 
 The table prints `vanished: none` (etc.) instead of an empty table.
 
 Rows: `signature, template, level, level_name, logger, exception_type, count_a,
 count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (+ `ratio` in
-`changed`). Exit: 0; 1 sets signed differently (signature/mask-rule version or
+`changed`).
+
+`--rate` adds `rate_a`, `rate_b` (count per hour of each set's span, first to
+last entry) and `rate_ratio = rate_b / rate_a` to the `changed` rows and sorts
+`changed` by `rate_ratio` descending — use it when the sets cover different
+lengths of time (`ratio` compares raw counts).
+
+`warnings` is present (independently of `--rate`) only when the spans of A and
+B differ by more than 4x either way: one sentence saying that new/vanished
+groups are unreliable, because groups that occur only at certain times of day
+(daytime traffic, nightly jobs) look new or vanished. In `table` and `jsonl`
+mode the sentence is printed on stderr (`warning: …`) instead. Exit: 0; 1 sets signed differently (signature/mask-rule version or
 spec) without `--force`; 3.
 
 ### `triage SET [--baseline SET|auto] [--min-level WARN] [--grow 2.0] [--limit 50]`
@@ -395,7 +407,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 # Upgrade comparison: what is new or louder after the upgrade?
 atlas-log ingest logs-before/ --name before
 atlas-log ingest logs-after/ --name after
-atlas-log diff before after --min-level WARN --limit 20
+atlas-log diff before after --min-level WARN --limit 20 --rate   # rates if spans differ
 
 # Who triggers a group? (users and request URLs of one signature)
 atlas-log query after "select user, count(*) n from entries

@@ -8,7 +8,14 @@ import polars as pl
 
 from atlas_log_analyzer.store.logset import LogSet
 
-__all__ = ["COVERAGE_FACTOR", "DiffResult", "coverage_warning", "diff", "span_hours"]
+__all__ = [
+    "COVERAGE_FACTOR",
+    "DiffResult",
+    "coverage_warning",
+    "diff",
+    "span_hours",
+    "with_rates",
+]
 
 _ATTRS = ("template", "level", "level_name", "logger", "exception_type")
 
@@ -54,6 +61,25 @@ def coverage_warning(
         "unreliable; compare sets of similar span"
     )
     return text[:1].upper() + text[1:]
+
+
+def with_rates(frame: pl.DataFrame, hours_a: float, hours_b: float) -> pl.DataFrame:
+    """Add hourly rates to diff rows and sort by their ratio.
+
+    Adds ``rate_a = count_a / hours_a``, ``rate_b = count_b / hours_b`` (counts per
+    hour of each set's span, see :func:`span_hours`) and ``rate_ratio = rate_b /
+    rate_a`` (all rounded to 3 decimals; ``None`` when a span or ``rate_a`` is 0),
+    sorted by ``rate_ratio`` descending, then ``signature``.
+    """
+    none = pl.lit(None, dtype=pl.Float64)
+    rate_a = pl.col("count_a") / hours_a if hours_a > 0 else none
+    rate_b = pl.col("count_b") / hours_b if hours_b > 0 else none
+    ratio = pl.when(rate_a > 0).then(rate_b / rate_a).otherwise(none)
+    return frame.with_columns(
+        rate_a.round(3).alias("rate_a"),
+        rate_b.round(3).alias("rate_b"),
+        ratio.round(3).alias("rate_ratio"),
+    ).sort(["rate_ratio", "signature"], descending=[True, False], nulls_last=True)
 
 
 @dataclass(frozen=True, slots=True)

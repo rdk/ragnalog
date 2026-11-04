@@ -115,6 +115,7 @@ DIFF_COLUMNS = (
     "count_a",
     "count_b",
     "ratio",
+    "rate_ratio",
     "level_name",
     "logger",
     "exception_type",
@@ -1105,6 +1106,7 @@ def diff(
     coarse: bool = False,
     force: bool = False,
     limit: int = 0,
+    rate: bool = False,
 ) -> None:
     """Compare the groups of two log sets (A = before, B = after).
 
@@ -1115,15 +1117,23 @@ def diff(
     Output (json):
       {"schema": "diff.v1", "a": id_a, "b": id_b,
        "new": [row], "vanished": [row], "changed": [row], "unchanged_count": int,
-       "totals": {"new": int, "vanished": int, "changed": int}, "truncated": bool}
+       "totals": {"new": int, "vanished": int, "changed": int}, "truncated": bool,
+       "warnings": [str]}
     "totals" are the section sizes before --limit; "truncated" is true when
     any section was cut by --limit.
     Each row has signature, template, level, level_name, logger,
     exception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b,
     last_seen_b (counts are 0 on the missing side); "changed" rows also have
     ratio. "new" is sorted by count_b, "vanished" by count_a, "changed" by
-    |log(ratio)|, all descending. In jsonl mode one row per
-    line with an extra "change" key (new / vanished / changed).
+    |log(ratio)|, all descending. With --rate "changed" rows also have rate_a
+    and rate_b (count per hour of each set's span, first to last entry) and
+    rate_ratio = rate_b / rate_a, and "changed" is sorted by rate_ratio
+    descending: use it when the sets cover different lengths of time.
+    "warnings" is present only when the spans of A and B differ by more than
+    4x either way: one sentence saying that new/vanished groups are
+    unreliable (groups that occur only at certain times of day). In table and
+    jsonl mode the sentence goes to stderr. In jsonl mode one row per line
+    with an extra "change" key (new / vanished / changed).
 
     Exit codes: 0 ok; 1 the sets were built with different signature/mask-rule
     versions or specs (use --force); 3 unknown set or store error.
@@ -1135,19 +1145,24 @@ def diff(
         coarse: Compare by coarse signature (exception chain ignored).
         force: Compare even if signature versions or specs differ.
         limit: Maximum rows per section; 0 = all.
+        rate: Add hourly rates (rate_a, rate_b, rate_ratio) to "changed" and sort it by
+            rate_ratio, for sets of different length.
 
     """
     from atlas_log_analyzer.store import diff as store_diff
+    from atlas_log_analyzer.store.query import coverage_warning, span_hours, with_rates
 
     min_lvl, lim = _level(min_level), _limit(limit)
     a, b = _open(set_a), _open(set_b)
     result = store_diff(a, b, min_level=min_lvl, coarse=coarse, force=force)
+    hours_a, hours_b = span_hours(a), span_hours(b)
+    changed = with_rates(result.changed, hours_a, hours_b) if rate else result.changed
     sections = {
         name: jsonable_rows(frame if lim is None else frame.head(lim))
         for name, frame in (
             ("new", result.new),
             ("vanished", result.vanished),
-            ("changed", result.changed),
+            ("changed", changed),
         )
     }
     totals = {
@@ -1163,7 +1178,17 @@ def diff(
         "totals": totals,
         "truncated": any(len(sections[k]) < totals[k] for k in totals),
     }
+    warning = coverage_warning(
+        hours_a,
+        hours_b,
+        label_a=f"set A ({a.manifest.name or a.manifest.id})",
+        label_b=f"set B ({b.manifest.name or b.manifest.id})",
+    )
     out = _out()
+    if warning is not None:
+        doc["warnings"] = [warning]
+        if out.mode != "json":
+            out.warn(warning)
     jsonl = [{"change": name, **row} for name, rows in sections.items() for row in rows]
 
     def render(console: Console) -> None:
