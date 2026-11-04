@@ -48,12 +48,15 @@ uv run atlas-log --help
 
 ```sh
 export ATLAS_LOG_STORE=~/atlas-log-store                       # where log sets live
-atlas-log ingest /var/atlassian/jira/log/ --name prod-1029     # build a log set
-atlas-log groups prod-1029 --min-level WARN                    # one row per signature
-atlas-log show prod-1029 83d1828c6afb2ead                      # entries of a group, with variables
-atlas-log show prod-1029 83d1828c6afb2ead --raw --limit 1      # the original text
-atlas-log ingest ./logs-after-upgrade/ --name prod-1030
-atlas-log diff prod-1029 prod-1030 --level ERROR               # new / vanished / changed groups
+atlas-log ingest /var/atlassian/jira/log/ --name prod-1030     # build a log set
+atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
+atlas-log groups prod-1030 --min-level WARN --brief            # one row per signature
+atlas-log groups prod-1030 --with-exception --brief            # stack traces at any level
+atlas-log show prod-1030 83d1828c --brief                      # entries of a group (unique signature prefix)
+atlas-log show prod-1030 83d1828c --raw --limit 1              # the original text
+atlas-log frames prod-1030 83d1828c                            # its stack trace, application frames first
+atlas-log context prod-1030 ENTRY_ID --before 10               # what the thread did around one entry
+atlas-log diff prod-1029 prod-1030 --rate --limit 20           # new / vanished / changed vs an earlier set
 ```
 
 Log sets live in `--store DIR`, else `$ATLAS_LOG_STORE`, else `./.atlas-log`.
@@ -99,16 +102,20 @@ same `triage.v1` document as `atlas-log triage SET`. See `docs/webapp.md`.
 
 ```sh
 atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
-atlas-log triage today                                      #    verdict vs the previous set
-atlas-log groups today --min-level ERROR --limit 20 --brief # 2. triage: check "total"/"truncated"
-atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
+atlas-log triage today                                      # 2. verdict vs the previous set
+atlas-log groups today --min-level ERROR --limit 20 --brief # 3. groups: check "total"/"truncated"
+atlas-log groups today --with-exception --brief             #    stack traces at any level
+atlas-log show today SIGNATURE --brief --limit 5            # 4. drill into one group
 atlas-log frames today SIGNATURE                            #    its stack trace, plugin frames first
-atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text
-atlas-log context today ENTRY_ID --before 10                # 5. what the thread did around it
-atlas-log entries today --request-id REQUEST_ID --brief     # 6. the whole HTTP request
+atlas-log context today ENTRY_ID --before 10 --brief        #    what the thread did around it
+atlas-log entries today --request-id REQUEST_ID --brief     #    the whole HTTP request
+atlas-log entries today --signature SIGNATURE --since 2h --raw   #    the raw text
+atlas-log diff yesterday today --rate --limit 20            # 5. compare with another set
 ```
 
-Repeat 2–6; on an error, read `error.hint` for the next step.
+Repeat 3–4; on an error, read `error.hint` for the next step. `SIGNATURE`
+may be a unique prefix (4+ hex characters); `atlas-log sets --brief` lists the
+sets with their error and warning counts, `atlas-log set SET` shows one.
 
 ## Quick start (agents)
 

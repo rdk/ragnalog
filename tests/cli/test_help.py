@@ -42,6 +42,15 @@ def test_root_help_lists_every_command_and_globals(cli: Invoke) -> None:
     assert "Exit codes" in result.stdout
 
 
+def test_root_help_typical_flow(cli: Invoke) -> None:
+    text = " ".join(cli("--help").stdout.split())
+    flow = text[text.index("Typical flow") :]
+    steps = ["`ingest`", "`triage`", "`groups --brief`", "--with-exception", "`show`"]
+    steps += ["`frames`", "`context`", "`diff --rate`"]
+    positions = [flow.index(step) for step in steps]
+    assert positions == sorted(positions)
+
+
 @pytest.mark.parametrize("command", COMMANDS)
 def test_command_help_is_complete(cli: Invoke, command: str) -> None:
     result = cli(command, "--help")

@@ -150,13 +150,18 @@ app = App(
     name="atlas-log",
     help=(
         "Parse, group and compare application log files (Jira Data Center first).\n\n"
-        "Typical flow: `ingest` log files into a log set, list `groups` (one row per\n"
-        "message signature), `show` the entries of one group, `diff` two sets.\n"
+        "Typical flow: `ingest` log files into a log set; `triage` it (new kinds of\n"
+        "errors since the previous set?); list `groups --brief` (one row per message\n"
+        "signature; `groups --with-exception` for stack traces at any level); drill\n"
+        "into one group with `show` (its entries), `frames` (its stack trace) and\n"
+        "`context` (what the thread did around an entry); compare two sets with\n"
+        "`diff --rate`. `set SET` prints one set, `sets --brief` all of them.\n"
         "Output is a table on a terminal and JSON otherwise (--output json|jsonl|table).\n"
         'Every JSON document has a "schema" key; listings put rows under "items".\n'
         'Errors in json/jsonl mode: {"schema": "error.v1", "error": {"code", "message"}}\n'
         "on stdout. Exit codes: 0 ok, 1 usage error, 2 nothing found / parse failure,\n"
-        "3 store error. SET arguments accept a log-set id, a unique id prefix or a name."
+        "3 store error. SET arguments accept a log-set id, a unique id prefix or a name;\n"
+        "signatures may be given as a unique prefix of at least 4 hex characters."
     ),
     version=__version__,
     default_parameter=Parameter(negative=()),

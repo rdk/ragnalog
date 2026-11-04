@@ -4,6 +4,19 @@
 this page is the long form. Column-level schemas of the stored tables are
 printed by `atlas-log schema` (see also `design.md` §7).
 
+Typical flow:
+
+1. `ingest PATH --name N` builds a log set.
+2. `triage N` answers "new kinds of errors since the previous set?".
+3. `groups N --brief` lists one row per message signature;
+   `groups N --with-exception --brief` finds stack traces at any level.
+4. `show N SIG` (entries of a group), `frames N SIG` (its stack trace,
+   application frames first) and `context N ENTRY` (what the thread did around
+   an entry) drill into one group.
+5. `diff A B --rate` compares two sets.
+
+`sets --brief` and `set SET` show what is in the store.
+
 ## Conventions
 
 ### Global options
