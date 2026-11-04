@@ -20,7 +20,13 @@ atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a networ
 | `--port` | | `8321` |
 | `--token` | `ATLAS_LOG_TOKEN` | none: no auth |
 | `--max-upload-mb` | `ATLAS_LOG_MAX_UPLOAD_MB` | `2048` |
+| | `ATLAS_LOG_REPORT_CACHE` | `8` report payloads kept in memory |
 | `--reload` | | off (development) |
+
+Flags win over the environment. With `--reload` uvicorn runs the app in a child
+process that sees only the environment, so `serve` exports every setting
+(`ATLAS_LOG_STORE`, `ATLAS_LOG_TOKEN`, `ATLAS_LOG_MAX_UPLOAD_MB`,
+`ATLAS_LOG_REPORT_CACHE`) before it starts: a reloading server keeps its token.
 
 ## Pages
 

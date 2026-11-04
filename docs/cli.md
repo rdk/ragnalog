@@ -475,8 +475,10 @@ Runs the web app over the store until interrupted (needs the `web` extra). Pages
 `/` (sets with triage verdicts and upload), `/sets/SET` (report, `?compare=auto|SET`),
 `/sets/SET/triage`; JSON API under `/api` with the same documents as this CLI and
 OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
-`Authorization: Bearer T` on `/api`. Nothing is printed to stdout; the server
-logs to stderr. See `docs/webapp.md`.
+`Authorization: Bearer T` on `/api`; `--max-upload-mb` defaults to env
+`ATLAS_LOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
+reloading process through these environment variables. Nothing is printed to
+stdout; the server logs to stderr. See `docs/webapp.md`.
 
 Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3.
 
