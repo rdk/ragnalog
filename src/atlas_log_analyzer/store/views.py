@@ -9,14 +9,16 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
-from typing import Any
-
-import polars as pl
+from typing import TYPE_CHECKING, Any
 
 from atlas_log_analyzer.core.java import is_app_frame
-from atlas_log_analyzer.store.logset import LogSet, to_records
-from atlas_log_analyzer.store.query import coverage_warning, span_hours
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA
+
+if TYPE_CHECKING:
+    from atlas_log_analyzer.store.logset import LogSet
+
+# polars and the log-set reader are imported where used: the CLI imports this module
+# for its column presets, and commands that read no set should not load polars.
 
 __all__ = [
     "DEFAULT_MAX_RAW",
@@ -129,6 +131,9 @@ _FRAME_HEAD = ["id", "ts", "level_name", "logger", "message", "signature", "exce
 
 def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
     """Return the entry ``ref`` (an entry id), else the first example of the group ``ref``."""
+    import polars as pl
+
+    from atlas_log_analyzer.store.logset import to_records
 
     def by_id(entry_id: str) -> dict[str, Any] | None:
         lf = ls.entries_lazy().filter(pl.col("id") == entry_id).select(_FRAME_HEAD)
@@ -204,6 +209,8 @@ def frames_view(
 
 def diff_warning(a: LogSet, b: LogSet) -> str | None:
     """Return the ``diff.v1`` coverage warning for baseline ``a`` and ``b``, if any."""
+    from atlas_log_analyzer.store.query import coverage_warning, span_hours
+
     return coverage_warning(
         span_hours(a),
         span_hours(b),

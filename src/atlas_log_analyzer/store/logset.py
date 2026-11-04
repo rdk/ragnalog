@@ -19,7 +19,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-import duckdb
 import polars as pl
 
 from atlas_log_analyzer.core.models import LogLevel
@@ -879,6 +878,8 @@ class LogSet:
             duckdb.Error: The query is invalid or tries to access other files.
 
         """
+        import duckdb  # only this method needs it; keeps it out of every other command
+
         con = duckdb.connect(":memory:")
         try:
             views = {"entries": self.entries_path, "groups": self.groups_path}

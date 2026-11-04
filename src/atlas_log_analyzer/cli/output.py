@@ -18,14 +18,9 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date, datetime
 from enum import Enum, IntEnum
 from pathlib import Path
-from typing import Any, Literal, TextIO
+from typing import TYPE_CHECKING, Any, Literal, TextIO
 
 import msgspec
-import polars as pl
-from rich.console import Console
-from rich.markup import escape
-from rich.table import Table
-from rich.text import Text
 
 from atlas_log_analyzer.core.java import (
     APP_PACKAGES_ENV,
@@ -34,6 +29,14 @@ from atlas_log_analyzer.core.java import (
     is_app_frame,
 )
 from atlas_log_analyzer.core.models import LogEntry
+
+# polars and rich are imported where used: JSON output of a command that reads no
+# log set needs neither, and rich is needed only for tables and coloured raw text.
+if TYPE_CHECKING:
+    import polars as pl
+    from rich.console import Console
+    from rich.table import Table
+    from rich.text import Text
 
 __all__ = [
     "APP_PACKAGES_ENV",
@@ -180,6 +183,8 @@ def default_mode(stream: TextIO | None = None) -> OutputMode:
 
 
 def _enc_hook(obj: Any) -> Any:
+    # polars objects can only exist if polars was imported; don't import it to check.
+    pl_mod = sys.modules.get("polars")
     if isinstance(obj, Enum):
         return obj.name
     if isinstance(obj, Path):
@@ -188,9 +193,9 @@ def _enc_hook(obj: Any) -> Any:
         return dict(obj)
     if isinstance(obj, (set, frozenset)):
         return sorted(obj, key=str)
-    if isinstance(obj, pl.DataFrame):
+    if pl_mod is not None and isinstance(obj, pl_mod.DataFrame):
         return obj.to_dicts()
-    if isinstance(obj, pl.Series):
+    if pl_mod is not None and isinstance(obj, pl_mod.Series):
         return obj.to_list()
     if dataclasses.is_dataclass(obj) and not isinstance(obj, type):
         return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
@@ -232,13 +237,16 @@ def jsonable_rows(data: pl.DataFrame | Iterable[Mapping[str, Any]]) -> list[dict
     itself: converting them to Python objects would need ``zoneinfo`` data,
     which is missing on Windows unless ``tzdata`` is installed.
     """
-    if isinstance(data, pl.DataFrame):
-        aware = [
-            pl.col(name).dt.to_string(ISO_FORMAT)
-            for name, dtype in data.schema.items()
-            if isinstance(dtype, pl.Datetime) and dtype.time_zone is not None
-        ]
-        return (data.with_columns(aware) if aware else data).to_dicts()
+    if "polars" in sys.modules:  # a DataFrame implies polars was imported
+        import polars as pl
+
+        if isinstance(data, pl.DataFrame):
+            aware = [
+                pl.col(name).dt.to_string(ISO_FORMAT)
+                for name, dtype in data.schema.items()
+                if isinstance(dtype, pl.Datetime) and dtype.time_zone is not None
+            ]
+            return (data.with_columns(aware) if aware else data).to_dicts()
     return [dict(row) for row in data]
 
 
@@ -333,6 +341,9 @@ def rows_table(
     Numeric columns are right-aligned; ids, levels, counts and timestamps are
     never wrapped. With ``color`` the ``level_name`` cells are coloured.
     """
+    from rich.markup import escape
+    from rich.table import Table
+
     if columns is None:
         seen: dict[str, None] = {}
         for row in rows[:100]:
@@ -366,6 +377,8 @@ def rows_table(
 
 def mapping_tables(doc: Mapping[str, Any], *, title: str | None = None) -> list[Table]:
     """Render a document: scalars as a key/value table, nested values as extra tables."""
+    from rich.table import Table
+
     kv = Table(title=title, title_justify="left", show_header=False)
     kv.add_column("key", style="bold")
     kv.add_column("value", overflow="fold")
@@ -445,6 +458,8 @@ def highlight_entry(raw: str) -> Text:
     or inside ``ATLAS_LOG_APP_PACKAGES`` when set) bold. ``... N more`` dim italic.
     Unrecognised lines are unstyled.
     """
+    from rich.text import Text
+
     prefixes = app_packages()
     text = Text()
     for i, line in enumerate(raw.replace("\r", "").split("\n")):
@@ -535,6 +550,8 @@ class Output:
 
     def console(self) -> Console:
         """Return a rich console on stdout; plain text (no ANSI) unless colour is enabled."""
+        from rich.console import Console
+
         color = self.color
         return Console(
             file=self.out,
@@ -567,6 +584,8 @@ class Output:
         if not self.color:
             self.out.write("\n\n".join(raw for raw, _ in entries) + "\n")
             return
+        from rich.text import Text
+
         console = self.console()
         for raw, label in entries:
             console.rule(Text(label or "", style="dim"), style="dim", align="left")

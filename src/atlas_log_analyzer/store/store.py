@@ -9,6 +9,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import xxhash
 
@@ -28,13 +29,9 @@ from atlas_log_analyzer.store.logset import (
     SourceInfo,
 )
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-from atlas_log_analyzer.store.writer import (
-    EntriesWriter,
-    SourceStats,
-    groups_from_entries,
-    iter_entries,
-    write_groups,
-)
+
+if TYPE_CHECKING:
+    from atlas_log_analyzer.store.writer import SourceStats
 
 __all__ = ["MIN_PREFIX", "AmbiguousLogSet", "LogSetNotFound", "Store", "StoreError", "logset_id"]
 
@@ -67,6 +64,8 @@ def _source_infos(
     sources: list[SourceFile], stats: dict[str, SourceStats]
 ) -> tuple[SourceInfo, ...]:
     """Match writer statistics (keyed by ``entry.source.path``) to the input files."""
+    from atlas_log_analyzer.store.writer import SourceStats
+
     normalised = {_norm(k): v for k, v in stats.items()}
     out = []
     for sf in sources:
@@ -247,6 +246,9 @@ class Store:
                 another log set.
 
         """
+        # the writer (pyarrow.compute) is loaded only by commands that write
+        from atlas_log_analyzer.store.writer import EntriesWriter, groups_from_entries, write_groups
+
         src_list = list(sources)
         if not src_list:
             raise StoreError("no sources to ingest")
@@ -306,6 +308,8 @@ class Store:
             StoreError: The set does not exist or its format is unknown.
 
         """
+        from atlas_log_analyzer.store.writer import EntriesWriter, iter_entries, write_groups
+
         ls = self.open(ref)
         m = ls.manifest
         try:

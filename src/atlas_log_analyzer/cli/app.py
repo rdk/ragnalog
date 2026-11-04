@@ -21,11 +21,9 @@ from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 
 from cyclopts import App, CycloptsError, Group, Parameter
-from rich.console import Console
-from rich.text import Text
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.cli.output import (
@@ -50,17 +48,7 @@ from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
-from atlas_log_analyzer.store import LogSet, Store
-from atlas_log_analyzer.store.pipeline import (
-    FormatNotDetected,
-    IngestProgress,
-    NoSourcesFound,
-    SourceSelection,
-    ingest_sources,
-    select_sources,
-)
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
-from atlas_log_analyzer.store.store import StoreError
 from atlas_log_analyzer.store.views import (
     DEFAULT_MAX_RAW,
     ENTRY_BRIEF,
@@ -72,6 +60,15 @@ from atlas_log_analyzer.store.views import (
     diff_warning,
     frames_view,
 )
+
+# Startup time: the log-set reader (polars), the ingest pipeline and Parquet writer,
+# DuckDB and rich are imported by the commands that need them, not here.
+if TYPE_CHECKING:
+    from rich.console import Console
+
+    from atlas_log_analyzer.store.logset import LogSet
+    from atlas_log_analyzer.store.pipeline import IngestProgress, SourceSelection
+    from atlas_log_analyzer.store.store import Store
 
 __all__ = ["app", "main", "run"]
 
@@ -225,10 +222,14 @@ def _store(*, create: bool = False) -> Store:
                 ExitCode.STORE,
                 hint=f"pass --store DIR outside the repository or set {STORE_ENV}",
             )
+    from atlas_log_analyzer.store.store import Store
+
     return Store(ctx.store)
 
 
 def _open(ref: str) -> LogSet:
+    from atlas_log_analyzer.store.store import StoreError
+
     store = _store()
     try:
         return store.open(ref)
@@ -371,6 +372,8 @@ def _selection(
 
 def _select(paths: Sequence[Path], name: str | None) -> SourceSelection:
     """Files and format of `ingest`/`parse`; foreign files found in directories are skipped."""
+    from atlas_log_analyzer.store.pipeline import FormatNotDetected, NoSourcesFound, select_sources
+
     if not paths:
         raise CliError("usage", "at least one PATH is required")
     try:
@@ -500,6 +503,8 @@ def ingest(
         mine: Propose group merges with Drain3 (needs extra "mine": uv sync --extra mine).
 
     """
+    from atlas_log_analyzer.store.pipeline import ingest_sources
+
     out = _out()
     if frames is not None and frames < 0:
         raise CliError("invalid_value", "--frames must be >= 0")
@@ -765,6 +770,8 @@ def show(
     group = group_rows[0] if group_rows else None
 
     def render(console: Console) -> None:
+        from rich.text import Text
+
         if group is not None:
             exc = f"  exception {group['exception_type']}" if group.get("exception_type") else ""
             console.print(Text(str(group.get("template", "")), style="bold"))
@@ -1067,6 +1074,8 @@ def frames(
         out.info(f"entry {doc['entry']} has no parsed exception")
 
     def render(console: Console) -> None:
+        from rich.text import Text
+
         console.print(
             Text(f"{doc['level_name']} {doc['logger']}", style="bold")
             + f"  {_cell(doc['ts'])}  entry {doc['entry']}  group {doc['signature']}"
@@ -1469,6 +1478,8 @@ def triage(
             out.warn(warning)
 
     def render(console: Console) -> None:
+        from rich.text import Text
+
         me = doc["set"]
         if doc["baseline"] is None:
             console.print(f"verdict: no_baseline ({me['name'] or me['id']} has no earlier set)")

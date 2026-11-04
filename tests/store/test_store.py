@@ -119,13 +119,14 @@ def test_groups_recomputed_when_grouper_counts_duplicates(store: Store, built: B
 
 def test_pipeline_dedupes_before_grouping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A repeated entry is dropped before the grouper: no recomputation of groups."""
-    import atlas_log_analyzer.store.store as store_mod
+    import atlas_log_analyzer.store.writer as writer_mod
     from atlas_log_analyzer.store.pipeline import ingest_paths
 
     def recompute(*args: object, **kwargs: object) -> int:
         raise AssertionError("groups were recomputed from entries.parquet")
 
-    monkeypatch.setattr(store_mod, "groups_from_entries", recompute)
+    # Store.ingest imports the writer's functions when it runs
+    monkeypatch.setattr(writer_mod, "groups_from_entries", recompute)
     a = "2026-10-29 02:19:41,415+0100 Caesium-1-1 WARN      [c.a.X] repeated line"
     b = "2026-10-29 02:19:42,000+0100 Caesium-1-1 INFO      [c.a.Y] other line"
     log = tmp_path / "dup.log"
