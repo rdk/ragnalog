@@ -32,6 +32,7 @@ from atlas_log_analyzer.cli.output import (
     ExitCode,
     Output,
     OutputMode,
+    app_packages,
     default_mode,
     encode_json,
     entry_to_dict,
@@ -44,6 +45,7 @@ from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
+from atlas_log_analyzer.core.java import is_app_frame
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import SourceFile, iter_lines, iter_sources
@@ -960,6 +962,159 @@ def context(
             "items": items,
         },
         jsonl_rows=[{**r, "anchor": True} if r["id"] == entry_id else r for r in items],
+        table=render,
+    )
+    return 0
+
+
+_HEX16 = re.compile(r"^[0-9a-f]{16}$")
+_FRAME_HEAD = ("id", "ts", "level_name", "logger", "message", "signature", "exception_chain")
+
+
+def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
+    """Return the entry ``ref`` (an entry id), else the first example of the group ``ref``."""
+    import polars as pl
+
+    def by_id(entry_id: str) -> dict[str, Any] | None:
+        lf = ls.entries_lazy().filter(pl.col("id") == entry_id).select(_FRAME_HEAD)
+        rows = jsonable_rows(lf.head(1).collect())
+        return rows[0] if rows else None
+
+    found = by_id(ref)
+    if found is not None or not _HEX16.match(ref):
+        return found
+    group = ls.group(ref)
+    if group is None:
+        return None
+    for example in group.get("examples") or []:
+        if (found := by_id(str(example))) is not None:
+            return found
+    rows = jsonable_rows(ls.entries(signature=ref, limit=1, columns=list(_FRAME_HEAD)))
+    return rows[0] if rows else None
+
+
+def _frame_dict(frame: dict[str, Any]) -> dict[str, Any]:
+    return {"location": frame["location"], "file": frame.get("file"), "line": frame.get("line")}
+
+
+@app.command
+def frames(
+    logset: str,
+    ref: str,
+    /,
+    *,
+    limit: int = 10,
+    all_: Annotated[bool, Parameter(name="--all")] = False,
+) -> int:
+    """Show the exception chain of one entry with its application frames first.
+
+    REF is an entry id or a group signature (16 hex chars; entry ids are tried
+    first). For a signature the group's first example entry is used. Each
+    exception of the chain (outermost first, then each "Caused by:") lists its
+    first --limit application frames: frames whose class is outside the
+    library packages (JDK, Groovy, Jira platform: com.atlassian., org.ofbiz.,
+    webwork., org.apache., com.google., JDBC drivers, ...), so plugin code
+    stands out. With the environment variable ATLAS_LOG_APP_PACKAGES set
+    (comma-separated prefixes, e.g. com.acme.,org.example.) an application
+    frame is one that starts with one of those prefixes instead.
+
+    Output (json):
+      {"schema": "frames.v1", "logset": id, "entry": <entry id>,
+       "signature": str, "ts": str, "level_name": str, "logger": str,
+       "message": str, "app_packages": [str] | null, "count": int,
+       "items": [{"type", "message",
+                  "app_frames": [{"location", "file", "line"}, ...],
+                  "app_frames_total": int, "frames_total": int,
+                  "omitted_frames": int,
+                  "frames": [{"location", "file", "line", "app": bool}]}]}
+    "items" is the chain (count = its length; empty when the entry has no
+    parsed exception). "app_frames" holds at most --limit frames and
+    "app_frames_total" counts all of them; "frames_total" is the number of
+    frames printed in the log, "omitted_frames" the "... N more" count.
+    "frames" (every frame with an "app" flag) and all application frames are
+    returned only with --all.
+    "app_packages" echoes ATLAS_LOG_APP_PACKAGES. In jsonl mode one exception
+    per line; the table prints each exception and its frames as text.
+
+    Exit codes: 0 ok (also when the entry has no exception); 1 bad option; 2 no
+    entry or group REF; 3 unknown set or store error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+        ref: Entry id, or group signature (its first example entry is used).
+        limit: Application frames per exception; 0 = all.
+        all_: Return every frame (with an "app" flag) and all application frames.
+
+    """
+    lim = _limit(limit)
+    ls = _open(logset)
+    entry = _frame_entry(ls, ref)
+    if entry is None:
+        name = ls.manifest.name or ls.manifest.id
+        raise CliError(
+            "not_found",
+            f"no entry or group {ref!r} in log set {ls.manifest.id}",
+            ExitCode.NOT_FOUND,
+            hint=f"pass an entry id (`atlas-log entries {name} --with-exception --brief`) "
+            f"or a group signature (`atlas-log groups {name} --with-exception --brief`)",
+        )
+    prefixes = app_packages()
+    items: list[dict[str, Any]] = []
+    for exc in entry.get("exception_chain") or []:
+        all_frames = list(exc.get("frames") or [])
+        flagged = [(f, is_app_frame(str(f["location"]), prefixes)) for f in all_frames]
+        apps = [_frame_dict(f) for f, app_frame in flagged if app_frame]
+        item: dict[str, Any] = {
+            "type": exc["type"],
+            "message": exc.get("message"),
+            "app_frames": apps if all_ or lim is None else apps[:lim],
+            "app_frames_total": len(apps),
+            "frames_total": len(all_frames),
+            "omitted_frames": int(exc.get("omitted_frames") or 0),
+        }
+        if all_:
+            item["frames"] = [{**_frame_dict(f), "app": app_frame} for f, app_frame in flagged]
+        items.append(item)
+    out = _out()
+    if not items:
+        out.info(f"entry {entry['id']} has no parsed exception")
+
+    def render(console: Console) -> None:
+        console.print(
+            Text(f"{entry['level_name']} {entry['logger']}", style="bold")
+            + f"  {_cell(entry['ts'])}  entry {entry['id']}  group {entry['signature']}"
+        )
+        for i, it in enumerate(items):
+            prefix = "Caused by: " if i else ""
+            message = f": {it['message']}" if it["message"] else ""
+            console.print(Text(f"{prefix}{it['type']}{message}", style="bold" if not i else ""))
+            shown = it["frames"] if all_ else it["app_frames"]
+            for f in shown:
+                where = f"{f['file']}:{f['line']}" if f.get("line") is not None else f["file"]
+                style = "bold" if f.get("app", True) else "dim"
+                console.print(Text(f"    at {f['location']}({where or ''})", style=style))
+            console.print(
+                Text(
+                    f"    [{len(it['app_frames'])} of {it['app_frames_total']} app frames, "
+                    f"{it['frames_total']} frames, {it['omitted_frames']} omitted]",
+                    style="dim",
+                )
+            )
+
+    out.emit(
+        "frames.v1",
+        {
+            "logset": ls.manifest.id,
+            "entry": entry["id"],
+            "signature": entry["signature"],
+            "ts": entry["ts"],
+            "level_name": entry["level_name"],
+            "logger": entry["logger"],
+            "message": entry["message"],
+            "app_packages": list(prefixes) if prefixes else None,
+            "count": len(items),
+            "items": items,
+        },
         table=render,
     )
     return 0

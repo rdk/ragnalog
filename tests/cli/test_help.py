@@ -15,6 +15,7 @@ COMMANDS = [
     "show",
     "entries",
     "context",
+    "frames",
     "query",
     "stats",
     "diff",

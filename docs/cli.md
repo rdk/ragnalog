@@ -41,8 +41,26 @@ Global options may appear before or after the command name.
   (see `--color`). Scalar metadata of listings (`logset=… count=… total=…
   truncated=…`) goes to stderr. `show --raw` / `entries --raw` with colour on
   highlight the header (timestamp, level, logger), exception class names,
-  `Caused by:`, stack frames (application frames in bold) and separate entries
-  with a `file:line` rule.
+  `Caused by:`, stack frames (application frames in bold, see
+  [Application frames](#application-frames)) and separate entries with a
+  `file:line` rule.
+
+### Application frames
+
+`frames` and the highlighting of `--raw` output separate application code from
+library/platform code. A frame is a *library* frame when its class starts with
+one of the prefixes in `core/java.py` `LIBRARY_PACKAGES`: the JDK and JVM
+languages (`java.`, `javax.`, `jakarta.`, `jdk.`, `sun.`, `com.sun.`, `kotlin.`,
+`scala.`, `groovy.`, `org.codehaus.groovy.`), the Jira platform and its
+libraries (`com.atlassian.`, `io.atlassian.`, `org.ofbiz.`, `webwork.`,
+`net.java.ao.`, `org.hibernate.`, `com.google.`, `org.osgi.`,
+`org.springframework.`, `org.apache.`, `org.eclipse.`, `org.glassfish.`,
+`io.netty.`, `com.zaxxer.`) and JDBC drivers (`org.postgresql.`, `oracle.`,
+`com.mysql.`, `com.microsoft.sqlserver.`); every other frame — plugin code,
+Groovy scripts — is an *application* frame. Set the environment variable
+`ATLAS_LOG_APP_PACKAGES` to comma-separated prefixes
+(`ATLAS_LOG_APP_PACKAGES=com.acme.,org.example.`) to invert this: a frame is
+then an application frame only when it starts with one of them.
 
 Values: timestamps are ISO 8601 strings; stored timestamps are UTC
 (`…+00:00`), `parse` keeps the original offset. `level` is numeric in stored
@@ -210,6 +228,36 @@ included. Entry ids are the `id` column of `entries`/`show` or a group's
 At most `--before + 1 + --after` items. `jsonl`: one row per line, the anchor
 row with an extra `"anchor": true`. The table marks the anchor row with `▶`.
 Exit: 0; 1 bad option; 2 no entry with this id (`not_found`, with a hint); 3.
+
+### `frames SET REF [--limit 10] [--all]`
+
+The exception chain of one entry with its application frames (see
+[Application frames](#application-frames)). `REF` is an entry id or a group
+signature (16 hex chars); entry ids are tried first, and for a signature the
+group's first example entry is used.
+
+```json
+{"schema": "frames.v1", "logset": "…", "entry": "<entry id>", "signature": "…",
+ "ts": "…", "level_name": "DEBUG", "logger": "c.q.r.stats.type.StatTypeHelper",
+ "message": "…", "app_packages": null, "count": 2,
+ "items": [{"type": "com.qoti.rf.exceptions.InternalException", "message": "…",
+            "app_frames": [{"location": "com.qoti.rf.stats.type.StatTypeHelper.resolve",
+                            "file": "StatTypeHelper.java", "line": 88}],
+            "app_frames_total": 2, "frames_total": 6, "omitted_frames": 0}]}
+```
+
+`items` is the chain, outermost exception first, then each `Caused by:`
+(empty, exit 0, when the entry has no parsed exception). `app_frames` holds the
+first `--limit` application frames (`0` = all) and `app_frames_total` counts
+them; `frames_total` is the number of frames in the log text and
+`omitted_frames` the `... N more` count. `--all` returns all application frames
+and adds `frames`: every frame with an `"app": true|false` flag.
+`app_packages` echoes `ATLAS_LOG_APP_PACKAGES` (`null` when unset). `jsonl`:
+one exception per line. The table prints each exception with its frames as
+text. Only the first exception chain of an entry is parsed (`design.md` §11),
+and the chain ends at the first line that is not a frame.
+
+Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 
 ### `query SET SQL`
 

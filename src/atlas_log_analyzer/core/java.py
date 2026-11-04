@@ -27,7 +27,57 @@ from collections.abc import Sequence
 
 from atlas_log_analyzer.core.models import ExceptionInfo, Frame
 
-__all__ = ["parse_exceptions", "parse_frame"]
+__all__ = ["LIBRARY_PACKAGES", "is_app_frame", "parse_exceptions", "parse_frame"]
+
+LIBRARY_PACKAGES: tuple[str, ...] = (
+    # JDK and JVM languages
+    "java.",
+    "javax.",
+    "jakarta.",
+    "jdk.",
+    "sun.",
+    "com.sun.",
+    "kotlin.",
+    "scala.",
+    "groovy.",
+    "org.codehaus.groovy.",
+    # Jira platform and the libraries it ships
+    "com.atlassian.",
+    "io.atlassian.",
+    "org.ofbiz.",
+    "webwork.",
+    "net.java.ao.",
+    "org.hibernate.",
+    "com.google.",
+    "org.osgi.",
+    "org.springframework.",
+    "org.apache.",
+    "org.eclipse.",
+    "org.glassfish.",
+    "io.netty.",
+    "com.zaxxer.",
+    # JDBC drivers
+    "org.postgresql.",
+    "oracle.",
+    "com.mysql.",
+    "com.microsoft.sqlserver.",
+)
+"""Package prefixes of library/platform code; frames elsewhere are application frames."""
+
+
+def is_app_frame(location: str, app_packages: Sequence[str] | None = None) -> bool:
+    """Tell whether a frame location (``pkg.Class.method``) is application code.
+
+    Args:
+        location: ``Frame.location``, e.g. ``com.example.Foo.bar``.
+        app_packages: When given (non-empty), a frame is application code iff it starts
+            with one of these prefixes; otherwise iff it is outside :data:`LIBRARY_PACKAGES`.
+
+    """
+    if app_packages:
+        return location.startswith(tuple(app_packages))
+    return not location.startswith(LIBRARY_PACKAGES)
+
 
 _TYPE = r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+"
 _HEADER_RE = re.compile(rf"(?P<type>{_TYPE})(?::(?: (?P<msg>.*)|$)|$)")

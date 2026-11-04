@@ -97,6 +97,7 @@ atlas-log ingest LOGS/ --name today                         # 1. build the set (
 atlas-log triage today                                      #    verdict vs the previous set
 atlas-log groups today --min-level ERROR --limit 20 --brief # 2. triage: check "total"/"truncated"
 atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
+atlas-log frames today SIGNATURE                            #    its stack trace, plugin frames first
 atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text
 atlas-log context today ENTRY_ID --before 10                # 5. what the thread did around it
 atlas-log entries today --request-id REQUEST_ID --brief     # 6. the whole HTTP request
@@ -115,6 +116,9 @@ Repeat 2–6; on an error, read `error.hint` for the next step.
   `--columns a,b,c` on `groups` and `entries`.
 - Level filters hide DEBUG stack traces; `--with-exception` (any level with an
   exception) and `--exception TEXT` (substring of `exception_type`) do not.
+- `frames SET SIGNATURE|ENTRY_ID` reduces a stack trace to its application
+  frames (JDK and Jira platform packages skipped; set `ATLAS_LOG_APP_PACKAGES=
+  com.acme.,org.example.` to name your own packages instead).
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).

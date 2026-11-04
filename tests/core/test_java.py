@@ -152,3 +152,41 @@ def test_parse_frame(line: str, frame: Frame | None) -> None:
         assert result.module is None
         return
     assert result == frame
+
+
+def test_library_packages_and_app_frames() -> None:
+    from atlas_log_analyzer.core.java import LIBRARY_PACKAGES, is_app_frame
+
+    for prefix in (
+        "com.atlassian.",
+        "io.atlassian.",
+        "org.ofbiz.",
+        "webwork.",
+        "net.java.ao.",
+        "org.hibernate.",
+        "com.google.",
+        "org.osgi.",
+        "org.springframework.",
+        "org.apache.",
+        "org.eclipse.",
+        "io.netty.",
+        "com.zaxxer.",
+        "org.postgresql.",
+        "oracle.",
+        "com.mysql.",
+        "com.microsoft.sqlserver.",
+        "java.",
+        "javax.",
+        "jdk.",
+        "sun.",
+        "groovy.",
+        "org.codehaus.groovy.",
+    ):
+        assert prefix in LIBRARY_PACKAGES
+    assert not is_app_frame("com.atlassian.jira.issue.IssueManager.getIssue")
+    assert not is_app_frame("java.lang.Thread.run")
+    assert is_app_frame("com.qoti.rf.stats.type.StatTypeHelper.resolve")
+    assert is_app_frame("Script42.run")  # Groovy script classes have no package
+    assert is_app_frame("com.atlassian.jira.Foo.bar", ["com.atlassian.jira."])
+    assert not is_app_frame("com.qoti.rf.Foo.bar", ["org.acme."])
+    assert not is_app_frame("com.qoti.rf.Foo.bar", ("org.acme.", "com.google."))

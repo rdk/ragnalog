@@ -27,13 +27,17 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
+from atlas_log_analyzer.core.java import LIBRARY_PACKAGES, is_app_frame
 from atlas_log_analyzer.core.models import LogEntry
 
 __all__ = [
+    "APP_PACKAGES_ENV",
+    "LIBRARY_PACKAGES",
     "CliError",
     "ExitCode",
     "Output",
     "OutputMode",
+    "app_packages",
     "default_mode",
     "encode_json",
     "entry_to_dict",
@@ -44,6 +48,9 @@ __all__ = [
     "mapping_tables",
     "rows_table",
 ]
+
+APP_PACKAGES_ENV = "ATLAS_LOG_APP_PACKAGES"
+"""Comma-separated package prefixes of application code; overrides :data:`LIBRARY_PACKAGES`."""
 
 type ColorMode = Literal["auto", "always", "never"]
 
@@ -410,21 +417,17 @@ _FRAME_RE = re.compile(
 )
 _MORE_RE = re.compile(r"^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$")
 
-LIBRARY_PACKAGES = (
-    "java.",
-    "javax.",
-    "jdk.",
-    "sun.",
-    "com.sun.",
-    "kotlin.",
-    "scala.",
-    "groovy.",
-    "org.codehaus.groovy.",
-    "org.springframework.",
-    "org.apache.",
-    "org.eclipse.",
-)
-"""Frames in these packages are rendered normally; other (application) frames in bold."""
+
+def app_packages() -> tuple[str, ...] | None:
+    """Application package prefixes from ``ATLAS_LOG_APP_PACKAGES``, or ``None`` when unset.
+
+    When set, a frame is application code iff it starts with one of the prefixes;
+    otherwise iff it is outside :data:`LIBRARY_PACKAGES` (see :func:`is_app_frame`).
+    """
+    value = os.environ.get(APP_PACKAGES_ENV, "")
+    prefixes = tuple(p.strip() for p in value.split(",") if p.strip())
+    return prefixes or None
+
 
 HEADER_LEVEL_STYLES: Mapping[str, str] = {
     "FATAL": "bold red",
@@ -442,9 +445,11 @@ def highlight_entry(raw: str) -> Text:
     Header line: timestamp dim, level coloured (ERROR/FATAL bold red, WARN
     yellow, DEBUG/TRACE dim), logger cyan. Exception lines: class name bold,
     ``Caused by:``/``Suppressed:`` magenta. Stack frames: package dim,
-    ``(File.java:12)`` cyan, application frames (outside :data:`LIBRARY_PACKAGES`)
-    bold. ``... N more`` dim italic. Unrecognised lines are unstyled.
+    ``(File.java:12)`` cyan, application frames (outside :data:`LIBRARY_PACKAGES`,
+    or inside ``ATLAS_LOG_APP_PACKAGES`` when set) bold. ``... N more`` dim italic.
+    Unrecognised lines are unstyled.
     """
+    prefixes = app_packages()
     text = Text()
     for i, line in enumerate(raw.replace("\r", "").split("\n")):
         if i:
@@ -461,7 +466,7 @@ def highlight_entry(raw: str) -> Text:
             text.append(m["msg"])
         elif m := _FRAME_RE.match(line):
             name = m["pkg"] + m["meth"]
-            app_frame = not name.startswith(LIBRARY_PACKAGES)
+            app_frame = is_app_frame(name, prefixes)
             text.append(m["indent"] + "at ", "dim")
             if m["module"]:
                 text.append(m["module"], "dim")
