@@ -316,7 +316,7 @@ busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
 
-### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 0] [--rate]`
+### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 50] [--rate]`
 
 Compares stored group tables: `new` (only in B), `vanished` (only in A),
 `changed` (both, different count; `ratio = count_b / count_a`).
@@ -328,7 +328,9 @@ Compares stored group tables: `new` (only in B), `vanished` (only in A),
  "warnings": ["Set B (night) covers 30 min but set A (day) covers 6.9 h (13.7x shorter): …"]}
 ```
 
-The table prints `vanished: none` (etc.) instead of an empty table.
+Each section holds at most `--limit` rows (default 50, `0` = all); `totals`
+are the section sizes before the cut and `truncated` is true when any section
+was cut. The table prints `vanished: none` (etc.) instead of an empty table.
 
 Rows: `signature, template, level, level_name, logger, exception_type, count_a,
 count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (+ `ratio` in

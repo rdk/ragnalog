@@ -159,7 +159,7 @@ set names given at `ingest --name`; `SIG` is a 16-hex group signature from
 
 ```sh
 atlas-log triage after --baseline before            # verdict, new types, new exceptions, growth
-atlas-log diff before after --min-level WARN --rate # full comparison, changed groups by hourly rate
+atlas-log diff before after --min-level WARN --rate --limit 20   # top 20 per section, changed by hourly rate
 ```
 
 Read `verdict`, then `new` and `new_exceptions` (stack traces below the level
@@ -188,7 +188,7 @@ atlas-log context after ENTRY --any-thread --before 5 --after 5   # what else ha
 ```sh
 atlas-log ingest logs-after-fix/ --name fixed
 atlas-log triage fixed --baseline after             # SIG should be in "vanished"
-atlas-log diff after fixed --rate | jq '[.vanished[], .changed[]] | map(select(.signature == "SIG"))'
+atlas-log diff after fixed --rate --limit 0 | jq '[.vanished[], .changed[]] | map(select(.signature == "SIG"))'
 atlas-log groups fixed --exception NullPointer --brief  # any group with that exception left?
 ```
 

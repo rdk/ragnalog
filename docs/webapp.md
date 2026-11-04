@@ -72,7 +72,7 @@ the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 | `GET /api/sets/{ref}/timeline` | `bucket` (`1h`, `15m`, `1d` …), `signature`, `level`, `min_level`, `since`, `until` | `timeline.v1`: `[{bucket, count}]` |
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto` or a set), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
-| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit`, `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
+| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
 | `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `mine`, `overwrite` as form fields or query | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |

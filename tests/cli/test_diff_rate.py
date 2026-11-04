@@ -83,3 +83,29 @@ def test_diff_warning_on_stderr_in_table_mode(cli: Invoke, sets: None, store_dir
     assert "rate_ratio" in res.stdout
     quiet = cli("--output", "table", "--store", store_dir, "diff", "base", "long")
     assert "warning" not in quiet.stderr
+
+
+def wide(groups: int) -> list[E]:
+    """One INFO entry per distinct logger: ``groups`` groups."""
+    return [
+        E(
+            f"03:{i // 60:02d}:{i % 60:02d},000",
+            "main",
+            "INFO",
+            f"org.acme.wide.L{i}",
+            "tick",
+            day=DAY,
+        )
+        for i in range(groups)
+    ]
+
+
+def test_diff_limit_defaults_to_50(jcli: Invoke, tmp_path: Path) -> None:
+    assert jcli("ingest", MINI_LOG, "--name", "base").code == 0
+    log = write_log(tmp_path / "wide" / "atlassian-jira.log", wide(60))
+    assert jcli("ingest", log, "--name", "wide").code == 0
+    doc = jcli("diff", "base", "wide").json()
+    assert len(doc["new"]) == 50 and doc["totals"]["new"] == 60 and doc["truncated"] is True
+    everything = jcli("diff", "base", "wide", "--limit", "0").json()
+    assert len(everything["new"]) == 60 and everything["truncated"] is False
+    assert everything["new"][:50] == doc["new"]

@@ -345,3 +345,17 @@ def test_triage_coverage_and_new_exceptions(client: TestClient) -> None:
     assert all(r["exception_type"] for r in doc["new_exceptions"])
     none = _json(client, "/api/sets/mini/triage?baseline=none")
     assert none["verdict"] == "no_baseline" and none["coverage"]["hours_baseline"] is None
+
+
+def test_diff_limit_defaults_to_50(store_dir: Path, tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from atlas_log_analyzer.store.store import Store
+    from tests.cli.synth import write_log
+    from tests.cli.test_diff_rate import wide
+
+    ingest_paths(Store(store_dir), [write_log(tmp_path / "w" / "a.log", wide(60))], name="wide")
+    with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))) as client:
+        doc = _json(client, "/api/diff?a=mini&b=wide")
+        assert len(doc["new"]) == 50 and doc["totals"]["new"] == 60 and doc["truncated"]
+        assert len(_json(client, "/api/diff?a=mini&b=wide&limit=0")["new"]) == 60
+    assert doc == _cli_json(store_dir, "diff", "mini", "wide")

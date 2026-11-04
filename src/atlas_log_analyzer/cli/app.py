@@ -1283,7 +1283,7 @@ def diff(
     min_level: Annotated[str | None, Parameter(name=["--min-level", "--level"])] = None,
     coarse: bool = False,
     force: bool = False,
-    limit: int = 0,
+    limit: int = 50,
     rate: bool = False,
 ) -> None:
     """Compare the groups of two log sets (A = before, B = after).
@@ -1297,8 +1297,9 @@ def diff(
        "new": [row], "vanished": [row], "changed": [row], "unchanged_count": int,
        "totals": {"new": int, "vanished": int, "changed": int}, "truncated": bool,
        "warnings": [str]}
-    "totals" are the section sizes before --limit; "truncated" is true when
-    any section was cut by --limit.
+    Each section holds at most --limit rows (default 50, 0 = all); "totals"
+    are the section sizes before --limit and "truncated" is true when any
+    section was cut.
     Each row has signature, template, level, level_name, logger,
     exception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b,
     last_seen_b (counts are 0 on the missing side); "changed" rows also have
@@ -1322,7 +1323,7 @@ def diff(
         min_level: Only groups of this level or more severe (e.g. ERROR).
         coarse: Compare by coarse signature (exception chain ignored).
         force: Compare even if signature versions or specs differ.
-        limit: Maximum rows per section; 0 = all.
+        limit: Maximum rows per section (new, vanished, changed); 0 = all.
         rate: Add hourly rates (rate_a, rate_b, rate_ratio) to "changed" and sort it by
             rate_ratio, for sets of different length.
 

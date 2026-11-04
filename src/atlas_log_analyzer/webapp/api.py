@@ -555,10 +555,13 @@ def diff(
     min_level: str | None = None,
     coarse: bool = False,
     force: bool = False,
-    limit: Annotated[int, Query(ge=0)] = 0,
+    limit: Annotated[int, Query(ge=0)] = 50,
     rate: bool = False,
 ) -> dict[str, Any]:
     """Compare baseline ``a`` with ``b`` (``diff.v1``, as ``atlas-log diff A B``).
+
+    Each section holds at most ``limit`` rows (default 50, 0 = all); ``totals``
+    counts them before the cut and ``truncated`` says whether any was cut.
 
     ``rate`` adds ``rate_a``, ``rate_b`` and ``rate_ratio`` (counts per hour of each
     set's span) to ``changed`` and sorts it by ``rate_ratio``. ``warnings`` is
