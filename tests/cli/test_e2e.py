@@ -139,6 +139,13 @@ def test_sets_summary_and_brief(jcli: Invoke) -> None:
     assert brief["items"][0]["id"] == manifest["id"]
 
 
+def test_sets_lists_a_damaged_set(jcli: Invoke, store_dir: Path) -> None:
+    manifest = ingest(jcli)
+    (store_dir / manifest["id"] / "groups.parquet").write_bytes(b"not parquet")
+    res = jcli("sets", "--brief")
+    assert res.code == 0 and res.json()["items"][0]["summary"] is None
+
+
 def test_set_command(jcli: Invoke) -> None:
     manifest = ingest(jcli)
     doc = jcli("set", "mini").json()

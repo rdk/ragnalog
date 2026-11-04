@@ -600,7 +600,7 @@ def sets(*, brief: bool = False) -> None:
         summary: dict[str, int] | None
         try:
             summary = set_summary(store.open(m.id))
-        except StoreError, OSError, ValueError:
+        except Exception:  # a damaged set must not break the listing (as GET /api/sets)
             summary = None
         items.append(set_item(m.to_dict(), summary, brief=brief))
     _out().emit(
