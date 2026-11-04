@@ -301,6 +301,11 @@ substring); entry filters take `request_id=`. Uploads go through
   returns the existing set without consuming the input iterator.
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
   reports sniff confidence per format; `parse` always emits JSONL; an empty
-  listing exits 0.
+  listing exits 0. Added for agents: `triage` (the web app's `triage.v1`,
+  built in `store/triage.py`), `context` (entries around one entry),
+  `frames` (application frames of a stack trace; library prefixes in
+  `core/java.py`), paging (`--offset`), `--brief`/`--columns`, `--max-raw`,
+  exception and request filters, `diff --rate` and coverage warnings. The
+  implicit `./.atlas-log` is not created inside a git work tree.
 - **Windows.** `tzdata` is a dependency on `win32`; polars/pyarrow cannot
   convert UTC timestamps to Python objects without it.

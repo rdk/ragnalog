@@ -146,6 +146,70 @@ atlas-log query today "select hour(ts) h, count(*) from entries where level >= 5
 atlas-log parse atlassian-jira.log --limit 100      # JSONL entries, no store
 ```
 
+`query --help` lists the columns of the `entries`, `groups` and `merges`
+views; a misspelt column gets the candidate columns in `error.hint`.
+
+## Agent cookbook
+
+Five common questions and the commands that answer them. `before`/`after` are
+set names given at `ingest --name`; `SIG` is a 16-hex group signature from
+`groups`, `ENTRY` an entry id from `entries`/`show`, `REQ` a Jira request id.
+
+**1. What broke after the deploy?**
+
+```sh
+atlas-log triage after --baseline before            # verdict, new types, new exceptions, growth
+atlas-log diff before after --min-level WARN --rate # full comparison, changed groups by hourly rate
+```
+
+Read `verdict`, then `new` and `new_exceptions` (stack traces below the level
+filter). If `warnings` is not empty the two sets cover very different spans
+and `new`/`vanished` are unreliable: compare sets of similar length.
+
+**2. What is in this stack trace?**
+
+```sh
+atlas-log frames after SIG                          # the chain with application frames first
+atlas-log frames after SIG --all                    # every frame, with an "app" flag
+atlas-log show after SIG --raw --limit 1 --max-raw 0   # the full original text of one entry
+```
+
+**3. Which request or thread triggered it?**
+
+```sh
+atlas-log entries after --signature SIG --columns id,ts,thread,user,request_id --limit 5
+atlas-log entries after --request-id REQ --brief    # everything that request logged
+atlas-log context after ENTRY --before 20           # what the thread did just before
+atlas-log context after ENTRY --any-thread --before 5 --after 5   # what else happened then
+```
+
+**4. Is it gone after the fix?**
+
+```sh
+atlas-log ingest logs-after-fix/ --name fixed
+atlas-log triage fixed --baseline after             # SIG should be in "vanished"
+atlas-log diff after fixed --rate | jq '[.vanished[], .changed[]] | map(select(.signature == "SIG"))'
+atlas-log groups fixed --exception NullPointer --brief  # any group with that exception left?
+```
+
+Let the fixed set cover a comparable span (see `coverage` / `warnings`);
+a group that only occurs at night is "vanished" from a daytime-only set.
+
+**5. Which issues or users are affected?**
+
+```sh
+atlas-log show after SIG --limit 20 | jq '.items[] | {ts, user, variables}'
+atlas-log query after "select unnest(variables) v, count(*) n from entries
+                       where signature = 'SIG' group by 1 order by 2 desc"
+atlas-log query after "select user, count(*) n from entries
+                       where signature = 'SIG' group by 1 order by 2 desc"
+atlas-log groups after --contains 'issue' --columns signature,count,top_users
+```
+
+`show` returns each entry's `variables` (the values masking replaced: issue
+keys, numbers, ids); the first `query` counts them over the whole group, the
+second counts users; `top_users` in `groups` is the top-10 list per group.
+
 Store layout:
 
 ```

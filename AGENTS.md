@@ -38,7 +38,7 @@ uv run ruff format .                 # format (CI runs `ruff format --check .`)
 uv run mypy                          # strict type check of the package
 uv run pytest                        # all tests; `uv run pytest tests/cli -q` for one package
 uv run atlas-log --help              # the CLI from the working tree
-uv run python docs/formats/generate.py   # regenerate docs/formats from store/schema.py
+uv run python docs/formats/generate.py   # regenerate docs/formats and the column lists in docs/cli.md
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, format check, mypy and pytest on

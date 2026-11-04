@@ -1,15 +1,27 @@
-"""Regenerate the format docs in this directory from ``atlas_log_analyzer.store.schema``.
+"""Regenerate the format docs from ``atlas_log_analyzer.store.schema``.
+
+Writes ``docs/formats/<name>.v1.md`` and the generated column blocks of
+``docs/cli.md`` (between ``<!-- generated:NAME ... -->`` and ``<!-- /generated -->``).
 
 Run: ``uv run python docs/formats/generate.py``
 """
 
 from __future__ import annotations
 
+import re
+import textwrap
 from pathlib import Path
 
 from atlas_log_analyzer.store.schema import SCHEMA_NAMES, schema_json
 
 HERE = Path(__file__).parent
+CLI_MD = HERE.parent / "cli.md"
+BLOCK_RE = re.compile(
+    r"(?P<open><!-- generated:(?P<name>[\w-]+)[^>]*-->\n)"
+    r"(?P<body>.*?)"
+    r"(?P<close><!-- /generated -->)",
+    re.S,
+)
 
 INTRO = {
     "entries": """\
@@ -79,12 +91,52 @@ def render(name: str) -> str:
     return "\n".join(lines) + "\n"
 
 
+def columns(name: str) -> list[str]:
+    """Column names of a stored table, in schema order."""
+    fields = schema_json(name)["fields"]
+    assert isinstance(fields, list)
+    return [str(f["name"]) for f in fields]
+
+
+def _wrap(text: str, indent: str = "") -> str:
+    return textwrap.fill(text, width=80, subsequent_indent=indent) + "\n"
+
+
+def cli_blocks() -> dict[str, str]:
+    """Bodies of the generated blocks of ``docs/cli.md``, by block name."""
+
+    def listing(name: str) -> str:
+        return ", ".join(f"`{c}`" for c in columns(name))
+
+    views = "".join(_wrap(f"- `{v}`: {listing(v)}", "  ") for v in ("entries", "groups", "merges"))
+    return {
+        "entries-columns": _wrap(f"entries.v1 columns: {listing('entries')}."),
+        "view-columns": "Columns of the views:\n\n" + views,
+    }
+
+
+def render_cli_md(text: str) -> str:
+    """``text`` (the content of ``docs/cli.md``) with its generated blocks rewritten."""
+    blocks = cli_blocks()
+
+    def fill(m: re.Match[str]) -> str:
+        body = blocks.get(m["name"])
+        if body is None:
+            raise KeyError(f"unknown generated block {m['name']!r} in {CLI_MD}")
+        return m["open"] + body + m["close"]
+
+    return BLOCK_RE.sub(fill, text)
+
+
 def main() -> None:
-    """Write all ``<name>.v1.md`` files."""
+    """Write all ``<name>.v1.md`` files and the generated blocks of ``docs/cli.md``."""
     for name in SCHEMA_NAMES:
         path = HERE / f"{name}.v1.md"
         path.write_text(render(name), encoding="utf-8", newline="\n")
         print(path)
+    text = CLI_MD.read_text(encoding="utf-8")
+    CLI_MD.write_text(render_cli_md(text), encoding="utf-8", newline="\n")
+    print(CLI_MD)
 
 
 if __name__ == "__main__":

@@ -206,12 +206,16 @@ message, exception_type, signature` (not combinable with `--columns`).
  "truncated": true, "items": [<entries.v1 row>]}
 ```
 
-entries.v1 columns: `id, ts, tz_offset, level, level_name, thread, logger,
-message, body, user, request_id, session, ip, url, request_url, context,
-exception_type, exception_message, exception_chain, signature,
-coarse_signature, template, variables, source_path, source_line,
-source_offset, raw, parse_error`. Exit: 0 (also empty); 1 bad option, unknown
-column, `--brief` with `--columns`; 3.
+<!-- generated:entries-columns by docs/formats/generate.py from store/schema.py -->
+entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
+`logger`, `message`, `body`, `user`, `request_id`, `session`, `ip`, `url`,
+`request_url`, `context`, `exception_type`, `exception_message`,
+`exception_chain`, `signature`, `coarse_signature`, `template`, `variables`,
+`source_path`, `source_line`, `source_offset`, `raw`, `parse_error`.
+<!-- /generated -->
+
+Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with
+`--columns`; 3.
 
 ### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N]`
 
@@ -262,10 +266,31 @@ Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 ### `query SET SQL`
 
 DuckDB SQL over the views `entries`, `groups` and (when present) `merges`.
+`atlas-log query --help` lists the same columns; `atlas-log schema NAME` adds
+types and descriptions.
+
+<!-- generated:view-columns by docs/formats/generate.py from store/schema.py -->
+Columns of the views:
+
+- `entries`: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`, `logger`,
+  `message`, `body`, `user`, `request_id`, `session`, `ip`, `url`,
+  `request_url`, `context`, `exception_type`, `exception_message`,
+  `exception_chain`, `signature`, `coarse_signature`, `template`, `variables`,
+  `source_path`, `source_line`, `source_offset`, `raw`, `parse_error`
+- `groups`: `signature`, `coarse_signature`, `template`, `level`, `level_name`,
+  `logger`, `exception_type`, `count`, `first_seen`, `last_seen`, `user_count`,
+  `thread_count`, `source_count`, `top_users`, `top_threads`, `sources`,
+  `examples`
+- `merges`: `cluster_id`, `drain_template`, `signatures`
+<!-- /generated -->
 
 ```json
 {"schema": "query.v1", "logset": "…", "columns": ["level_name", "n"], "count": 4, "total": 4, "truncated": false, "items": [{"level_name": "WARN", "n": 18}]}
 ```
+
+Errors are `sql_error` (exit 1). For an unknown column the `hint` lists
+DuckDB's candidate columns (or, without candidates, the columns of the views);
+for an unknown table it lists the available views.
 
 Exit: 0 (also empty); 1 SQL error; 3.
 

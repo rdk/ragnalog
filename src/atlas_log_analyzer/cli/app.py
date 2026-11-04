@@ -15,6 +15,7 @@ import io
 import os
 import re
 import sys
+import textwrap
 from collections.abc import Iterable, Sequence
 from datetime import UTC, datetime, timedelta
 from itertools import islice
@@ -52,7 +53,7 @@ from atlas_log_analyzer.core.reader import SourceFile, iter_lines, iter_sources
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
 from atlas_log_analyzer.store import LogSet, Store
 from atlas_log_analyzer.store.pipeline import IngestProgress, ingest_sources
-from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA
+from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, MERGES_SCHEMA
 from atlas_log_analyzer.store.store import StoreError
 
 __all__ = ["app", "main", "run"]
@@ -80,6 +81,33 @@ ENTRY_FIELDS: tuple[str, ...] = tuple(ENTRIES_SCHEMA.names)
 """Columns of entries.v1 (valid ``entries --columns`` values)."""
 GROUP_FIELDS: tuple[str, ...] = tuple(GROUPS_SCHEMA.names)
 """Columns of groups.v1 (valid ``groups --columns`` values; ``signatures`` with --coarse)."""
+MERGE_FIELDS: tuple[str, ...] = tuple(MERGES_SCHEMA.names)
+"""Columns of merges.v1."""
+VIEW_FIELDS: dict[str, tuple[str, ...]] = {
+    "entries": ENTRY_FIELDS,
+    "groups": GROUP_FIELDS,
+    "merges": MERGE_FIELDS,
+}
+"""Columns of the views of `query`, from ``store/schema.py``."""
+
+
+def _fill_doc(func: Any, **columns: Sequence[str]) -> None:
+    """Replace ``<NAME>`` marker lines in ``func``'s docstring (= its ``--help``).
+
+    Each marker becomes the comma-separated ``columns[NAME]``, wrapped and indented
+    like the marker line.
+    """
+    lines = str(func.__doc__ or "").splitlines()
+    for i, line in enumerate(lines):
+        key = line.strip()[1:-1]
+        if line.strip().startswith("<") and key in columns:
+            indent = line[: len(line) - len(line.lstrip())]
+            lines[i] = textwrap.fill(
+                ", ".join(columns[key]), width=78, initial_indent=indent, subsequent_indent=indent
+            )
+    func.__doc__ = "\n".join(lines)
+
+
 GROUP_BRIEF = (
     "signature",
     "template",
@@ -826,12 +854,9 @@ def entries(
     (offset + count < total; the next page starts at offset + count). With
     --raw the raw log text of the entries is printed instead (as `show --raw`;
     --offset/--limit apply).
-    Rows hold all entries.v1 columns (`atlas-log schema entries`) unless
-    --columns is given: id, ts (UTC), tz_offset, level (numeric), level_name,
-    thread, logger, message, body, user, request_id, session, ip, url,
-    request_url, context, exception_type, exception_message, exception_chain,
-    signature, coarse_signature, template, variables, source_path, source_line,
-    source_offset, raw, parse_error.
+    Rows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,
+    level numeric) unless --columns is given:
+      <ENTRIES_COLUMNS>
     --columns takes comma-separated names and/or is repeated
     (--columns ts,level_name --columns message); an unknown name is error
     "invalid_value" whose "hint" lists the valid columns. --brief is the
@@ -1161,7 +1186,16 @@ def query(logset: str, sql: str, /) -> None:
     """Run DuckDB SQL over a log set and print the result rows.
 
     Views: "entries" (entries.v1), "groups" (groups.v1) and "merges" (merges.v1,
-    only when present). See `atlas-log schema entries|groups|merges` for columns.
+    only when present). Their columns (types and descriptions: `atlas-log
+    schema entries|groups|merges`):
+      entries:
+        <ENTRIES_COLUMNS>
+      groups:
+        <GROUPS_COLUMNS>
+      merges:
+        <MERGES_COLUMNS>
+    level is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),
+    ts/first_seen/last_seen are UTC timestamps, variables a list of strings.
 
     SQL examples:
       select level, count(*) n from entries group by 1 order by 2 desc
@@ -1174,6 +1208,10 @@ def query(logset: str, sql: str, /) -> None:
       {"schema": "query.v1", "logset": id, "columns": [str, ...], "count": int,
        "total": int, "truncated": false, "items": [{<column>: value, ...}, ...]}
     The CLI never truncates query results ("total" = "count"); use LIMIT in SQL.
+
+    Errors: "sql_error"; for an unknown column its "hint" lists DuckDB's
+    candidate columns (or the columns of the views), for an unknown table the
+    available views.
 
     Exit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or
     store error.
@@ -1190,7 +1228,9 @@ def query(logset: str, sql: str, /) -> None:
     try:
         df = ls.sql(sql)
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        raise CliError("sql_error", str(exc).strip()) from exc
+        message = str(exc).strip()
+        views = [v for v in VIEW_FIELDS if v != "merges" or ls.merges_path.exists()]
+        raise CliError("sql_error", message, hint=_sql_hint(message, views)) from exc
     items = jsonable_rows(df)
     _out().emit(
         "query.v1",
@@ -1204,6 +1244,30 @@ def query(logset: str, sql: str, /) -> None:
         },
         title="query result",
     )
+
+
+_CANDIDATES_RE = re.compile(r"Candidate bindings: (.+)")
+_COLUMN_ERRORS = ("Binder Error", "ColumnNotFound", "not found in FROM clause", "column named")
+
+
+def _sql_hint(message: str, views: Sequence[str]) -> str | None:
+    """Next step for a failed query: candidate columns, the views' columns, or the views."""
+    if any(marker in message for marker in _COLUMN_ERRORS):
+        if m := _CANDIDATES_RE.search(message):
+            return (
+                f"candidate columns: {m.group(1).strip()}; all columns: "
+                "`atlas-log query --help` or `atlas-log schema entries|groups`"
+            )
+        return "; ".join(f"{v} columns: {', '.join(VIEW_FIELDS[v])}" for v in views)
+    if "Catalog Error" in message and "does not exist" in message:
+        return f"available views: {', '.join(views)}"
+    return None
+
+
+_fill_doc(entries, ENTRIES_COLUMNS=ENTRY_FIELDS)
+_fill_doc(
+    query, ENTRIES_COLUMNS=ENTRY_FIELDS, GROUPS_COLUMNS=GROUP_FIELDS, MERGES_COLUMNS=MERGE_FIELDS
+)
 
 
 @app.command
