@@ -27,7 +27,12 @@ from rich.markup import escape
 from rich.table import Table
 from rich.text import Text
 
-from atlas_log_analyzer.core.java import LIBRARY_PACKAGES, is_app_frame
+from atlas_log_analyzer.core.java import (
+    APP_PACKAGES_ENV,
+    LIBRARY_PACKAGES,
+    app_packages_from_env,
+    is_app_frame,
+)
 from atlas_log_analyzer.core.models import LogEntry
 
 __all__ = [
@@ -49,9 +54,6 @@ __all__ = [
     "rows_table",
 ]
 
-APP_PACKAGES_ENV = "ATLAS_LOG_APP_PACKAGES"
-"""Comma-separated package prefixes of application code; overrides :data:`LIBRARY_PACKAGES`."""
-
 type ColorMode = Literal["auto", "always", "never"]
 
 type OutputMode = Literal["table", "json", "jsonl"]
@@ -59,8 +61,9 @@ type OutputMode = Literal["table", "json", "jsonl"]
 MAX_CELL = 80
 """Table cells longer than this are truncated with an ellipsis."""
 
-ISO_FORMAT = "%Y-%m-%dT%H:%M:%S%.f%:z"
-"""chrono format for timezone-aware datetime columns (ISO 8601 with offset)."""
+ISO_FORMAT = "%Y-%m-%dT%H:%M:%S%.3f%:z"
+"""chrono format for timezone-aware datetime columns: ISO 8601 with milliseconds and offset,
+as :func:`atlas_log_analyzer.store.logset.to_records` (the web API) writes them."""
 
 _ISO_RE = re.compile(r"^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)?$")
 
@@ -418,15 +421,8 @@ _FRAME_RE = re.compile(
 _MORE_RE = re.compile(r"^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$")
 
 
-def app_packages() -> tuple[str, ...] | None:
-    """Application package prefixes from ``ATLAS_LOG_APP_PACKAGES``, or ``None`` when unset.
-
-    When set, a frame is application code iff it starts with one of the prefixes;
-    otherwise iff it is outside :data:`LIBRARY_PACKAGES` (see :func:`is_app_frame`).
-    """
-    value = os.environ.get(APP_PACKAGES_ENV, "")
-    prefixes = tuple(p.strip() for p in value.split(",") if p.strip())
-    return prefixes or None
+app_packages = app_packages_from_env
+"""Application package prefixes from ``ATLAS_LOG_APP_PACKAGES`` (see ``core.java``)."""
 
 
 HEADER_LEVEL_STYLES: Mapping[str, str] = {

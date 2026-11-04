@@ -57,14 +57,16 @@ the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
-| `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `sort`, `limit` (50; 0 = all), `offset`, `coarse` | `groups.v1` with `total`, `offset`, `truncated` |
-| `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse` | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
+| `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
+| `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse`, `max_raw` (4000; 0 = all) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw` | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape |
-| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `since`, `until`, `contains`, `columns` (repeat), `limit` (100, max 10000), `offset` | `entries.v1` with `total`, `next_offset` |
+| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
+| `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000) | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context`) |
+| `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
 | `GET /api/sets/{ref}/timeline` | `bucket` (`1h`, `15m`, `1d` …), `signature`, `level`, `min_level`, `since`, `until` | `timeline.v1`: `[{bucket, count}]` |
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto` or a set), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
-| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` | `diff.v1` (as `atlas-log diff A B`) |
+| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit`, `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
 | `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `mine`, `overwrite` as form fields or query | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |

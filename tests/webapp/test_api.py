@@ -250,6 +250,91 @@ def test_triage_auto_baseline_is_an_earlier_or_overlapping_set(client: TestClien
             assert doc["verdict"] == "no_baseline"
 
 
+def _cli_json(store_dir: Path, *args: str) -> dict[str, Any]:
+    """The CLI's JSON document for ``args`` over the same store."""
+    import json
+    import subprocess
+    import sys
+
+    command = [sys.executable, "-m", "atlas_log_analyzer.cli.app", "--output", "json"]
+    res = subprocess.run(
+        [*command, "--store", str(store_dir), *args],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    doc: dict[str, Any] = json.loads(res.stdout)
+    return doc
+
+
+def test_groups_exception_filters_and_columns(client: TestClient, store_dir: Path) -> None:
+    url = "/api/sets/mini/groups?with_exception=true&columns=signature,exception_type&limit=0"
+    doc = _json(client, url)
+    assert doc["count"] >= 1 and all(
+        set(g) == {"signature", "exception_type"} for g in doc["items"]
+    )
+    assert all(g["exception_type"] for g in doc["items"])
+    cli = _cli_json(store_dir, "groups", "mini", "--with-exception", "--limit", "0")
+    assert sorted(g["signature"] for g in doc["items"]) == sorted(
+        g["signature"] for g in cli["items"]
+    )
+    npe = _json(client, "/api/sets/mini/groups?exception=nullpointer&brief=true")
+    assert npe["total"] == 1 and "top_users" not in npe["items"][0]
+    assert _json(client, "/api/sets/mini/groups?contains=SLA")["total"] == 1
+    bad = _json(client, "/api/sets/mini/groups?columns=signature,nope", 400)["error"]
+    assert bad["code"] == "invalid_value" and "top_users" in bad["hint"]
+    both = _json(client, "/api/sets/mini/groups?brief=true&columns=signature", 400)
+    assert both["error"]["code"] == "usage"
+
+
+def test_entries_request_id_exception_and_max_raw(client: TestClient) -> None:
+    rid = _json(client, "/api/sets/mini/entries?request_id=543x1290x2")
+    assert rid["total"] == 1 and rid["items"][0]["request_id"] == "543x1290x2"
+    exc = _json(client, "/api/sets/mini/entries?exception=ConnectException&brief=true")
+    assert exc["total"] == 0  # the outermost exception is DataAccessException
+    exc = _json(client, "/api/sets/mini/entries?exception=DataAccess&brief=true")
+    assert exc["total"] == 1 and set(exc["items"][0]) == set(
+        ("id", "ts", "level_name", "thread", "logger", "message", "exception_type", "signature")
+    )
+    cut = _json(client, "/api/sets/mini/entries?with_exception=true&max_raw=50&columns=raw")
+    row = cut["items"][0]
+    assert row["body_truncated"] is True and row["raw_chars"] > 50
+    assert row["raw"].endswith("chars total, use max_raw=0]")
+    full = _json(client, "/api/sets/mini/entries?with_exception=true&max_raw=0&columns=raw")
+    assert "body_truncated" not in full["items"][0]
+
+
+def test_context_endpoint(client: TestClient, store_dir: Path) -> None:
+    ids = [e["id"] for e in _json(client, "/api/sets/mini/entries?columns=id")["items"]]
+    anchor = ids[1]
+    doc = _json(client, f"/api/sets/mini/entries/{anchor}/context?before=1&after=1&any_thread=true")
+    assert doc["schema"] == "entries.v1" and doc["anchor"] == anchor and doc["any_thread"] is True
+    assert [e["id"] for e in doc["items"]] == ids[0:3]
+    cli = _cli_json(store_dir, "context", "mini", anchor, "--before", "1", "--after", "1",
+                    "--any-thread")  # fmt: skip
+    assert doc["items"] == cli["items"]
+    missing = _json(client, "/api/sets/mini/entries/0000000000000000/context", 404)
+    assert missing["error"]["code"] == "not_found"
+
+
+def test_frames_endpoint(client: TestClient, store_dir: Path) -> None:
+    sig = _json(client, "/api/sets/mini/groups?exception=DataAccess")["items"][0]["signature"]
+    doc = _json(client, f"/api/sets/mini/frames/{sig}")
+    assert doc["schema"] == "frames.v1" and doc["count"] == 2
+    assert doc == _cli_json(store_dir, "frames", "mini", sig)
+    every = _json(client, f"/api/sets/mini/frames/{sig}?all=true")
+    assert all("app" in f for f in every["items"][0]["frames"])
+    assert _json(client, "/api/sets/mini/frames/nope", 404)["error"]["code"] == "not_found"
+
+
+def test_diff_rate_and_warning(client: TestClient, store_dir: Path) -> None:
+    doc = _json(client, "/api/diff?a=sample&b=mini&rate=true")
+    cli = _cli_json(store_dir, "diff", "sample", "mini", "--rate")
+    assert doc["changed"] == cli["changed"] and doc.get("warnings") == cli.get("warnings")
+    assert all({"rate_a", "rate_b", "rate_ratio"} <= set(r) for r in doc["changed"])
+
+
 def test_triage_coverage_and_new_exceptions(client: TestClient) -> None:
     doc = _json(client, "/api/sets/mini/triage?baseline=sample")
     assert set(doc["coverage"]) == {"hours_baseline", "hours_set", "ratio"}

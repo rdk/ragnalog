@@ -46,7 +46,6 @@ from atlas_log_analyzer.cli.output import (
 from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-from atlas_log_analyzer.core.java import is_app_frame
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
@@ -60,8 +59,19 @@ from atlas_log_analyzer.store.pipeline import (
     ingest_sources,
     select_sources,
 )
-from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, MERGES_SCHEMA
+from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 from atlas_log_analyzer.store.store import StoreError
+from atlas_log_analyzer.store.views import (
+    DEFAULT_MAX_RAW,
+    ENTRY_BRIEF,
+    ENTRY_FIELDS,
+    GROUP_BRIEF,
+    GROUP_FIELDS,
+    cap_text,
+    cap_texts,
+    diff_warning,
+    frames_view,
+)
 
 __all__ = ["app", "main", "run"]
 
@@ -84,10 +94,6 @@ GROUP_COLUMNS = (
     "last_seen",
 )
 ENTRY_COLUMNS = ("ts", "level_name", "thread", "user", "logger", "message", "variables")
-ENTRY_FIELDS: tuple[str, ...] = tuple(ENTRIES_SCHEMA.names)
-"""Columns of entries.v1 (valid ``entries --columns`` values)."""
-GROUP_FIELDS: tuple[str, ...] = tuple(GROUPS_SCHEMA.names)
-"""Columns of groups.v1 (valid ``groups --columns`` values; ``signatures`` with --coarse)."""
 MERGE_FIELDS: tuple[str, ...] = tuple(MERGES_SCHEMA.names)
 """Columns of merges.v1."""
 VIEW_FIELDS: dict[str, tuple[str, ...]] = {
@@ -115,28 +121,6 @@ def _fill_doc(func: Any, **columns: Sequence[str]) -> None:
     func.__doc__ = "\n".join(lines)
 
 
-GROUP_BRIEF = (
-    "signature",
-    "template",
-    "level_name",
-    "logger",
-    "exception_type",
-    "count",
-    "first_seen",
-    "last_seen",
-)
-"""Columns of ``groups --brief``."""
-ENTRY_BRIEF = (
-    "id",
-    "ts",
-    "level_name",
-    "thread",
-    "logger",
-    "message",
-    "exception_type",
-    "signature",
-)
-"""Columns of ``entries --brief``."""
 SET_COLUMNS = (
     "id",
     "name",
@@ -324,10 +308,6 @@ def _offset(value: int) -> int:
     return value
 
 
-DEFAULT_MAX_RAW = 4000
-"""Default ``--max-raw`` of ``show``/``entries`` in json/jsonl mode."""
-
-
 def _max_raw(value: int | None, *, text: bool) -> int | None:
     """Resolve ``--max-raw``: explicit value (0 = no limit), else 4000 for json/jsonl.
 
@@ -343,35 +323,7 @@ def _max_raw(value: int | None, *, text: bool) -> int | None:
     return DEFAULT_MAX_RAW
 
 
-def _cap(text: str, limit: int) -> str:
-    return f"{text[:limit]}… [truncated: {len(text)} chars total, use --max-raw 0]"
-
-
-def _cap_items(items: list[dict[str, Any]], limit: int | None) -> list[dict[str, Any]]:
-    """Cut ``raw`` and ``body`` to ``limit`` characters; mark the rows that were cut.
-
-    A cut row gets ``"body_truncated": true`` and ``"raw_chars"`` (the original
-    length of ``raw``, or of ``body`` when ``raw`` is not among the columns).
-    """
-    if limit is None:
-        return items
-    for item in items:
-        sizes: dict[str, int] = {}
-        for key in ("raw", "body"):
-            value = item.get(key)
-            if isinstance(value, str) and len(value) > limit:
-                sizes[key] = len(value)
-                item[key] = _cap(value, limit)
-        if sizes:
-            item["body_truncated"] = True
-            raw = item.get("raw")
-            if "raw" in sizes:
-                item["raw_chars"] = sizes["raw"]
-            elif isinstance(raw, str):
-                item["raw_chars"] = len(raw)
-            else:
-                item["raw_chars"] = sizes["body"]
-    return items
+_cap_items = cap_texts
 
 
 def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | None:
@@ -1048,36 +1000,6 @@ def context(
     return 0
 
 
-_HEX16 = re.compile(r"^[0-9a-f]{16}$")
-_FRAME_HEAD = ("id", "ts", "level_name", "logger", "message", "signature", "exception_chain")
-
-
-def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
-    """Return the entry ``ref`` (an entry id), else the first example of the group ``ref``."""
-    import polars as pl
-
-    def by_id(entry_id: str) -> dict[str, Any] | None:
-        lf = ls.entries_lazy().filter(pl.col("id") == entry_id).select(_FRAME_HEAD)
-        rows = jsonable_rows(lf.head(1).collect())
-        return rows[0] if rows else None
-
-    found = by_id(ref)
-    if found is not None or not _HEX16.match(ref):
-        return found
-    group = ls.group(ref)
-    if group is None:
-        return None
-    for example in group.get("examples") or []:
-        if (found := by_id(str(example))) is not None:
-            return found
-    rows = jsonable_rows(ls.entries(signature=ref, limit=1, columns=list(_FRAME_HEAD)))
-    return rows[0] if rows else None
-
-
-def _frame_dict(frame: dict[str, Any]) -> dict[str, Any]:
-    return {"location": frame["location"], "file": frame.get("file"), "line": frame.get("line")}
-
-
 @app.command
 def frames(
     logset: str,
@@ -1129,8 +1051,8 @@ def frames(
     """
     lim = _limit(limit)
     ls = _open(logset)
-    entry = _frame_entry(ls, ref)
-    if entry is None:
+    doc = frames_view(ls, ref, limit=lim, all_frames=all_, app_packages=app_packages())
+    if doc is None:
         name = ls.manifest.name or ls.manifest.id
         raise CliError(
             "not_found",
@@ -1139,31 +1061,15 @@ def frames(
             hint=f"pass an entry id (`atlas-log entries {name} --with-exception --brief`) "
             f"or a group signature (`atlas-log groups {name} --with-exception --brief`)",
         )
-    prefixes = app_packages()
-    items: list[dict[str, Any]] = []
-    for exc in entry.get("exception_chain") or []:
-        all_frames = list(exc.get("frames") or [])
-        flagged = [(f, is_app_frame(str(f["location"]), prefixes)) for f in all_frames]
-        apps = [_frame_dict(f) for f, app_frame in flagged if app_frame]
-        item: dict[str, Any] = {
-            "type": exc["type"],
-            "message": exc.get("message"),
-            "app_frames": apps if all_ or lim is None else apps[:lim],
-            "app_frames_total": len(apps),
-            "frames_total": len(all_frames),
-            "omitted_frames": int(exc.get("omitted_frames") or 0),
-        }
-        if all_:
-            item["frames"] = [{**_frame_dict(f), "app": app_frame} for f, app_frame in flagged]
-        items.append(item)
+    items: list[dict[str, Any]] = doc["items"]
     out = _out()
     if not items:
-        out.info(f"entry {entry['id']} has no parsed exception")
+        out.info(f"entry {doc['entry']} has no parsed exception")
 
     def render(console: Console) -> None:
         console.print(
-            Text(f"{entry['level_name']} {entry['logger']}", style="bold")
-            + f"  {_cell(entry['ts'])}  entry {entry['id']}  group {entry['signature']}"
+            Text(f"{doc['level_name']} {doc['logger']}", style="bold")
+            + f"  {_cell(doc['ts'])}  entry {doc['entry']}  group {doc['signature']}"
         )
         for i, it in enumerate(items):
             prefix = "Caused by: " if i else ""
@@ -1182,22 +1088,7 @@ def frames(
                 )
             )
 
-    out.emit(
-        "frames.v1",
-        {
-            "logset": ls.manifest.id,
-            "entry": entry["id"],
-            "signature": entry["signature"],
-            "ts": entry["ts"],
-            "level_name": entry["level_name"],
-            "logger": entry["logger"],
-            "message": entry["message"],
-            "app_packages": list(prefixes) if prefixes else None,
-            "count": len(items),
-            "items": items,
-        },
-        table=render,
-    )
+    out.emit("frames.v1", doc, table=render)
     return 0
 
 
@@ -1357,8 +1248,8 @@ def _raw_pairs(df: Any, max_raw: int | None = None) -> list[tuple[str, str | Non
         path, line = row.get("source_path"), row.get("source_line")
         label = f"{Path(path).name}:{line}" if path else None
         raw = str(row["raw"])
-        if max_raw is not None and len(raw) > max_raw:
-            raw = _cap(raw, max_raw)
+        if max_raw is not None:
+            raw = cap_text(raw, max_raw)
         pairs.append((raw, label))
     return pairs
 
@@ -1425,13 +1316,12 @@ def diff(
 
     """
     from atlas_log_analyzer.store import diff as store_diff
-    from atlas_log_analyzer.store.query import coverage_warning, span_hours, with_rates
+    from atlas_log_analyzer.store.query import span_hours, with_rates
 
     min_lvl, lim = _level(min_level), _limit(limit)
     a, b = _open(set_a), _open(set_b)
     result = store_diff(a, b, min_level=min_lvl, coarse=coarse, force=force)
-    hours_a, hours_b = span_hours(a), span_hours(b)
-    changed = with_rates(result.changed, hours_a, hours_b) if rate else result.changed
+    changed = with_rates(result.changed, span_hours(a), span_hours(b)) if rate else result.changed
     sections = {
         name: jsonable_rows(frame if lim is None else frame.head(lim))
         for name, frame in (
@@ -1453,12 +1343,7 @@ def diff(
         "totals": totals,
         "truncated": any(len(sections[k]) < totals[k] for k in totals),
     }
-    warning = coverage_warning(
-        hours_a,
-        hours_b,
-        label_a=f"set A ({a.manifest.name or a.manifest.id})",
-        label_b=f"set B ({b.manifest.name or b.manifest.id})",
-    )
+    warning = diff_warning(a, b)
     out = _out()
     if warning is not None:
         doc["warnings"] = [warning]

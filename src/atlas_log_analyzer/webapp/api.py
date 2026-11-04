@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -13,14 +14,27 @@ from starlette.responses import Response
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.core.formats import registry
+from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.report import example_entries
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
+from atlas_log_analyzer.store.query import span_hours, with_rates
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
 from atlas_log_analyzer.store.triage import auto_baseline as pick_baseline
 from atlas_log_analyzer.store.triage import triage as store_triage
+from atlas_log_analyzer.store.views import (
+    DEFAULT_MAX_RAW,
+    ENTRY_BRIEF,
+    ENTRY_FIELDS,
+    GROUP_BRIEF,
+    GROUP_FIELDS,
+    cap_texts,
+    diff_warning,
+    frames_view,
+    select_columns,
+)
 from atlas_log_analyzer.webapp.errors import ApiError
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.responses import JSON
@@ -186,6 +200,34 @@ def stats(ref: str, state: StateDep) -> dict[str, Any]:
     return {"schema": "stats.v1", "logset": ls.manifest.id, **ls.stats()}
 
 
+def _columns(
+    columns: list[str] | None, brief: bool, valid: Sequence[str], preset: Sequence[str]
+) -> list[str] | None:
+    """Columns chosen by ``columns`` (comma-separated and/or repeated) or ``brief``."""
+    if brief and columns:
+        raise ApiError(
+            "usage", "brief and columns cannot be combined", hint=f"brief is {','.join(preset)}"
+        )
+    if brief:
+        return list(preset)
+    chosen, unknown = select_columns(columns, valid)
+    if unknown:
+        raise ApiError(
+            "invalid_value",
+            f"unknown column(s) {', '.join(map(repr, unknown))} in columns",
+            hint=f"valid columns: {', '.join(valid)}",
+        )
+    return chosen
+
+
+def _max_raw(value: int) -> int | None:
+    return value or None
+
+
+MAX_RAW_HOW = "use max_raw=0"
+"""How to get the full text, in the marker of a cut ``raw``/``body``."""
+
+
 @router.get("/sets/{ref}/groups")
 def groups(
     ref: str,
@@ -195,15 +237,26 @@ def groups(
     logger: str | None = None,
     since: str | None = None,
     until: str | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
+    contains: str | None = None,
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: Annotated[int, Query(ge=0, le=100_000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     coarse: bool = False,
+    columns: Annotated[list[str] | None, Query()] = None,
+    brief: bool = False,
 ) -> dict[str, Any]:
-    """List the groups of a set (``groups.v1``).
+    """List the groups of a set (``groups.v1``), as ``atlas-log groups``.
 
     ``limit=0`` returns all; ``total`` counts the matches before paging.
+    ``with_exception`` keeps groups with an exception at any level, ``exception``
+    matches a substring of ``exception_type``, ``contains`` one of ``template``
+    (both case-insensitive). ``columns`` (comma-separated and/or repeated) or
+    ``brief`` select the columns.
     """
+    valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
+    cols = _columns(columns, brief, valid, GROUP_BRIEF)
     ls = state.open(ref)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
@@ -213,10 +266,13 @@ def groups(
         "since": parse_time(since, "since", last),
         "until": parse_time(until, "until", last),
         "coarse": coarse,
+        "with_exception": with_exception,
+        "exception": exception,
+        "contains": contains,
     }
     df = ls.groups(**filters, sort=sort, limit=limit or None, offset=offset)
     total = ls.count_groups(**filters)
-    items = to_records(df)
+    items = to_records(df if cols is None else df.select(cols))
     return {
         "schema": "groups.v1",
         "logset": ls.manifest.id,
@@ -235,8 +291,13 @@ def group(
     state: StateDep,
     limit: Annotated[int, Query(ge=0, le=10_000)] = 20,
     coarse: bool = False,
+    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
-    """One group with its hourly histogram and first entries (``group.v1``)."""
+    """One group with its hourly histogram and first entries (``group.v1``).
+
+    ``raw`` and ``body`` of the entries are cut to ``max_raw`` characters (0 = all),
+    marked as in ``entries``.
+    """
     ls = state.open(ref)
     row = ls.group(signature, coarse=coarse)
     if row is None:
@@ -250,7 +311,7 @@ def group(
         df = ls.entries(coarse_signature=signature, limit=limit or None)
     else:
         df = ls.entries(signature=signature, limit=limit or None)
-    entries = to_records(df)
+    entries = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
     return {
         "schema": "group.v1",
         "logset": ls.manifest.id,
@@ -296,14 +357,26 @@ def entries(
     logger: str | None = None,
     user: str | None = None,
     thread: str | None = None,
+    request_id: str | None = None,
     since: str | None = None,
     until: str | None = None,
     contains: str | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
     columns: Annotated[list[str] | None, Query()] = None,
+    brief: bool = False,
     limit: Annotated[int, Query(ge=1, le=10_000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
+    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
-    """Entries of a set (``entries.v1``), paged with ``offset``/``next_offset``."""
+    """Entries of a set (``entries.v1``), paged with ``offset``/``next_offset``.
+
+    Filters as ``atlas-log entries`` (``request_id`` exact, ``with_exception`` /
+    ``exception`` on ``exception_type``). ``raw`` and ``body`` are cut to
+    ``max_raw`` characters (default 4000, 0 = all); a cut row gets
+    ``body_truncated`` and ``raw_chars``.
+    """
+    cols = _columns(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
     ls = state.open(ref)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
@@ -314,18 +387,16 @@ def entries(
         "logger": logger,
         "user": user,
         "thread": thread,
+        "request_id": request_id,
         "since": parse_time(since, "since", last),
         "until": parse_time(until, "until", last),
         "contains": contains,
+        "with_exception": with_exception,
+        "exception": exception,
     }
-    try:
-        df = ls.entries(**filters, limit=limit, offset=offset, columns=columns)
-    except Exception as exc:
-        if type(exc).__name__ in ("ColumnNotFoundError", "ValueError"):
-            raise ApiError("invalid_value", f"columns: {exc}") from exc
-        raise
+    df = ls.entries(**filters, limit=limit, offset=offset, columns=cols)
     total = ls.count_entries(**filters)
-    items = to_records(df)
+    items = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
     nxt = offset + len(items)
     return {
         "schema": "entries.v1",
@@ -337,6 +408,73 @@ def entries(
         "truncated": nxt < total,
         "items": items,
     }
+
+
+@router.get("/sets/{ref}/entries/{entry_id}/context")
+def context(
+    ref: str,
+    entry_id: str,
+    state: StateDep,
+    before: Annotated[int, Query(ge=0, le=10_000)] = 5,
+    after: Annotated[int, Query(ge=0, le=10_000)] = 5,
+    any_thread: bool = False,
+    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+) -> dict[str, Any]:
+    """Return the entries around one entry in time order (``entries.v1``), as ``context``.
+
+    ``before``/``after`` entries of the anchor's thread (all threads with
+    ``any_thread``), the anchor included; ``raw``/``body`` cut as in ``entries``.
+    """
+    ls = state.open(ref)
+    df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
+    if df is None:
+        raise ApiError(
+            "not_found",
+            f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
+            404,
+            hint=f"entry ids are the id column of GET /api/sets/{ls.manifest.id}/entries",
+        )
+    items = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
+    anchor = next((row for row in items if row["id"] == entry_id), None)
+    return {
+        "schema": "entries.v1",
+        "logset": ls.manifest.id,
+        "anchor": entry_id,
+        "thread": anchor.get("thread") if anchor else None,
+        "any_thread": any_thread,
+        "count": len(items),
+        "items": items,
+    }
+
+
+@router.get("/sets/{ref}/frames/{item}")
+def frames(
+    ref: str,
+    item: str,
+    state: StateDep,
+    limit: Annotated[int, Query(ge=0)] = 10,
+    all: bool = False,
+) -> dict[str, Any]:
+    """Return an entry's or group's exception chain, application frames first (``frames.v1``).
+
+    ``item`` is an entry id or a group signature (its first example entry), as
+    ``atlas-log frames``; ``limit`` application frames per exception (0 = all),
+    ``all`` adds every frame with an ``app`` flag. ``ATLAS_LOG_APP_PACKAGES`` of the
+    server process defines application code when set.
+    """
+    ls = state.open(ref)
+    doc = frames_view(
+        ls, item, limit=limit or None, all_frames=all, app_packages=app_packages_from_env()
+    )
+    if doc is None:
+        raise ApiError(
+            "not_found",
+            f"no entry or group {item!r} in log set {ls.manifest.id}",
+            404,
+            hint=f"pass an entry id or a signature from GET /api/sets/{ls.manifest.id}/groups"
+            "?with_exception=true",
+        )
+    return {"schema": "frames.v1", **doc}
 
 
 @router.get("/sets/{ref}/timeline")
@@ -418,8 +556,14 @@ def diff(
     coarse: bool = False,
     force: bool = False,
     limit: Annotated[int, Query(ge=0)] = 0,
+    rate: bool = False,
 ) -> dict[str, Any]:
-    """Compare baseline ``a`` with ``b`` (``diff.v1``, as ``atlas-log diff A B``)."""
+    """Compare baseline ``a`` with ``b`` (``diff.v1``, as ``atlas-log diff A B``).
+
+    ``rate`` adds ``rate_a``, ``rate_b`` and ``rate_ratio`` (counts per hour of each
+    set's span) to ``changed`` and sorts it by ``rate_ratio``. ``warnings`` is
+    present when the spans differ by more than 4x (new/vanished are unreliable).
+    """
     sa, sb = state.open(a), state.open(b)
     try:
         result = store_diff(
@@ -429,10 +573,11 @@ def diff(
         raise ApiError(
             "incompatible_sets", str(exc), 409, hint="pass force=true to compare anyway"
         ) from exc
-    frames = {"new": result.new, "vanished": result.vanished, "changed": result.changed}
-    sections = {k: to_records(f if not limit else f.head(limit)) for k, f in frames.items()}
-    totals = {k: f.height for k, f in frames.items()}
-    return {
+    changed = with_rates(result.changed, span_hours(sa), span_hours(sb)) if rate else result.changed
+    parts = {"new": result.new, "vanished": result.vanished, "changed": changed}
+    sections = {k: to_records(f if not limit else f.head(limit)) for k, f in parts.items()}
+    totals = {k: f.height for k, f in parts.items()}
+    doc: dict[str, Any] = {
         "schema": "diff.v1",
         "a": result.a,
         "b": result.b,
@@ -441,6 +586,10 @@ def diff(
         "totals": totals,
         "truncated": any(len(sections[k]) < totals[k] for k in totals),
     }
+    warning = diff_warning(sa, sb)
+    if warning is not None:
+        doc["warnings"] = [warning]
+    return doc
 
 
 @router.get("/sets/{ref}/triage")

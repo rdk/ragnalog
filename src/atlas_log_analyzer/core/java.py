@@ -28,12 +28,20 @@ text, so the chain still ends there.
 
 from __future__ import annotations
 
+import os
 import re
 from collections.abc import Sequence
 
 from atlas_log_analyzer.core.models import ExceptionInfo, Frame
 
-__all__ = ["LIBRARY_PACKAGES", "is_app_frame", "parse_exceptions", "parse_frame"]
+__all__ = [
+    "APP_PACKAGES_ENV",
+    "LIBRARY_PACKAGES",
+    "app_packages_from_env",
+    "is_app_frame",
+    "parse_exceptions",
+    "parse_frame",
+]
 
 LIBRARY_PACKAGES: tuple[str, ...] = (
     # JDK and JVM languages
@@ -69,6 +77,21 @@ LIBRARY_PACKAGES: tuple[str, ...] = (
     "com.microsoft.sqlserver.",
 )
 """Package prefixes of library/platform code; frames elsewhere are application frames."""
+
+
+APP_PACKAGES_ENV = "ATLAS_LOG_APP_PACKAGES"
+"""Comma-separated package prefixes of application code; overrides :data:`LIBRARY_PACKAGES`."""
+
+
+def app_packages_from_env() -> tuple[str, ...] | None:
+    """Return the prefixes in ``ATLAS_LOG_APP_PACKAGES``, or ``None`` when unset or blank.
+
+    When set, a frame is application code iff it starts with one of the prefixes;
+    otherwise iff it is outside :data:`LIBRARY_PACKAGES` (see :func:`is_app_frame`).
+    """
+    value = os.environ.get(APP_PACKAGES_ENV, "")
+    prefixes = tuple(p.strip() for p in value.split(",") if p.strip())
+    return prefixes or None
 
 
 def is_app_frame(location: str, app_packages: Sequence[str] | None = None) -> bool:
