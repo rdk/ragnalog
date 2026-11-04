@@ -1116,6 +1116,9 @@ def query(logset: str, sql: str, /) -> None:
         <MERGES_COLUMNS>
     level is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),
     ts/first_seen/last_seen are UTC timestamps, variables a list of strings.
+    The session time zone is UTC whatever the machine's zone: result
+    timestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets
+    at UTC midnight.
 
     SQL examples:
       select level, count(*) n from entries group by 1 order by 2 desc

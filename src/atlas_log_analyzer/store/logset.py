@@ -867,8 +867,10 @@ class LogSet:
         The connection is an in-memory database meant for reading: after the views
         are created, file-system access is restricted to this set's Parquet files
         (``enable_external_access=false``) and the configuration is locked, so a
-        query cannot read or write other files. Tables created by the query live
-        only for the duration of the call.
+        query cannot read or write other files. The session time zone is UTC
+        whatever the machine's zone: timestamps come back in UTC and
+        ``date_trunc('day', ts)`` buckets at UTC midnight. Tables created by the
+        query live only for the duration of the call.
 
         Args:
             query: SQL text; the last statement's result is returned.
@@ -892,6 +894,7 @@ class LogSet:
             allowed = ", ".join(f"'{_sql_path(p)}'" for p in views.values())
             con.execute(f"SET allowed_paths = [{allowed}]")
             con.execute("SET enable_external_access = false")
+            con.execute("SET TimeZone = 'UTC'")
             con.execute("SET lock_configuration = true")
             rel = con.sql(query)
             if rel is None:

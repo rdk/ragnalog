@@ -274,7 +274,9 @@ Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 
 DuckDB SQL over the views `entries`, `groups` and (when present) `merges`.
 `atlas-log query --help` lists the same columns; `atlas-log schema NAME` adds
-types and descriptions.
+types and descriptions. The session time zone is UTC whatever the machine's
+zone: timestamps in the result are UTC, as in `entries`, and
+`date_trunc('day', ts)` buckets at UTC midnight.
 
 <!-- generated:view-columns by docs/formats/generate.py from store/schema.py -->
 Columns of the views:
