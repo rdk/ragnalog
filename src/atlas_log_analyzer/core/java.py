@@ -18,6 +18,12 @@ have no frames; their message spans the remaining lines.
 the ``Suppressed:`` line itself: they describe secondary failures (typically from
 ``close()``) and would otherwise make the chain of the primary failure unstable.
 Only the first chain in a text is parsed; text after it is ignored.
+
+Among the frames, a mangled frame line (characters lost when a log was copied out
+of a terminal or chat window: an indented ``at …`` that does not parse, or a line
+ending like a frame, ``…bar(Foo.java:64)``) is skipped instead of ending the
+chain. A ``Caused by:`` line that lost its prefix cannot be told from unrelated
+text, so the chain still ends there.
 """
 
 from __future__ import annotations
@@ -86,6 +92,14 @@ _FRAME_RE = re.compile(
     r"\s+at (?:(?P<module>[\w.@-]+)/(?:[\w.@-]*/)?)?(?P<loc>[^\s(]+)\((?P<src>[^)]*)\)"
 )
 _MORE_RE = re.compile(r"\s+\.\.\. (?P<n>\d+) (?:more|common frames omitted)")
+_DAMAGED_FRAME_RE = re.compile(
+    r"\s+at \S"
+    r"|.*(?:\.(?:java|kt|kts|groovy|scala)(?::\d+)?|Native Method|Unknown Source)\)\s*$"
+)
+"""A mangled frame line: an indented ``at …`` that does not parse, or a line ending
+like a frame (``…bar(Foo.java:64)``). Copies of logs out of terminals and chat
+windows drop characters at wrap points (``    ai.rf.web.Foo.bar(Foo.java:64)``,
+``    at a.B.doFiervletContainer.java:430)``)."""
 _EXC_SUFFIXES = ("Exception", "Error", "Throwable", "Failure", "Fault")
 _MAX_SCAN_LINES = 2000
 _WS = (" ", "\t")
@@ -213,6 +227,8 @@ def _parse(lines: Sequence[str]) -> tuple[ExceptionInfo, ...]:
                 in_frames = False
                 continue
         if in_frames:
+            if _DAMAGED_FRAME_RE.match(line):
+                continue  # a mangled frame: skip it, the frames go on
             break  # end of the chain
         msg_lines.append(line)
         has_msg = True

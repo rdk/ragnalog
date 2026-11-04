@@ -87,6 +87,46 @@ def test_text_before_exception_and_stop_after_chain() -> None:
     assert len(exc.frames) == 1
 
 
+def test_mangled_frames_are_skipped() -> None:
+    """Characters lost when a log is copied out of a terminal must not end the chain."""
+    text = "\n".join(
+        [
+            "com.example.FooException: boom",
+            "    at com.example.web.A.b(A.java:1)",
+            "    ample.web.Gadget.lambda$load$4(Gadget.java:64)",  # start lost
+            "    at org.glassfish.jersey.servlet.ServletContainer.doFiervletContainer.java:430)",
+            "m.atlassian.plugin.servlet.filter.DelegatingPluginFilter.doFilter(Filter.java:59)",
+            "    at com.example.web.A.c(A.java:2)",
+            "    at java.base/java.lang.Thread.run(Native Method)",
+            "Caused by: java.lang.IllegalStateException: cause",
+            "    at com.example.web.A.d(A.java:3)",
+            "trailing text",
+            "    at com.example.web.A.e(A.java:4)",
+        ]
+    )
+    chain = parse_exceptions(text)
+    assert [e.type for e in chain] == [
+        "com.example.FooException",
+        "java.lang.IllegalStateException",
+    ]
+    locations = [f.location for f in chain[0].frames]
+    assert locations == ["com.example.web.A.b", "com.example.web.A.c", "java.lang.Thread.run"]
+    assert [f.location for f in chain[1].frames] == ["com.example.web.A.d"]
+
+
+def test_lost_caused_by_prefix_still_ends_the_chain() -> None:
+    text = "\n".join(
+        [
+            "com.example.FooException: boom",
+            "    at com.example.web.A.b(A.java:1)",
+            "com.example.BarException: another one",
+            "    at com.example.web.A.c(A.java:2)",
+        ]
+    )
+    (exc,) = parse_exceptions(text)
+    assert exc.type == "com.example.FooException" and len(exc.frames) == 1
+
+
 def test_suppressed_is_skipped() -> None:
     text = "\n".join(
         [

@@ -292,7 +292,10 @@ substring); entry filters take `request_id=`. Uploads go through
   `str`). When an exception message's first line ends with `:` (Groovy
   `startup failed:`), the next non-empty line joins the signature so different
   compile errors stay apart. `Suppressed:` blocks are skipped; only the first
-  exception chain in a body is parsed.
+  exception chain in a body is parsed. Mangled frame lines (characters lost
+  when a log is copied out of a terminal or chat: an indented `at …` that does
+  not parse, or a line ending like `…(Foo.java:64)`) are skipped instead of
+  ending the chain; on the 780k sample entries this changed no chain.
 - **Masking.** A generic `user` rule masks the identifier after
   `uid:`/`user=`/`userName:`/`sAMAccountName:`/`login:`; without it a custom
   LDAP-sync plugin produced 4,000 single-user groups. `Masker` caches results
