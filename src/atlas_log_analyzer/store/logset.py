@@ -22,6 +22,7 @@ from typing import Any
 import polars as pl
 
 from atlas_log_analyzer.core.models import LogLevel
+from atlas_log_analyzer.store.levels import level_values
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION, schema_major
 
 __all__ = ["LevelSpec", "LogSet", "LogSetManifest", "SourceInfo", "rows", "to_records"]
@@ -37,7 +38,10 @@ GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
 TOP_LOGGERS = 20
 
 type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
-"""A level filter: a :class:`LogLevel`, a name or comma-separated names, or an iterable."""
+"""A level filter: a :class:`LogLevel`, a name or comma-separated names, or an iterable.
+
+Names as in :mod:`atlas_log_analyzer.store.levels` (``UNKNOWN`` included, ``WARNING``
+= ``WARN``); a blank string means no filter."""
 
 _BUCKET_UNITS_MS = {"s": 1_000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 _BUCKET_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
@@ -193,31 +197,24 @@ class LogSetManifest:
         return cls.from_dict(data)
 
 
-def _levels(spec: str) -> list[int]:
-    """Parse ``"ERROR"`` or ``"WARN,ERROR"`` into level values; ``ValueError`` if unknown."""
-    out: list[int] = []
-    for token in spec.split(","):
-        token = token.strip()
-        if not token:
-            continue
-        lv = LogLevel.parse(token)
-        if lv is LogLevel.UNKNOWN and token.upper() != "UNKNOWN":
-            raise ValueError(f"unknown level {token!r}")
-        out.append(int(lv))
-    if not out:
-        raise ValueError("empty level filter")
-    return out
-
-
 def _level_values(spec: LevelSpec) -> list[int]:
-    """Normalise a :data:`LevelSpec` to level values; ``ValueError`` if unknown or empty."""
+    """Normalise a :data:`LevelSpec` to level values; ``[]`` for a blank string.
+
+    Names are parsed by :func:`~atlas_log_analyzer.store.levels.parse_levels`, the
+    parser of the CLI and the web API.
+
+    Raises:
+        InvalidLevel: An unknown level name.
+        ValueError: An empty iterable.
+
+    """
     if isinstance(spec, LogLevel):
         return [int(spec)]
     if isinstance(spec, str):
-        return _levels(spec)
+        return level_values(spec)
     out: list[int] = []
     for item in spec:
-        out.extend([int(item)] if isinstance(item, LogLevel) else _levels(item))
+        out.extend([int(item)] if isinstance(item, LogLevel) else level_values(item))
     if not out:
         raise ValueError("empty level filter")
     return out
@@ -225,10 +222,9 @@ def _level_values(spec: LevelSpec) -> list[int]:
 
 def _level_filters(level: LevelSpec | None, min_level: LevelSpec | None) -> list[pl.Expr]:
     out: list[pl.Expr] = []
-    if level is not None:
-        out.append(pl.col("level").is_in(_level_values(level)))
-    if min_level is not None:
-        lv = _level_values(min_level)
+    if level is not None and (values := _level_values(level)):
+        out.append(pl.col("level").is_in(values))
+    if min_level is not None and (lv := _level_values(min_level)):
         if len(lv) != 1:
             raise ValueError("min_level takes a single level")
         out.append((pl.col("level") >= lv[0]) & (pl.col("level") != int(LogLevel.UNKNOWN)))

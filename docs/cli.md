@@ -109,8 +109,8 @@ unique id prefix (resolved in that order).
 
 | Option | Semantics |
 |---|---|
-| `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. |
-| `--min-level L` | This level or more severe. |
+| `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. Names: `TRACE`, `DEBUG`, `INFO`, `WARN` (also `WARNING`), `ERROR`, `FATAL` and `UNKNOWN` (entries whose header could not be parsed: `parse_error` rows, level 0). A blank value means no filter. Anything else (also `SEVERE`, `FINE`) → error `invalid_level`. The web API and `LogSet` use the same parser (`store/levels.py`). |
+| `--min-level L` | This level or more severe (one name, as `--level`; `UNKNOWN` entries are never included). |
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
 | `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
 | `--with-exception` | `groups`, `entries`: only rows that carry an exception (`exception_type` not null), at any level — a DEBUG entry with a stack trace is found although `--min-level WARN` hides it. |

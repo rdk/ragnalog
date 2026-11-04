@@ -25,6 +25,7 @@ from atlas_log_analyzer.store import (
     rows,
     to_records,
 )
+from atlas_log_analyzer.store.levels import LEVEL_NAMES, InvalidLevel, level_values, parse_levels
 from atlas_log_analyzer.store.logset import MANIFEST_FILE
 
 from .conftest import Built
@@ -70,6 +71,29 @@ def test_level_param_forms(built: Built) -> None:
         ls.count_entries(level=[])
     with pytest.raises(ValueError):
         ls.count_entries(min_level=[LogLevel.WARN, LogLevel.ERROR])
+
+
+def test_level_names_shared_with_front_ends(built: Built) -> None:
+    ls = built.logset
+    total = ls.count_entries()
+    assert ls.count_entries(level="") == ls.count_entries(level=" , ") == total
+    assert ls.count_entries(min_level="") == total
+    assert ls.count_entries(level="warning") == ls.count_entries(level="WARN")
+    assert ls.count_entries(level="UNKNOWN") == ls.count_entries(level=[LogLevel.UNKNOWN])
+    for alias in ("SEVERE", "FINE", "FINEST"):  # input-format aliases are not filter names
+        with pytest.raises(InvalidLevel, match="expected one of TRACE"):
+            ls.count_entries(level=alias)
+
+
+def test_parse_levels() -> None:
+    assert parse_levels(None) is None and parse_levels("") is None and parse_levels(" ,") is None
+    assert parse_levels("warn, Error,WARNING") == "WARN,ERROR"
+    assert parse_levels("unknown") == "UNKNOWN"
+    assert level_values("INFO,FATAL") == [30, 60] and level_values("") == []
+    assert set(LEVEL_NAMES) == {lv.name for lv in LogLevel}
+    with pytest.raises(InvalidLevel, match=r"unknown level 'loud'.*WARNING = WARN"):
+        parse_levels("INFO, loud")
+    assert issubclass(InvalidLevel, ValueError)
 
 
 def test_count_groups_and_offset(built: Built) -> None:

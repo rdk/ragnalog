@@ -45,10 +45,10 @@ from atlas_log_analyzer.cli.output import (
 from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
+from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 from atlas_log_analyzer.store.views import (
     DEFAULT_MAX_RAW,
@@ -78,7 +78,6 @@ STORE_ENV = "ATLAS_LOG_STORE"
 SNIFF_LINES = 200
 """Number of leading lines of the first source used for format detection."""
 
-LEVEL_NAMES = tuple(level.name for level in LogLevel)
 SCHEMA_NAMES = ("entries", "groups", "merges", "logset")
 
 GROUP_COLUMNS = (
@@ -277,19 +276,11 @@ def _when(value: str | None, flag: str, anchor: datetime | None) -> datetime | N
 
 
 def _level(value: str | None) -> str | None:
-    if value is None:
-        return None
-    names = []
-    for part in value.split(","):
-        name = part.strip().upper()
-        name = "WARN" if name == "WARNING" else name
-        if name not in LEVEL_NAMES:
-            raise CliError(
-                "invalid_level",
-                f"unknown level {part!r}; expected one of {', '.join(LEVEL_NAMES)}",
-            )
-        names.append(name)
-    return ",".join(names)
+    """Parse a level option (``store.levels``: names, ``WARNING``, ``UNKNOWN``; blank = unset)."""
+    try:
+        return parse_levels(value)
+    except InvalidLevel as exc:
+        raise CliError("invalid_level", str(exc)) from None
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -657,7 +648,8 @@ def groups(
 
     Args:
         logset: Log set id, unique id prefix or name.
-        level: Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL).
+        level: Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL;
+            UNKNOWN = entries whose header could not be parsed).
         min_level: Only this level or more severe, e.g. WARN.
         logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
         since: Only groups with an entry at/after this time (last_seen >= since): ISO 8601

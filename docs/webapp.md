@@ -79,7 +79,13 @@ the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |
 
 `since` and `until` accept ISO 8601 (naive = UTC), `YYYY-MM-DD`, or `30m`/`2h`/`1d`
-before the set's last entry.
+before the set's last entry; blank means unset. `level` and `min_level` take
+the CLI's level names (`TRACE` … `FATAL`, `WARNING` = `WARN`, `UNKNOWN` for
+`parse_error` rows; blank = unset; anything else is `invalid_level`).
+
+Differences from the CLI: `GET /api/sets/{ref}/entries` pages with
+`1 <= limit <= 10000` (no `limit=0` for "all"; follow `next_offset` instead),
+while `atlas-log entries --limit 0` returns every entry.
 
 ### Triage
 

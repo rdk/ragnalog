@@ -18,6 +18,7 @@ from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.report import example_entries
+from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
 from atlas_log_analyzer.store.query import span_hours, with_rates
@@ -62,7 +63,6 @@ def _auth(request: Request) -> None:
 router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=[Depends(_auth)])
 StateDep = Annotated[AppState, Depends(get_state)]
 
-LEVELS = ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")
 _RELATIVE = re.compile(r"^(\d+)\s*([smhd])$")
 _UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
 
@@ -87,18 +87,11 @@ def parse_time(value: str | None, name: str, anchor: datetime | None) -> datetim
 
 
 def _levels(value: str | None, name: str) -> str | None:
-    if value is None or not value.strip():
-        return None
-    out = []
-    for part in value.split(","):
-        level = part.strip().upper()
-        level = "WARN" if level == "WARNING" else level
-        if level not in LEVELS:
-            raise ApiError(
-                "invalid_level", f"{name}: unknown level {part!r}; one of {', '.join(LEVELS)}"
-            )
-        out.append(level)
-    return ",".join(out)
+    """Parse a level parameter as the CLI does (``store.levels``; blank = unset)."""
+    try:
+        return parse_levels(value)
+    except InvalidLevel as exc:
+        raise ApiError("invalid_level", f"{name}: {exc}") from None
 
 
 def manifest_item(m: LogSetManifest) -> dict[str, Any]:

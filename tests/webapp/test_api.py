@@ -359,3 +359,24 @@ def test_diff_limit_defaults_to_50(store_dir: Path, tmp_path: Path) -> None:
         assert len(doc["new"]) == 50 and doc["totals"]["new"] == 60 and doc["truncated"]
         assert len(_json(client, "/api/diff?a=mini&b=wide&limit=0")["new"]) == 60
     assert doc == _cli_json(store_dir, "diff", "mini", "wide")
+
+
+def test_levels_as_cli(tmp_path: Path) -> None:
+    log = tmp_path / "pe" / "atlassian-jira.log"
+    log.parent.mkdir()
+    log.write_text("preamble\n" + MINI.read_text(encoding="utf-8"), encoding="utf-8")
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from atlas_log_analyzer.store.store import Store
+
+    ingest_paths(Store(tmp_path / "s"), [log], name="pe")
+    with TestClient(create_app(Settings(store=tmp_path / "s", sync_jobs=True))) as client:
+        unknown = _json(client, "/api/sets/pe/entries?level=UNKNOWN&columns=level")
+        assert unknown["items"] == [{"level": 0}]
+        blank = _json(client, "/api/sets/pe/entries?level=&limit=1")
+        assert blank["total"] == 11
+        bad = _json(client, "/api/sets/pe/groups?level=SEVERE", 400)["error"]
+    assert bad["code"] == "invalid_level"
+    assert bad["message"] == (
+        "level: unknown level 'SEVERE'; expected one of TRACE, DEBUG, INFO, WARN, ERROR, "
+        "FATAL, UNKNOWN (WARNING = WARN)"
+    )
