@@ -106,6 +106,8 @@ Repeat 2–4; on an error, read `error.hint` for the next step.
 - Output is JSON whenever stdout is not a terminal; force it with
   `--output json` (one document) or `--output jsonl` (one row per line).
 - Every document has `"schema": "<name>.v1"`; listings put rows in `"items"`.
+- `groups` and `entries` page with `--limit N --offset M`: `"truncated": true`
+  means more rows follow; fetch the next page with `--offset <offset + count>`.
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).

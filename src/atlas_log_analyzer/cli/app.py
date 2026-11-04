@@ -219,6 +219,12 @@ def _limit(value: int) -> int | None:
     return value or None
 
 
+def _offset(value: int) -> int:
+    if value < 0:
+        raise CliError("invalid_value", "--offset must be >= 0")
+    return value
+
+
 DEFAULT_MAX_RAW = 4000
 """Default ``--max-raw`` of ``show``/``entries`` in json/jsonl mode."""
 
@@ -524,6 +530,7 @@ def groups(
     until: str | None = None,
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: int = 50,
+    offset: int = 0,
     coarse: bool = False,
 ) -> None:
     """List the groups (one per message signature) of a log set.
@@ -534,16 +541,18 @@ def groups(
 
     Output (json):
       {"schema": "groups.v1", "logset": id, "count": int, "total": int,
-       "truncated": bool, "items": [
+       "offset": int, "truncated": bool, "items": [
         {"signature", "coarse_signature", "template", "level", "logger",
          "level_name", "exception_type", "count", "first_seen", "last_seen",
          ...}, ...]}
     "level" is numeric (ERROR=50), "level_name" the name. "items" holds the
     groups.v1 columns (`atlas-log schema groups`: also user_count, thread_count,
     source_count, top_users, top_threads, sources, examples), at most --limit
-    rows. "total" is the number of matching groups before --limit, "truncated"
-    is true when items were cut by --limit. With --coarse, "signature" is the
-    coarse signature and "signatures" lists the member signatures.
+    rows starting at --offset (in --sort order). "total" is the number of
+    matching groups before --offset/--limit, "offset" echoes --offset and
+    "truncated" is true when more rows follow this page (offset + count <
+    total; the next page starts at offset + count). With --coarse, "signature"
+    is the coarse signature and "signatures" lists the member signatures.
 
     Exit codes: 0 ok (also when no group matches); 1 bad option; 3 unknown set
     or store error.
@@ -558,30 +567,33 @@ def groups(
         until: Only groups first seen before this time (same forms as --since).
         sort: count, last_seen (newest first), first_seen (oldest first), signature, template.
         limit: Maximum number of rows; 0 = all.
+        offset: Skip this many rows first (paging: next offset = offset + count).
         coarse: Group by coarse signature (level + logger + masked message; no exceptions).
 
     """
-    lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
+    lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
     ls = _open(logset)
     last = ls.manifest.last_ts
-    df = ls.groups(
-        level=lvl,
-        min_level=min_lvl,
-        logger=logger,
-        since=_when(since, "--since", last),
-        until=_when(until, "--until", last),
-        sort=sort,
-        coarse=coarse,
-    )
-    total = df.height
-    items = jsonable_rows(df if lim is None else df.head(lim))
+    filters: dict[str, Any] = {
+        "level": lvl,
+        "min_level": min_lvl,
+        "logger": logger,
+        "since": _when(since, "--since", last),
+        "until": _when(until, "--until", last),
+        "coarse": coarse,
+    }
+    df = ls.groups(**filters, sort=sort, limit=lim, offset=skip)
+    complete = skip == 0 and (lim is None or df.height < lim)
+    total = df.height if complete else ls.count_groups(**filters)
+    items = jsonable_rows(df)
     _out().emit(
         "groups.v1",
         {
             "logset": ls.manifest.id,
             "count": len(items),
             "total": total,
-            "truncated": len(items) < total,
+            "offset": skip,
+            "truncated": skip + len(items) < total,
             "items": items,
         },
         columns=GROUP_COLUMNS,
@@ -695,6 +707,7 @@ def entries(
     contains: str | None = None,
     columns: list[str] | None = None,
     limit: int = 100,
+    offset: int = 0,
     raw: bool = False,
     max_raw: int | None = None,
 ) -> None:
@@ -702,10 +715,12 @@ def entries(
 
     Output (json):
       {"schema": "entries.v1", "logset": id, "count": int, "total": int,
-       "truncated": bool, "items": [<entries.v1 row>, ...]}
-    "total" counts the matching entries before --limit; "truncated" is true
-    when items were cut by --limit. With --raw the raw log text of the
-    entries is printed instead (as `show --raw`).
+       "offset": int, "truncated": bool, "items": [<entries.v1 row>, ...]}
+    "total" counts the matching entries before --offset/--limit; "offset"
+    echoes --offset; "truncated" is true when more entries follow this page
+    (offset + count < total; the next page starts at offset + count). With
+    --raw the raw log text of the entries is printed instead (as `show --raw`;
+    --offset/--limit apply).
     Rows hold all entries.v1 columns (`atlas-log schema entries`) unless
     --columns is given: id, ts (UTC), tz_offset, level (numeric), level_name,
     thread, logger, message, body, user, request_id, session, ip, url,
@@ -738,12 +753,13 @@ def entries(
         contains: Only entries whose raw text contains this text (case-insensitive).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         limit: Maximum number of rows; 0 = all.
+        offset: Skip this many entries first (paging: next offset = offset + count).
         raw: Print the raw log text of the entries (highlighted when colour is on).
         max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
             in json/jsonl mode, no limit in table and --raw mode.
 
     """
-    lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
+    lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
     columns = _columns(columns, ENTRY_FIELDS)
     cap = _max_raw(max_raw, text=raw)
     ls = _open(logset)
@@ -761,10 +777,12 @@ def entries(
     }
     if raw:
         cols = ["raw", "source_path", "source_line"]
-        _out().raw_entries(_raw_pairs(ls.entries(**filters, limit=lim, columns=cols), cap))
+        page = ls.entries(**filters, limit=lim, offset=skip, columns=cols)
+        _out().raw_entries(_raw_pairs(page, cap))
         return
-    df = ls.entries(**filters, limit=lim, columns=columns)
-    total = df.height if lim is None or df.height < lim else _count_entries(ls, filters)
+    df = ls.entries(**filters, limit=lim, offset=skip, columns=columns)
+    complete = skip == 0 and (lim is None or df.height < lim)
+    total = df.height if complete else _count_entries(ls, filters)
     items = _cap_items(jsonable_rows(df), cap)
     _out().emit(
         "entries.v1",
@@ -772,7 +790,8 @@ def entries(
             "logset": ls.manifest.id,
             "count": len(items),
             "total": total,
-            "truncated": len(items) < total,
+            "offset": skip,
+            "truncated": skip + len(items) < total,
             "items": items,
         },
         columns=columns or ENTRY_COLUMNS,

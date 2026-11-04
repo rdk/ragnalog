@@ -25,9 +25,10 @@ Global options may appear before or after the command name.
 - **json** — exactly one JSON document on stdout. Every document is an object
   with a `"schema": "<name>.v1"` key. Listings put their rows under `"items"`
   and add `"count"`. Compact on a pipe, indented on a terminal.
-  Listings cut by `--limit` (`groups`, `entries`) also carry `"total"` (rows
-  matching the filters before `--limit`) and `"truncated"` (`count < total`);
-  `count` is always `len(items)`. `query` has `"total" == "count"` and
+  Paged listings (`groups`, `entries`) also carry `"total"` (rows matching
+  the filters before `--offset`/`--limit`), `"offset"` (the `--offset` used)
+  and `"truncated"` (more rows follow this page: `offset + count < total`; the
+  next page starts at `offset + count`); `count` is always `len(items)`. `query` has `"total" == "count"` and
   `"truncated": false` (use `LIMIT` in the SQL); `diff` has
   `"totals": {"new", "vanished", "changed"}` and one `"truncated"` flag.
 - **jsonl** — listings: one row per line, without the envelope (`diff`: one row
@@ -89,6 +90,7 @@ unique id prefix (resolved in that order).
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
 | `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
 | `--limit N` | Maximum rows; `0` = all. |
+| `--offset N` | `groups`, `entries`: skip N rows first (paging; default 0). |
 
 ## Commands
 
@@ -122,7 +124,7 @@ files, format not detected, or zero entries (manifest still printed); 3.
 
 Newest first. Exit: 0 (also empty); 3.
 
-### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--sort K] [--limit 50] [--coarse]`
+### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--sort K] [--limit 50] [--offset 0] [--coarse]`
 
 One row per signature. `--sort`: `count` (default, desc), `last_seen` (desc),
 `first_seen` (asc), `signature`, `template`. `--coarse` groups by coarse
@@ -130,7 +132,7 @@ signature (exception chain ignored); `signature` then holds the coarse
 signature and `signatures` lists the members.
 
 ```json
-{"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "truncated": true, "items": [
+{"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "offset": 0, "truncated": true, "items": [
   {"signature", "coarse_signature", "template", "level", "level_name", "logger",
    "exception_type", "count", "first_seen", "last_seen", "user_count", "thread_count",
    "source_count", "top_users", "top_threads", "sources", "examples"}]}
@@ -160,7 +162,7 @@ cut have neither key, so short entries look exactly as before.
 
 Exit: 0; 1 bad option; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--raw] [--max-raw N]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
 `raw`; `--columns` selects columns, comma-separated and/or repeated
@@ -170,8 +172,8 @@ in `hint`. `--raw` prints the raw text like `show --raw`. `--max-raw` cuts
 `raw`/`body` as described for `show` (default 4000 in `json`/`jsonl`).
 
 ```json
-{"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "truncated": true,
- "items": [<entries.v1 row>]}
+{"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "offset": 0,
+ "truncated": true, "items": [<entries.v1 row>]}
 ```
 
 entries.v1 columns: `id, ts, tz_offset, level, level_name, thread, logger,
