@@ -99,14 +99,12 @@ class JobManager:
     def __init__(
         self,
         store: Store,
-        store_lock: threading.RLock,
         *,
         on_done: Callable[[str], None] | None = None,
         sync: bool = False,
     ) -> None:
-        """Create a manager for ``store``; ``store_lock`` serialises store writes."""
+        """Create a manager for ``store`` (which locks itself only for the final rename)."""
         self.store = store
-        self._store_lock = store_lock
         self._on_done = on_done
         self._jobs: dict[str, Job] = {}
         self._lock = threading.Lock()
@@ -175,12 +173,18 @@ class JobManager:
         return job
 
     def shutdown(self) -> None:
-        """Cancel everything and stop the worker (application shutdown)."""
+        """Cancel everything, stop the worker and delete the spools (application shutdown).
+
+        Jobs are not persisted, so a queued job's upload would never be read again.
+        """
         for job in self.all():
             if job.state in ("queued", "running"):
                 job.cancel_requested = True
         if self._pool is not None:
             self._pool.shutdown(wait=True, cancel_futures=True)
+        for job in self.all():
+            if job.state == "queued":  # its future was cancelled, so _run never ran
+                self._finish(job, "cancelled")
 
     def _finish(self, job: Job, state: JobState) -> None:
         job.state = state
@@ -230,18 +234,17 @@ class JobManager:
         self, job: Job, paths: list[Path], progress: Callable[[IngestProgress], None]
     ) -> IngestResult:
         opts = job.options
-        with self._store_lock:
-            return ingest_paths(
-                self.store,
-                paths,
-                fmt=opts.get("format"),
-                name=job.name,
-                frames=opts.get("frames"),
-                overwrite=bool(opts.get("overwrite")),
-                mine=bool(opts.get("mine")),
-                progress=progress,
-                progress_every=20_000,
-            )
+        return ingest_paths(
+            self.store,
+            paths,
+            fmt=opts.get("format"),
+            name=job.name,
+            frames=opts.get("frames"),
+            overwrite=bool(opts.get("overwrite")),
+            mine=bool(opts.get("mine")),
+            progress=progress,
+            progress_every=20_000,
+        )
 
 
 def _code(exc: Exception) -> str:

@@ -34,8 +34,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        yield
-        state.jobs.shutdown()
+        state.start()
+        try:
+            yield
+        finally:
+            state.close()
 
     app = FastAPI(
         title="atlas-log",

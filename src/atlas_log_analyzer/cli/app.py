@@ -1872,7 +1872,8 @@ def serve(
 
     Exit codes: 0 stopped normally; 1 the `web` extra is not installed or bad
     option; 3 store error (including the default ./.atlas-log not existing inside
-    a git work tree: pass --store DIR or set ATLAS_LOG_STORE).
+    a git work tree: pass --store DIR or set ATLAS_LOG_STORE, and another server
+    already using the store: one server per store).
 
     Args:
         host: Interface to bind; use 0.0.0.0 to serve the network (set --token then).
@@ -1900,6 +1901,10 @@ def serve(
         raise CliError("invalid_value", "--max-upload-mb must be >= 1")
     store = _store(create=True)  # uploads create the store directory
     settings = Settings.from_env(store=store.root, max_upload_mb=max_upload_mb, token=token)
+    from atlas_log_analyzer.webapp.state import lock_server
+
+    if (probe := lock_server(settings.store)) is not None:  # a clear error if already served
+        probe.release()
     _out().info(f"serving {settings.store.as_posix()} at http://{host}:{port}/")
     if reload:
         # the reloading child builds its settings from the environment alone

@@ -133,18 +133,31 @@ reports parsed entries, bytes read and the current file, and `fraction` goes
 from 0 to 1. A successful job's `result` is the `logset.v1` manifest with the
 `ingest` block, the same as `atlas-log ingest` prints. Cancelling stops the job
 at its next progress callback; the store discards the partial set. Upload
-directories are removed when the job ends. Jobs live in memory, so a restart
-forgets them; the sets they created remain.
+directories are removed when the job ends, when the server stops (jobs still
+queued are cancelled) and, for spools left by a crashed server, when the next
+server starts. Jobs live in memory, so a restart forgets them; the sets they
+created remain. Pages and `/api` keep answering while a job runs.
+
+One server per store: the server holds an OS lock on `<store>/.server.lock`
+(released when the process ends, also after a crash), and a second
+`atlas-log serve` on the same store exits with code 3 ("another atlas-log
+server is already using the store"). CLI commands, including `ingest`, may
+run next to the server.
 
 ## Design notes
 
 - **Dependencies:** `webapp` imports `core`, `store` and `report`, never `cli`.
   The CLI imports FastAPI and uvicorn only inside `serve`, and fails with exit 1
   and an install hint when the `web` extra is missing.
-- **Concurrency:** `Store` keeps a manifest cache that is not thread-safe, so
-  store access goes through one lock. Log sets are immutable Parquet once
-  written, so readers do not lock. Set summaries and report payloads are cached
-  per set id and `created_at`, and dropped on delete or re-ingest.
+- **Concurrency:** request threads and the ingest worker share one `Store`.
+  It locks only its manifest cache (loading happens outside the lock) and, for
+  a write, the final name check and rename (also across processes, through
+  `<store>/.write.lock`), so an ingest never blocks reads. Log sets are
+  immutable Parquet once written, so readers do not lock. On Windows a set
+  directory cannot be renamed or deleted while a reader has a file open, so
+  `--overwrite` and delete retry for about 1.5 s. Set summaries and report
+  payloads are cached per set id and `created_at`, and dropped on delete or
+  re-ingest.
 - **Encoding:** large documents are encoded with msgspec. The report payload is
   cached as encoded bytes, so a repeat request for the 712k-entry sample set
   takes about 20 ms instead of about 200 ms.
@@ -165,7 +178,7 @@ src/atlas_log_analyzer/webapp/
   __init__.py   create_app, Settings
   app.py        create_app(): routers, static files, HTML/JSON error handling
   settings.py   Settings (flags > ATLAS_LOG_* env > defaults)
-  state.py      AppState: store + lock, summary and report caches, JobManager
+  state.py      AppState: store, server lock, summary and report caches, JobManager
   api.py        /api routes; triage and the auto baseline come from store/triage.py
   pages.py      HTML routes (Jinja2), report page assembly
   jobs.py       JobManager, Job (job.v1), upload spool

@@ -345,6 +345,19 @@ makes its case fail until the marker is removed.
   flushed every 65,536 rows or 32 M characters of `raw` + `body`, whichever
   comes first. `ingest` with an existing id returns the existing set without
   consuming the input iterator.
+- **Store concurrency.** A `Store` may be shared by threads: a small lock
+  guards the manifest cache (manifests load outside it), and a write lock is
+  held only for the name check and the rename that installs a set, so a long
+  ingest blocks no reader. The name is checked before parsing and again under
+  the lock; a set with the same id installed meanwhile is returned instead of
+  replaced. The write lock is also an OS file lock on `<store>/.write.lock`
+  (`msvcrt.locking` / `fcntl.flock`, `store/locks.py`), which the OS releases
+  when a process dies, so a CLI ingest next to `serve` cannot take the same
+  name at the same moment. Renames and deletes of set directories retry on
+  `PermissionError` (Windows refuses them while a reader has a file open);
+  `remove` renames the set to `.trash-*` first, so it disappears at once and a
+  failure leaves it intact. The web app holds `<store>/.server.lock` (one
+  server per store).
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
   reports sniff confidence per format; `parse` always emits JSONL; an empty
   listing exits 0. Added for agents: `triage` (the web app's `triage.v1`,
