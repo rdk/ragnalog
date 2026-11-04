@@ -252,6 +252,54 @@ count_b, first_seen_a, last_seen_a, first_seen_b, last_seen_b` (+ `ratio` in
 `changed`). Exit: 0; 1 sets signed differently (signature/mask-rule version or
 spec) without `--force`; 3.
 
+### `triage SET [--baseline SET|auto] [--min-level WARN] [--grow 2.0] [--limit 50]`
+
+"Are there new kinds of errors since the baseline?" in one document — the same
+`triage.v1` as `GET /api/sets/SET/triage` of the web app, without its
+`report_url` links. It compares the baseline with SET like
+`diff BASELINE SET --min-level L` and sorts the result for a decision.
+`--baseline auto` (default) picks the newest other set that ends before SET
+starts, else the newest other set that ends no later than SET; without one the
+verdict is `no_baseline`.
+
+```jsonc
+{"schema": "triage.v1",
+ "set": {"id", "name", "first_ts", "last_ts", "entries"},
+ "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param"} | null,
+ "min_level": "WARN",
+ "verdict": "new_errors | new_warnings | new_exceptions | clean | no_baseline",
+ "summary": {"new", "new_by_level": {"ERROR": n}, "new_exceptions", "grew", "vanished",
+             "changed", "unchanged"} | null,
+ "coverage": {"hours_baseline": 6.88, "hours_set": 0.51, "ratio": 0.074},
+ "warnings": ["The set covers 31 min but the baseline covers 6.9 h (13.5x shorter): …"],
+ "new":            [<diff row> + rate_per_hour],   // ERROR first, then by count
+ "new_exceptions": [<diff row> + rate_per_hour],   // any level, not in "new"
+ "grew":           [<diff row> + ratio + rate_ratio],
+ "vanished":       [<diff row>]}
+```
+
+- `new`: groups at or above `--min-level` that exist only in SET, most severe
+  first, then by count.
+- `new_exceptions`: new groups of **any** level whose `exception_type` is set
+  and that are not already in `new` (a new DEBUG stack trace), same order.
+  Empty when `--min-level` is the lowest level that matters (everything new is
+  then in `new`).
+- `grew`: groups in both sets whose hourly rate rose at least `--grow` times
+  (`rate_ratio`; rates normalise sets of different length).
+- `verdict`: `new_errors` (a new ERROR/FATAL group), `new_warnings` (other new
+  groups), `new_exceptions` (`new` is empty but `new_exceptions` is not),
+  `clean`, `no_baseline`.
+- `coverage`: span of each set in hours and `ratio = hours_set /
+  hours_baseline`. When the spans differ by more than 4x either way,
+  `warnings` holds a sentence saying that `new`/`vanished` are unreliable (a
+  nightly set lacks daytime groups); otherwise `warnings` is `[]`.
+- Lists hold at most `--limit` rows (`0` = all); `summary` counts all.
+- `jsonl` prints the document on one line; the table prints the verdict, the
+  summary and one table per list, with the warnings on stderr.
+
+Exit: 0 whatever the verdict (also `no_baseline`); 1 bad option, invalid level,
+`--grow` not > 1, or the sets were signed differently; 3 unknown set.
+
 ### `report SET [--out FILE] [--compare SET_B] [--min-level L] [--examples 3] [--max-raw 4000] [--max-groups 0] [--open]`
 
 Writes a single self-contained HTML file (CSS, JS and data inlined; no network
@@ -361,6 +409,9 @@ atlas-log query after "select date_trunc('hour', ts) h,
 # Exceptions at any level (DEBUG stack traces included), then one exception type
 atlas-log groups after --with-exception --brief
 atlas-log entries after --exception InternalException --brief
+
+# What broke since the previous snapshot? (verdict, new types, growth, coverage)
+atlas-log triage after --baseline before
 
 # The last 2 hours of the log (relative to its last entry)
 atlas-log groups after --since 2h --min-level ERROR

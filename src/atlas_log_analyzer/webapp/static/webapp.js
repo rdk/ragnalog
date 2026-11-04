@@ -62,7 +62,9 @@
       ? `<span class="verdict-badge bad">${fmt((s.new_by_level || {}).ERROR || 0)} new error types</span>`
       : t.verdict === "new_warnings"
         ? `<span class="verdict-badge warn">${fmt(s.new)} new warning types</span>`
-        : '<span class="verdict-badge ok">no new types</span>';
+        : t.verdict === "new_exceptions"
+          ? `<span class="verdict-badge warn">${fmt(s.new_exceptions)} new exception types</span>`
+          : '<span class="verdict-badge ok">no new types</span>';
     return `<a href="${href}" title="Compared with ${base}">${badge}</a><span class="counts">vs ${base}</span>`;
   }
 

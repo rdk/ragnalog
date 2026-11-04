@@ -54,22 +54,25 @@
   <div class="verdict-line">
     {% if t.verdict == 'new_errors' %}<span class="verdict-badge bad">New errors</span>
     {% elif t.verdict == 'new_warnings' %}<span class="verdict-badge warn">New warnings</span>
+    {% elif t.verdict == 'new_exceptions' %}<span class="verdict-badge warn">New exceptions below level {{ t.min_level }}</span>
     {% else %}<span class="verdict-badge ok">No new types</span>{% endif %}
     <span>compared with <a href="/sets/{{ t.baseline.id }}">{{ t.baseline.name or t.baseline.id }}</a>
     <span class="muted">({{ t.baseline.first_ts|ts }} → {{ t.baseline.last_ts|ts }}, {{ t.baseline.resolved_by }})</span></span>
     <span class="grow"></span>
     <a class="btn small" href="/sets/{{ me.id }}?compare={{ t.baseline.id }}">Open comparison report</a>
   </div>
+  {% for w in t.warnings %}<p class="muted small">⚠ {{ w }}</p>{% endfor %}
   <div class="tiles mini">
     <div class="tile"><div class="label">New types</div><div class="value">{{ s.new|num }}</div>
       <div class="note">{% for k, v in s.new_by_level.items() %}{{ v }} {{ k }}{% if not loop.last %} · {% endif %}{% endfor %}</div></div>
+    <div class="tile"><div class="label">New exceptions</div><div class="value">{{ s.new_exceptions|num }}</div><div class="note">any level, not in new types</div></div>
     <div class="tile"><div class="label">Grew ≥ ×2 per hour</div><div class="value">{{ s.grew|num }}</div><div class="note">of {{ s.changed|num }} changed</div></div>
     <div class="tile"><div class="label">Vanished</div><div class="value">{{ s.vanished|num }}</div></div>
     <div class="tile"><div class="label">Unchanged</div><div class="value">{{ s.unchanged|num }}</div></div>
   </div>
 </section>
 
-{% for kind, title, rows, cols in [('new', 'New types', t.new, ('Count', 'Per hour', 'First seen')), ('grew', 'Grew', t.grew, ('Count', 'Rate', 'Last seen')), ('vanished', 'Vanished', t.vanished, ('Count before', '', 'Last seen before'))] %}
+{% for kind, title, rows, cols in [('new', 'New types', t.new, ('Count', 'Per hour', 'First seen')), ('new', 'New exceptions (any level)', t.new_exceptions, ('Count', 'Per hour', 'First seen')), ('grew', 'Grew', t.grew, ('Count', 'Rate', 'Last seen')), ('vanished', 'Vanished', t.vanished, ('Count before', '', 'Last seen before'))] %}
 <section class="card">
   <h2>{{ title }} <span class="muted">{{ rows|length }}</span></h2>
   {% if rows %}

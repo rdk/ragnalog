@@ -1179,6 +1179,145 @@ def diff(
     out.emit("diff.v1", doc, items=None, jsonl_rows=jsonl, table=render)
 
 
+NEW_COLUMNS = (
+    "signature",
+    "level_name",
+    "count_b",
+    "rate_per_hour",
+    "logger",
+    "exception_type",
+    "template",
+)
+GREW_COLUMNS = ("signature", "level_name", "count_a", "count_b", "rate_ratio", "logger", "template")
+VANISHED_COLUMNS = ("signature", "level_name", "count_a", "logger", "exception_type", "template")
+
+
+@app.command
+def triage(
+    logset: str,
+    /,
+    *,
+    baseline: str = "auto",
+    min_level: str = "WARN",
+    grow: float = 2.0,
+    limit: int = 50,
+) -> None:
+    """Answer "are there new kinds of errors since the baseline?" in one document.
+
+    Compares SET with a baseline (as `diff BASELINE SET --min-level L`) and
+    sorts the result for a decision: new groups (most severe first), new
+    groups of a lower level that carry an exception, groups whose hourly rate
+    grew, vanished groups. --baseline auto (default) picks the newest other
+    set that ends before SET starts, else the newest other set that ends no
+    later than SET (the web app's rule); with no such set the verdict is
+    no_baseline.
+
+    Output (json):
+      {"schema": "triage.v1",
+       "set": {"id", "name", "first_ts", "last_ts", "entries"},
+       "baseline": {"id", "name", "first_ts", "last_ts",
+                    "resolved_by": "auto" | "param"} | null,
+       "min_level": "WARN",
+       "verdict": "new_errors" | "new_warnings" | "new_exceptions" | "clean"
+                  | "no_baseline",
+       "summary": {"new", "new_by_level": {"ERROR": n, ...}, "new_exceptions",
+                   "grew", "vanished", "changed", "unchanged"} | null,
+       "coverage": {"hours_baseline", "hours_set", "ratio"},
+       "warnings": [str, ...],
+       "new": [<diff row> + "rate_per_hour"],
+       "new_exceptions": [<diff row> + "rate_per_hour"],
+       "grew": [<diff row> + "ratio", "rate_ratio"],
+       "vanished": [<diff row>]}
+    Diff rows are those of `diff` (signature, template, level, level_name,
+    logger, exception_type, count_a, count_b, first/last_seen_a/b).
+    "new": groups at/above --min-level only in SET; "new_exceptions": new
+    groups of ANY level with an exception that are not in "new" (a new DEBUG
+    stack trace); "grew": changed groups whose hourly rate rose at least --grow
+    times (rate_ratio, rates normalise different spans); "vanished": groups at
+    /above --min-level only in the baseline. "verdict": new_errors (a new
+    ERROR/FATAL group), new_warnings (other new groups), new_exceptions (no
+    new group but a new exception at a lower level), clean, no_baseline.
+    "coverage" gives both spans in hours and ratio = hours_set /
+    hours_baseline; when they differ by more than 4x either way "warnings"
+    says that "new"/"vanished" are unreliable (a nightly set lacks daytime
+    groups). Lists hold at most --limit rows; "summary" counts all.
+    jsonl mode prints the document on one line. Table mode prints the
+    verdict, the summary and one table per list; the warnings go to stderr.
+
+    Exit codes: 0 ok, whatever the verdict (also no_baseline); 1 bad option,
+    invalid level, or the sets were built with different signature/mask-rule
+    versions or specs; 3 unknown set or store error.
+
+    Args:
+        logset: The log set to judge (id, id prefix or name).
+        baseline: Baseline set (id, id prefix or name), or auto.
+        min_level: Only groups of this level or more severe count as new/grew/vanished.
+        grow: Minimum hourly-rate factor for "grew" (> 1).
+        limit: Maximum rows per list; 0 = all.
+
+    """
+    from atlas_log_analyzer.store.triage import auto_baseline
+    from atlas_log_analyzer.store.triage import triage as store_triage
+
+    lvl, lim = _level(min_level), _limit(limit)
+    if not grow > 1:
+        raise CliError("invalid_value", "--grow must be > 1")
+    ls = _open(logset)
+    if baseline == "auto":
+        best = auto_baseline(_store().list(), ls.manifest)
+        base = _open(best.id) if best is not None else None
+    else:
+        base = _open(baseline)
+    doc = store_triage(
+        ls,
+        base,
+        min_level=lvl,
+        grow=grow,
+        limit=lim,
+        resolved_by="auto" if baseline == "auto" else "param",
+    )
+    out = _out()
+    if out.mode == "table":
+        for warning in doc["warnings"]:
+            out.warn(warning)
+
+    def render(console: Console) -> None:
+        me = doc["set"]
+        if doc["baseline"] is None:
+            console.print(f"verdict: no_baseline ({me['name'] or me['id']} has no earlier set)")
+            return
+        b, s, cov = doc["baseline"], doc["summary"], doc["coverage"]
+        console.print(
+            Text(f"verdict: {doc['verdict']}", style="bold")
+            + f"  {me['name'] or me['id']} vs {b['name'] or b['id']} ({b['resolved_by']})"
+        )
+        levels = ", ".join(f"{k} {v}" for k, v in s["new_by_level"].items())
+        console.print(
+            f"new {s['new']}"
+            + (f" ({levels})" if levels else "")
+            + f"  new exceptions {s['new_exceptions']}  grew {s['grew']} of {s['changed']}"
+            f" changed  vanished {s['vanished']}  unchanged {s['unchanged']}"
+        )
+        console.print(
+            f"coverage: set {cov['hours_set']} h, baseline {cov['hours_baseline']} h"
+            f" (ratio {cov['ratio']})"
+        )
+        for name, cols in (
+            ("new", NEW_COLUMNS),
+            ("new_exceptions", NEW_COLUMNS),
+            ("grew", GREW_COLUMNS),
+            ("vanished", VANISHED_COLUMNS),
+        ):
+            rows = doc[name]
+            if not rows:
+                console.print(f"{name}: none")
+                continue
+            console.print(rows_table(rows, cols, title=name, color=out.color))
+
+    body = {k: v for k, v in doc.items() if k != "schema"}
+    out.emit("triage.v1", body, items=None, table=render)
+
+
 def _report_filename(logset: LogSet) -> Path:
     stem = re.sub(r"[^\w.-]+", "_", logset.manifest.name or logset.manifest.id).strip("._")
     return Path((stem or logset.manifest.id) + ".html")

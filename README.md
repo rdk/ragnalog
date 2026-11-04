@@ -87,13 +87,14 @@ against the previous set. **Triage** shows the new types first (ERROR before
 WARN), then groups whose hourly rate grew, then vanished ones, each linking into
 the report with the group open. **Upload** ingests log files in the background
 with a progress bar. Everything is also JSON under `/api` (OpenAPI at `/docs`);
-`GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call. See
-`docs/webapp.md`.
+`GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call — the
+same `triage.v1` document as `atlas-log triage SET`. See `docs/webapp.md`.
 
 ## Agent workflow
 
 ```sh
 atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
+atlas-log triage today                                      #    verdict vs the previous set
 atlas-log groups today --min-level ERROR --limit 20 --brief # 2. triage: check "total"/"truncated"
 atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
 atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text

@@ -248,3 +248,15 @@ def test_triage_auto_baseline_is_an_earlier_or_overlapping_set(client: TestClien
             assert doc["baseline"]["name"] == other and doc["baseline"]["resolved_by"] == "auto"
         else:
             assert doc["verdict"] == "no_baseline"
+
+
+def test_triage_coverage_and_new_exceptions(client: TestClient) -> None:
+    doc = _json(client, "/api/sets/mini/triage?baseline=sample")
+    assert set(doc["coverage"]) == {"hours_baseline", "hours_set", "ratio"}
+    assert isinstance(doc["warnings"], list) and isinstance(doc["new_exceptions"], list)
+    assert doc["summary"]["new_exceptions"] == len(doc["new_exceptions"])
+    assert doc["report_url"] == f"/sets/{doc['set']['id']}"
+    assert all(r["report_url"].startswith("/sets/") for r in doc["new_exceptions"])
+    assert all(r["exception_type"] for r in doc["new_exceptions"])
+    none = _json(client, "/api/sets/mini/triage?baseline=none")
+    assert none["verdict"] == "no_baseline" and none["coverage"]["hours_baseline"] is None

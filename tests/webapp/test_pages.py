@@ -44,7 +44,7 @@ def test_triage_page(client: TestClient) -> None:
     res = client.get("/sets/mini/triage?baseline=sample")
     assert res.status_code == 200
     assert "Triage" in res.text and "sample" in res.text
-    assert "New types" in res.text
+    assert "New types" in res.text and "New exceptions" in res.text
 
 
 def test_html_404(client: TestClient) -> None:

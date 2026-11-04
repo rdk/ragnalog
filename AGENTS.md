@@ -9,7 +9,8 @@ before changing behaviour; `docs/cli.md` documents the command contract.
 src/atlas_log_analyzer/
   core/      pure library: models, formats (registry, jira), reader, parser,
              java stack traces, masking, signatures, grouping, mining (drain3, optional)
-  store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff
+  store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff,
+             triage (triage.v1, shared by the CLI and the web app)
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
   cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes)
   webapp/    FastAPI app (`atlas-log serve`): api.py (/api JSON), pages.py + templates/

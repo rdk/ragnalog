@@ -8,9 +8,52 @@ import polars as pl
 
 from atlas_log_analyzer.store.logset import LogSet
 
-__all__ = ["DiffResult", "diff"]
+__all__ = ["COVERAGE_FACTOR", "DiffResult", "coverage_warning", "diff", "span_hours"]
 
 _ATTRS = ("template", "level", "level_name", "logger", "exception_type")
+
+COVERAGE_FACTOR = 4.0
+"""Spans of two compared sets that differ by more than this factor get a coverage warning."""
+
+
+def span_hours(ls: LogSet) -> float:
+    """Hours between the first and the last entry of a set (at least one minute; 0 if empty)."""
+    m = ls.manifest
+    if m.first_ts is None or m.last_ts is None:
+        return 0.0
+    return max((m.last_ts - m.first_ts).total_seconds() / 3600, 1 / 60)
+
+
+def _span_text(hours: float) -> str:
+    if hours < 1:
+        return f"{hours * 60:.0f} min"
+    if hours < 48:
+        return f"{hours:.1f} h"
+    return f"{hours / 24:.1f} days"
+
+
+def coverage_warning(
+    hours_a: float, hours_b: float, *, label_a: str = "set A", label_b: str = "set B"
+) -> str | None:
+    """Return a sentence when the spans of two sets differ by more than :data:`COVERAGE_FACTOR`.
+
+    Groups that occur only at some times of day (daytime traffic, nightly jobs)
+    then appear as new or vanished although nothing changed. ``None`` when the
+    spans are comparable or one of them is unknown (``0``).
+    """
+    if hours_a <= 0 or hours_b <= 0:
+        return None
+    ratio = hours_b / hours_a
+    if 1 / COVERAGE_FACTOR <= ratio <= COVERAGE_FACTOR:
+        return None
+    factor, longer = (ratio, "longer") if ratio > 1 else (1 / ratio, "shorter")
+    text = (
+        f"{label_b} covers {_span_text(hours_b)} but {label_a} covers {_span_text(hours_a)} "
+        f"({factor:.1f}x {longer}): groups that occur only at certain times (daytime "
+        "traffic, nightly jobs) look new or vanished, so new/vanished groups are "
+        "unreliable; compare sets of similar span"
+    )
+    return text[:1].upper() + text[1:]
 
 
 @dataclass(frozen=True, slots=True)

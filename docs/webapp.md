@@ -28,7 +28,7 @@ atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a networ
 |---|---|
 | `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. |
 | `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. |
-| `/sets/{ref}/triage` | Verdict, then new types (most severe first), groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
+| `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
 | `/docs` | OpenAPI (Swagger UI) for the JSON API. |
 
 `{ref}` is a set id, a unique id prefix or a name, as in the CLI. Unknown sets
@@ -75,25 +75,37 @@ before the set's last entry.
 
 ### Triage
 
-`GET /api/sets/{ref}/triage` answers the question in one call:
+`GET /api/sets/{ref}/triage` answers the question in one call. The document
+is built by `store/triage.py` and is the same as `atlas-log triage` prints
+(`docs/cli.md`), plus the `report_url` links:
 
 ```jsonc
 {"schema": "triage.v1",
  "set": {"id", "name", "first_ts", "last_ts", "entries"},
  "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param"} | null,
  "min_level": "WARN",
- "verdict": "new_errors | new_warnings | clean | no_baseline",
- "summary": {"new", "new_by_level": {"ERROR": n, ...}, "grew", "vanished", "changed", "unchanged"},
- "new":      [<diff row> + rate_per_hour + report_url, ...],   // ERROR first, then by count
- "grew":     [<diff row> + ratio + rate_ratio + report_url, ...],
- "vanished": [<diff row>, ...],
+ "verdict": "new_errors | new_warnings | new_exceptions | clean | no_baseline",
+ "summary": {"new", "new_by_level": {"ERROR": n, ...}, "new_exceptions", "grew", "vanished",
+             "changed", "unchanged"} | null,
+ "coverage": {"hours_baseline", "hours_set", "ratio"},
+ "warnings": ["The set covers 31 min but the baseline covers 6.9 h (13.5x shorter): …"],
+ "new":            [<diff row> + rate_per_hour + report_url, ...],   // ERROR first, then by count
+ "new_exceptions": [<diff row> + rate_per_hour + report_url, ...],   // any level, not in "new"
+ "grew":           [<diff row> + ratio + rate_ratio + report_url, ...],
+ "vanished":       [<diff row>, ...],
  "report_url": "/sets/{id}"}
 ```
 
 The automatic baseline is the newest other set that ends before this one starts
 (an earlier snapshot). Failing that, it is the newest other set that ends no later
 than this one (an overlapping snapshot). Growth compares hourly rates, so sets of
-different lengths compare fairly.
+different lengths compare fairly. `new_exceptions` lists new groups of any level
+that carry an exception and are not in `new` (a DEBUG stack trace below
+`min_level`); when `new` is empty but `new_exceptions` is not, the verdict is
+`new_exceptions`. `coverage` gives both spans in hours (`ratio = hours_set /
+hours_baseline`); when they differ by more than 4x either way, `warnings` says
+that new/vanished groups are unreliable (a nightly set lacks daytime groups).
+`baseline=none` gives `no_baseline`.
 
 ### Ingest jobs
 
@@ -136,7 +148,7 @@ src/atlas_log_analyzer/webapp/
   app.py        create_app(): routers, static files, HTML/JSON error handling
   settings.py   Settings (flags > ATLAS_LOG_* env > defaults)
   state.py      AppState: store + lock, summary and report caches, JobManager
-  api.py        /api routes, triage, auto baseline
+  api.py        /api routes; triage and the auto baseline come from store/triage.py
   pages.py      HTML routes (Jinja2), report page assembly
   jobs.py       JobManager, Job (job.v1), upload spool
   errors.py     ApiError, error.v1 handlers

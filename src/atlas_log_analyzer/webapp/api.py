@@ -19,6 +19,8 @@ from atlas_log_analyzer.report import example_entries
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
+from atlas_log_analyzer.store.triage import auto_baseline as pick_baseline
+from atlas_log_analyzer.store.triage import triage as store_triage
 from atlas_log_analyzer.webapp.errors import ApiError
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.responses import JSON
@@ -93,22 +95,14 @@ def manifest_item(m: LogSetManifest) -> dict[str, Any]:
 
 
 def auto_baseline(state: AppState, ls: LogSet) -> LogSet | None:
-    """Pick the default baseline of ``ls``.
+    """Pick the default baseline of ``ls`` (``store.triage.auto_baseline``).
 
     That is the newest other set that ends before ``ls`` starts (an earlier snapshot),
     else the newest other set that ends no later than ``ls`` (an overlapping snapshot);
     ``None`` when there is none.
     """
-    me = ls.manifest
-    others = [m for m in state.manifests() if m.id != me.id and m.last_ts is not None]
-    if me.first_ts is None or not others:
-        return None
-    before = [m for m in others if m.last_ts is not None and m.last_ts <= me.first_ts]
-    pool = before or [m for m in others if me.last_ts and m.last_ts and m.last_ts <= me.last_ts]
-    if not pool:
-        return None
-    best = max(pool, key=lambda m: (m.last_ts, str(m.created_at)))
-    return state.open(best.id)
+    best = pick_baseline(state.manifests(), ls.manifest)
+    return state.open(best.id) if best is not None else None
 
 
 def _baseline(state: AppState, ls: LogSet, ref: str | None) -> LogSet | None:
@@ -449,13 +443,6 @@ def diff(
     }
 
 
-def _hours(ls: LogSet) -> float:
-    m = ls.manifest
-    if m.first_ts is None or m.last_ts is None:
-        return 0.0
-    return max((m.last_ts - m.first_ts).total_seconds() / 3600, 1 / 60)
-
-
 @router.get("/sets/{ref}/triage")
 def triage(
     ref: str,
@@ -468,83 +455,35 @@ def triage(
     """Answer "are there new kinds of errors since the baseline?" in one call (``triage.v1``).
 
     ``verdict`` is ``new_errors`` (new ERROR/FATAL groups), ``new_warnings``,
-    ``clean`` or ``no_baseline``. ``grew`` lists groups whose hourly rate rose at least
-    ``grow`` times (rates normalise sets of different length).
+    ``new_exceptions`` (only lower-level new groups carrying an exception), ``clean``
+    or ``no_baseline``. ``grew`` lists groups whose hourly rate rose at least ``grow``
+    times (rates normalise sets of different length); ``coverage``/``warnings`` flag
+    sets whose spans differ by more than 4x. The document is
+    :func:`atlas_log_analyzer.store.triage.triage` plus ``report_url`` links.
     """
     ls = state.open(ref)
     lvl = _levels(min_level, "min_level")
     base = _baseline(state, ls, baseline)
-    me = ls.manifest
-    head = {
-        "schema": "triage.v1",
-        "set": {
-            "id": me.id,
-            "name": me.name,
-            "first_ts": me.first_ts,
-            "last_ts": me.last_ts,
-            "entries": me.entry_count,
-        },
-        "min_level": lvl,
-        "report_url": f"/sets/{me.id}",
-    }
-    if base is None:
-        return {
-            **head,
-            "baseline": None,
-            "verdict": "no_baseline",
-            "summary": None,
-            "new": [],
-            "grew": [],
-            "vanished": [],
-        }
     try:
-        result = store_diff(base, ls, min_level=lvl)
+        doc = store_triage(
+            ls,
+            base,
+            min_level=lvl,
+            grow=grow,
+            limit=limit,
+            resolved_by="auto" if baseline == "auto" else "param",
+        )
     except ValueError as exc:
         raise ApiError("incompatible_sets", str(exc), 409) from exc
-    hours_a, hours_b = _hours(base), _hours(ls)
-    # most severe first, then by volume
-    new = to_records(result.new.sort(["level", "count_b"], descending=[True, True]))
-    changed = to_records(result.changed)
-    for row in new:
-        row["rate_per_hour"] = round(row["count_b"] / hours_b, 3) if hours_b else None
-    grew = []
-    for row in changed:
-        rate_a = row["count_a"] / hours_a if hours_a else 0.0
-        rate_b = row["count_b"] / hours_b if hours_b else 0.0
-        row["rate_ratio"] = round(rate_b / rate_a, 3) if rate_a else None
-        if row["rate_ratio"] is not None and row["rate_ratio"] >= grow:
-            grew.append(row)
-    grew.sort(key=lambda r: r["rate_ratio"], reverse=True)
-    by_level: dict[str, int] = {}
-    for row in new:
-        by_level[row["level_name"]] = by_level.get(row["level_name"], 0) + 1
-    errors = sum(n for k, n in by_level.items() if k in ("ERROR", "FATAL"))
-    verdict = "new_errors" if errors else "new_warnings" if new else "clean"
-    for row in new + grew:
-        row["report_url"] = f"/sets/{me.id}?compare={base.manifest.id}#sig={row['signature']}"
-    vanished = to_records(result.vanished)
-    return {
-        **head,
-        "baseline": {
-            "id": base.manifest.id,
-            "name": base.manifest.name,
-            "first_ts": base.manifest.first_ts,
-            "last_ts": base.manifest.last_ts,
-            "resolved_by": "auto" if baseline == "auto" else "param",
-        },
-        "verdict": verdict,
-        "summary": {
-            "new": len(new),
-            "new_by_level": by_level,
-            "grew": len(grew),
-            "vanished": len(vanished),
-            "changed": len(changed),
-            "unchanged": result.unchanged_count,
-        },
-        "new": new[:limit] if limit else new,
-        "grew": grew[:limit] if limit else grew,
-        "vanished": vanished[:limit] if limit else vanished,
-    }
+    me = ls.manifest
+    doc["report_url"] = f"/sets/{me.id}"
+    if base is not None:
+        for key in ("new", "new_exceptions", "grew"):
+            for row in doc[key]:
+                row["report_url"] = (
+                    f"/sets/{me.id}?compare={base.manifest.id}#sig={row['signature']}"
+                )
+    return doc
 
 
 @router.post("/ingest", status_code=202)

@@ -18,6 +18,7 @@ COMMANDS = [
     "query",
     "stats",
     "diff",
+    "triage",
     "parse",
     "regroup",
     "report",
