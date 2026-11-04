@@ -17,7 +17,10 @@ src/atlas_log_analyzer/
              (HTML), jobs.py (background ingest), state.py (store lock, caches)
 tests/
   core/  store/  cli/  report/  webapp/   one directory per package
+  contract/test_parity.py    CLI <-> API parity contract (docs/design.md, "CLI and API parity")
+  golden/signatures.json     golden signatures of the fixtures (`pytest --update-golden`)
   fixtures/jira/*.log        masked Jira log excerpts shared by all tests
+  fixtures/foreign/*.log     non-Jira text (access, GC logs) no format may claim
   cli/data/mini.log          10-entry Jira log used by the CLI end-to-end tests
 docs/        requirements, research, design, cli reference, formats/*.v1.md
 ```
@@ -58,6 +61,11 @@ ubuntu-latest and windows-latest.
   1 usage, 2 nothing found / parse failure, 3 store error. Results go to stdout,
   diagnostics to stderr. A command's docstring is its `--help`: keep the output
   shape and exit codes in it accurate, and update `docs/cli.md` with it.
+- Startup time: `cli/`, `store/__init__.py` and `store/views.py` import polars,
+  DuckDB, rich, the ingest pipeline and the Parquet writer inside the functions
+  that use them (annotations via `TYPE_CHECKING`); `tests/cli/test_startup.py`
+  checks it. Keep `_version.py` equal to `project.version`.
+- Changing signatures on purpose: bump the version, then `uv run pytest --update-golden`.
 - Don't call `DataFrame.to_dicts()` on timezone-aware columns in code that runs
   on Windows without `tzdata`; use `store.logset.rows`/`to_records` or
   `cli.output.jsonable_rows`.

@@ -273,6 +273,35 @@ substring); entry filters take `request_id=`. Uploads go through
   fixtures (`tests/fixtures/jira/*.log`) and a throughput smoke test.
 - GitHub Actions: lint, type-check, tests on `windows-latest` and
   `ubuntu-latest`, Python 3.14.
+- **Golden signatures** (`tests/golden/signatures.json`): per fixture file, an
+  xxh3 of its sorted `(signature, coarse_signature)` pairs and the entry count,
+  keyed by `SIGNATURE_VERSION`, `MASK_RULES_VERSION` and the format's spec. A
+  change that moves a signature fails; if intended, bump a version and run
+  `uv run pytest --update-golden`.
+- **Format conformance kit** (`tests/core/test_conformance.py`), run for every
+  registered format over `tests/fixtures/<format>/`: joined `raw` texts give back
+  the file (minus `\r` before `\n` and the final newline), ids are unique,
+  `source_line`/`source_offset` point at the header line, parsing is
+  deterministic, `raw == header + "\n" + body`, `sniff` ≥ 0.5 on the format's
+  own fixtures and 0 on foreign text (`tests/fixtures/foreign/`).
+- **Startup guard** (`tests/cli/test_startup.py`): a JSON read command loads no
+  DuckDB, `pyarrow.compute`, `rich.table`, ingest pipeline or Parquet writer;
+  `version` and `formats` load no polars. `store/__init__.py` resolves its names
+  on first use (PEP 562), and the version is a literal (`_version.py`).
+
+### CLI and API parity
+
+`tests/contract/test_parity.py` is the written contract between
+`atlas-log --output json` and `/api`: its `CASES` table pairs a command line with
+a request; both run against one store and must return the same document once
+volatile keys (`created_at`, `elapsed_s`, `tool_version`, `report_url`) are
+dropped. Differences by design are listed per case in `allowed`, each with its
+reason (the API names only the store directory and adds per-set `summary`; `show`
+is `entries.v1` while the API's group page gets `group.v1` with a histogram; a cut
+text says `use --max-raw 0` or `use max_raw=0`). `HTTP_CAPS` lists the page caps
+only the API has. Errors must agree on `error.code`, with the documented CLI exit
+code and HTTP status. Known drifts are `xfail(strict=True)` cases: fixing one
+makes its case fail until the marker is removed.
 
 ## 11. Implementation notes and deviations (v0.1)
 
