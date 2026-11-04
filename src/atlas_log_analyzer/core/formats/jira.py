@@ -79,6 +79,11 @@ _TS_HEAD_RE = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}[+-]\d{4} ")
 _LEVEL_TOKEN_RE = re.compile(r" (TRACE|DEBUG|INFO|WARN|ERROR|FATAL)(?= )")
 _LOGGER_RE = re.compile(r"\[([^\]\s]+)\] ?")
 _SPACES_RE = re.compile(r" +")
+_CONTINUATION_RE = re.compile(
+    r"\s|Caused by: |Suppressed: |\.\.\. \d+ (?:more|common frames omitted)"
+    r"|[\w$.]+(?:Exception|Error|Throwable)\b"
+)
+"""Lines that commonly continue an entry: indented frames, chain heads, exception lines."""
 _THREAD_START = 29
 """Index after ``<ts> ``; the thread has at least one character."""
 
@@ -345,8 +350,18 @@ class JiraFormat:
         )
 
     def sniff(self, lines: Sequence[str]) -> float:
-        """Fraction of non-empty ``lines`` that are Jira headers."""
-        considered = [line for line in lines if line.strip()]
-        if not considered:
-            return 0.0
-        return sum(1 for line in considered if self.is_header(line)) / len(considered)
+        """Share of Jira headers among the non-empty ``lines`` that could start an entry.
+
+        Continuation-looking lines (indented stack frames, ``Caused by:``, exception
+        lines) are not counted against the score, so a log full of stack traces still
+        scores high. No header at all scores 0.
+        """
+        headers = others = 0
+        for line in lines:
+            if not line.strip():
+                continue
+            if self.is_header(line):
+                headers += 1
+            elif not _CONTINUATION_RE.match(line):
+                others += 1
+        return headers / (headers + others) if headers else 0.0

@@ -283,7 +283,9 @@ substring); entry filters take `request_id=`. Uploads go through
   the file (minus `\r` before `\n` and the final newline), ids are unique,
   `source_line`/`source_offset` point at the header line, parsing is
   deterministic, `raw == header + "\n" + body`, `sniff` ≥ 0.5 on the format's
-  own fixtures and 0 on foreign text (`tests/fixtures/foreign/`).
+  own fixtures and 0 on foreign text (`tests/fixtures/foreign/`). Jira's `sniff`
+  is the share of headers among lines that could start an entry: indented frames,
+  `Caused by:` and exception lines don't count against it, and no header scores 0.
 - **Startup guard** (`tests/cli/test_startup.py`): a JSON read command loads no
   DuckDB, `pyarrow.compute`, `rich.table`, ingest pipeline or Parquet writer;
   `version` and `formats` load no polars. `store/__init__.py` resolves its names

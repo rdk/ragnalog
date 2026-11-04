@@ -38,13 +38,7 @@ ALIEN = [
 ]
 
 
-SNIFF_GAPS = {
-    "jira": (
-        "JiraFormat.sniff is the share of non-empty lines that are headers, so stack traces "
-        "pull it down (sample.log 0.15, edge_cases.log 0.35); detection still works because "
-        "the best score > 0 wins, but a second format could out-score it"
-    ),
-}
+SNIFF_GAPS: dict[str, str] = {}
 """Formats whose ``sniff`` is known to miss the 0.5 bar on their own fixtures."""
 
 

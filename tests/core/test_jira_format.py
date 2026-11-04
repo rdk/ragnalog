@@ -343,6 +343,8 @@ def test_sniff_and_protocol(jira: JiraFormat) -> None:
     assert isinstance(jira, LogFormat)
     lines = EDGE_CASES.read_text(encoding="utf-8").splitlines()
     score = jira.sniff(lines)
-    assert 0.3 < score < 1
+    assert 0.5 <= score < 1
     assert jira.sniff(["hello", "world"]) == 0
+    stack = [lines[0], "java.lang.IllegalStateException: boom", "	at org.acme.A.b(A.java:1)"]
+    assert jira.sniff(stack) == 1
     assert jira.sniff([]) == 0
