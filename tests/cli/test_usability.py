@@ -73,6 +73,21 @@ def test_unknown_set_hint(jcli: Invoke, mini: str, store_dir: Path) -> None:
     assert str(store_dir) not in err["message"]
 
 
+@pytest.mark.parametrize("command", ["remove", "regroup", "stats"])
+def test_unknown_set_same_error_everywhere(
+    jcli: Invoke, mini: str, store_dir: Path, command: str
+) -> None:
+    res = jcli(command, "nope")
+    assert res.code == 3
+    err = res.json()["error"]
+    assert err == {
+        "code": "store_error",
+        "message": "no log set 'nope'",
+        "hint": "available sets: mini",
+        "store": store_dir.as_posix(),
+    }
+
+
 def test_unknown_signature_hint(jcli: Invoke, mini: str) -> None:
     res = jcli("show", mini, "0000000000000000")
     assert res.code == 2

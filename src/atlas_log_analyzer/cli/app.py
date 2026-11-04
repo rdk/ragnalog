@@ -1686,8 +1686,8 @@ def regroup(logset: str, /, *, frames: int = 0, no_exceptions: bool = False) -> 
     """
     if frames < 0:
         raise CliError("invalid_value", "--frames must be >= 0")
+    ls = _open(logset)
     store = _store()
-    ls = store.open(logset)
     spec = dataclasses.replace(
         _format_spec(ls.manifest.format), frames=frames, include_exceptions=not no_exceptions
     )
@@ -1777,9 +1777,8 @@ def remove(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    store = _store()
-    ls = store.open(logset)
-    store.remove(ls.manifest.id)
+    ls = _open(logset)
+    _store().remove(ls.manifest.id)
     _out().info(f"removed log set {ls.manifest.id}")
     _out().emit("remove.v1", {"removed": ls.manifest.id, "name": ls.manifest.name}, items=None)
 
