@@ -91,7 +91,7 @@ is built by `store/triage.py` and is the same as `atlas-log triage` prints
  "warnings": ["The set covers 31 min but the baseline covers 6.9 h (13.5x shorter): …"],
  "new":            [<diff row> + rate_per_hour + report_url, ...],   // ERROR first, then by count
  "new_exceptions": [<diff row> + rate_per_hour + report_url, ...],   // any level, not in "new"
- "grew":           [<diff row> + ratio + rate_ratio + report_url, ...],
+ "grew":           [<diff row> + ratio + rate_a + rate_b + rate_ratio + report_url, ...],
  "vanished":       [<diff row>, ...],
  "report_url": "/sets/{id}"}
 ```

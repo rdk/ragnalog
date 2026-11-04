@@ -87,6 +87,36 @@ def test_triage_new_errors_and_exceptions(jcli: Invoke, sets: dict[str, str]) ->
     assert len(doc["warnings"]) == 1 and "unreliable" in doc["warnings"][0]
 
 
+def test_triage_timestamps_match_manifests(jcli: Invoke, sets: dict[str, str]) -> None:
+    doc = jcli("triage", "short", "--baseline", "base").json()
+    manifests = {m["name"]: m for m in jcli("sets").json()["items"]}
+    for key, name in (("set", "short"), ("baseline", "base")):
+        for field in ("first_ts", "last_ts"):
+            assert doc[key][field] == manifests[name][field]
+            assert not doc[key][field].endswith("Z")
+    assert doc["vanished"][0]["first_seen_a"].endswith("+00:00")
+
+
+def test_triage_grew_uses_diff_rates(jcli: Invoke, sets: dict[str, str], tmp_path: Path) -> None:
+    """The GroovyCustomField errors twice within ten minutes grow against mini.log."""
+    text = MINI_LOG.read_text(encoding="utf-8")
+    groovy = text[: text.index("2026-10-29 02:20:00,001")]
+    busy = tmp_path / "busy" / "a.log"
+    busy.parent.mkdir()
+    busy.write_bytes((groovy + groovy.replace("02:19:4", "02:29:4")).encode())
+    assert jcli("ingest", busy, "--name", "busy").code == 0
+    doc = jcli("triage", "busy", "--baseline", "base").json()
+    assert len(doc["grew"]) == 1 and doc["summary"]["grew"] == 1
+    row = doc["grew"][0]
+    assert (row["count_a"], row["count_b"]) == (3, 6)
+    assert row["rate_ratio"] == pytest.approx(row["rate_b"] / row["rate_a"], rel=1e-2)
+    diffed = jcli("diff", "base", "busy", "--rate", "--min-level", "WARN").json()
+    same = next(r for r in diffed["changed"] if r["signature"] == row["signature"])
+    assert {k: same[k] for k in ("rate_a", "rate_b", "rate_ratio")} == {
+        k: row[k] for k in ("rate_a", "rate_b", "rate_ratio")
+    }
+
+
 def test_triage_auto_baseline(jcli: Invoke, sets: dict[str, str]) -> None:
     doc = jcli("triage", "short").json()
     assert doc["baseline"]["id"] == sets["base"] and doc["baseline"]["resolved_by"] == "auto"

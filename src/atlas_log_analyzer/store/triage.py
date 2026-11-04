@@ -12,7 +12,7 @@ from typing import Any, Literal
 import polars as pl
 
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
-from atlas_log_analyzer.store.query import coverage_warning, diff, span_hours
+from atlas_log_analyzer.store.query import coverage_warning, diff, span_hours, with_rates
 
 __all__ = ["VERDICTS", "auto_baseline", "triage"]
 
@@ -38,21 +38,22 @@ def auto_baseline(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> Lo
 
 
 def _set_info(m: LogSetManifest) -> dict[str, Any]:
+    """Identity and span of a set; timestamps as in its ``logset.v1`` manifest."""
+    d = m.to_dict()
     return {
         "id": m.id,
         "name": m.name,
-        "first_ts": m.first_ts,
-        "last_ts": m.last_ts,
+        "first_ts": d["first_ts"],
+        "last_ts": d["last_ts"],
         "entries": m.entry_count,
     }
 
 
 def _new_rows(frame: pl.DataFrame, hours: float) -> list[dict[str, Any]]:
     """Rows of a ``new`` frame, most severe first, then by count, with ``rate_per_hour``."""
-    rows = to_records(frame.sort(["level", "count_b", "signature"], descending=[True, True, False]))
-    for row in rows:
-        row["rate_per_hour"] = round(row["count_b"] / hours, 3) if hours else None
-    return rows
+    rate = (pl.col("count_b") / hours).round(3) if hours > 0 else pl.lit(None, pl.Float64)
+    ordered = frame.sort(["level", "count_b", "signature"], descending=[True, True, False])
+    return to_records(ordered.with_columns(rate.alias("rate_per_hour")))
 
 
 def triage(
@@ -77,8 +78,10 @@ def triage(
         resolved_by: Recorded as ``baseline.resolved_by`` (``auto`` or ``param``).
 
     Returns:
-        The ``triage.v1`` document (timestamps of ``set``/``baseline`` are datetimes,
-        rows are JSON-ready). ``verdict``: ``new_errors`` (a new ERROR/FATAL group),
+        The JSON-ready ``triage.v1`` document (``set``/``baseline`` timestamps as in
+        their manifests, row timestamps as in ``diff``; ``grew`` rows carry
+        ``rate_a``, ``rate_b`` and ``rate_ratio`` as ``diff --rate``).
+        ``verdict``: ``new_errors`` (a new ERROR/FATAL group),
         ``new_warnings`` (other new groups), ``new_exceptions`` (no new group at
         ``min_level`` but a new group of a lower level carrying an exception),
         ``clean`` or ``no_baseline``. ``coverage`` compares the spans of both sets
@@ -115,15 +118,10 @@ def triage(
             pl.col("exception_type").is_not_null() & ~pl.col("signature").is_in(list(known))
         )
         new_exceptions = _new_rows(extra, hours_b)
-    changed = to_records(result.changed)
-    grew = []
-    for row in changed:
-        rate_a = row["count_a"] / hours_a if hours_a else 0.0
-        rate_b = row["count_b"] / hours_b if hours_b else 0.0
-        row["rate_ratio"] = round(rate_b / rate_a, 3) if rate_a else None
-        if row["rate_ratio"] is not None and row["rate_ratio"] >= grow:
-            grew.append(row)
-    grew.sort(key=lambda r: r["rate_ratio"], reverse=True)
+    changed = result.changed.height
+    grew = to_records(
+        with_rates(result.changed, hours_a, hours_b).filter(pl.col("rate_ratio") >= grow)
+    )
     by_level: dict[str, int] = {}
     for row in new:
         by_level[row["level_name"]] = by_level.get(row["level_name"], 0) + 1
@@ -139,14 +137,14 @@ def triage(
     vanished = to_records(result.vanished)
     warning = coverage_warning(hours_a, hours_b, label_a="the baseline", label_b="the set")
     cut = limit or None
-    bm = baseline.manifest
+    info = _set_info(baseline.manifest)
     return {
         **head,
         "baseline": {
-            "id": bm.id,
-            "name": bm.name,
-            "first_ts": bm.first_ts,
-            "last_ts": bm.last_ts,
+            "id": info["id"],
+            "name": info["name"],
+            "first_ts": info["first_ts"],
+            "last_ts": info["last_ts"],
             "resolved_by": resolved_by,
         },
         "verdict": verdict,
@@ -156,7 +154,7 @@ def triage(
             "new_exceptions": len(new_exceptions),
             "grew": len(grew),
             "vanished": len(vanished),
-            "changed": len(changed),
+            "changed": changed,
             "unchanged": result.unchanged_count,
         },
         "coverage": {

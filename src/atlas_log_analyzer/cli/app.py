@@ -1519,14 +1519,16 @@ def triage(
        "warnings": [str, ...],
        "new": [<diff row> + "rate_per_hour"],
        "new_exceptions": [<diff row> + "rate_per_hour"],
-       "grew": [<diff row> + "ratio", "rate_ratio"],
+       "grew": [<diff row> + "ratio", "rate_a", "rate_b", "rate_ratio"],
        "vanished": [<diff row>]}
     Diff rows are those of `diff` (signature, template, level, level_name,
-    logger, exception_type, count_a, count_b, first/last_seen_a/b).
+    logger, exception_type, count_a, count_b, first/last_seen_a/b); set and
+    baseline timestamps are written as in their manifests.
     "new": groups at/above --min-level only in SET; "new_exceptions": new
     groups of ANY level with an exception that are not in "new" (a new DEBUG
     stack trace); "grew": changed groups whose hourly rate rose at least --grow
-    times (rate_ratio, rates normalise different spans); "vanished": groups at
+    times (rates as `diff --rate`, which normalise different spans), highest
+    rate_ratio first; "vanished": groups at
     /above --min-level only in the baseline. "verdict": new_errors (a new
     ERROR/FATAL group), new_warnings (other new groups), new_exceptions (no
     new group but a new exception at a lower level), clean, no_baseline.

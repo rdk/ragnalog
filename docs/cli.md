@@ -362,7 +362,7 @@ verdict is `no_baseline`.
  "warnings": ["The set covers 31 min but the baseline covers 6.9 h (13.5x shorter): …"],
  "new":            [<diff row> + rate_per_hour],   // ERROR first, then by count
  "new_exceptions": [<diff row> + rate_per_hour],   // any level, not in "new"
- "grew":           [<diff row> + ratio + rate_ratio],
+ "grew":           [<diff row> + ratio + rate_a + rate_b + rate_ratio],
  "vanished":       [<diff row>]}
 ```
 
@@ -373,7 +373,10 @@ verdict is `no_baseline`.
   Empty when `--min-level` is the lowest level that matters (everything new is
   then in `new`).
 - `grew`: groups in both sets whose hourly rate rose at least `--grow` times
-  (`rate_ratio`; rates normalise sets of different length).
+  (`rate_a`, `rate_b` and `rate_ratio` as in `diff --rate`; rates normalise
+  sets of different length), sorted by `rate_ratio` descending.
+- `set`/`baseline` timestamps are written as in the sets' manifests
+  (`logset.v1`), row timestamps as in `diff`.
 - `verdict`: `new_errors` (a new ERROR/FATAL group), `new_warnings` (other new
   groups), `new_exceptions` (`new` is empty but `new_exceptions` is not),
   `clean`, `no_baseline`.
