@@ -306,9 +306,14 @@ substring); entry filters take `request_id=`. Uploads go through
   (`cache_size`).
 - **Store.** `regroup` rewrites `entries.parquet` as well as `groups.parquet`
   (signature, template and variables change) and drops `merges.parquet`.
-  `ingest` recomputes groups from the stored entries if the grouper's counts do
-  not add up to the deduplicated entry count. `ingest` with an existing id
-  returns the existing set without consuming the input iterator.
+  The ingest pipeline drops repeated entry ids before the grouper
+  (`unique_entries`) and writes with `dedupe=False`, so one id set is held and
+  group counts always match; `Store.ingest` still recomputes groups from the
+  stored entries if a caller's grouper counts do not add up (that path doubled
+  peak memory: 1.3 GB instead of 0.45 GB for the 191 MB sample). Row groups are
+  flushed every 65,536 rows or 32 M characters of `raw` + `body`, whichever
+  comes first. `ingest` with an existing id returns the existing set without
+  consuming the input iterator.
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
   reports sniff confidence per format; `parse` always emits JSONL; an empty
   listing exits 0. Added for agents: `triage` (the web app's `triage.v1`,

@@ -104,6 +104,12 @@ class Signer:
     def __init__(self, masker: Masker, spec: SignatureSpec = DEFAULT_SPEC) -> None:
         self.masker = masker
         self.spec = spec
+        # Without exceptions an entry's parts under ``spec`` and COARSE_SPEC are equal
+        # when both treat level and logger alike (exceptions and frames add nothing).
+        self._coarse_if_no_exceptions = (
+            spec.include_level == COARSE_SPEC.include_level
+            and spec.include_logger == COARSE_SPEC.include_logger
+        )
 
     def sign(self, entry: LogEntry) -> Signature:
         """Compute the signature of ``entry``."""
@@ -111,10 +117,16 @@ class Signer:
         return self._make(entry, self.spec, template, variables, self._exception_parts(entry))
 
     def sign_both(self, entry: LogEntry) -> tuple[Signature, Signature]:
-        """Return ``(signature, coarse_signature)`` sharing one masking pass."""
+        """Return ``(signature, coarse_signature)`` sharing one masking pass.
+
+        For an entry without exceptions both are the same object when the spec
+        and :data:`COARSE_SPEC` agree on level and logger (the default).
+        """
         template, variables = self.masker.apply(entry.message)
         exc_parts = self._exception_parts(entry)
         full = self._make(entry, self.spec, template, variables, exc_parts)
+        if not entry.exceptions and self._coarse_if_no_exceptions:
+            return full, full
         coarse = self._make(entry, COARSE_SPEC, template, variables, exc_parts)
         return full, coarse
 

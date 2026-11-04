@@ -43,6 +43,7 @@ from atlas_log_analyzer.store.schema import (
 
 __all__ = [
     "COMPRESSION",
+    "ROW_GROUP_CHARS",
     "ROW_GROUP_SIZE",
     "EntriesWriter",
     "MergeProposalLike",
@@ -55,6 +56,9 @@ __all__ = [
 ]
 
 ROW_GROUP_SIZE = 65_536
+ROW_GROUP_CHARS = 32 * 1024 * 1024
+"""A row group is also flushed once the buffered ``raw`` and ``body`` texts reach this many
+characters, so sets of large entries (stack traces) do not buffer gigabytes."""
 COMPRESSION = "zstd"
 TOP_N = 10
 
@@ -117,8 +121,11 @@ def _exception_rows(chain: Sequence[ExceptionInfo]) -> list[tuple[Any, ...]]:
 class EntriesWriter:
     """Streams :class:`SignedEntry` objects into ``entries.parquet``.
 
-    Entries with an ``id`` already written are skipped. Rows are buffered in
-    column lists and flushed as one row group every ``row_group_size`` rows.
+    Entries with an ``id`` already written are skipped unless ``dedupe`` is false
+    (the caller guarantees unique ids, see :func:`unique_entries`). Rows are
+    buffered in column lists and flushed as one row group every
+    ``row_group_size`` rows or once the buffered ``raw`` and ``body`` texts reach
+    ``row_group_chars`` characters, whichever comes first.
 
     Example::
 
@@ -127,9 +134,18 @@ class EntriesWriter:
         w.count, w.duplicates, w.sources
     """
 
-    def __init__(self, path: Path, *, row_group_size: int = ROW_GROUP_SIZE) -> None:
+    def __init__(
+        self,
+        path: Path,
+        *,
+        row_group_size: int = ROW_GROUP_SIZE,
+        row_group_chars: int = ROW_GROUP_CHARS,
+        dedupe: bool = True,
+    ) -> None:
         self.path = path
         self.row_group_size = row_group_size
+        self.row_group_chars = row_group_chars
+        self.dedupe = dedupe
         self.count = 0
         """Rows written."""
         self.duplicates = 0
@@ -137,6 +153,7 @@ class EntriesWriter:
         self.sources: dict[str, SourceStats] = {}
         """Statistics keyed by ``entry.source.path``."""
         self._seen: set[str] = set()
+        self._chars = 0
         self._writer = pq.ParquetWriter(
             str(path), ENTRIES_SCHEMA, compression=COMPRESSION, write_statistics=True
         )
@@ -174,16 +191,19 @@ class EntriesWriter:
     def write(self, signed: Iterable[SignedEntry]) -> None:
         """Consume ``signed`` and append its (deduplicated) entries."""
         seen = self._seen
+        dedupe = self.dedupe
         size = self.row_group_size
+        max_chars = self.row_group_chars
         # Local bindings keep the per-row loop cheap.
         id_, ts_, tz_, level_ = self._id.append, self._ts.append, self._tz.append, self._level
         for se in signed:
             e = se.entry
             eid = e.id
-            if eid in seen:
-                self.duplicates += 1
-                continue
-            seen.add(eid)
+            if dedupe:
+                if eid in seen:
+                    self.duplicates += 1
+                    continue
+                seen.add(eid)
             id_(eid)
             ts = e.timestamp
             ts_(ts)
@@ -232,7 +252,8 @@ class EntriesWriter:
             self._source_offset.append(src.offset)
             self._raw.append(e.raw)
             self._parse_error.append(e.parse_error)
-            if len(level_) >= size:
+            self._chars += len(e.raw) + len(e.body)
+            if len(level_) >= size or self._chars >= max_chars:
                 self._flush()
                 id_, ts_, tz_, level_ = (
                     self._id.append,
@@ -296,6 +317,7 @@ class EntriesWriter:
             strict=True,
         ):
             self.sources.setdefault(p, SourceStats()).update(cnt, _ms(lo), _ms(hi))
+        self._chars = 0
         self._reset()
 
     def close(self) -> None:

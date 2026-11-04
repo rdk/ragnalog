@@ -117,6 +117,42 @@ def test_groups_recomputed_when_grouper_counts_duplicates(store: Store, built: B
     assert got["count"].sum() == TOTAL_A
 
 
+def test_pipeline_dedupes_before_grouping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A repeated entry is dropped before the grouper: no recomputation of groups."""
+    import atlas_log_analyzer.store.store as store_mod
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+
+    def recompute(*args: object, **kwargs: object) -> int:
+        raise AssertionError("groups were recomputed from entries.parquet")
+
+    monkeypatch.setattr(store_mod, "groups_from_entries", recompute)
+    a = "2026-10-29 02:19:41,415+0100 Caesium-1-1 WARN      [c.a.X] repeated line"
+    b = "2026-10-29 02:19:42,000+0100 Caesium-1-1 INFO      [c.a.Y] other line"
+    log = tmp_path / "dup.log"
+    log.write_text(f"{a}\n{b}\n{a}\n", encoding="utf-8")  # the third entry repeats the first
+    result = ingest_paths(Store(tmp_path / "store"), [log])
+    m = result.logset.manifest
+    assert result.parsed_entries == 3 and m.entry_count == 2
+    assert result.logset.groups()["count"].sum() == 2
+
+
+def test_writer_flushes_row_groups_by_text_size(tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.writer import EntriesWriter
+
+    signed = list(generate(source_files(["a.log"]), WEIGHTS_A, 60))
+    unique = {se.entry.id for se in signed}
+    chars = sum(len(se.entry.raw) + len(se.entry.body) for se in signed)
+    path = tmp_path / "entries.parquet"
+    with EntriesWriter(path, row_group_chars=chars // 5) as writer:
+        writer.write(signed)
+    assert writer.count == len(unique)
+    assert 4 <= pq.ParquetFile(path).num_row_groups <= 6
+    with EntriesWriter(tmp_path / "all.parquet", dedupe=False) as plain:
+        plain.write(signed)
+    assert plain.count == len(signed) and plain.duplicates == 0
+    assert pq.ParquetFile(tmp_path / "all.parquet").num_row_groups == 1
+
+
 def test_unique_entries() -> None:
     from atlas_log_analyzer.store.writer import unique_entries
 

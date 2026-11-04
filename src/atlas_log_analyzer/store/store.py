@@ -219,11 +219,14 @@ class Store:
         name: str | None = None,
         spec: SignatureSpec,
         overwrite: bool = False,
+        dedupe: bool = True,
     ) -> LogSet:
         """Write a new log set.
 
         ``signed`` is consumed once, streamed into ``entries.parquet`` in
-        batches with deduplication on ``entry.id``. ``groups_after`` is called
+        batches with deduplication on ``entry.id`` (pass ``dedupe=False`` when the
+        ids are unique already, e.g. :func:`~atlas_log_analyzer.store.writer.
+        unique_entries` ran before the grouper). ``groups_after`` is called
         after the stream is exhausted (the grouper has seen everything by then)
         and its result written to ``groups.parquet``; if the group counts do not
         add up to the number of stored (deduplicated) entries, ``groups.parquet``
@@ -257,7 +260,7 @@ class Store:
                     raise StoreError(f"name {name!r} is already used by log set {m.id}")
         tmp = self._tmp_dir(set_id)
         try:
-            with EntriesWriter(tmp / ENTRIES_FILE) as writer:
+            with EntriesWriter(tmp / ENTRIES_FILE, dedupe=dedupe) as writer:
                 writer.write(signed)
             groups = list(groups_after())
             if sum(g.count for g in groups) == writer.count:
@@ -312,7 +315,8 @@ class Store:
         grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), spec))
         tmp = self._tmp_dir(m.id)
         try:
-            with EntriesWriter(tmp / ENTRIES_FILE) as writer:
+            # stored ids are unique: no deduplication set needed
+            with EntriesWriter(tmp / ENTRIES_FILE, dedupe=False) as writer:
                 writer.write(grouper.sign(iter_entries(ls.entries_path, m.format)))
             group_count = write_groups(tmp / GROUPS_FILE, grouper.groups.values())
             manifest = replace(

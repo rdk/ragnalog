@@ -19,14 +19,15 @@ from typing import Any
 
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
-from atlas_log_analyzer.core.grouping import Grouper, SignedEntry
+from atlas_log_analyzer.core.grouping import Grouper
 from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
+from atlas_log_analyzer.core.models import LogEntry
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import SourceFile, discover_sources, iter_raw_lines
 from atlas_log_analyzer.core.signature import SignatureSpec, Signer
 from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.store.store import Store, StoreError
-from atlas_log_analyzer.store.writer import write_merges
+from atlas_log_analyzer.store.writer import unique_entries, write_merges
 
 __all__ = [
     "PROGRESS_EVERY",
@@ -188,24 +189,24 @@ class _Counter:
 
 
 def _tracked(
-    signed: Iterable[SignedEntry],
+    entries: Iterable[LogEntry],
     counter: _Counter,
     sources: Sequence[SourceFile],
     progress: Callable[[IngestProgress], None] | None,
     every: int,
-) -> Iterator[SignedEntry]:
+) -> Iterator[LogEntry]:
     total = sum(s.size for s in sources)
     base: dict[str, int] = {}
     acc = 0
     for s in sources:
         base[str(s.path)] = acc
         acc += s.size
-    for item in signed:
+    for item in entries:
         counter.entries += 1
-        if item.entry.parse_error is not None:
+        if item.parse_error is not None:
             counter.parse_errors += 1
         if progress is not None and counter.entries % every == 0:
-            src = item.entry.source
+            src = item.source
             progress(
                 IngestProgress(
                     entries=counter.entries,
@@ -277,11 +278,19 @@ def ingest_sources(
     grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), spec))
     counter = _Counter()
     started = time.perf_counter()
-    signed = _tracked(
-        grouper.sign(parse_sources(sources, fmt)), counter, sources, progress, progress_every
-    )
+    parsed = _tracked(parse_sources(sources, fmt), counter, sources, progress, progress_every)
+    # Deduplicate before grouping so group counts match the stored entries (no
+    # recomputation from entries.parquet) and only one id set is held.
+    signed = grouper.sign(unique_entries(parsed))
     logset = store.ingest(
-        signed, grouper.sorted_groups, sources, fmt, name=name, spec=spec, overwrite=overwrite
+        signed,
+        grouper.sorted_groups,
+        sources,
+        fmt,
+        name=name,
+        spec=spec,
+        overwrite=overwrite,
+        dedupe=False,
     )
     elapsed = time.perf_counter() - started
     merges = _mine(logset) if mine else None

@@ -149,12 +149,23 @@ def test_sign_and_sign_both_agree(jira: JiraFormat, masker: Masker) -> None:
             jira, n=1, user="u", issue="ABC-1", obj="1a", root="java.lang.X", ts="2026-10-29"
         ),
     ]
-    for spec in (DEFAULT_SPEC, COARSE_SPEC, SignatureSpec(frames=2)):
+    specs = (
+        DEFAULT_SPEC,
+        COARSE_SPEC,
+        SignatureSpec(frames=2),
+        SignatureSpec(include_level=False),
+        SignatureSpec(include_logger=False, include_exceptions=False),
+    )
+    for spec in specs:
         signer = Signer(masker, spec)
         for entry in entries:
             full, coarse = signer.sign_both(entry)
             assert signer.sign(entry) == full
             assert coarse == Signer(masker, COARSE_SPEC).sign(entry)
+    plain = entries[1]
+    assert not plain.exceptions
+    full, coarse = Signer(masker).sign_both(plain)
+    assert full is coarse  # one hash for entries without exceptions
     coarse_only = Signer(masker, COARSE_SPEC).sign(entries[0])
     assert coarse_only.template == "java.lang.IllegalStateException: bad id <NUM>"
     assert "java.lang.IllegalStateException" not in coarse_only.parts
