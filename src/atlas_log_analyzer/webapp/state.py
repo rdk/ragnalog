@@ -12,7 +12,7 @@ import msgspec
 from fastapi import Request
 
 from atlas_log_analyzer.report import build_payload
-from atlas_log_analyzer.store.locks import FileLock, LockUnavailable
+from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 from atlas_log_analyzer.store.store import Store, StoreError
 from atlas_log_analyzer.store.views import set_summary
@@ -36,7 +36,7 @@ def lock_server(root: Path) -> FileLock | None:
 
     The operating system releases it when the process ends, so a crashed server
     never blocks the next one. Returns ``None`` (no lock) when ``root`` does not
-    exist yet or its file system cannot lock files.
+    exist yet, the lock file cannot be created or the file system cannot lock files.
 
     Raises:
         StoreInUse: Another process serves ``root``.
@@ -48,7 +48,7 @@ def lock_server(root: Path) -> FileLock | None:
     try:
         if lock.acquire():
             return lock
-    except LockUnavailable:
+    except OSError:  # no lock file (read-only store) or no locking: run unlocked
         return None
     raise StoreInUse(
         f"another atlas-log server is already using the store {root}; stop it or serve "

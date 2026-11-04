@@ -23,7 +23,7 @@ from atlas_log_analyzer.core.grouping import Group, Grouper, SignedEntry
 from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker
 from atlas_log_analyzer.core.reader import SourceFile
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec, Signer
-from atlas_log_analyzer.store.locks import FileLock, LockUnavailable
+from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import (
     ENTRIES_FILE,
     GROUPS_FILE,
@@ -240,15 +240,15 @@ class Store:
         """Hold the store's write lock: this instance's, then :data:`WRITE_LOCK_FILE`.
 
         The file lock keeps another process (a CLI ingest next to ``serve``) from
-        installing a set under the same name at the same moment. On file systems
-        that cannot lock files only the in-process lock is held.
+        installing a set under the same name at the same moment. When the lock
+        file cannot be created or locked (read-only store, a file system without
+        locks) only the in-process lock is held; the rename then reports the error.
         """
         with self._write_lock:
-            self.root.mkdir(parents=True, exist_ok=True)
             lock = FileLock(self.root / WRITE_LOCK_FILE)
             try:
                 locked = lock.acquire(timeout=WRITE_LOCK_TIMEOUT_S)
-            except LockUnavailable:
+            except OSError:  # includes LockUnavailable
                 locked = None
             if locked is False:
                 raise StoreError(

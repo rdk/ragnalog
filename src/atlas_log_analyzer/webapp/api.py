@@ -682,7 +682,7 @@ async def ingest(
     name = name or _form_str(form.get("name"))
     format = format or _form_str(form.get("format"))
     if frames is None and (text := _form_str(form.get("frames"))) is not None:
-        if not text.isdigit():
+        if not (text.isascii() and text.isdigit()):
             raise ApiError("invalid_value", f"frames must be an integer >= 0, not {text!r}")
         frames = int(text)
     mine = mine or _form_str(form.get("mine")) in ("1", "true", "on", "yes")

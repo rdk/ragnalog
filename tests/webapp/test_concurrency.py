@@ -120,3 +120,19 @@ def test_shutdown_deletes_spools_of_queued_jobs(
     assert not stopper.is_alive()
     assert running.state == "succeeded" and queued.state == "cancelled"
     assert list(manager.spool.iterdir()) == []
+
+
+def test_server_runs_unlocked_when_the_lock_file_cannot_be_created(
+    store_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas_log_analyzer.store.locks import FileLock
+
+    def refuse(self: FileLock, timeout: float = 0.0) -> bool:
+        raise PermissionError(13, "read-only (simulated)", str(self.path))
+
+    monkeypatch.setattr(FileLock, "acquire", refuse)
+    orphan = store_dir / UPLOADS_DIR / "18f00000001"
+    orphan.mkdir(parents=True)
+    with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))) as client:
+        assert client.get("/api/health").json()["sets"] == 2
+    assert orphan.is_dir()  # without the lock another server may own the spools

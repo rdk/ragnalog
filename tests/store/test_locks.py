@@ -116,3 +116,13 @@ def test_install_waits_for_another_process(store: Store, monkeypatch: pytest.Mon
     assert not [p for p in store.root.iterdir() if p.name.startswith(".tmp-")]
     build(store, ["x.log"], WEIGHTS_A)
     assert len(store.list()) == 1
+
+
+def test_writes_work_without_a_lock_file(store: Store, monkeypatch: pytest.MonkeyPatch) -> None:
+    def refuse(self: FileLock, timeout: float = 0.0) -> bool:
+        raise PermissionError(13, "read-only (simulated)", str(self.path))
+
+    monkeypatch.setattr(FileLock, "acquire", refuse)
+    built = build(store, ["x.log"], WEIGHTS_A, name="x")
+    store.remove("x")
+    assert store.list() == [] and built.logset.manifest.name == "x"
