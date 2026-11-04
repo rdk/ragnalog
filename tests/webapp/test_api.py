@@ -46,6 +46,19 @@ def test_sets_list_with_summary(client: TestClient) -> None:
         assert set(item["summary"]) == {"errors", "warnings", "error_groups"}
 
 
+def test_sets_brief_and_set_as_cli(client: TestClient, store_dir: Path) -> None:
+    from atlas_log_analyzer.store.views import SET_BRIEF
+
+    full = _json(client, "/api/sets")
+    brief = _json(client, "/api/sets?brief=true")
+    assert all(tuple(item) == SET_BRIEF for item in brief["items"])
+    assert brief["items"] == [{k: i[k] for k in SET_BRIEF} for i in full["items"]]
+    cli = _cli_json(store_dir, "sets", "--brief")
+    assert cli["items"] == brief["items"] and cli["count"] == brief["count"]
+    assert _cli_json(store_dir, "sets")["items"] == full["items"]
+    assert _cli_json(store_dir, "set", "mini") == _json(client, "/api/sets/mini")
+
+
 def test_empty_store(empty_client: TestClient) -> None:
     assert _json(empty_client, "/api/sets")["count"] == 0
 

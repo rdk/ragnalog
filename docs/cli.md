@@ -147,13 +147,29 @@ proposals in `merges.parquet`.
 `merges` only with `--mine`. Exit: 0; 1 unknown format / missing drain3; 2 no
 files, format not detected, or zero entries (manifest still printed); 3.
 
-### `sets`
+### `sets [--brief]`
 
 ```json
-{"schema": "sets.v1", "store": "…", "count": 1, "items": [<manifest without "schema">]}
+{"schema": "sets.v1", "store": "…", "count": 1,
+ "items": [<manifest without "schema"> + "summary": {"errors", "warnings", "error_groups"}]}
 ```
 
-Newest first. Exit: 0 (also empty); 3.
+Newest first. `summary` counts the entries at ERROR/FATAL (`errors`), at WARN
+(`warnings`) and the groups at ERROR/FATAL (`error_groups`), computed from the
+group table as `GET /api/sets` does (`null` when a set cannot be read).
+`--brief` keeps only `id, name, first_ts, last_ts, entry_count, group_count,
+summary` per item (no `sources`, no versions). Exit: 0 (also empty); 3.
+
+### `set SET`
+
+One set: its manifest (`logset.v1`, as `ingest` prints it, without `ingest`)
+plus `summary` as in `sets`; the twin of `GET /api/sets/{ref}`.
+
+```json
+{"schema": "logset.v1", "id": "…", "name": "prod", …, "summary": {"errors": 5, "warnings": 2, "error_groups": 3}}
+```
+
+Exit: 0; 3 unknown set.
 
 ### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--sort K] [--limit 50] [--offset 0] [--coarse] [--columns C[,C…]]... [--brief]`
 

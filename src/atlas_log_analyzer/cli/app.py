@@ -61,6 +61,8 @@ from atlas_log_analyzer.store.views import (
     cap_texts,
     diff_warning,
     frames_view,
+    set_item,
+    set_summary,
 )
 
 # Startup time: the log-set reader (polars), the ingest pipeline and Parquet writer,
@@ -566,30 +568,63 @@ def _mine(logset: LogSet) -> list[dict[str, Any]]:
 
 
 @app.command
-def sets() -> None:
+def sets(*, brief: bool = False) -> None:
     """List the log sets in the store, newest first.
 
     Output (json):
       {"schema": "sets.v1", "store": str, "count": int,
-       "items": [<logset.v1 manifest without "schema">, ...]}
+       "items": [<logset.v1 manifest without "schema"> + "summary", ...]}
     Each item has id, name, format, sources, first_ts, last_ts, entry_count,
     group_count, created_at, tool_version, schema_version, signature_version,
-    mask_rules_version, signature_spec. An empty or missing store gives count 0.
+    mask_rules_version, signature_spec and
+    "summary": {"errors", "warnings", "error_groups"} (entries at ERROR/FATAL,
+    entries at WARN, groups at ERROR/FATAL; null when the set cannot be read).
+    --brief keeps only id, name, first_ts, last_ts, entry_count, group_count
+    and summary. An empty or missing store gives count 0.
 
     Exit codes: 0 ok (also when empty); 3 store error.
+
+    Args:
+        brief: Only id, name, first_ts, last_ts, entry_count, group_count, summary.
+
     """
-    manifests = _store().list()
+    store = _store()
     items = []
-    for m in manifests:
-        d = dict(m.to_dict())
-        d.pop("schema", None)
-        items.append(d)
+    for m in store.list():
+        summary: dict[str, int] | None
+        try:
+            summary = set_summary(store.open(m.id))
+        except StoreError, OSError, ValueError:
+            summary = None
+        items.append(set_item(m.to_dict(), summary, brief=brief))
     _out().emit(
         "sets.v1",
         {"store": _ctx().store.as_posix(), "count": len(items), "items": items},
         columns=SET_COLUMNS,
         title="log sets",
     )
+
+
+@app.command(name="set")
+def set_(logset: str, /) -> None:
+    """Print one log set: its manifest plus the severity summary of `sets`.
+
+    Output (json):
+      {"schema": "logset.v1", <manifest keys, see `ingest`>,
+       "summary": {"errors", "warnings", "error_groups"}}
+    "summary" counts the entries at ERROR/FATAL, the entries at WARN and the
+    groups at ERROR/FATAL, as in `sets` and GET /api/sets/{ref}. Table mode
+    prints the manifest as tables.
+
+    Exit codes: 0 ok; 3 unknown set or store error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+
+    """
+    ls = _open(logset)
+    doc = {**_manifest_dict(ls), "summary": set_summary(ls)}
+    _out().emit("logset.v1", doc, items=None, title=f"log set {ls.manifest.id}")
 
 
 @app.command

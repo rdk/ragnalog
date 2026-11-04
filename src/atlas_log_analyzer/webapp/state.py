@@ -7,12 +7,12 @@ from collections import OrderedDict
 from typing import Any
 
 import msgspec
-import polars as pl
 from fastapi import Request
 
 from atlas_log_analyzer.report import build_payload
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 from atlas_log_analyzer.store.store import Store
+from atlas_log_analyzer.store.views import set_summary
 from atlas_log_analyzer.webapp.jobs import JobManager
 from atlas_log_analyzer.webapp.settings import Settings
 
@@ -69,22 +69,13 @@ class AppState:
                 del self._summaries[key]
 
     def summary(self, ls: LogSet) -> dict[str, int]:
-        """Entry counts by severity bucket (``errors`` = ERROR and FATAL, ``warnings``)."""
+        """:func:`~atlas_log_analyzer.store.views.set_summary`, cached per set version."""
         key = (ls.manifest.id, str(ls.manifest.created_at))
         with self._cache_lock:
             hit = self._summaries.get(key)
         if hit is not None:
             return hit
-        df = (
-            ls.groups_lazy()
-            .select(
-                pl.col("count").filter(pl.col("level") >= 50).sum().alias("errors"),
-                pl.col("count").filter(pl.col("level") == 40).sum().alias("warnings"),
-                pl.col("count").filter(pl.col("level") >= 50).len().alias("error_groups"),
-            )
-            .collect()
-        )
-        row = {k: int(v or 0) for k, v in df.row(0, named=True).items()}
+        row = set_summary(ls)
         with self._cache_lock:
             self._summaries[key] = row
         return row

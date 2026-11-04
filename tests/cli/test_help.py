@@ -11,6 +11,7 @@ from .conftest import Invoke
 COMMANDS = [
     "ingest",
     "sets",
+    "set",
     "groups",
     "show",
     "entries",

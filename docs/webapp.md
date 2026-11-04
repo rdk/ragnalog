@@ -59,8 +59,8 @@ the CLI's codes. Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
 | `GET /api/health` | | `health.v1` |
 | `GET /api/version` | | `version.v1` |
 | `GET /api/formats` | | `formats.v1` |
-| `GET /api/sets` | | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
-| `GET /api/sets/{ref}` | | `logset.v1` plus `summary` |
+| `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
+| `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |

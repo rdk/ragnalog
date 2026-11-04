@@ -73,7 +73,7 @@ def test_unknown_set_hint(jcli: Invoke, mini: str, store_dir: Path) -> None:
     assert str(store_dir) not in err["message"]
 
 
-@pytest.mark.parametrize("command", ["remove", "regroup", "stats"])
+@pytest.mark.parametrize("command", ["remove", "regroup", "stats", "set"])
 def test_unknown_set_same_error_everywhere(
     jcli: Invoke, mini: str, store_dir: Path, command: str
 ) -> None:

@@ -36,6 +36,7 @@ from atlas_log_analyzer.store.views import (
     diff_warning,
     frames_view,
     select_columns,
+    set_item,
 )
 from atlas_log_analyzer.webapp.errors import ApiError
 from atlas_log_analyzer.webapp.jobs import safe_filename
@@ -153,16 +154,20 @@ def formats() -> dict[str, Any]:
 
 
 @router.get("/sets")
-def list_sets(state: StateDep) -> dict[str, Any]:
-    """All sets, newest first (``sets.v1``); each item adds ``summary`` (errors/warnings)."""
+def list_sets(state: StateDep, brief: bool = False) -> dict[str, Any]:
+    """All sets, newest first (``sets.v1``); each item adds ``summary`` (errors/warnings).
+
+    ``brief`` keeps only ``id``, ``name``, ``first_ts``, ``last_ts``, ``entry_count``,
+    ``group_count`` and ``summary`` per item, as ``atlas-log sets --brief``.
+    """
     items = []
     for m in state.manifests():
-        item = manifest_item(m)
+        summary: dict[str, int] | None
         try:
-            item["summary"] = state.summary(state.open(m.id))
+            summary = state.summary(state.open(m.id))
         except Exception:
-            item["summary"] = None
-        items.append(item)
+            summary = None
+        items.append(set_item(m.to_dict(), summary, brief=brief))
     return {
         "schema": "sets.v1",
         "store": state.store.root.name,

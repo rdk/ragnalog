@@ -125,6 +125,30 @@ def test_sets(jcli: Invoke, store_dir: Path) -> None:
     assert Path(doc["store"]) == store_dir
 
 
+SET_BRIEF = ["id", "name", "first_ts", "last_ts", "entry_count", "group_count", "summary"]
+
+
+def test_sets_summary_and_brief(jcli: Invoke) -> None:
+    manifest = ingest(jcli)
+    item = jcli("sets").json()["items"][0]
+    assert item["summary"] == {"errors": 5, "warnings": 2, "error_groups": 3}
+    assert item["sources"] and "schema" not in item
+    brief = jcli("sets", "--brief").json()
+    assert list(brief["items"][0]) == SET_BRIEF and brief["count"] == 1
+    assert brief["items"][0] == {k: item[k] for k in SET_BRIEF}
+    assert brief["items"][0]["id"] == manifest["id"]
+
+
+def test_set_command(jcli: Invoke) -> None:
+    manifest = ingest(jcli)
+    doc = jcli("set", "mini").json()
+    assert doc["schema"] == "logset.v1"
+    assert doc["summary"] == {"errors": 5, "warnings": 2, "error_groups": 3}
+    del manifest["ingest"]
+    assert {k: v for k, v in doc.items() if k != "summary"} == manifest
+    assert jcli("set", manifest["id"][:6]).json() == doc
+
+
 def test_sets_empty_store(jcli: Invoke) -> None:
     result = jcli("sets")
     assert result.code == 0

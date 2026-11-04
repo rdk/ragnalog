@@ -27,11 +27,14 @@ __all__ = [
     "ENTRY_FIELDS",
     "GROUP_BRIEF",
     "GROUP_FIELDS",
+    "SET_BRIEF",
     "cap_text",
     "cap_texts",
     "diff_warning",
     "frames_view",
     "select_columns",
+    "set_item",
+    "set_summary",
 ]
 
 ENTRY_FIELDS: tuple[str, ...] = tuple(ENTRIES_SCHEMA.names)
@@ -66,8 +69,50 @@ DETAIL_BRIEF: tuple[str, ...] = (*ENTRY_BRIEF, "variables")
 """Columns of ``show --brief`` and ``context --brief`` (and their API twins): the entry
 preset plus the values masking replaced in the template."""
 
+SET_BRIEF: tuple[str, ...] = (
+    "id",
+    "name",
+    "first_ts",
+    "last_ts",
+    "entry_count",
+    "group_count",
+    "summary",
+)
+"""Keys of a ``sets --brief`` / ``brief=true`` item (no ``sources``, no versions)."""
+
 DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
+
+
+def set_summary(ls: LogSet) -> dict[str, int]:
+    """Entry counts by severity of a set, from its groups table.
+
+    ``errors`` counts ERROR and FATAL entries, ``warnings`` WARN entries and
+    ``error_groups`` the groups at ERROR or above. The ``summary`` of ``sets`` /
+    ``set`` items and of ``GET /api/sets`` (the web app caches it per set version).
+    """
+    df = (
+        ls.groups_lazy()
+        .select(
+            pl.col("count").filter(pl.col("level") >= 50).sum().alias("errors"),
+            pl.col("count").filter(pl.col("level") == 40).sum().alias("warnings"),
+            pl.col("count").filter(pl.col("level") >= 50).len().alias("error_groups"),
+        )
+        .collect()
+    )
+    return {k: int(v or 0) for k, v in df.row(0, named=True).items()}
+
+
+def set_item(
+    manifest: dict[str, Any], summary: dict[str, int] | None, *, brief: bool
+) -> dict[str, Any]:
+    """One ``sets.v1`` item: the manifest without ``schema`` plus ``summary``.
+
+    With ``brief`` only the :data:`SET_BRIEF` keys are kept.
+    """
+    item = {k: v for k, v in manifest.items() if k != "schema"}
+    item["summary"] = summary
+    return {k: item.get(k) for k in SET_BRIEF} if brief else item
 
 
 def select_columns(
