@@ -1,0 +1,6 @@
+2026-10-29T00:40:52.681+0100: 12.345: [GC (Allocation Failure) [PSYoungGen: 524800K->43514K(611840K)] 524800K->43586K(2010112K), 0.0412345 secs] [Times: user=0.15 sys=0.02, real=0.04 secs]
+2026-10-29T00:41:03.650+0100: 23.314: [GC (Metadata GC Threshold) [PSYoungGen: 312345K->51200K(611840K)] 312417K->51296K(2010112K), 0.0301234 secs] [Times: user=0.10 sys=0.01, real=0.03 secs]
+2026-10-29T00:41:03.680+0100: 23.344: [Full GC (Metadata GC Threshold) [PSYoungGen: 51200K->0K(611840K)] [ParOldGen: 96K->48611K(1398272K)] 51296K->48611K(2010112K), [Metaspace: 20890K->20890K(1069056K)], 0.1834567 secs] [Times: user=0.52 sys=0.03, real=0.18 secs]
+[2026-10-29T00:42:10.012+0100][info][gc,start    ] GC(7) Pause Young (Normal) (G1 Evacuation Pause)
+[2026-10-29T00:42:10.031+0100][info][gc          ] GC(7) Pause Young (Normal) (G1 Evacuation Pause) 412M->101M(2048M) 19.123ms
+[2026-10-29T00:42:10.031+0100][info][gc,cpu      ] GC(7) User=0.07s Sys=0.00s Real=0.02s

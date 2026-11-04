@@ -1,0 +1,5 @@
+10.0.0.11 642x1203x1 user1 [29/Oct/2026:00:40:52 +0100] "GET /rest/api/2/issue/ABC-123 HTTP/1.1" 200 4312 18 "https://jira.example.com/browse/ABC-123" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "11vv7yi"
+10.0.0.12 642x1204x2 - [29/Oct/2026:00:40:53 +0100] "POST /rest/gadget/1.0/login HTTP/1.1" 401 0 3 "-" "curl/8.5.0" "-"
+10.0.0.11 642x1205x1 user1 [29/Oct/2026:00:40:55 +0100] "GET /secure/Dashboard.jspa HTTP/1.1" 200 21877 245 "https://jira.example.com/" "Mozilla/5.0 (Windows NT 10.0; Win64; x64)" "11vv7yi"
+10.0.0.13 643x1206x3 user2 [29/Oct/2026:00:41:03 +0100] "GET /rest/api/2/search?jql=project%3DXYZ HTTP/1.1" 200 90311 1032 "-" "python-requests/2.32.3" "1a2b3c"
+10.0.0.14 643x1207x1 - [29/Oct/2026:00:41:07 +0100] "GET /status HTTP/1.1" 200 22 1 "-" "kube-probe/1.30" "-"
