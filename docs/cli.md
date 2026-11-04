@@ -124,12 +124,17 @@ files, format not detected, or zero entries (manifest still printed); 3.
 
 Newest first. Exit: 0 (also empty); 3.
 
-### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--sort K] [--limit 50] [--offset 0] [--coarse]`
+### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--sort K] [--limit 50] [--offset 0] [--coarse] [--columns C[,C…]]... [--brief]`
 
 One row per signature. `--sort`: `count` (default, desc), `last_seen` (desc),
 `first_seen` (asc), `signature`, `template`. `--coarse` groups by coarse
 signature (exception chain ignored); `signature` then holds the coarse
 signature and `signatures` lists the members.
+
+`--columns` keeps only the named groups.v1 columns (comma-separated and/or
+repeated, as for `entries`; `signatures` is valid with `--coarse`). `--brief`
+is the preset `signature, template, level_name, logger, exception_type, count,
+first_seen, last_seen`. `--brief` together with `--columns` is a usage error.
 
 ```json
 {"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "offset": 0, "truncated": true, "items": [
@@ -138,7 +143,7 @@ signature and `signatures` lists the members.
    "source_count", "top_users", "top_threads", "sources", "examples"}]}
 ```
 
-Exit: 0 (also empty); 1; 3.
+Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with `--columns`; 3.
 
 ### `show SET SIGNATURE [--limit 20] [--raw] [--max-raw N]`
 
@@ -162,13 +167,15 @@ cut have neither key, so short entries look exactly as before.
 
 Exit: 0; 1 bad option; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--offset 0] [--raw] [--max-raw N]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
 `raw`; `--columns` selects columns, comma-separated and/or repeated
 (`--columns ts,level_name --columns message`; order kept, duplicates dropped).
 An unknown column is error `invalid_value` naming it, with the valid columns
-in `hint`. `--raw` prints the raw text like `show --raw`. `--max-raw` cuts
+in `hint`. `--brief` is the preset `id, ts, level_name, thread, logger,
+message, exception_type, signature` (not combinable with `--columns`).
+`--raw` prints the raw text like `show --raw`. `--max-raw` cuts
 `raw`/`body` as described for `show` (default 4000 in `json`/`jsonl`).
 
 ```json
@@ -180,8 +187,8 @@ entries.v1 columns: `id, ts, tz_offset, level, level_name, thread, logger,
 message, body, user, request_id, session, ip, url, request_url, context,
 exception_type, exception_message, exception_chain, signature,
 coarse_signature, template, variables, source_path, source_line,
-source_offset, raw, parse_error`. Exit: 0 (also empty); 1 bad option or unknown
-column; 3.
+source_offset, raw, parse_error`. Exit: 0 (also empty); 1 bad option, unknown
+column, `--brief` with `--columns`; 3.
 
 ### `query SET SQL`
 

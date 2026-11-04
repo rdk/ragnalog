@@ -78,6 +78,28 @@ ENTRY_FIELDS: tuple[str, ...] = tuple(ENTRIES_SCHEMA.names)
 """Columns of entries.v1 (valid ``entries --columns`` values)."""
 GROUP_FIELDS: tuple[str, ...] = tuple(GROUPS_SCHEMA.names)
 """Columns of groups.v1 (valid ``groups --columns`` values; ``signatures`` with --coarse)."""
+GROUP_BRIEF = (
+    "signature",
+    "template",
+    "level_name",
+    "logger",
+    "exception_type",
+    "count",
+    "first_seen",
+    "last_seen",
+)
+"""Columns of ``groups --brief``."""
+ENTRY_BRIEF = (
+    "id",
+    "ts",
+    "level_name",
+    "thread",
+    "logger",
+    "message",
+    "exception_type",
+    "signature",
+)
+"""Columns of ``entries --brief``."""
 SET_COLUMNS = (
     "id",
     "name",
@@ -303,6 +325,19 @@ def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | 
             "invalid_value", "--columns is empty", hint=f"valid columns: {', '.join(valid)}"
         )
     return chosen
+
+
+def _selection(
+    columns: Sequence[str] | None, brief: bool, valid: Sequence[str], preset: Sequence[str]
+) -> list[str] | None:
+    """Columns chosen by ``--columns`` or ``--brief`` (``None`` = all); both is a usage error."""
+    if brief and columns:
+        raise CliError(
+            "usage",
+            "--brief and --columns cannot be combined",
+            hint=f"--brief is --columns {','.join(preset)}",
+        )
+    return list(preset) if brief else _columns(columns, valid)
 
 
 def _sources(paths: Sequence[Path]) -> list[SourceFile]:
@@ -532,6 +567,8 @@ def groups(
     limit: int = 50,
     offset: int = 0,
     coarse: bool = False,
+    columns: list[str] | None = None,
+    brief: bool = False,
 ) -> None:
     """List the groups (one per message signature) of a log set.
 
@@ -553,9 +590,14 @@ def groups(
     "truncated" is true when more rows follow this page (offset + count <
     total; the next page starts at offset + count). With --coarse, "signature"
     is the coarse signature and "signatures" lists the member signatures.
+    --columns keeps only the named columns (comma-separated and/or repeated;
+    unknown name: error "invalid_value", "hint" lists the valid ones).
+    --brief is the preset --columns signature,template,level_name,logger,
+    exception_type,count,first_seen,last_seen; --brief with --columns is a
+    usage error.
 
-    Exit codes: 0 ok (also when no group matches); 1 bad option; 3 unknown set
-    or store error.
+    Exit codes: 0 ok (also when no group matches); 1 bad option, unknown
+    column, or --brief with --columns; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -569,9 +611,14 @@ def groups(
         limit: Maximum number of rows; 0 = all.
         offset: Skip this many rows first (paging: next offset = offset + count).
         coarse: Group by coarse signature (level + logger + masked message; no exceptions).
+        columns: Columns to return: comma-separated (signature,count) and/or repeated.
+        brief: Only signature, template, level_name, logger, exception_type, count,
+            first_seen, last_seen.
 
     """
     lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
+    valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
+    columns = _selection(columns, brief, valid, GROUP_BRIEF)
     ls = _open(logset)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
@@ -585,7 +632,7 @@ def groups(
     df = ls.groups(**filters, sort=sort, limit=lim, offset=skip)
     complete = skip == 0 and (lim is None or df.height < lim)
     total = df.height if complete else ls.count_groups(**filters)
-    items = jsonable_rows(df)
+    items = jsonable_rows(df if columns is None else df.select(columns))
     _out().emit(
         "groups.v1",
         {
@@ -596,7 +643,7 @@ def groups(
             "truncated": skip + len(items) < total,
             "items": items,
         },
-        columns=GROUP_COLUMNS,
+        columns=columns or GROUP_COLUMNS,
         title=f"groups of {ls.manifest.id}",
     )
 
@@ -706,6 +753,7 @@ def entries(
     until: str | None = None,
     contains: str | None = None,
     columns: list[str] | None = None,
+    brief: bool = False,
     limit: int = 100,
     offset: int = 0,
     raw: bool = False,
@@ -729,15 +777,17 @@ def entries(
     source_offset, raw, parse_error.
     --columns takes comma-separated names and/or is repeated
     (--columns ts,level_name --columns message); an unknown name is error
-    "invalid_value" whose "hint" lists the valid columns.
+    "invalid_value" whose "hint" lists the valid columns. --brief is the
+    preset --columns id,ts,level_name,thread,logger,message,exception_type,
+    signature; --brief with --columns is a usage error.
     "raw" and "body" are cut to --max-raw characters (default 4000 in
     json/jsonl, no limit in table and --raw mode); a cut text ends with
     "… [truncated: N chars total, use --max-raw 0]" and its row gets
     "body_truncated": true and "raw_chars": <original length of raw> (of body
     when raw is not among --columns); both keys appear only on cut rows.
 
-    Exit codes: 0 ok (also when nothing matches); 1 bad option or unknown
-    column; 3 unknown set or store error.
+    Exit codes: 0 ok (also when nothing matches); 1 bad option, unknown
+    column, or --brief with --columns; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -752,6 +802,7 @@ def entries(
         until: Only entries before this time (same forms as --since).
         contains: Only entries whose raw text contains this text (case-insensitive).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
+        brief: Only id, ts, level_name, thread, logger, message, exception_type, signature.
         limit: Maximum number of rows; 0 = all.
         offset: Skip this many entries first (paging: next offset = offset + count).
         raw: Print the raw log text of the entries (highlighted when colour is on).
@@ -760,7 +811,7 @@ def entries(
 
     """
     lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
-    columns = _columns(columns, ENTRY_FIELDS)
+    columns = _selection(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
     cap = _max_raw(max_raw, text=raw)
     ls = _open(logset)
     last = ls.manifest.last_ts

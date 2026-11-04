@@ -48,3 +48,65 @@ def test_entries_columns_table(cli: Invoke, mini: str, store_dir: object) -> Non
     assert res.code == 0
     header = next(line for line in res.stdout.splitlines() if " ts " in line)
     assert "logger" in header and "message" not in header
+
+
+GROUP_BRIEF = [
+    "signature",
+    "template",
+    "level_name",
+    "logger",
+    "exception_type",
+    "count",
+    "first_seen",
+    "last_seen",
+]
+ENTRY_BRIEF = [
+    "id",
+    "ts",
+    "level_name",
+    "thread",
+    "logger",
+    "message",
+    "exception_type",
+    "signature",
+]
+
+
+def test_groups_columns(jcli: Invoke, mini: str) -> None:
+    doc = jcli("groups", mini, "--columns", "signature,count", "--limit", "0").json()
+    assert doc["items"] and all(list(g) == ["signature", "count"] for g in doc["items"])
+    assert doc["total"] == doc["count"] and doc["truncated"] is False
+    repeated = jcli("groups", mini, "--columns", "count", "--columns", "template").json()
+    assert all(list(g) == ["count", "template"] for g in repeated["items"])
+    coarse = jcli("groups", mini, "--coarse", "--columns", "signature,signatures").json()
+    assert all(isinstance(g["signatures"], list) for g in coarse["items"])
+
+
+def test_groups_unknown_column(jcli: Invoke, mini: str) -> None:
+    res = jcli("groups", mini, "--columns", "signature,signatures")  # only with --coarse
+    assert res.code == 1
+    err = res.json()["error"]
+    assert err["code"] == "invalid_value" and "'signatures'" in err["message"]
+    assert "top_users" in err["hint"]
+
+
+def test_brief_presets(jcli: Invoke, mini: str) -> None:
+    groups = jcli("groups", mini, "--brief").json()["items"]
+    assert groups and all(list(g) == GROUP_BRIEF for g in groups)
+    entries = jcli("entries", mini, "--brief", "--limit", "3").json()
+    assert entries["count"] == 3 and all(list(e) == ENTRY_BRIEF for e in entries["items"])
+
+
+def test_brief_with_columns_is_usage_error(jcli: Invoke, mini: str) -> None:
+    for command in ("groups", "entries"):
+        res = jcli(command, mini, "--brief", "--columns", "signature")
+        assert res.code == 1
+        err = res.json()["error"]
+        assert err["code"] == "usage" and "--brief" in err["message"]
+
+
+def test_brief_table(cli: Invoke, mini: str, store_dir: object) -> None:
+    res = cli("--output", "table", "--width", 200, "--store", store_dir, "groups", mini, "--brief")
+    assert res.code == 0
+    header = next(line for line in res.stdout.splitlines() if "signature" in line)
+    assert "template" in header and "top_users" not in header

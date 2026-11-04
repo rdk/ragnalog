@@ -94,7 +94,7 @@ with a progress bar. Everything is also JSON under `/api` (OpenAPI at `/docs`);
 
 ```sh
 atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
-atlas-log groups today --min-level ERROR --limit 20         # 2. triage: check "total"/"truncated"
+atlas-log groups today --min-level ERROR --limit 20 --brief # 2. triage: check "total"/"truncated"
 atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
 atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text
 ```
@@ -108,6 +108,8 @@ Repeat 2–4; on an error, read `error.hint` for the next step.
 - Every document has `"schema": "<name>.v1"`; listings put rows in `"items"`.
 - `groups` and `entries` page with `--limit N --offset M`: `"truncated": true`
   means more rows follow; fetch the next page with `--offset <offset + count>`.
+- Keep rows small: `--brief` (a documented column preset) or
+  `--columns a,b,c` on `groups` and `entries`.
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).
