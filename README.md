@@ -109,6 +109,9 @@ Repeat 2–4; on an error, read `error.hint` for the next step.
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).
+- Long entries are cut in JSON: `raw` and `body` keep 4000 characters
+  (`--max-raw N`, `0` = all); cut rows carry `"body_truncated": true` and
+  `"raw_chars"`. `--raw` (plain text) is never cut unless `--max-raw` is given.
 - `atlas-log schema` describes the stored tables (`entries`, `groups`,
   `merges`, `logset`) field by field; `atlas-log COMMAND --help` documents the
   JSON shape and exit codes of each command.

@@ -219,6 +219,56 @@ def _limit(value: int) -> int | None:
     return value or None
 
 
+DEFAULT_MAX_RAW = 4000
+"""Default ``--max-raw`` of ``show``/``entries`` in json/jsonl mode."""
+
+
+def _max_raw(value: int | None, *, text: bool) -> int | None:
+    """Resolve ``--max-raw``: explicit value (0 = no limit), else 4000 for json/jsonl.
+
+    ``text`` is true for the plain-text modes (``--raw`` and table), which default
+    to no limit.
+    """
+    if value is not None:
+        if value < 0:
+            raise CliError("invalid_value", "--max-raw must be >= 0 (0 = no limit)")
+        return value or None
+    if text or _out().mode == "table":
+        return None
+    return DEFAULT_MAX_RAW
+
+
+def _cap(text: str, limit: int) -> str:
+    return f"{text[:limit]}… [truncated: {len(text)} chars total, use --max-raw 0]"
+
+
+def _cap_items(items: list[dict[str, Any]], limit: int | None) -> list[dict[str, Any]]:
+    """Cut ``raw`` and ``body`` to ``limit`` characters; mark the rows that were cut.
+
+    A cut row gets ``"body_truncated": true`` and ``"raw_chars"`` (the original
+    length of ``raw``, or of ``body`` when ``raw`` is not among the columns).
+    """
+    if limit is None:
+        return items
+    for item in items:
+        sizes: dict[str, int] = {}
+        for key in ("raw", "body"):
+            value = item.get(key)
+            if isinstance(value, str) and len(value) > limit:
+                sizes[key] = len(value)
+                item[key] = _cap(value, limit)
+        if sizes:
+            item["body_truncated"] = True
+            raw = item.get("raw")
+            if "raw" in sizes:
+                item["raw_chars"] = sizes["raw"]
+            elif isinstance(raw, str):
+                item["raw_chars"] = len(raw)
+            else:
+                item["raw_chars"] = sizes["body"]
+    return items
+
+
 def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | None:
     """Parse ``--columns``: repeated options and/or comma-separated names, validated.
 
@@ -540,7 +590,15 @@ def groups(
 
 
 @app.command
-def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) -> int:
+def show(
+    logset: str,
+    signature: str,
+    /,
+    *,
+    limit: int = 20,
+    raw: bool = False,
+    max_raw: int | None = None,
+) -> int:
     """Show the entries of one group, with the variables extracted from each message.
 
     Output (json):
@@ -551,21 +609,29 @@ def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) 
                   template, variables, source_path, source_line, raw, ...>}, ...]}
     "variables" lists the values that masking replaced in the template, in
     order (issue keys, numbers, ids ...). Entries are ordered by time.
+    "raw" and "body" are cut to --max-raw characters (default 4000 in json/jsonl,
+    no limit in table and --raw mode); a cut text ends with
+    "… [truncated: N chars total, use --max-raw 0]" and its row gets
+    "body_truncated": true and "raw_chars": <original length of raw> (both keys
+    only on cut rows).
     With --raw the original log text of each entry is printed instead (any
     --output mode), entries separated by a blank line (or, when colour is on,
     highlighted and separated by a source:line rule).
 
-    Exit codes: 0 ok; 2 no entries with this signature; 3 unknown set or store
-    error.
+    Exit codes: 0 ok; 1 bad option; 2 no entries with this signature; 3 unknown
+    set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
         signature: Group signature (from `groups`).
         limit: Maximum number of entries; 0 = all.
         raw: Print the raw log text of the entries (highlighted when colour is on).
+        max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
+            in json/jsonl mode, no limit in table and --raw mode.
 
     """
     lim = _limit(limit)
+    cap = _max_raw(max_raw, text=raw)
     ls = _open(logset)
     df = ls.entries(signature=signature, limit=lim)
     if df.height == 0:
@@ -577,12 +643,12 @@ def show(logset: str, signature: str, /, *, limit: int = 20, raw: bool = False) 
         )
     out = _out()
     if raw:
-        out.raw_entries(_raw_pairs(df))
+        out.raw_entries(_raw_pairs(df, cap))
         return 0
     import polars as pl
 
     group_rows = jsonable_rows(ls.groups_lazy().filter(pl.col("signature") == signature).collect())
-    items = jsonable_rows(df)
+    items = _cap_items(jsonable_rows(df), cap)
     group = group_rows[0] if group_rows else None
 
     def render(console: Console) -> None:
@@ -630,6 +696,7 @@ def entries(
     columns: list[str] | None = None,
     limit: int = 100,
     raw: bool = False,
+    max_raw: int | None = None,
 ) -> None:
     """List entries of a log set, filtered, ordered by time.
 
@@ -648,6 +715,11 @@ def entries(
     --columns takes comma-separated names and/or is repeated
     (--columns ts,level_name --columns message); an unknown name is error
     "invalid_value" whose "hint" lists the valid columns.
+    "raw" and "body" are cut to --max-raw characters (default 4000 in
+    json/jsonl, no limit in table and --raw mode); a cut text ends with
+    "… [truncated: N chars total, use --max-raw 0]" and its row gets
+    "body_truncated": true and "raw_chars": <original length of raw> (of body
+    when raw is not among --columns); both keys appear only on cut rows.
 
     Exit codes: 0 ok (also when nothing matches); 1 bad option or unknown
     column; 3 unknown set or store error.
@@ -667,10 +739,13 @@ def entries(
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         limit: Maximum number of rows; 0 = all.
         raw: Print the raw log text of the entries (highlighted when colour is on).
+        max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
+            in json/jsonl mode, no limit in table and --raw mode.
 
     """
     lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
     columns = _columns(columns, ENTRY_FIELDS)
+    cap = _max_raw(max_raw, text=raw)
     ls = _open(logset)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {
@@ -686,11 +761,11 @@ def entries(
     }
     if raw:
         cols = ["raw", "source_path", "source_line"]
-        _out().raw_entries(_raw_pairs(ls.entries(**filters, limit=lim, columns=cols)))
+        _out().raw_entries(_raw_pairs(ls.entries(**filters, limit=lim, columns=cols), cap))
         return
     df = ls.entries(**filters, limit=lim, columns=columns)
     total = df.height if lim is None or df.height < lim else _count_entries(ls, filters)
-    items = jsonable_rows(df)
+    items = _cap_items(jsonable_rows(df), cap)
     _out().emit(
         "entries.v1",
         {
@@ -814,14 +889,17 @@ def _hour_days(hours: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
-def _raw_pairs(df: Any) -> list[tuple[str, str | None]]:
-    """``(raw, "source:line")`` pairs of an entries frame."""
+def _raw_pairs(df: Any, max_raw: int | None = None) -> list[tuple[str, str | None]]:
+    """``(raw, "source:line")`` pairs of an entries frame; raw cut to ``max_raw`` chars."""
     pairs = []
     cols = [c for c in ("raw", "source_path", "source_line") if c in df.columns]
     for row in df.select(cols).iter_rows(named=True):
         path, line = row.get("source_path"), row.get("source_line")
         label = f"{Path(path).name}:{line}" if path else None
-        pairs.append((str(row["raw"]), label))
+        raw = str(row["raw"])
+        if max_raw is not None and len(raw) > max_raw:
+            raw = _cap(raw, max_raw)
+        pairs.append((raw, label))
     return pairs
 
 

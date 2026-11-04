@@ -138,7 +138,7 @@ signature and `signatures` lists the members.
 
 Exit: 0 (also empty); 1; 3.
 
-### `show SET SIGNATURE [--limit 20] [--raw]`
+### `show SET SIGNATURE [--limit 20] [--raw] [--max-raw N]`
 
 Entries of one group, ordered by time, with `variables` (the values masking
 replaced, in order). `--raw` prints the original log text of each entry,
@@ -146,20 +146,28 @@ separated by blank lines, in any output mode (highlighted, with `file:line`
 rules, when colour is on). The table starts with a three-line group header:
 template; logger, level and exception; count, first and last seen.
 
+`--max-raw N` keeps at most N characters of `raw` and `body` per entry
+(`0` = no limit). Default: **4000 in `json`/`jsonl`**, no limit in `table` and
+`--raw` mode. A cut text ends with `… [truncated: N chars total, use --max-raw 0]`
+and the row gets `"body_truncated": true` and `"raw_chars": <original length
+of raw>` (of `body` when `raw` is not among the columns). Rows that were not
+cut have neither key, so short entries look exactly as before.
+
 ```json
 {"schema": "entries.v1", "logset": "…", "signature": "…", "group": {<groups.v1 row>} | null,
  "count": 3, "items": [<entries.v1 row>]}
 ```
 
-Exit: 0; 2 no entries with this signature; 3.
+Exit: 0; 1 bad option; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--raw]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--raw] [--max-raw N]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
 `raw`; `--columns` selects columns, comma-separated and/or repeated
 (`--columns ts,level_name --columns message`; order kept, duplicates dropped).
 An unknown column is error `invalid_value` naming it, with the valid columns
-in `hint`. `--raw` prints the raw text like `show --raw`.
+in `hint`. `--raw` prints the raw text like `show --raw`. `--max-raw` cuts
+`raw`/`body` as described for `show` (default 4000 in `json`/`jsonl`).
 
 ```json
 {"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "truncated": true,
