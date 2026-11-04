@@ -235,6 +235,17 @@ Dedup: when a set is built from files that overlap (snapshots), entries with
 an identical `id` are written once. Cross-set comparison never needs the raw
 logs — only `groups.parquet` of both sets.
 
+Entry ids must therefore differ for distinct entries of one file even when the
+text repeats. The parser re-hashes the id of every entry after the first in a
+run of adjacent same-millisecond entries with its ordinal in the run, and
+keeps the ids issued in the last 4,096 milliseconds (at most 128 per
+millisecond): an id issued already in its millisecond, because the
+millisecond recurred after other timestamps, is re-hashed again. Only such
+collisions get new ids, so the ids of existing stores stay valid; on the 191 MB
+sample exactly one id changed, a startup banner line that was dropped as a
+duplicate before. A pure per-timestamp ordinal would have changed 19 ids of
+non-colliding entries (threads log slightly out of order).
+
 ## 8. CLI (`atlas-log`)
 
 Global options: `--output table|json|jsonl` (default `table` on a TTY, `json`

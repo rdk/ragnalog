@@ -237,3 +237,82 @@ def test_default_caps_bound_a_huge_entry(tmp_path: Path, jira: JiraFormat) -> No
     assert entry.body.count("\n") + 2 == MAX_ENTRY_LINES
     size = path.stat().st_size - 1  # without the final newline
     assert entry.parse_error == f"entry truncated: {lines} lines, {size} bytes"
+
+
+# --- entry ids --------------------------------------------------------------------------
+
+ID_LINE = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] *****"
+ID_LINE_2 = ID_LINE.replace(",415", ",416")
+
+
+def _ids(texts: list[str]) -> list[str]:
+    from atlas_log_analyzer.core.reader import Line
+
+    lines = [Line(i + 1, i * 100, t) for i, t in enumerate(texts)]
+    return [e.id for e in parse_lines(lines, JiraFormat(), "a.log")]
+
+
+@pytest.mark.parametrize(
+    ("fixture", "count", "digest"),
+    [
+        (SAMPLE, 47, "6a4fd64fe087c840"),
+        (EDGE_CASES, 15, "e07a5219cc18eaf6"),
+        (Path(__file__).parents[1] / "cli" / "data" / "mini.log", 10, "e35f07bdb9e3e630"),
+    ],
+)
+def test_fixture_ids_are_stable(fixture: Path, count: int, digest: str, jira: JiraFormat) -> None:
+    """Ids of existing stores stay valid: these digests were computed before the ordinal LRU."""
+    import hashlib
+
+    ids = [e.id for e in parse_file(fixture, jira)]
+    assert len(ids) == len(set(ids)) == count
+    assert hashlib.sha256("\n".join(ids).encode()).hexdigest()[:16] == digest
+
+
+def test_run_ordinal_ids_are_stable() -> None:
+    assert _ids([ID_LINE, ID_LINE, ID_LINE, ID_LINE_2]) == [
+        "d06d1865ae0f9295",
+        "7e1103d0f5d38e90",
+        "c737f0e78c4217a3",
+        "06f971bdf304312b",
+    ]
+
+
+def test_non_adjacent_repeat_in_one_millisecond_gets_a_distinct_id() -> None:
+    import xxhash
+
+    ids = _ids([ID_LINE, ID_LINE_2, ID_LINE, ID_LINE, ID_LINE_2])
+    assert len(set(ids)) == 5
+    # entries that did not collide keep the ids of earlier versions (where ids[2] == ids[0])
+    assert [ids[0], ids[1], ids[3]] == ["d06d1865ae0f9295", "06f971bdf304312b", "7e1103d0f5d38e90"]
+    assert ids[2] == xxhash.xxh3_64_hexdigest(f"{ids[0]}\x1e1".encode())
+    assert ids == _ids([ID_LINE, ID_LINE_2, ID_LINE, ID_LINE, ID_LINE_2])
+
+
+def test_repeat_ids_are_remembered_for_recent_milliseconds_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import atlas_log_analyzer.core.parser as parser
+
+    other = [ID_LINE.replace(",415", f",{ms}") for ms in (500, 501)]
+    texts = [ID_LINE, *other, ID_LINE]
+    assert len(set(_ids(texts))) == 4
+    monkeypatch.setattr(parser, "RECENT_TIMESTAMPS", 2)
+    ids = _ids(texts)
+    assert ids[3] == ids[0]  # forgotten: the store keeps one of them
+    monkeypatch.setattr(parser, "RECENT_TIMESTAMPS", 4096)
+    monkeypatch.setattr(parser, "IDS_PER_MILLISECOND", 1)
+    texts = [ID_LINE, ID_LINE, ID_LINE_2, ID_LINE, ID_LINE]
+    ids = _ids(texts)
+    assert ids[3] != ids[0] and ids[4] == ids[1]  # only the first id of a millisecond is kept
+
+
+def test_with_id_copies_every_field(jira: JiraFormat) -> None:
+    import dataclasses
+
+    from atlas_log_analyzer.core.parser import _with_id
+
+    entry = next(e for e in parse_file(SAMPLE, jira) if e.exceptions and e.context and e.body)
+    entry = dataclasses.replace(entry, parse_error="x")
+    assert len(dataclasses.fields(LogEntry)) == 13, "update _with_id for the new field"
+    assert _with_id(entry, "0123456789abcdef") == dataclasses.replace(entry, id="0123456789abcdef")

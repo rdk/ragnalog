@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import dataclasses
+from collections import OrderedDict
 from collections.abc import Iterable, Iterator
+from datetime import datetime
 from itertools import islice
 from pathlib import Path
 
@@ -33,6 +35,10 @@ MAX_ENTRY_CHARS = 4 << 20
 """Default cap of the text kept per entry: 4 Mi characters, header line included."""
 MAX_ENTRY_LINES = 100_000
 """Default cap of the lines kept per entry, header line included."""
+RECENT_TIMESTAMPS = 4096
+"""Milliseconds whose issued ids are remembered to keep ids unique (see :func:`_distinct_ids`)."""
+IDS_PER_MILLISECOND = 128
+"""Ids remembered per millisecond (the 191 MB sample has at most 101 entries in one)."""
 
 DETECT_LINES = 200
 """Number of leading lines handed to :func:`formats.detect`."""
@@ -121,29 +127,73 @@ def _assemble(
         yield entry if not orphan and cut is None else _mark(entry, orphan, cut, header_line, cont)
 
 
+def _with_id(entry: LogEntry, entry_id: str) -> LogEntry:
+    """``dataclasses.replace(entry, id=entry_id)`` at a third of its cost (per-entry path)."""
+    return LogEntry(
+        entry_id,
+        entry.format,
+        entry.timestamp,
+        entry.level,
+        entry.thread,
+        entry.logger,
+        entry.message,
+        entry.body,
+        entry.exceptions,
+        entry.context,
+        entry.source,
+        entry.raw,
+        entry.parse_error,
+    )
+
+
 def _distinct_ids(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
-    """Make ids unique within one millisecond without remembering the entries.
+    """Make ids unique within one millisecond without remembering every entry.
 
     Entry ids hash ``(format, timestamp, thread, logger, raw)``, so a line that
     Jira writes twice in the same millisecond (separator banners, repeated
     warnings) would collapse into one entry when the store deduplicates. Every
-    entry after the first in a millisecond is re-hashed with its ordinal ``k``
-    in that millisecond: ``xxh3(id, k)``. The ordinal depends only on the file
-    content before the entry, so the same entry keeps the same id when the file
-    shows up again in another snapshot, and the state is one counter.
+    entry after the first of a run of adjacent entries in one millisecond is
+    re-hashed with its ordinal ``k`` in the run: ``xxh3(id, 0x1f, k)``.
+
+    A millisecond can also recur after other timestamps (threads log slightly
+    out of order), and a repeated line there would get the id of its first
+    occurrence. The ids issued in each of the last :data:`RECENT_TIMESTAMPS`
+    milliseconds are therefore kept (the first :data:`IDS_PER_MILLISECOND` of
+    each, so memory stays bounded), and an id issued already in its
+    millisecond is re-hashed as ``xxh3(id, 0x1e, j)`` with the smallest free
+    ``j``. Only such collisions change, so ids of earlier versions stay valid.
+    Both rules depend only on the file content before the entry, so the same
+    entry keeps its id when the file shows up again in another snapshot.
     """
+    recent: OrderedDict[datetime, set[str]] = OrderedDict()
+    issued: set[str] = set()
     last_ts = None
     k = 0
     for entry in entries:
-        if entry.timestamp != last_ts:
-            last_ts = entry.timestamp
+        ts = entry.timestamp
+        eid = entry.id
+        if ts != last_ts:
+            last_ts = ts
             k = 0
+            seen = recent.get(ts)
+            if seen is None:
+                issued = recent[ts] = set()
+                if len(recent) > RECENT_TIMESTAMPS:
+                    recent.popitem(last=False)
+            else:
+                issued = seen
+                recent.move_to_end(ts)
         else:
             k += 1
-            entry = dataclasses.replace(
-                entry, id=xxhash.xxh3_64_hexdigest(f"{entry.id}{k}".encode())
-            )
-        yield entry
+            eid = xxhash.xxh3_64_hexdigest(f"{eid}\x1f{k}".encode())
+        if eid in issued:
+            base, j = eid, 0
+            while eid in issued:
+                j += 1
+                eid = xxhash.xxh3_64_hexdigest(f"{base}\x1e{j}".encode())
+        if len(issued) < IDS_PER_MILLISECOND:
+            issued.add(eid)
+        yield entry if eid is entry.id else _with_id(entry, eid)
 
 
 def parse_lines(

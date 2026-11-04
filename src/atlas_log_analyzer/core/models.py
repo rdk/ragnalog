@@ -98,7 +98,8 @@ class LogEntry:
 
     id: str
     """xxh3-64 hex digest of ``(format, timestamp, thread, logger, raw)``, re-hashed with the
-    entry's ordinal within its millisecond when that is non-zero; stable across runs."""
+    entry's ordinal within its run of same-millisecond entries when that is non-zero, and again
+    when the id was issued already in that millisecond; stable across runs."""
     format: str
     timestamp: datetime
     """Timezone-aware."""

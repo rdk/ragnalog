@@ -130,9 +130,10 @@ def test_pipeline_dedupes_before_grouping(tmp_path: Path, monkeypatch: pytest.Mo
     monkeypatch.setattr(writer_mod, "groups_from_entries", recompute)
     a = "2026-10-29 02:19:41,415+0100 Caesium-1-1 WARN      [c.a.X] repeated line"
     b = "2026-10-29 02:19:42,000+0100 Caesium-1-1 INFO      [c.a.Y] other line"
-    log = tmp_path / "dup.log"
-    log.write_text(f"{a}\n{b}\n{a}\n", encoding="utf-8")  # the third entry repeats the first
-    result = ingest_paths(Store(tmp_path / "store"), [log])
+    # overlapping snapshots: the second file repeats the first entry of the first
+    (tmp_path / "dup.log.1").write_text(f"{a}\n{b}\n", encoding="utf-8")
+    (tmp_path / "dup.log").write_text(f"{a}\n", encoding="utf-8")
+    result = ingest_paths(Store(tmp_path / "store"), [tmp_path])
     m = result.logset.manifest
     assert result.parsed_entries == 3 and m.entry_count == 2
     assert result.logset.groups()["count"].sum() == 2
