@@ -10,6 +10,7 @@ from pathlib import Path
 import xxhash
 
 __all__ = [
+    "MAX_LINE_BYTES",
     "Line",
     "SourceFile",
     "discover_sources",
@@ -21,6 +22,8 @@ __all__ = [
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
 _CHUNK = 1 << 18
+MAX_LINE_BYTES = 1 << 20
+"""Default cap of one line (1 MiB); :func:`iter_raw_lines` skips the rest of a longer line."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,55 +114,94 @@ iter_sources = discover_sources
 """Former name of :func:`discover_sources` (it returns a list, not an iterator)."""
 
 
-def iter_raw_lines(path: Path | str, *, encoding: str = "utf-8") -> Generator[tuple[int, int, str]]:
+def _decode_line(raw: bytes, encoding: str) -> str:
+    try:
+        text = raw.decode(encoding)
+    except UnicodeDecodeError:
+        text = raw.decode(encoding, "replace")
+    return text[:-1] if text and text[-1] == "\r" else text
+
+
+def iter_raw_lines(
+    path: Path | str, *, encoding: str = "utf-8", max_line_bytes: int = MAX_LINE_BYTES
+) -> Generator[tuple[int, int, str]]:
     r"""Like :func:`iter_lines` but yields plain ``(number, offset, text)`` tuples (faster).
 
     The file is read and decoded in blocks; a block that is not valid in
     ``encoding`` falls back to per-line decoding with ``errors="replace"`` so that
     byte offsets stay exact. ``encoding`` must be ASCII-compatible (``\n`` is
     split on the byte level).
+
+    A line longer than ``max_line_bytes`` is cut to its first ``max_line_bytes``
+    bytes and the rest, up to the next newline, is skipped, so memory stays
+    bounded and time linear on files without line breaks (minified JSON, binary
+    dumps). Line numbers and offsets stay exact.
+
+    Raises:
+        ValueError: ``max_line_bytes`` is not positive.
+
     """
+    if max_line_bytes <= 0:
+        raise ValueError("max_line_bytes must be > 0")
+    limit = max_line_bytes
+    over = limit + 1  # size of a line with its "\n" above which the line is cut
     number = 0
     offset = 0
-    tail = b""
+    # start of a line that continues past the current block: at most `limit` bytes are
+    # kept in `head`, the `skipped` bytes after them are only counted
+    head: list[bytes] = []
+    kept = 0
+    skipped = 0
     with open(path, "rb") as f:
-        while True:
-            block = f.read(_CHUNK)
-            if not block:
-                break
-            if tail:
-                block = tail + block
+        while block := f.read(_CHUNK):
             cut = block.rfind(b"\n") + 1
             if cut == 0:
-                tail = block
+                room = max(0, limit - kept)
+                if room:
+                    head.append(block[:room])
+                    kept += min(room, len(block))
+                skipped += max(0, len(block) - room)
                 continue
-            tail = block[cut:]
-            data = block[:cut]
-            try:
-                lines = data.decode(encoding).split("\n")
-                exact = False
-            except UnicodeDecodeError:
-                lines = [raw.decode(encoding, "replace") for raw in data.split(b"\n")]
-                raw_lens = [len(raw) for raw in data.split(b"\n")]
-                exact = True
-            lines.pop()  # data ends with "\n"
-            for i, text in enumerate(lines):
+            start = 0
+            if head:
+                # the carried line ends at the first "\n" of this block
+                start = block.find(b"\n") + 1
+                raw = b"".join(head) + block[: start - 1]
                 number += 1
-                if exact:
-                    size = raw_lens[i] + 1
-                elif text.isascii():
-                    size = len(text) + 1
-                else:
-                    size = len(text.encode(encoding)) + 1
-                if text and text[-1] == "\r":
-                    text = text[:-1]
-                yield number, offset, text
-                offset += size
-    if tail:
-        text = tail.decode(encoding, "replace")
-        if text and text[-1] == "\r":
-            text = text[:-1]
-        yield number + 1, offset, text
+                yield number, offset, _decode_line(raw[:limit], encoding)
+                offset += len(raw) + skipped + 1
+                head, kept, skipped = [], 0, 0
+            if start < cut:
+                data = block[start:cut]
+                raws: list[bytes] | None = None
+                try:
+                    lines = data.decode(encoding).split("\n")
+                except UnicodeDecodeError:
+                    raws = data.split(b"\n")
+                    lines = [raw.decode(encoding, "replace") for raw in raws]
+                lines.pop()  # data ends with "\n"
+                for i, text in enumerate(lines):
+                    number += 1
+                    if raws is not None:
+                        size = len(raws[i]) + 1
+                    elif text.isascii():
+                        size = len(text) + 1
+                    else:
+                        size = len(text.encode(encoding)) + 1
+                    if size > over:
+                        long = raws[i] if raws is not None else text.encode(encoding)
+                        text = _decode_line(long[:limit], encoding)
+                    elif text and text[-1] == "\r":
+                        text = text[:-1]
+                    yield number, offset, text
+                    offset += size
+            rest = block[cut:]
+            if rest:
+                head = [rest[:limit]]
+                kept = len(head[0])
+                skipped = len(rest) - kept
+    if head:
+        yield number + 1, offset, _decode_line(b"".join(head), encoding)
 
 
 def iter_lines(path: Path | str, *, encoding: str = "utf-8") -> Iterator[Line]:
