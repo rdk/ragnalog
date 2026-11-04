@@ -8,8 +8,14 @@ import pytest
 
 from atlas_log_analyzer.core.formats.base import CTX_USER
 from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.models import LogLevel
-from atlas_log_analyzer.core.parser import ORPHAN_ERROR, parse, parse_file, parse_lines
+from atlas_log_analyzer.core.models import LogEntry, LogLevel
+from atlas_log_analyzer.core.parser import (
+    ORPHAN_ERROR,
+    TRUNCATED_ERROR,
+    parse,
+    parse_file,
+    parse_lines,
+)
 from atlas_log_analyzer.core.reader import iter_lines, iter_sources
 
 from .conftest import EDGE_CASES, SAMPLE
@@ -177,3 +183,57 @@ def test_parse_file_gives_same_millisecond_duplicates_distinct_ids(tmp_path: Pat
     p = tmp_path / "a.log"
     p.write_text(text * 3, encoding="utf-8")
     assert len({e.id for e in parse_file(p, formats.get("jira"))}) == 3
+
+
+def _entries(texts: list[str], **caps: int) -> list[LogEntry]:
+    from atlas_log_analyzer.core.reader import Line
+
+    lines = (Line(i + 1, i * 1000, t) for i, t in enumerate(texts))
+    return list(parse_lines(lines, JiraFormat(), "x.log", **caps))
+
+
+def test_entry_lines_cap_keeps_counting() -> None:
+    texts = [HEADER.format(1), *(f"\tat a.B.c{i}(B.java:{i})" for i in range(10)), HEADER.format(2)]
+    full = _entries(texts)
+    entries = _entries(texts, max_entry_lines=4)
+    assert len(entries) == 2
+    cut = entries[0]
+    assert cut.body.splitlines() == texts[1:4]
+    size = len("\n".join(texts[:11]).encode())
+    assert cut.parse_error == f"entry truncated: 11 lines, {size} bytes"
+    assert TRUNCATED_ERROR.format(lines=11, bytes=size) == cut.parse_error
+    # the entry after a truncated one is complete, and its id did not change
+    assert entries[1].parse_error is None and entries[1].id == full[1].id
+    # truncation is deterministic and changes the id of the truncated entry only
+    assert cut.id == _entries(texts, max_entry_lines=4)[0].id != full[0].id
+    assert cut.source == full[0].source
+
+
+def test_entry_chars_cap_counts_utf8_bytes() -> None:
+    header = HEADER.format(1)
+    texts = [header, "ab", "é" * 10, "cd"]
+    (entry,) = _entries(texts, max_entry_chars=len(header) + 3)
+    assert entry.body == "ab"
+    size = len("\n".join(texts).encode())
+    assert entry.parse_error == f"entry truncated: 4 lines, {size} bytes"
+    (whole,) = _entries(texts, max_entry_chars=len("\n".join(texts)))
+    assert whole.parse_error is None and whole.body == "\n".join(texts[1:])
+
+
+def test_truncated_orphan_keeps_orphan_error() -> None:
+    texts = ["orphan 1", "orphan 2", "orphan 3", HEADER.format(1)]
+    first, second = _entries(texts, max_entry_lines=2)
+    assert first.parse_error == f"{ORPHAN_ERROR}; entry truncated: 3 lines, 26 bytes"
+    assert first.body == "orphan 2" and second.parse_error is None
+
+
+def test_default_caps_bound_a_huge_entry(tmp_path: Path, jira: JiraFormat) -> None:
+    from atlas_log_analyzer.core.parser import MAX_ENTRY_LINES
+
+    path = tmp_path / "big.log"
+    lines = MAX_ENTRY_LINES + 50
+    path.write_bytes((HEADER.format(1) + "\n" + "\tat x.Y.z(Y.java:1)\n" * (lines - 1)).encode())
+    (entry,) = parse_file(path, jira)
+    assert entry.body.count("\n") + 2 == MAX_ENTRY_LINES
+    size = path.stat().st_size - 1  # without the final newline
+    assert entry.parse_error == f"entry truncated: {lines} lines, {size} bytes"
