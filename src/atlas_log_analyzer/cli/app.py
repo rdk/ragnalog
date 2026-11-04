@@ -12,6 +12,7 @@ import dataclasses
 import difflib
 import errno
 import importlib
+import inspect
 import io
 import os
 import re
@@ -23,7 +24,7 @@ from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
-from cyclopts import App, CycloptsError, Group, Parameter
+from cyclopts import App, CycloptsError, Group, Parameter, UnusedCliTokensError
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.cli.output import (
@@ -441,6 +442,8 @@ def _meta(
     _CTX = _Context(out, store or DEFAULT_STORE, store is None)
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
+    except CycloptsError as exc:
+        return out.error(_usage_error(exc, tokens))
     except Exception as exc:
         err = error_from_exception(exc)
         if err is None:
@@ -1902,8 +1905,45 @@ def run(argv: Sequence[str] | None = None) -> int:
             tokens, exit_on_error=False, print_error=False, result_action="return_value"
         )
     except CycloptsError as exc:
-        return Output(_sniff_mode(tokens)).error(CliError("usage", str(exc).strip()))
+        return Output(_sniff_mode(tokens)).error(_usage_error(exc, tokens))
     return int(result) if isinstance(result, int) else 0
+
+
+def _usage_error(exc: CycloptsError, tokens: Sequence[str]) -> CliError:
+    """Map a cyclopts parse error to ``usage`` with the command's ``--help`` as hint.
+
+    Cyclopts' messages are kept (they name the option and the expected values),
+    except "Unused Tokens", which becomes "unexpected argument 'x'" and says what
+    the command takes.
+    """
+    chain = tuple(exc.command_chain or ())
+    command = chain[-1] if chain and chain[-1] in app else None
+    hint = f"atlas-log {command} --help" if command else "atlas-log --help"
+    message = str(exc).strip()
+    if isinstance(exc, UnusedCliTokensError) and command and exc.unused_tokens:
+        message = _unexpected(command, list(exc.unused_tokens), tokens)
+    return CliError("usage", message, hint=hint)
+
+
+def _unexpected(command: str, unused: Sequence[str], tokens: Sequence[str]) -> str:
+    """Message for arguments a command did not consume (cyclopts' "Unused Tokens")."""
+    func = app[command].default_command
+    params = inspect.signature(func).parameters if func is not None else {}
+    words = ", ".join(repr(t) for t in unused)
+    what = f"unexpected argument{'s' if len(unused) > 1 else ''} {words}"
+    at = [i for i, token in enumerate(tokens) if token == unused[0]]
+    before = tokens[at[-1] - 1] if at and at[-1] > 0 else ""
+    if before.startswith("--") and "=" not in before:
+        name = before[2:].replace("-", "_")
+        flag = params.get(name) or params.get(name + "_")
+        if flag is not None and isinstance(flag.default, bool):
+            return f"{what}; {before} is a flag and takes no value"
+    kinds = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
+    names = [p.name.upper() for p in params.values() if p.kind in kinds]
+    if not names:
+        return f"{what}; {command} takes no arguments"
+    count = f"{len(names)} argument{'s' if len(names) > 1 else ''}"
+    return f"{what}; {command} takes {count}: {' '.join(names)}"
 
 
 def _utf8_streams() -> None:

@@ -84,8 +84,11 @@ In `json`/`jsonl` mode errors are written to **stdout** as
 ```
 
 `"hint"` (optional) suggests the next step (available set names for an unknown
-set; `atlas-log groups SET` for an unknown signature); other optional keys
-carry context such as `"store"`. In `table` mode errors go to stderr as
+set; `atlas-log groups SET` for an unknown signature; `atlas-log CMD --help`
+for a `usage` error from argument parsing); other optional keys carry context
+such as `"store"`. An argument a command does not take is reported as, e.g.,
+`unexpected argument 'nope'; sets takes no arguments` or `unexpected argument
+'yes'; --brief is a flag and takes no value`. In `table` mode errors go to stderr as
 `error: <message> [<code>]` followed by `hint: …`. Error codes:
 `usage`, `invalid_value`, `invalid_level`, `unknown_format`, `sql_error`,
 `missing_dependency`, `file_not_found`, `no_sources`, `format_not_detected`,

@@ -101,8 +101,70 @@ def test_missing_argument_is_usage_error(cli: Invoke) -> None:
     assert result.code == 1
     assert result.json() == {
         "schema": "error.v1",
-        "error": {"code": "usage", "message": result.json()["error"]["message"]},
+        "error": {
+            "code": "usage",
+            "message": 'Command "groups" parameter LOGSET requires an argument.',
+            "hint": "atlas-log groups --help",
+        },
     }
+
+
+@pytest.mark.parametrize(
+    ("argv", "message"),
+    [
+        (["sets", "nope"], "unexpected argument 'nope'; sets takes no arguments"),
+        (["groups", "x", "y"], "unexpected argument 'y'; groups takes 1 argument: LOGSET"),
+        (
+            ["show", "x", "y", "z", "w"],
+            "unexpected arguments 'z', 'w'; show takes 2 arguments: LOGSET SIGNATURE",
+        ),
+        (
+            ["entries", "x", "--brief", "yes", "--limit", "5"],
+            "unexpected argument 'yes'; --brief is a flag and takes no value",
+        ),
+        (
+            ["frames", "x", "y", "--all", "z"],
+            "unexpected argument 'z'; --all is a flag and takes no value",
+        ),
+    ],
+)
+def test_unexpected_arguments(cli: Invoke, argv: list[str], message: str) -> None:
+    result = cli("--output", "json", *argv)
+    assert result.code == 1
+    assert result.json()["error"] == {
+        "code": "usage",
+        "message": message,
+        "hint": f"atlas-log {argv[0]} --help",
+    }
+
+
+@pytest.mark.parametrize(
+    ("argv", "hint", "text"),
+    [
+        (["groups", "x", "--nope"], "atlas-log groups --help", "Unknown option: --nope"),
+        (["groups", "x", "--limit", "abc"], "atlas-log groups --help", "--limit"),
+        (["schema", "bogus"], "atlas-log schema --help", '"entries"'),
+        (["frobnicate"], "atlas-log --help", "frobnicate"),
+        (["--output", "xml", "version"], "atlas-log --help", "--output"),
+    ],
+)
+def test_parse_errors_keep_message_and_hint_help(
+    cli: Invoke, argv: list[str], hint: str, text: str
+) -> None:
+    result = cli(*argv) if argv[0] == "--output" else cli("--output", "json", *argv)
+    assert result.code == 1
+    err = result.json()["error"] if result.stdout else None
+    if err is None:  # table mode (--output xml is invalid): the error goes to stderr
+        assert text in result.stderr and f"hint: {hint}" in result.stderr
+        return
+    assert err["code"] == "usage" and text in err["message"] and err["hint"] == hint
+
+
+def test_unexpected_argument_table_mode(cli: Invoke) -> None:
+    result = cli("--output", "table", "sets", "nope")
+    assert result.code == 1 and result.stdout == ""
+    assert "unexpected argument 'nope'; sets takes no arguments" in result.stderr
+    assert "hint: atlas-log sets --help" in result.stderr
 
 
 def test_invalid_level(cli: Invoke) -> None:
