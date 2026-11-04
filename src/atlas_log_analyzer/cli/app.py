@@ -148,6 +148,8 @@ app = App(
 class _Context:
     output: Output
     store: Path
+    implicit_store: bool = False
+    """True when neither --store nor ATLAS_LOG_STORE was given (``./.atlas-log``)."""
 
 
 _CTX: _Context | None = None
@@ -155,7 +157,8 @@ _CTX: _Context | None = None
 
 def _ctx() -> _Context:
     if _CTX is None:  # only when a command function is called outside the CLI
-        return _Context(Output(default_mode()), Path(os.environ.get(STORE_ENV, DEFAULT_STORE)))
+        env = os.environ.get(STORE_ENV)
+        return _Context(Output(default_mode()), Path(env or DEFAULT_STORE), not env)
     return _CTX
 
 
@@ -166,8 +169,34 @@ def _out() -> Output:
 # --- helpers
 
 
-def _store() -> Store:
-    return Store(_ctx().store)
+def _in_git_work_tree(path: Path) -> Path | None:
+    """Return the first of ``path`` and its parents with a ``.git`` entry, or ``None``."""
+    for folder in (path, *path.parents):
+        if (folder / ".git").exists():
+            return folder
+    return None
+
+
+def _store(*, create: bool = False) -> Store:
+    """Return the store of this invocation.
+
+    With ``create`` (commands that may create the store directory) the implicit
+    default ``./.atlas-log`` is refused inside a git work tree unless it exists
+    already: a store there risks committing real logs.
+    """
+    ctx = _ctx()
+    if create and ctx.implicit_store and not ctx.store.exists():
+        repo = _in_git_work_tree(Path.cwd().resolve())
+        if repo is not None:
+            raise CliError(
+                "store_error",
+                f"refusing to create the default store {ctx.store.as_posix()} inside the git "
+                f"work tree {repo.as_posix()}: a store inside a repository risks committing "
+                "real logs",
+                ExitCode.STORE,
+                hint=f"pass --store DIR outside the repository or set {STORE_ENV}",
+            )
+    return Store(ctx.store)
 
 
 def _open(ref: str) -> LogSet:
@@ -389,7 +418,7 @@ def _format_spec(format_name: str) -> SignatureSpec:
 def _meta(
     *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     output: Annotated[OutputMode | None, Parameter(group=GLOBAL)] = None,
-    store: Annotated[Path, Parameter(group=GLOBAL, env_var=STORE_ENV)] = DEFAULT_STORE,
+    store: Annotated[Path | None, Parameter(group=GLOBAL, env_var=STORE_ENV)] = None,
     quiet: Annotated[bool, Parameter(group=GLOBAL, negative="")] = False,
     width: Annotated[int | None, Parameter(group=GLOBAL)] = None,
     color: Annotated[ColorMode, Parameter(group=GLOBAL)] = "auto",
@@ -399,7 +428,8 @@ def _meta(
     Args:
         tokens: Command and its arguments.
         output: Output mode. Default: table when stdout is a terminal, json otherwise.
-        store: Store directory holding log sets (env ATLAS_LOG_STORE; default ./.atlas-log).
+        store: Store directory holding log sets (env ATLAS_LOG_STORE; default ./.atlas-log,
+            which ingest/serve do not create inside a git work tree).
         quiet: Suppress progress and diagnostics on stderr (warnings and errors still shown).
         width: Table width; default: the terminal width, else $COLUMNS, else 160.
         color: Colour tables and raw entries: auto (terminal and no $NO_COLOR), always, never.
@@ -411,7 +441,7 @@ def _meta(
             CliError("invalid_value", "--width must be >= 40")
         )
     out = Output(output or default_mode(), quiet=quiet, width=width, color_mode=color)
-    _CTX = _Context(out, store)
+    _CTX = _Context(out, store or DEFAULT_STORE, store is None)
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
     except Exception as exc:
@@ -454,8 +484,13 @@ def ingest(
     merges.parquet (the "merges" view of `query`).
     "ingest.existing" is true when the set already existed and was reused.
 
+    Without --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git
+    work tree it is not created (error "store_error": real logs could be
+    committed), but an existing ./.atlas-log is used.
+
     Exit codes: 0 ok; 1 unknown --format or bad option; 2 no files found, format
-    not detected, or no entries parsed (manifest still printed); 3 store error.
+    not detected, or no entries parsed (manifest still printed); 3 store error
+    (including a refused default store inside a git work tree).
 
     Args:
         paths: Log files and/or directories.
@@ -471,6 +506,7 @@ def ingest(
         raise CliError("invalid_value", "--frames must be >= 0")
     sources = _sources(paths)
     fmt = _resolve_format(format, sources)
+    store = _store(create=True)
     total = sum(s.size for s in sources)
     out.info(f"ingesting {len(sources)} file(s), {total / 1e6:.1f} MB, format {fmt.name}")
 
@@ -479,7 +515,7 @@ def ingest(
             out.info(f"  {p.entries:,} entries")
 
     result = ingest_sources(
-        _store(), sources, fmt, name=name, frames=frames, overwrite=overwrite, progress=progress
+        store, sources, fmt, name=name, frames=frames, overwrite=overwrite, progress=progress
     )
     logset = result.logset
     doc = _manifest_dict(logset)
@@ -1780,7 +1816,8 @@ def serve(
     ("schema": none).
 
     Exit codes: 0 stopped normally; 1 the `web` extra is not installed or bad
-    option; 3 store error.
+    option; 3 store error (including the default ./.atlas-log not existing inside
+    a git work tree: pass --store DIR or set ATLAS_LOG_STORE).
 
     Args:
         host: Interface to bind; use 0.0.0.0 to serve the network (set --token then).
@@ -1802,7 +1839,8 @@ def serve(
         ) from exc
     if not 0 < port < 65536:
         raise CliError("invalid_value", "--port must be between 1 and 65535")
-    settings = Settings.from_env(store=_ctx().store, max_upload_mb=max_upload_mb, token=token)
+    store = _store(create=True)  # uploads create the store directory
+    settings = Settings.from_env(store=store.root, max_upload_mb=max_upload_mb, token=token)
     _out().info(f"serving {settings.store.as_posix()} at http://{host}:{port}/")
     if reload:
         import os

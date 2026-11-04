@@ -69,4 +69,6 @@ ubuntu-latest and windows-latest.
 
 **Never commit real logs.** Fixtures must be small, hand-checked excerpts with
 user names, issue keys, hosts, IPs and URLs masked or invented. Stores
-(`.atlas-log/`) and any customer data stay out of the repository.
+(`.atlas-log/`) and any customer data stay out of the repository: the CLI
+refuses to create the implicit `./.atlas-log` inside a git work tree, so pass
+`--store DIR` (a temp dir) or set `ATLAS_LOG_STORE` when trying commands.

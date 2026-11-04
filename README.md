@@ -47,6 +47,7 @@ uv run atlas-log --help
 ## Quick start (humans)
 
 ```sh
+export ATLAS_LOG_STORE=~/atlas-log-store                       # where log sets live
 atlas-log ingest /var/atlassian/jira/log/ --name prod-1029     # build a log set
 atlas-log groups prod-1029 --min-level WARN                    # one row per signature
 atlas-log show prod-1029 83d1828c6afb2ead                      # entries of a group, with variables
@@ -55,8 +56,12 @@ atlas-log ingest ./logs-after-upgrade/ --name prod-1030
 atlas-log diff prod-1029 prod-1030 --level ERROR               # new / vanished / changed groups
 ```
 
-Log sets live in `./.atlas-log` (override with `--store DIR` or
-`ATLAS_LOG_STORE`). A set can be referred to by id, name or unique id prefix.
+Log sets live in `--store DIR`, else `$ATLAS_LOG_STORE`, else `./.atlas-log`.
+The implicit `./.atlas-log` is not created inside a git work tree (a store in a
+repository risks committing real logs): `ingest` then stops with a
+`store_error` and asks for `--store` or `ATLAS_LOG_STORE`; an existing
+`./.atlas-log` keeps working. A set can be referred to by id, name or unique id
+prefix.
 
 ## Report
 
@@ -79,7 +84,7 @@ with its `#…` part reopens the same view. See `docs/report.md`.
 ## Web app
 
 ```sh
-atlas-log --store ./.atlas-log serve        # http://127.0.0.1:8321/
+atlas-log --store ~/atlas-log-store serve   # http://127.0.0.1:8321/
 ```
 
 The start page lists every set with its error counts and a triage verdict
@@ -107,6 +112,8 @@ Repeat 2–6; on an error, read `error.hint` for the next step.
 
 ## Quick start (agents)
 
+- Set `ATLAS_LOG_STORE` (or pass `--store DIR`) to a directory outside any
+  repository; the implicit `./.atlas-log` is refused inside a git work tree.
 - Output is JSON whenever stdout is not a terminal; force it with
   `--output json` (one document) or `--output jsonl` (one row per line).
 - Every document has `"schema": "<name>.v1"`; listings put rows in `"items"`.

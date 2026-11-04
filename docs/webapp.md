@@ -9,13 +9,13 @@ can work from the same data.
 
 ```sh
 uv sync --extra web                      # or: uv tool install 'atlas-log-analyzer[web]'
-atlas-log --store ./.atlas-log serve     # http://127.0.0.1:8321/
+atlas-log --store ~/atlas-log-store serve   # http://127.0.0.1:8321/
 atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a network
 ```
 
 | Flag | Env | Default |
 |---|---|---|
-| `--store DIR` (global) | `ATLAS_LOG_STORE` | `./.atlas-log` |
+| `--store DIR` (global) | `ATLAS_LOG_STORE` | `./.atlas-log` (not created inside a git work tree) |
 | `--host` | | `127.0.0.1` |
 | `--port` | | `8321` |
 | `--token` | `ATLAS_LOG_TOKEN` | none: no auth |

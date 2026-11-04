@@ -13,7 +13,7 @@ Global options may appear before or after the command name.
 | Option | Default | Meaning |
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
-| `--store DIR` | env `ATLAS_LOG_STORE`, else `./.atlas-log` | Store directory holding log sets. |
+| `--store DIR` | env `ATLAS_LOG_STORE`, else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -74,7 +74,7 @@ name in `level_name`; `parse` emits the name in `level`.
 | 0 | OK (an empty listing is OK). |
 | 1 | Usage error: bad option/argument, unknown format, invalid level, SQL error, incompatible sets in `diff` without `--force`, missing optional dependency. |
 | 2 | Nothing found / parse failure: no input files, format not detected, no entries parsed, no entries for a signature, file not found. |
-| 3 | Store error: unknown log set, ambiguous reference, corrupt manifest, unsupported schema version. |
+| 3 | Store error: unknown log set, ambiguous reference, corrupt manifest, unsupported schema version, default store refused inside a git work tree. |
 
 In `json`/`jsonl` mode errors are written to **stdout** as
 
