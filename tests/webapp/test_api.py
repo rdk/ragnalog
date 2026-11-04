@@ -294,9 +294,18 @@ def test_entries_request_id_exception_and_max_raw(client: TestClient) -> None:
     exc = _json(client, "/api/sets/mini/entries?exception=ConnectException&brief=true")
     assert exc["total"] == 0  # the outermost exception is DataAccessException
     exc = _json(client, "/api/sets/mini/entries?exception=DataAccess&brief=true")
-    assert exc["total"] == 1 and set(exc["items"][0]) == set(
-        ("id", "ts", "level_name", "thread", "logger", "message", "exception_type", "signature")
-    )
+    assert exc["total"] == 1 and list(exc["items"][0]) == [
+        "id",
+        "ts",
+        "level_name",
+        "thread",
+        "user",
+        "request_id",
+        "logger",
+        "message",
+        "exception_type",
+        "signature",
+    ]
     cut = _json(client, "/api/sets/mini/entries?with_exception=true&max_raw=50&columns=raw")
     row = cut["items"][0]
     assert row["body_truncated"] is True and row["raw_chars"] > 50
@@ -380,3 +389,25 @@ def test_levels_as_cli(tmp_path: Path) -> None:
         "level: unknown level 'SEVERE'; expected one of TRACE, DEBUG, INFO, WARN, ERROR, "
         "FATAL, UNKNOWN (WARNING = WARN)"
     )
+
+
+def test_group_and_context_columns_and_brief(client: TestClient, store_dir: Path) -> None:
+    from atlas_log_analyzer.store.views import DETAIL_BRIEF, GROUP_BRIEF
+
+    sig = _first_signature(client)
+    doc = _json(client, f"/api/sets/mini/groups/{sig}?brief=true")
+    assert doc["items"] and all(tuple(r) == DETAIL_BRIEF for r in doc["items"])
+    assert tuple(doc["group"]) == GROUP_BRIEF
+    cli = _cli_json(store_dir, "show", "mini", sig, "--brief")
+    assert cli["items"] == doc["items"] and cli["group"] == doc["group"]
+    picked = _json(client, f"/api/sets/mini/groups/{sig}?columns=ts,message")
+    assert all(list(r) == ["ts", "message"] for r in picked["items"])
+    assert len(picked["group"]) > len(GROUP_BRIEF)
+    entry = doc["items"][0]["id"]
+    ctx = _json(client, f"/api/sets/mini/entries/{entry}/context?brief=true&any_thread=true")
+    assert all(tuple(r) == DETAIL_BRIEF for r in ctx["items"])
+    assert ctx == _cli_json(store_dir, "context", "mini", entry, "--brief", "--any-thread")
+    bad = _json(client, f"/api/sets/mini/entries/{entry}/context?columns=nope", 400)
+    assert bad["error"]["code"] == "invalid_value"
+    both = _json(client, f"/api/sets/mini/groups/{sig}?brief=true&columns=ts", 400)
+    assert both["error"]["code"] == "usage"

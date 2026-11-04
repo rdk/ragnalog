@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_MAX_RAW",
+    "DETAIL_BRIEF",
     "ENTRY_BRIEF",
     "ENTRY_FIELDS",
     "GROUP_BRIEF",
@@ -53,12 +54,17 @@ ENTRY_BRIEF: tuple[str, ...] = (
     "ts",
     "level_name",
     "thread",
+    "user",
+    "request_id",
     "logger",
     "message",
     "exception_type",
     "signature",
 )
 """Columns of ``entries --brief`` / ``brief=true``."""
+DETAIL_BRIEF: tuple[str, ...] = (*ENTRY_BRIEF, "variables")
+"""Columns of ``show --brief`` and ``context --brief`` (and their API twins): the entry
+preset plus the values masking replaced in the template."""
 
 DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""

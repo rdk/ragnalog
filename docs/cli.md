@@ -177,7 +177,7 @@ With `--coarse` the filters apply to the member groups before aggregation.
 
 Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with `--columns`; 3.
 
-### `show SET SIGNATURE [--limit 20] [--raw] [--max-raw N]`
+### `show SET SIGNATURE [--limit 20] [--raw] [--max-raw N] [--columns C[,C…]]... [--brief]`
 
 Entries of one group, ordered by time, with `variables` (the values masking
 replaced, in order). `--raw` prints the original log text of each entry,
@@ -197,7 +197,15 @@ cut have neither key, so short entries look exactly as before.
  "count": 3, "items": [<entries.v1 row>]}
 ```
 
-Exit: 0; 1 bad option; 2 no entries with this signature; 3.
+`--columns` selects entry columns as for `entries`. `--brief` is the preset
+`id, ts, level_name, thread, user, request_id, logger, message,
+exception_type, signature, variables` (`entries --brief` plus `variables`)
+and also cuts `group` to the `groups --brief` columns; without it a row
+repeats the stack trace in `raw`, `body`, `exception_chain` and
+`exception_message`. `--brief` with `--columns` is a usage error.
+
+Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no
+entries with this signature; 3.
 
 ### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
@@ -206,8 +214,9 @@ request id of the request context, e.g. `540x101x1`: all entries of one HTTP
 request); `--contains` is a case-insensitive substring of `raw`; `--columns` selects columns, comma-separated and/or repeated
 (`--columns ts,level_name --columns message`; order kept, duplicates dropped).
 An unknown column is error `invalid_value` naming it, with the valid columns
-in `hint`. `--brief` is the preset `id, ts, level_name, thread, logger,
-message, exception_type, signature` (not combinable with `--columns`).
+in `hint`. `--brief` is the preset `id, ts, level_name, thread, user,
+request_id, logger, message, exception_type, signature` (not combinable with
+`--columns`).
 `--raw` prints the raw text like `show --raw`. `--max-raw` cuts
 `raw`/`body` as described for `show` (default 4000 in `json`/`jsonl`).
 
@@ -227,12 +236,14 @@ entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
 Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with
 `--columns`; 3.
 
-### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N]`
+### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N] [--columns C[,C…]]... [--brief]`
 
 The entries immediately around one entry in time order (ties in file order),
 restricted to the anchor's thread unless `--any-thread`; the anchor itself is
 included. Entry ids are the `id` column of `entries`/`show` or a group's
-`examples`. `--max-raw` as for `show`.
+`examples`. `--max-raw`, `--columns` and `--brief` as for `show` (`--brief`:
+`id, ts, level_name, thread, user, request_id, logger, message,
+exception_type, signature, variables`).
 
 ```json
 {"schema": "entries.v1", "logset": "…", "anchor": "<entry id>", "thread": "http-nio-8080-exec-1",
@@ -240,8 +251,10 @@ included. Entry ids are the `id` column of `entries`/`show` or a group's
 ```
 
 At most `--before + 1 + --after` items. `jsonl`: one row per line, the anchor
-row with an extra `"anchor": true`. The table marks the anchor row with `▶`.
-Exit: 0; 1 bad option; 2 no entry with this id (`not_found`, with a hint); 3.
+row with an extra `"anchor": true` (also when `--columns` leaves out `id`).
+The table marks the anchor row with `▶`.
+Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no entry
+with this id (`not_found`, with a hint); 3.
 
 ### `frames SET REF [--limit 10] [--all]`
 

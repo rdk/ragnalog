@@ -27,6 +27,7 @@ from atlas_log_analyzer.store.triage import auto_baseline as pick_baseline
 from atlas_log_analyzer.store.triage import triage as store_triage
 from atlas_log_analyzer.store.views import (
     DEFAULT_MAX_RAW,
+    DETAIL_BRIEF,
     ENTRY_BRIEF,
     ENTRY_FIELDS,
     GROUP_BRIEF,
@@ -285,12 +286,17 @@ def group(
     limit: Annotated[int, Query(ge=0, le=10_000)] = 20,
     coarse: bool = False,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    columns: Annotated[list[str] | None, Query()] = None,
+    brief: bool = False,
 ) -> dict[str, Any]:
     """One group with its hourly histogram and first entries (``group.v1``).
 
     ``raw`` and ``body`` of the entries are cut to ``max_raw`` characters (0 = all),
-    marked as in ``entries``.
+    marked as in ``entries``. ``columns`` or ``brief`` select the entry columns as
+    ``atlas-log show --columns/--brief``; ``brief`` also cuts ``group`` to the
+    ``groups`` brief columns.
     """
+    cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = state.open(ref)
     row = ls.group(signature, coarse=coarse)
     if row is None:
@@ -301,10 +307,12 @@ def group(
             hint=f"list signatures with GET /api/sets/{ls.manifest.id}/groups",
         )
     if coarse:
-        df = ls.entries(coarse_signature=signature, limit=limit or None)
+        df = ls.entries(coarse_signature=signature, limit=limit or None, columns=cols)
     else:
-        df = ls.entries(signature=signature, limit=limit or None)
+        df = ls.entries(signature=signature, limit=limit or None, columns=cols)
     entries = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
+    if brief:
+        row = {k: row[k] for k in (*GROUP_BRIEF, "signatures") if k in row}
     return {
         "schema": "group.v1",
         "logset": ls.manifest.id,
@@ -412,12 +420,16 @@ def context(
     after: Annotated[int, Query(ge=0, le=10_000)] = 5,
     any_thread: bool = False,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    columns: Annotated[list[str] | None, Query()] = None,
+    brief: bool = False,
 ) -> dict[str, Any]:
     """Return the entries around one entry in time order (``entries.v1``), as ``context``.
 
     ``before``/``after`` entries of the anchor's thread (all threads with
-    ``any_thread``), the anchor included; ``raw``/``body`` cut as in ``entries``.
+    ``any_thread``), the anchor included; ``raw``/``body`` cut as in ``entries``;
+    ``columns`` or ``brief`` select the columns as ``atlas-log context``.
     """
+    cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = state.open(ref)
     df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
     if df is None:
@@ -427,13 +439,16 @@ def context(
             404,
             hint=f"entry ids are the id column of GET /api/sets/{ls.manifest.id}/entries",
         )
-    items = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
-    anchor = next((row for row in items if row["id"] == entry_id), None)
+    at = df["id"].to_list().index(entry_id)
+    thread = df["thread"][at]
+    items = cap_texts(
+        to_records(df if cols is None else df.select(cols)), _max_raw(max_raw), how=MAX_RAW_HOW
+    )
     return {
         "schema": "entries.v1",
         "logset": ls.manifest.id,
         "anchor": entry_id,
-        "thread": anchor.get("thread") if anchor else None,
+        "thread": thread,
         "any_thread": any_thread,
         "count": len(items),
         "items": items,

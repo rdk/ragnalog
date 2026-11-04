@@ -120,7 +120,7 @@ Repeat 2–6; on an error, read `error.hint` for the next step.
 - `groups` and `entries` page with `--limit N --offset M`: `"truncated": true`
   means more rows follow; fetch the next page with `--offset <offset + count>`.
 - Keep rows small: `--brief` (a documented column preset) or
-  `--columns a,b,c` on `groups` and `entries`.
+  `--columns a,b,c` on `groups`, `entries`, `show` and `context`.
 - Level filters hide DEBUG stack traces; `--with-exception` (any level with an
   exception) and `--exception TEXT` (substring of `exception_type`) do not.
 - `frames SET SIGNATURE|ENTRY_ID` reduces a stack trace to its application

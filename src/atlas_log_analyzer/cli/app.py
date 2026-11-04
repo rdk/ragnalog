@@ -52,6 +52,7 @@ from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 from atlas_log_analyzer.store.views import (
     DEFAULT_MAX_RAW,
+    DETAIL_BRIEF,
     ENTRY_BRIEF,
     ENTRY_FIELDS,
     GROUP_BRIEF,
@@ -711,6 +712,8 @@ def show(
     limit: int = 20,
     raw: bool = False,
     max_raw: int | None = None,
+    columns: list[str] | None = None,
+    brief: bool = False,
 ) -> int:
     """Show the entries of one group, with the variables extracted from each message.
 
@@ -730,9 +733,14 @@ def show(
     With --raw the original log text of each entry is printed instead (any
     --output mode), entries separated by a blank line (or, when colour is on,
     highlighted and separated by a source:line rule).
+    --columns keeps only the named entry columns (as `entries --columns`).
+    --brief is the preset --columns id,ts,level_name,thread,user,request_id,
+    logger,message,exception_type,signature,variables and also cuts "group"
+    to signature,template,level_name,logger,exception_type,count,first_seen,
+    last_seen; --brief with --columns is a usage error.
 
-    Exit codes: 0 ok; 1 bad option; 2 no entries with this signature; 3 unknown
-    set or store error.
+    Exit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;
+    2 no entries with this signature; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -741,12 +749,16 @@ def show(
         raw: Print the raw log text of the entries (highlighted when colour is on).
         max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
             in json/jsonl mode, no limit in table and --raw mode.
+        columns: Entry columns to return: comma-separated (ts,message) and/or repeated.
+        brief: Only id, ts, level_name, thread, user, request_id, logger, message,
+            exception_type, signature, variables; "group" in its --brief form.
 
     """
     lim = _limit(limit)
     cap = _max_raw(max_raw, text=raw)
+    columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = _open(logset)
-    df = ls.entries(signature=signature, limit=lim)
+    df = ls.entries(signature=signature, limit=lim, columns=None if raw else columns)
     if df.height == 0:
         raise CliError(
             "not_found",
@@ -763,6 +775,8 @@ def show(
     group_rows = jsonable_rows(ls.groups_lazy().filter(pl.col("signature") == signature).collect())
     items = _cap_items(jsonable_rows(df), cap)
     group = group_rows[0] if group_rows else None
+    if group is not None and brief:
+        group = {k: group[k] for k in GROUP_BRIEF}
 
     def render(console: Console) -> None:
         from rich.text import Text
@@ -775,7 +789,7 @@ def show(
                 f"count {group.get('count')}  first {_cell(group.get('first_seen'))}"
                 f"  last {_cell(group.get('last_seen'))}"
             )
-        cols = [c for c in ENTRY_COLUMNS if not items or c in items[0]]
+        cols = columns or [c for c in ENTRY_COLUMNS if not items or c in items[0]]
         console.print(rows_table(items, cols, title=f"entries of {signature}", color=out.color))
 
     out.emit(
@@ -787,7 +801,7 @@ def show(
             "count": len(items),
             "items": items,
         },
-        columns=ENTRY_COLUMNS,
+        columns=columns or ENTRY_COLUMNS,
         title=f"entries of {signature}",
         table=render,
     )
@@ -834,8 +848,8 @@ def entries(
     --columns takes comma-separated names and/or is repeated
     (--columns ts,level_name --columns message); an unknown name is error
     "invalid_value" whose "hint" lists the valid columns. --brief is the
-    preset --columns id,ts,level_name,thread,logger,message,exception_type,
-    signature; --brief with --columns is a usage error.
+    preset --columns id,ts,level_name,thread,user,request_id,logger,message,
+    exception_type,signature; --brief with --columns is a usage error.
     --with-exception keeps entries with an exception (exception_type not
     null) at any level; --exception TEXT matches a case-insensitive substring
     of exception_type (the outermost exception).
@@ -864,7 +878,8 @@ def entries(
         with_exception: Only entries with an exception (exception_type not null), any level.
         exception: Only entries whose exception_type contains this text (case-insensitive).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
-        brief: Only id, ts, level_name, thread, logger, message, exception_type, signature.
+        brief: Only id, ts, level_name, thread, user, request_id, logger, message,
+            exception_type, signature.
         limit: Maximum number of rows; 0 = all.
         offset: Skip this many entries first (paging: next offset = offset + count).
         raw: Print the raw log text of the entries (highlighted when colour is on).
@@ -929,6 +944,8 @@ def context(
     after: int = 5,
     any_thread: bool = False,
     max_raw: int | None = None,
+    columns: list[str] | None = None,
+    brief: bool = False,
 ) -> int:
     """Show the entries immediately around one entry, in time order (same thread by default).
 
@@ -946,9 +963,13 @@ def context(
     "raw" and "body" are cut as in `entries` (--max-raw, default 4000 in
     json/jsonl). In jsonl mode one row per line; the anchor row has an extra
     "anchor": true. The table marks the anchor row with ▶.
+    --columns keeps only the named columns (as `entries --columns`); --brief
+    is the preset --columns id,ts,level_name,thread,user,request_id,logger,
+    message,exception_type,signature,variables; --brief with --columns is a
+    usage error.
 
-    Exit codes: 0 ok; 1 bad option; 2 no entry with this id; 3 unknown set or
-    store error.
+    Exit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;
+    2 no entry with this id; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -958,12 +979,16 @@ def context(
         any_thread: Consider entries of all threads, not only the anchor's thread.
         max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
             in json/jsonl mode, no limit in table mode.
+        columns: Columns to return: comma-separated (ts,message) and/or repeated.
+        brief: Only id, ts, level_name, thread, user, request_id, logger, message,
+            exception_type, signature, variables.
 
     """
     for flag, value in (("--before", before), ("--after", after)):
         if value < 0:
             raise CliError("invalid_value", f"{flag} must be >= 0")
     cap = _max_raw(max_raw, text=False)
+    columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = _open(logset)
     df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
     if df is None:
@@ -975,16 +1000,16 @@ def context(
             hint=f'entry ids are the "id" column of `atlas-log entries {ref} --brief` '
             f"or `atlas-log show {ref} SIGNATURE`",
         )
-    items = _cap_items(jsonable_rows(df), cap)
-    anchor = next(row for row in items if row["id"] == entry_id)
-    thread = anchor.get("thread")
+    at = df["id"].to_list().index(entry_id)
+    thread = df["thread"][at]
+    items = _cap_items(jsonable_rows(df if columns is None else df.select(columns)), cap)
     out = _out()
     title = f"context of {entry_id}" + ("" if any_thread else f" (thread {thread})")
 
     def render(console: Console) -> None:
-        rows = [{"": ANCHOR_MARK if r["id"] == entry_id else "", **r} for r in items]
-        cols = ["", "ts", "level_name", "thread", "user", "logger", "message"]
-        console.print(rows_table(rows, cols, title=title, color=out.color))
+        rows = [{"": ANCHOR_MARK if i == at else "", **r} for i, r in enumerate(items)]
+        default = ["ts", "level_name", "thread", "user", "logger", "message"]
+        console.print(rows_table(rows, ["", *(columns or default)], title=title, color=out.color))
 
     out.emit(
         "entries.v1",
@@ -996,7 +1021,7 @@ def context(
             "count": len(items),
             "items": items,
         },
-        jsonl_rows=[{**r, "anchor": True} if r["id"] == entry_id else r for r in items],
+        jsonl_rows=[{**r, "anchor": True} if i == at else r for i, r in enumerate(items)],
         table=render,
     )
     return 0
