@@ -9,6 +9,7 @@ Each command is a thin wrapper over :mod:`atlas_log_analyzer.core` and
 from __future__ import annotations
 
 import dataclasses
+import difflib
 import importlib
 import io
 import os
@@ -49,6 +50,7 @@ from atlas_log_analyzer.core.reader import SourceFile, iter_lines, iter_sources
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
 from atlas_log_analyzer.store import LogSet, Store
 from atlas_log_analyzer.store.pipeline import IngestProgress, ingest_sources
+from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA
 from atlas_log_analyzer.store.store import StoreError
 
 __all__ = ["app", "main", "run"]
@@ -72,6 +74,10 @@ GROUP_COLUMNS = (
     "last_seen",
 )
 ENTRY_COLUMNS = ("ts", "level_name", "thread", "user", "logger", "message", "variables")
+ENTRY_FIELDS: tuple[str, ...] = tuple(ENTRIES_SCHEMA.names)
+"""Columns of entries.v1 (valid ``entries --columns`` values)."""
+GROUP_FIELDS: tuple[str, ...] = tuple(GROUPS_SCHEMA.names)
+"""Columns of groups.v1 (valid ``groups --columns`` values; ``signatures`` with --coarse)."""
 SET_COLUMNS = (
     "id",
     "name",
@@ -211,6 +217,36 @@ def _limit(value: int) -> int | None:
     if value < 0:
         raise CliError("invalid_value", "--limit must be >= 0 (0 = no limit)")
     return value or None
+
+
+def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | None:
+    """Parse ``--columns``: repeated options and/or comma-separated names, validated.
+
+    Returns ``None`` when the option was not given; duplicates are dropped, order is kept.
+    """
+    if not values:
+        return None
+    chosen: list[str] = []
+    for value in values:
+        for part in value.split(","):
+            name = part.strip()
+            if not name:
+                continue
+            if name not in valid:
+                close = difflib.get_close_matches(name, valid, n=1)
+                guess = f" (did you mean {close[0]!r}?)" if close else ""
+                raise CliError(
+                    "invalid_value",
+                    f"unknown column {name!r} in --columns{guess}",
+                    hint=f"valid columns: {', '.join(valid)}",
+                )
+            if name not in chosen:
+                chosen.append(name)
+    if not chosen:
+        raise CliError(
+            "invalid_value", "--columns is empty", hint=f"valid columns: {', '.join(valid)}"
+        )
+    return chosen
 
 
 def _sources(paths: Sequence[Path]) -> list[SourceFile]:
@@ -609,9 +645,12 @@ def entries(
     request_url, context, exception_type, exception_message, exception_chain,
     signature, coarse_signature, template, variables, source_path, source_line,
     source_offset, raw, parse_error.
+    --columns takes comma-separated names and/or is repeated
+    (--columns ts,level_name --columns message); an unknown name is error
+    "invalid_value" whose "hint" lists the valid columns.
 
-    Exit codes: 0 ok (also when nothing matches); 1 bad option; 3 unknown set
-    or store error.
+    Exit codes: 0 ok (also when nothing matches); 1 bad option or unknown
+    column; 3 unknown set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -625,12 +664,13 @@ def entries(
             30m/2h/1d before the set's last entry.
         until: Only entries before this time (same forms as --since).
         contains: Only entries whose raw text contains this text (case-insensitive).
-        columns: Columns to return (repeat the option or separate by spaces).
+        columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         limit: Maximum number of rows; 0 = all.
         raw: Print the raw log text of the entries (highlighted when colour is on).
 
     """
     lvl, min_lvl, lim = _level(level), _level(min_level), _limit(limit)
+    columns = _columns(columns, ENTRY_FIELDS)
     ls = _open(logset)
     last = ls.manifest.last_ts
     filters: dict[str, Any] = {

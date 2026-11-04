@@ -153,11 +153,13 @@ template; logger, level and exception; count, first and last seen.
 
 Exit: 0; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C]... [--limit 100] [--raw]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--limit 100] [--raw]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
-`raw`; `--columns` (repeatable) selects columns; `--raw` prints the raw text
-like `show --raw`.
+`raw`; `--columns` selects columns, comma-separated and/or repeated
+(`--columns ts,level_name --columns message`; order kept, duplicates dropped).
+An unknown column is error `invalid_value` naming it, with the valid columns
+in `hint`. `--raw` prints the raw text like `show --raw`.
 
 ```json
 {"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "truncated": true,
@@ -168,7 +170,8 @@ entries.v1 columns: `id, ts, tz_offset, level, level_name, thread, logger,
 message, body, user, request_id, session, ip, url, request_url, context,
 exception_type, exception_message, exception_chain, signature,
 coarse_signature, template, variables, source_path, source_line,
-source_offset, raw, parse_error`. Exit: 0 (also empty); 1; 3.
+source_offset, raw, parse_error`. Exit: 0 (also empty); 1 bad option or unknown
+column; 3.
 
 ### `query SET SQL`
 
