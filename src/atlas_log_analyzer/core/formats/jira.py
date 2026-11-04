@@ -11,6 +11,9 @@ Header layout::
 * ``<user> <reqid> <session> <ip>[,<ip>…] <url>`` on HTTP threads,
 * ``<user>  <service name>`` (two or more spaces) on scheduled services, e.g.
   ``anonymous    Mail Queue Service``; the service lands in ``context["service"]``.
+  ``ServiceRunner`` in the user slot is Jira's scheduler, not a user: it is
+  recorded as the service (``ServiceRunner`` alone, or the service name that
+  follows it) and no user is set.
 
 The ``url:`` segment may carry ``; user: <name>``, which is dropped from the URL
 (the user is also present in ``<context>``).
@@ -74,6 +77,8 @@ _SERVICE_SPLIT_RE = re.compile(r"\s{2,}")
 
 _LEVELS = {name: LogLevel[name] for name in ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")}
 _NO_USER = frozenset({"-", ""})
+_SERVICE_RUNNER = "ServiceRunner"
+"""Jira's scheduler in the user slot; recorded as the service, not as a user."""
 
 JIRA_RULES: tuple[MaskRule, ...] = (
     MaskRule.make(
@@ -144,10 +149,15 @@ def _parse_context(ctx: str | None, url: str | None) -> dict[str, str]:
                 out[key] = value
         return out
     parts = _SERVICE_SPLIT_RE.split(ctx, maxsplit=1)
-    if parts[0] not in _NO_USER:
-        out[CTX_USER] = parts[0]
-    if len(parts) > 1 and parts[1]:
-        out[CTX_SERVICE] = parts[1]
+    who = parts[0]
+    service = parts[1] if len(parts) > 1 and parts[1] else None
+    if who == _SERVICE_RUNNER:
+        out[CTX_SERVICE] = service or who
+        return out
+    if who not in _NO_USER:
+        out[CTX_USER] = who
+    if service:
+        out[CTX_SERVICE] = service
     return out
 
 

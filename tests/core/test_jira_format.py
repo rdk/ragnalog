@@ -146,6 +146,24 @@ HEADERS = [
         {CTX_USER: "anonymous", CTX_SERVICE: "Mail Queue Service"},
     ),
     (
+        "2026-10-29 02:20:00,001+0100 Caesium-1-3 INFO ServiceRunner     "
+        "[c.a.jira.servicedesk.sla.SlaUpdater] Recalculated SLA",
+        "Caesium-1-3",
+        LogLevel.INFO,
+        "c.a.jira.servicedesk.sla.SlaUpdater",
+        "Recalculated SLA",
+        {CTX_SERVICE: "ServiceRunner"},
+    ),
+    (
+        "2026-10-29 03:00:00,002+0100 Caesium-1-2 INFO ServiceRunner    Backup Service "
+        "[c.a.jira.bc.dataimport.X] Backup started",
+        "Caesium-1-2",
+        LogLevel.INFO,
+        "c.a.jira.bc.dataimport.X",
+        "Backup started",
+        {CTX_SERVICE: "Backup Service"},
+    ),
+    (
         "2026-10-24 07:00:29,106+0200 automation-rule-executor:thread-8 WARN Automation Robot     "
         "[c.c.X] Slow validation (923ms)",
         "automation-rule-executor:thread-8",

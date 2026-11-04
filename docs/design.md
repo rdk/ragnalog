@@ -279,8 +279,11 @@ substring); entry filters take `request_id=`. Uploads go through
 - **Jira header context.** Besides the request context, Jira writes a
   scheduled-service name after the user (`anonymous    Mail Queue Service`);
   it is stored under the context key `service` (`CTX_SERVICE` in
-  `formats/jira.py`). `url:` segments may carry `; user: X`, which is stripped;
-  the IP field may be a comma-separated list; `-` means no user.
+  `formats/jira.py`). `ServiceRunner` in the user slot is the scheduler, not a
+  user: it becomes the `service` (or the service name after it) and no user is
+  set, so it does not show up in `top_users`. `url:` segments may carry
+  `; user: X`, which is stripped; the IP field may be a comma-separated list;
+  `-` means no user.
 - **`is_header` is the full regex.** Message bodies can start with a timestamp,
   so a timestamp-only pre-check would create false headers. The full match is
   still ~40 MB/s on the sample data; parse + sign + group runs at ~16 MB/s and
