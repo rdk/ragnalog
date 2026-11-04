@@ -664,6 +664,7 @@ async def ingest(
     state: StateDep,
     name: Annotated[str | None, Query(max_length=128)] = None,
     format: str | None = None,
+    frames: Annotated[int | None, Query(ge=0)] = None,
     mine: bool = False,
     overwrite: bool = False,
     force: bool = False,
@@ -672,13 +673,18 @@ async def ingest(
 
     Poll ``GET /api/jobs/{id}`` until ``state`` is ``succeeded`` (``result`` holds the
     ``logset.v1`` manifest) or ``failed``/``cancelled``. Options may also be sent as
-    form fields ``name``, ``format``, ``mine``, ``overwrite``, ``force`` (ingest a file
+    form fields ``name``, ``format``, ``frames`` (top stack frames in signatures, as
+    ``atlas-log ingest --frames``), ``mine``, ``overwrite``, ``force`` (ingest a file
     over 64 MiB that is not in the format; otherwise the job fails with
     ``not_in_format``).
     """
     form = await request.form()
     name = name or _form_str(form.get("name"))
     format = format or _form_str(form.get("format"))
+    if frames is None and (text := _form_str(form.get("frames"))) is not None:
+        if not text.isdigit():
+            raise ApiError("invalid_value", f"frames must be an integer >= 0, not {text!r}")
+        frames = int(text)
     mine = mine or _form_str(form.get("mine")) in ("1", "true", "on", "yes")
     overwrite = overwrite or _form_str(form.get("overwrite")) in ("1", "true", "on", "yes")
     force = force or _form_str(form.get("force")) in ("1", "true", "on", "yes")
@@ -713,6 +719,7 @@ async def ingest(
         paths,
         name=name or None,
         format=format,
+        frames=frames,
         mine=mine,
         overwrite=overwrite,
         force=force,

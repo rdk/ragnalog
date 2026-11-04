@@ -73,7 +73,7 @@ the CLI's codes (an ambiguous signature prefix adds `"candidates"`). Status code
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto` or a set), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
 | `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
-| `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `mine`, `overwrite`, `force` as form fields or query | `job.v1`, status 202 and `Location` |
+| `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `frames`, `mine`, `overwrite`, `force` as form fields or query (as the `ingest` options) | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |

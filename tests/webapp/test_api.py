@@ -469,3 +469,19 @@ def test_ingest_large_foreign_file_needs_force(
     assert forced["state"] == "succeeded", forced
     assert forced["options"]["force"] is True
     assert forced["result"]["ingest"]["parse_errors"] == 1
+
+
+def test_ingest_frames_option(empty_client: TestClient) -> None:
+    upload = {"files": ("mini.log", MINI.read_bytes())}
+    job = empty_client.post("/api/ingest", files=upload, data={"frames": "2"}).json()
+    assert job["state"] == "succeeded", job
+    assert job["options"]["frames"] == 2
+    assert job["result"]["signature_spec"].endswith("F2")
+    again = {"files": ("mini.log", MINI.read_bytes() + b"\n")}
+    job = empty_client.post("/api/ingest?frames=1", files=again).json()
+    assert job["result"]["signature_spec"].endswith("F1")
+    bad = empty_client.post("/api/ingest", files=upload, data={"frames": "-1"})
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_value"
+    bad = empty_client.post("/api/ingest?frames=-1", files=upload)
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "usage"
+    assert not any((empty_client.app.state.atlas.store.root / ".uploads").glob("*/*"))
