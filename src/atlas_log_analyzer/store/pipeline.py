@@ -22,7 +22,7 @@ from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.grouping import Grouper, SignedEntry
 from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
 from atlas_log_analyzer.core.parser import parse_sources
-from atlas_log_analyzer.core.reader import SourceFile, discover_sources, iter_lines
+from atlas_log_analyzer.core.reader import SourceFile, discover_sources, iter_raw_lines
 from atlas_log_analyzer.core.signature import SignatureSpec, Signer
 from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.store.store import Store, StoreError
@@ -35,9 +35,11 @@ __all__ = [
     "IngestProgress",
     "IngestResult",
     "NoSourcesFound",
+    "SourceSelection",
     "detect_format",
     "ingest_paths",
     "ingest_sources",
+    "select_sources",
 ]
 
 PROGRESS_EVERY = 50_000
@@ -82,6 +84,8 @@ class IngestResult:
     """The set already existed and was reused without parsing."""
     merges: list[dict[str, Any]] | None = field(default=None)
     """Merge proposals (``{"cluster_id", "signatures", "drain_template"}``) when mined."""
+    skipped: tuple[str, ...] = ()
+    """Paths of files found in directories but not in the format (see :func:`select_sources`)."""
 
     def ingest_dict(self) -> dict[str, Any]:
         """Return the ``"ingest"`` object of the CLI's logset.v1 output."""
@@ -90,24 +94,91 @@ class IngestResult:
             "parse_errors": self.parse_errors,
             "elapsed_s": round(self.elapsed_s, 3),
             "existing": self.existing,
+            "skipped": list(self.skipped),
         }
 
 
+def _head(source: SourceFile) -> list[str]:
+    """Return the first :data:`SNIFF_LINES` lines of a source."""
+    lines = iter_raw_lines(source.path)
+    try:
+        return [text for _, _, text in islice(lines, SNIFF_LINES)]
+    finally:
+        lines.close()
+
+
 def detect_format(sources: Sequence[SourceFile]) -> LogFormat:
-    """Detect the format from the first :data:`SNIFF_LINES` lines of the first source.
+    """Detect the format from the first :data:`SNIFF_LINES` lines of the sources, in order.
+
+    The first source that some format recognises decides, so a directory whose
+    oldest file is an access or GC log is still detected.
 
     Raises:
-        FormatNotDetected: No format recognises the lines.
+        FormatNotDetected: No format recognises any source.
 
     """
-    first = [line.text for line in islice(iter_lines(sources[0].path), SNIFF_LINES)]
-    fmt = formats.detect(first)
-    if fmt is None:
-        raise FormatNotDetected(
-            f"could not detect the log format of {sources[0].path}; pass --format "
-            "(see `atlas-log formats`)"
-        )
-    return fmt
+    for source in sources:
+        fmt = formats.detect(_head(source))
+        if fmt is not None:
+            return fmt
+    raise FormatNotDetected(
+        f"could not detect the log format of {sources[0].path}; pass --format "
+        "(see `atlas-log formats`)"
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class SourceSelection:
+    """Result of :func:`select_sources`."""
+
+    sources: list[SourceFile]
+    """Files to ingest, in reading order."""
+    skipped: list[SourceFile]
+    """Files found in directories that the format does not recognise."""
+    fmt: LogFormat
+
+
+def select_sources(
+    paths: Iterable[Path | str], fmt: str | LogFormat | None = None
+) -> SourceSelection:
+    """Discover the files in ``paths``, resolve the format and drop foreign files.
+
+    A Jira log directory also holds access, GC and JSON logs that ``*.log*``
+    matches; parsed as Jira they would become one huge ``parse_error`` entry.
+    Files found by scanning a directory are therefore kept only when the format
+    recognises at least one of their first :data:`SNIFF_LINES` lines; files named
+    explicitly are always kept.
+
+    Raises:
+        NoSourcesFound: ``paths`` holds no log files, or none in the format.
+        FormatNotDetected: ``fmt`` is ``None`` and detection failed.
+        FileNotFoundError: A path does not exist.
+        LookupError: Unknown format name (``UnknownFormatError``).
+
+    """
+    path_list = list(paths)
+    found = discover_sources(path_list)
+    shown = ", ".join(str(p) for p in path_list)
+    if not found:
+        raise NoSourcesFound(f"no log files found in {shown}")
+    named = {Path(p).resolve() for p in path_list if Path(p).is_file()}
+    if isinstance(fmt, str):
+        fmt = formats.get(fmt)
+    elif fmt is None:
+        named_first = [s for s in found if s.path in named] + [
+            s for s in found if s.path not in named
+        ]
+        fmt = detect_format(named_first)
+    sources: list[SourceFile] = []
+    skipped: list[SourceFile] = []
+    for source in found:
+        if source.path in named or fmt.sniff(_head(source)) > 0:
+            sources.append(source)
+        else:
+            skipped.append(source)
+    if not sources:
+        raise NoSourcesFound(f"no {fmt.name} log files found in {shown}")
+    return SourceSelection(sources, skipped, fmt)
 
 
 @dataclass
@@ -239,10 +310,14 @@ def ingest_paths(
 ) -> IngestResult:
     """Discover sources in ``paths``, detect the format when not given, and ingest them.
 
+    Files found in directories that the format does not recognise are skipped
+    and listed in :attr:`IngestResult.skipped` (see :func:`select_sources`).
+
     Args:
         store: Target store.
         paths: Files and/or directories (non-recursive ``*.log*``).
-        fmt: Format name or object; default: detected from the first source.
+        fmt: Format name or object; default: detected from the sources (named files
+            first).
         name: Name of the new set.
         spec: Signature spec; default the format's.
         frames: Override ``spec.frames``.
@@ -259,19 +334,11 @@ def ingest_paths(
         StoreError: See :meth:`Store.ingest`.
 
     """
-    path_list = list(paths)
-    sources = discover_sources(path_list)
-    if not sources:
-        shown = ", ".join(str(p) for p in path_list)
-        raise NoSourcesFound(f"no log files found in {shown}")
-    if isinstance(fmt, str):
-        fmt = formats.get(fmt)
-    elif fmt is None:
-        fmt = detect_format(sources)
-    return ingest_sources(
+    selection = select_sources(paths, fmt)
+    result = ingest_sources(
         store,
-        sources,
-        fmt,
+        selection.sources,
+        selection.fmt,
         name=name,
         spec=spec,
         frames=frames,
@@ -280,3 +347,4 @@ def ingest_paths(
         progress=progress,
         progress_every=progress_every,
     )
+    return dataclasses.replace(result, skipped=tuple(str(s.path) for s in selection.skipped))

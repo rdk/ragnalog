@@ -45,15 +45,21 @@ from atlas_log_analyzer.cli.output import (
 )
 from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.java import is_app_frame
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.core.parser import parse_sources
-from atlas_log_analyzer.core.reader import SourceFile, iter_lines, iter_sources
+from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
 from atlas_log_analyzer.store import LogSet, Store
-from atlas_log_analyzer.store.pipeline import IngestProgress, ingest_sources
+from atlas_log_analyzer.store.pipeline import (
+    FormatNotDetected,
+    IngestProgress,
+    NoSourcesFound,
+    SourceSelection,
+    ingest_sources,
+    select_sources,
+)
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, MERGES_SCHEMA
 from atlas_log_analyzer.store.store import StoreError
 
@@ -411,29 +417,24 @@ def _selection(
     return list(preset) if brief else _columns(columns, valid)
 
 
-def _sources(paths: Sequence[Path]) -> list[SourceFile]:
+def _select(paths: Sequence[Path], name: str | None) -> SourceSelection:
+    """Files and format of `ingest`/`parse`; foreign files found in directories are skipped."""
     if not paths:
         raise CliError("usage", "at least one PATH is required")
-    sources = iter_sources(paths)
-    if not sources:
-        shown = ", ".join(str(p) for p in paths)
-        raise CliError("no_sources", f"no log files found in {shown}", ExitCode.NOT_FOUND)
-    return sources
-
-
-def _resolve_format(name: str | None, sources: Sequence[SourceFile]) -> LogFormat:
-    if name is not None:
-        return formats.get(name)
-    first = [line.text for line in islice(iter_lines(sources[0].path), SNIFF_LINES)]
-    fmt = formats.detect(first)
-    if fmt is None:
-        raise CliError(
-            "format_not_detected",
-            f"could not detect the log format of {sources[0].path}; pass --format "
-            "(see `atlas-log formats`)",
-            ExitCode.NOT_FOUND,
+    try:
+        selection = select_sources(paths, name)
+    except NoSourcesFound as exc:
+        raise CliError("no_sources", str(exc), ExitCode.NOT_FOUND) from exc
+    except FormatNotDetected as exc:
+        raise CliError("format_not_detected", str(exc), ExitCode.NOT_FOUND) from exc
+    if selection.skipped:
+        names = ", ".join(s.path.name for s in selection.skipped[:5])
+        more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
+        _out().info(
+            f"skipped {len(selection.skipped)} file(s) that are not {selection.fmt.name} "
+            f"logs: {names}{more}"
         )
-    return fmt
+    return selection
 
 
 def _manifest_dict(logset: LogSet) -> dict[str, Any]:
@@ -508,10 +509,13 @@ def ingest(
     """Parse log files into a stored log set and print its manifest.
 
     PATHs are files or directories (directories are scanned non-recursively for
-    *.log*; rotated files x.log.N are read oldest first). The log-set id is
-    derived from the file digests, so ingesting the same files again is a no-op
-    that prints the existing manifest (use --overwrite to rebuild it).
-    Progress goes to stderr.
+    *.log*; rotated files x.log.N are read oldest first). Files found in a
+    directory that the format does not recognise in their first 200 lines
+    (access, GC or JSON logs next to atlassian-jira.log) are skipped and
+    listed in "ingest.skipped"; files named explicitly are always read. The
+    log-set id is derived from the file digests, so ingesting the same files
+    again is a no-op that prints the existing manifest (use --overwrite to
+    rebuild it). Progress goes to stderr.
 
     Output (json): the manifest, schema "logset.v1":
       {"schema": "logset.v1", "id", "name", "format",
@@ -519,7 +523,8 @@ def ingest(
        "first_ts", "last_ts", "entry_count", "group_count", "created_at",
        "tool_version", "schema_version", "signature_version",
        "mask_rules_version", "signature_spec",
-       "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing"},
+       "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing",
+                  "skipped": [path, ...]},
        "merges": [{"cluster_id", "signatures": [str], "drain_template"}]}
     "merges" is present only with --mine; the proposals are also stored in
     merges.parquet (the "merges" view of `query`).
@@ -535,7 +540,8 @@ def ingest(
 
     Args:
         paths: Log files and/or directories.
-        format: Format name (see `formats`); default: detected from the first 200 lines.
+        format: Format name (see `formats`); default: detected from the first 200 lines
+            of the first file a format recognises (named files first).
         name: Human-readable alias for the set, usable wherever SET is expected.
         frames: Add the top N stack frames to signatures (finer groups); default 0.
         overwrite: Rebuild the set if one with the same id already exists.
@@ -545,8 +551,8 @@ def ingest(
     out = _out()
     if frames is not None and frames < 0:
         raise CliError("invalid_value", "--frames must be >= 0")
-    sources = _sources(paths)
-    fmt = _resolve_format(format, sources)
+    selection = _select(paths, format)
+    sources, fmt = selection.sources, selection.fmt
     store = _store(create=True)
     total = sum(s.size for s in sources)
     out.info(f"ingesting {len(sources)} file(s), {total / 1e6:.1f} MB, format {fmt.name}")
@@ -558,6 +564,7 @@ def ingest(
     result = ingest_sources(
         store, sources, fmt, name=name, frames=frames, overwrite=overwrite, progress=progress
     )
+    result = dataclasses.replace(result, skipped=tuple(str(s.path) for s in selection.skipped))
     logset = result.logset
     doc = _manifest_dict(logset)
     doc["ingest"] = result.ingest_dict()
@@ -1720,7 +1727,8 @@ def parse(*paths: Path, format: str | None = None, limit: int = 0) -> int:
                        "line", "module"}], "omitted_frames"}],
        "context": {"user", "request_id", "session", "ip", "url", "request_url", ...},
        "source": {"path", "line", "offset"}, "raw", "parse_error"}
-    Entries whose header could not be parsed have "parse_error" set.
+    Entries whose header could not be parsed have "parse_error" set. Files
+    found in a directory that are not in the format are skipped (as `ingest`).
 
     Exit codes: 0 ok; 1 unknown --format; 2 no files, format not detected or no
     entries.
@@ -1734,8 +1742,8 @@ def parse(*paths: Path, format: str | None = None, limit: int = 0) -> int:
     import msgspec
 
     lim = _limit(limit)
-    sources = _sources(paths)
-    fmt = _resolve_format(format, sources)
+    selection = _select(paths, format)
+    sources, fmt = selection.sources, selection.fmt
     encoder = msgspec.json.Encoder()
     stream = _out().out
     count = 0

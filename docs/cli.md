@@ -124,16 +124,20 @@ Parse files/directories (directories: non-recursive `*.log*`; rotated `x.log.N`
 read oldest first) into a log set. The id is derived from the file digests:
 re-ingesting the same files prints the existing manifest
 (`ingest.existing: true`) unless `--overwrite`. Format detection sniffs the
-first 200 lines of the first file. `--frames N` adds the top N stack frames to
-signatures. `--mine` runs Drain3 over the group templates (needs the `mine`
-extra) and stores proposals in `merges.parquet`.
+first 200 lines of each file (named files first) until a format recognises
+one. Files found in a directory whose first 200 lines contain no line of that
+format (the access, GC and JSON logs next to `atlassian-jira.log`) are skipped
+and listed in `ingest.skipped` (and on stderr); files named explicitly are
+always read. `--frames N` adds the top N stack frames to signatures. `--mine`
+runs Drain3 over the group templates (needs the `mine` extra) and stores
+proposals in `merges.parquet`.
 
 ```json
 {"schema": "logset.v1", "id": "99ee29398877dcd3", "name": "prod", "format": "jira",
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing"},
+ "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path]},
  "merges": [{"cluster_id", "signatures": [], "drain_template"}]}
 ```
 

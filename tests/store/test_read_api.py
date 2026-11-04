@@ -206,3 +206,54 @@ def test_ingest_paths_errors(tmp_path: Path) -> None:
     junk.write_text("not a log line\n", encoding="utf-8")
     with pytest.raises(FormatNotDetected):
         ingest_paths(store, [junk])
+
+
+ACCESS_LINE = (
+    '10.0.0.1 1x2x3 jdoe [29/Oct/2026:02:19:41 +0100] "GET /rest/api/2/issue HTTP/1.1" 200\n'
+)
+GC_LINE = "[2026-10-29T02:19:41.418+0100][12.123s] GC(1) Pause Young (Normal) 512M->128M 12.3ms\n"
+
+
+def mixed_dir(tmp_path: Path) -> Path:
+    """A Jira log directory: atlassian-jira.log plus an access and a GC log, the GC log oldest."""
+    folder = tmp_path / "log"
+    folder.mkdir()
+    (folder / "atlassian-jira.log").write_bytes(MINI.read_bytes())
+    (folder / "atlassian-jira-http-access.log").write_text(ACCESS_LINE * 500, encoding="utf-8")
+    gc = folder / "atlassian-jira-gc-2026-10-29_02-00-00.log.0.current"
+    gc.write_text(GC_LINE * 500, encoding="utf-8")
+    old = datetime(2026, 10, 1, tzinfo=UTC).timestamp()
+    os.utime(gc, (old, old))
+    return folder
+
+
+def test_ingest_paths_skips_foreign_files_in_directories(tmp_path: Path) -> None:
+    folder = mixed_dir(tmp_path)
+    result = ingest_paths(Store(tmp_path / "store"), [folder])
+    m = result.logset.manifest
+    assert m.format == "jira" and m.entry_count == 10 and result.parse_errors == 0
+    assert [Path(s.path).name for s in m.sources] == ["atlassian-jira.log"]
+    skipped = sorted(Path(p).name for p in result.skipped)
+    assert skipped == [
+        "atlassian-jira-gc-2026-10-29_02-00-00.log.0.current",
+        "atlassian-jira-http-access.log",
+    ]
+    assert result.ingest_dict()["skipped"] == list(result.skipped)
+
+
+def test_named_files_are_always_read(tmp_path: Path) -> None:
+    folder = mixed_dir(tmp_path)
+    access = folder / "atlassian-jira-http-access.log"
+    result = ingest_paths(Store(tmp_path / "store"), [folder / "atlassian-jira.log", access])
+    assert result.skipped == () and result.parse_errors == 1
+    assert len(result.logset.manifest.sources) == 2
+
+
+def test_select_sources_without_format_files(tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import select_sources
+
+    folder = tmp_path / "only-access"
+    folder.mkdir()
+    (folder / "access.log").write_text(ACCESS_LINE * 3, encoding="utf-8")
+    with pytest.raises(NoSourcesFound, match="no jira log files"):
+        select_sources([folder], "jira")

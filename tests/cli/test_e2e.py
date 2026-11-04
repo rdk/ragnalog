@@ -81,6 +81,28 @@ def test_ingest_is_idempotent(jcli: Invoke) -> None:
     assert jcli("sets").json()["count"] == 1
 
 
+def test_ingest_directory_skips_foreign_files(jcli: Invoke, tmp_path: Path) -> None:
+    folder = tmp_path / "log"
+    folder.mkdir()
+    (folder / "atlassian-jira.log").write_bytes(MINI_LOG.read_bytes())
+    access = '10.0.0.1 1x2x3 jdoe [29/Oct/2026:02:19:41 +0100] "GET /x HTTP/1.1" 200\n'
+    (folder / "atlassian-jira-http-access.log").write_text(access * 50, encoding="utf-8")
+    result = jcli("ingest", folder)
+    assert result.code == 0, result.stdout
+    doc = result.json()
+    assert doc["entry_count"] == 10 and doc["ingest"]["parse_errors"] == 0
+    assert [Path(p).name for p in doc["ingest"]["skipped"]] == ["atlassian-jira-http-access.log"]
+    assert "skipped 1 file(s) that are not jira logs" in result.stderr
+    assert jcli("parse", folder, "--limit", "1").code == 0
+    none = jcli("ingest", folder / "atlassian-jira-http-access.log", "--format", "jira")
+    assert none.code == 0  # a named file is read even when it is no Jira log
+    only = tmp_path / "only-access"
+    only.mkdir()
+    (only / "access.log").write_text(access, encoding="utf-8")
+    empty = jcli("ingest", only, "--format", "jira")
+    assert empty.code == 2 and empty.json()["error"]["code"] == "no_sources"
+
+
 def test_ingest_unknown_format(jcli: Invoke) -> None:
     result = jcli("ingest", MINI_LOG, "--format", "nope")
     assert result.code == 1
