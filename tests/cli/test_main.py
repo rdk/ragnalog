@@ -76,6 +76,7 @@ def test_other_einval_is_an_internal_error(
 ) -> None:
     """EINVAL while stdout still works (e.g. an invalid file name) is reported."""
     monkeypatch.delenv("ATLAS_LOG_DEBUG", raising=False)
+    monkeypatch.setattr(cli_app, "_CTX", None)  # no output settings left by other tests
     monkeypatch.setattr(sys, "argv", ["atlas-log", "--output", "json", "sets"])
     monkeypatch.setattr(cli_app, "run", _fail_with(OSError(errno.EINVAL, "bad name")))
     with pytest.raises(SystemExit) as stop:
