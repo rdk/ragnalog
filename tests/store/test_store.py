@@ -23,7 +23,7 @@ from atlas_log_analyzer.store import (
 )
 from atlas_log_analyzer.store.logset import ENTRIES_FILE, MANIFEST_FILE
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, SCHEMA_NAMES
-from atlas_log_analyzer.store.store import logset_id
+from atlas_log_analyzer.store.store import WRITE_LOCK_FILE, logset_id
 from atlas_log_analyzer.store.writer import iter_entries, write_merges
 
 from .conftest import DUPLICATES, N_PER_SOURCE, PARSE_ERRORS, Built, build
@@ -95,7 +95,8 @@ def test_dedup_and_files(built: Built) -> None:
     groups = pq.read_table(built.logset.path / "groups.parquet")
     assert groups.schema.remove_metadata().equals(GROUPS_SCHEMA.remove_metadata())
     # Nothing temporary left behind.
-    assert [p.name for p in built.store.root.iterdir()] == [built.logset.manifest.id]
+    left = [p.name for p in built.store.root.iterdir() if p.name != WRITE_LOCK_FILE]
+    assert left == [built.logset.manifest.id]
 
 
 def test_groups_recomputed_when_grouper_counts_duplicates(store: Store, built: Built) -> None:
@@ -197,7 +198,8 @@ def test_overwrite_replaces(built: Built) -> None:
     assert again.logset.manifest.created_at >= built.logset.manifest.created_at
     assert again.logset.manifest.entry_count == TOTAL_A
     assert len(built.store.list()) == 1
-    assert [p.name for p in built.store.root.iterdir()] == [built.logset.manifest.id]
+    sets = [p.name for p in built.store.root.iterdir() if not p.name.startswith(".")]
+    assert sets == [built.logset.manifest.id]
 
 
 def test_failed_ingest_leaves_nothing(store: Store) -> None:

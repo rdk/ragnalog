@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import os
 import shutil
+import threading
+import time
 import uuid
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
@@ -20,6 +23,7 @@ from atlas_log_analyzer.core.grouping import Group, Grouper, SignedEntry
 from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker
 from atlas_log_analyzer.core.reader import SourceFile
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec, Signer
+from atlas_log_analyzer.store.locks import FileLock, LockUnavailable
 from atlas_log_analyzer.store.logset import (
     ENTRIES_FILE,
     GROUPS_FILE,
@@ -37,6 +41,16 @@ __all__ = ["MIN_PREFIX", "AmbiguousLogSet", "LogSetNotFound", "Store", "StoreErr
 
 MIN_PREFIX = 4
 """Minimum length of an id prefix accepted by :meth:`Store.open`."""
+WRITE_LOCK_FILE = ".write.lock"
+"""Lock file in the store root, held while a set is renamed into place or removed."""
+WRITE_LOCK_TIMEOUT_S = 30.0
+"""How long a write waits for another process's install or removal to finish."""
+RETRY_DELAYS_S = (0.05, 0.1, 0.2, 0.4, 0.8)
+"""Back-off between attempts to rename or delete a set directory that is in use.
+
+On Windows a directory cannot be renamed or deleted while a reader has one of its
+files open; such readers are short-lived (one query), so a few retries suffice.
+"""
 
 
 class StoreError(Exception):
@@ -83,6 +97,24 @@ def _source_infos(
     return tuple(out)
 
 
+def _retry[T](action: Callable[[], T]) -> T:
+    """Run ``action``, retrying after :data:`RETRY_DELAYS_S` while it raises ``PermissionError``."""
+    for delay in RETRY_DELAYS_S:
+        try:
+            return action()
+        except PermissionError:
+            time.sleep(delay)
+    return action()
+
+
+def _remove_tree(path: Path) -> None:
+    """Delete ``path`` with retries; a leftover ``.trash-*`` directory is ignored by readers."""
+    try:
+        _retry(lambda: shutil.rmtree(path))
+    except OSError:
+        shutil.rmtree(path, ignore_errors=True)
+
+
 def _time_range(stats: Iterable[SourceStats]) -> tuple[datetime | None, datetime | None]:
     firsts = [s.first_ts for s in stats if s.first_ts is not None]
     lasts = [s.last_ts for s in stats if s.last_ts is not None]
@@ -94,28 +126,39 @@ class Store:
 
     Every log set lives in ``<root>/<id>/``. Directories whose names start with
     ``.`` are temporary (in-progress writes) and ignored by readers.
+
+    One instance may be shared by threads. Reads take no lock beyond a short one
+    around the manifest cache; a write locks the store (against other processes
+    too, see :data:`WRITE_LOCK_FILE`) only for its final name check and rename.
     """
 
     def __init__(self, root: Path) -> None:
         self.root = root
         self._index: dict[Path, tuple[int, int, LogSet | None]] = {}
         """Manifest cache: set dir → (manifest mtime_ns, size, loaded set or None if invalid)."""
+        self._index_lock = threading.Lock()
+        """Guards :attr:`_index`; manifests are loaded outside it."""
+        self._write_lock = threading.Lock()
+        """Serialises the installs and removals of this instance (see :meth:`_writing`)."""
 
     def _cached(self, d: Path) -> LogSet | None:
         """Load ``d`` through the manifest cache; ``None`` when unreadable or invalid."""
         try:
             st = (d / MANIFEST_FILE).stat()
         except OSError:
-            self._index.pop(d, None)
+            with self._index_lock:
+                self._index.pop(d, None)
             return None
-        hit = self._index.get(d)
+        with self._index_lock:
+            hit = self._index.get(d)
         if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
             return hit[2]
         try:
             ls: LogSet | None = LogSet.load(d)
         except OSError, ValueError:
             ls = None
-        self._index[d] = (st.st_mtime_ns, st.st_size, ls)
+        with self._index_lock:
+            self._index[d] = (st.st_mtime_ns, st.st_size, ls)
         return ls
 
     def _set_dirs(self) -> list[Path]:
@@ -130,8 +173,9 @@ class Store:
     def _load_all(self) -> list[LogSet]:
         dirs = self._set_dirs()
         live = set(dirs)
-        for stale in [d for d in self._index if d not in live]:
-            del self._index[stale]
+        with self._index_lock:
+            for stale in [d for d in self._index if d not in live]:
+                del self._index[stale]
         # corrupt or newer-schema sets are skipped by listings
         return [ls for d in dirs if (ls := self._cached(d)) is not None]
 
@@ -191,21 +235,56 @@ class Store:
         tmp.mkdir()
         return tmp
 
+    @contextmanager
+    def _writing(self) -> Iterator[None]:
+        """Hold the store's write lock: this instance's, then :data:`WRITE_LOCK_FILE`.
+
+        The file lock keeps another process (a CLI ingest next to ``serve``) from
+        installing a set under the same name at the same moment. On file systems
+        that cannot lock files only the in-process lock is held.
+        """
+        with self._write_lock:
+            self.root.mkdir(parents=True, exist_ok=True)
+            lock = FileLock(self.root / WRITE_LOCK_FILE)
+            try:
+                locked = lock.acquire(timeout=WRITE_LOCK_TIMEOUT_S)
+            except LockUnavailable:
+                locked = None
+            if locked is False:
+                raise StoreError(
+                    f"store {self.root} is locked by another writer "
+                    f"(waited {WRITE_LOCK_TIMEOUT_S:g} s)"
+                )
+            try:
+                yield
+            finally:
+                lock.release()
+
+    def _check_name(self, name: str | None, set_id: str) -> None:
+        if name is None:
+            return
+        for m in self.list():
+            if m.name == name and m.id != set_id:
+                raise StoreError(f"name {name!r} is already used by log set {m.id}")
+
+    def _trash(self, set_id: str) -> Path:
+        return self.root / f".trash-{set_id}-{uuid.uuid4().hex[:8]}"
+
     def _install(self, tmp: Path, set_id: str) -> Path:
-        """Move ``tmp`` to ``<root>/<set_id>``, replacing an existing set."""
+        """Move ``tmp`` to ``<root>/<set_id>``, replacing an existing set; hold :meth:`_writing`."""
         final = self.root / set_id
         trash: Path | None = None
         if final.exists():
-            trash = self.root / f".trash-{set_id}-{uuid.uuid4().hex[:8]}"
-            os.replace(final, trash)
+            trash = self._trash(set_id)
+            _retry(lambda: os.replace(final, trash))
         try:
-            os.replace(tmp, final)
+            _retry(lambda: os.replace(tmp, final))
         except OSError:
             if trash is not None:
-                os.replace(trash, final)
+                _retry(lambda: os.replace(trash, final))
             raise
         if trash is not None:
-            shutil.rmtree(trash, ignore_errors=True)
+            _remove_tree(trash)
         return final
 
     def ingest(
@@ -256,10 +335,7 @@ class Store:
         existing = self.root / set_id
         if (existing / MANIFEST_FILE).is_file() and not overwrite:
             return self._load(existing)
-        if name is not None:
-            for m in self.list():
-                if m.name == name and m.id != set_id:
-                    raise StoreError(f"name {name!r} is already used by log set {m.id}")
+        self._check_name(name, set_id)  # fail before parsing; checked again before the rename
         tmp = self._tmp_dir(set_id)
         try:
             with EntriesWriter(tmp / ENTRIES_FILE, dedupe=dedupe) as writer:
@@ -289,7 +365,13 @@ class Store:
                 signature_spec=spec.key,
             )
             manifest.write(tmp)
-            final = self._install(tmp, set_id)
+            with self._writing():
+                # another writer may have taken the name or built the same set meanwhile
+                self._check_name(name, set_id)
+                if not overwrite and (existing / MANIFEST_FILE).is_file():
+                    shutil.rmtree(tmp, ignore_errors=True)
+                    return self._load(existing)
+                final = self._install(tmp, set_id)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
@@ -334,7 +416,8 @@ class Store:
                 signature_spec=spec.key,
             )
             manifest.write(tmp)
-            final = self._install(tmp, m.id)
+            with self._writing():
+                final = self._install(tmp, m.id)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
@@ -343,12 +426,22 @@ class Store:
     def remove(self, ref: str) -> None:
         """Delete a log set directory.
 
+        The directory is first renamed out of the way, so the set disappears at
+        once and a failure leaves it intact, then deleted. Both steps are retried
+        while a reader holds one of its files open (Windows).
+
         Raises:
             StoreError: The set does not exist or cannot be deleted.
 
         """
         ls = self.open(ref)
-        try:
-            shutil.rmtree(ls.path)
-        except OSError as exc:
-            raise StoreError(f"cannot remove log set {ls.manifest.id}: {exc}") from exc
+        set_id = ls.manifest.id
+        trash = self._trash(set_id)
+        with self._writing():
+            try:
+                _retry(lambda: os.replace(ls.path, trash))
+            except OSError as exc:
+                raise StoreError(f"cannot remove log set {set_id}: {exc}") from exc
+        with self._index_lock:
+            self._index.pop(ls.path, None)
+        _remove_tree(trash)
