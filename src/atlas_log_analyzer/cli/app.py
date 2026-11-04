@@ -563,6 +563,9 @@ def groups(
     logger: str | None = None,
     since: str | None = None,
     until: str | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
+    contains: str | None = None,
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: int = 50,
     offset: int = 0,
@@ -595,6 +598,12 @@ def groups(
     --brief is the preset --columns signature,template,level_name,logger,
     exception_type,count,first_seen,last_seen; --brief with --columns is a
     usage error.
+    --with-exception keeps groups that carry an exception (exception_type not
+    null) at any level, so a DEBUG entry with a stack trace is found even
+    though --min-level WARN would hide it. --exception TEXT matches a
+    case-insensitive substring of exception_type (the outermost exception);
+    --contains TEXT a case-insensitive substring of template. With --coarse
+    all filters apply to the member groups.
 
     Exit codes: 0 ok (also when no group matches); 1 bad option, unknown
     column, or --brief with --columns; 3 unknown set or store error.
@@ -607,6 +616,9 @@ def groups(
         since: Only groups with an entry at/after this time (last_seen >= since): ISO 8601
             (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry.
         until: Only groups first seen before this time (same forms as --since).
+        with_exception: Only groups with an exception (exception_type not null), any level.
+        exception: Only groups whose exception_type contains this text (case-insensitive).
+        contains: Only groups whose template contains this text (case-insensitive).
         sort: count, last_seen (newest first), first_seen (oldest first), signature, template.
         limit: Maximum number of rows; 0 = all.
         offset: Skip this many rows first (paging: next offset = offset + count).
@@ -628,6 +640,9 @@ def groups(
         "since": _when(since, "--since", last),
         "until": _when(until, "--until", last),
         "coarse": coarse,
+        "with_exception": with_exception,
+        "exception": exception,
+        "contains": contains,
     }
     df = ls.groups(**filters, sort=sort, limit=lim, offset=skip)
     complete = skip == 0 and (lim is None or df.height < lim)
@@ -752,6 +767,8 @@ def entries(
     since: str | None = None,
     until: str | None = None,
     contains: str | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
     columns: list[str] | None = None,
     brief: bool = False,
     limit: int = 100,
@@ -780,6 +797,9 @@ def entries(
     "invalid_value" whose "hint" lists the valid columns. --brief is the
     preset --columns id,ts,level_name,thread,logger,message,exception_type,
     signature; --brief with --columns is a usage error.
+    --with-exception keeps entries with an exception (exception_type not
+    null) at any level; --exception TEXT matches a case-insensitive substring
+    of exception_type (the outermost exception).
     "raw" and "body" are cut to --max-raw characters (default 4000 in
     json/jsonl, no limit in table and --raw mode); a cut text ends with
     "… [truncated: N chars total, use --max-raw 0]" and its row gets
@@ -801,6 +821,8 @@ def entries(
             30m/2h/1d before the set's last entry.
         until: Only entries before this time (same forms as --since).
         contains: Only entries whose raw text contains this text (case-insensitive).
+        with_exception: Only entries with an exception (exception_type not null), any level.
+        exception: Only entries whose exception_type contains this text (case-insensitive).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         brief: Only id, ts, level_name, thread, logger, message, exception_type, signature.
         limit: Maximum number of rows; 0 = all.
@@ -825,6 +847,8 @@ def entries(
         "since": _when(since, "--since", last),
         "until": _when(until, "--until", last),
         "contains": contains,
+        "with_exception": with_exception,
+        "exception": exception,
     }
     if raw:
         cols = ["raw", "source_path", "source_line"]

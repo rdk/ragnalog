@@ -89,6 +89,9 @@ unique id prefix (resolved in that order).
 | `--min-level L` | This level or more severe. |
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
 | `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
+| `--with-exception` | `groups`, `entries`: only rows that carry an exception (`exception_type` not null), at any level — a DEBUG entry with a stack trace is found although `--min-level WARN` hides it. |
+| `--exception TEXT` | `groups`, `entries`: case-insensitive substring of `exception_type` (the outermost exception of the chain; `Caused by:` types are not searched). |
+| `--contains TEXT` | `entries`: case-insensitive substring of `raw`. `groups`: case-insensitive substring of the masked `template`. |
 | `--limit N` | Maximum rows; `0` = all. |
 | `--offset N` | `groups`, `entries`: skip N rows first (paging; default 0). |
 
@@ -124,7 +127,7 @@ files, format not detected, or zero entries (manifest still printed); 3.
 
 Newest first. Exit: 0 (also empty); 3.
 
-### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--sort K] [--limit 50] [--offset 0] [--coarse] [--columns C[,C…]]... [--brief]`
+### `groups SET [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--sort K] [--limit 50] [--offset 0] [--coarse] [--columns C[,C…]]... [--brief]`
 
 One row per signature. `--sort`: `count` (default, desc), `last_seen` (desc),
 `first_seen` (asc), `signature`, `template`. `--coarse` groups by coarse
@@ -135,6 +138,7 @@ signature and `signatures` lists the members.
 repeated, as for `entries`; `signatures` is valid with `--coarse`). `--brief`
 is the preset `signature, template, level_name, logger, exception_type, count,
 first_seen, last_seen`. `--brief` together with `--columns` is a usage error.
+With `--coarse` the filters apply to the member groups before aggregation.
 
 ```json
 {"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "offset": 0, "truncated": true, "items": [
@@ -167,7 +171,7 @@ cut have neither key, so short entries look exactly as before.
 
 Exit: 0; 1 bad option; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
 `--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
 `raw`; `--columns` selects columns, comma-separated and/or repeated
@@ -336,6 +340,10 @@ atlas-log query after "select user, count(*) n from entries
 atlas-log query after "select date_trunc('hour', ts) h,
   count(*) filter (where level >= 50) errors, count(*) total,
   round(100.0 * errors / total, 1) pct from entries group by 1 order by 1"
+
+# Exceptions at any level (DEBUG stack traces included), then one exception type
+atlas-log groups after --with-exception --brief
+atlas-log entries after --exception InternalException --brief
 
 # The last 2 hours of the log (relative to its last entry)
 atlas-log groups after --since 2h --min-level ERROR

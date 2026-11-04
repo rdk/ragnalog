@@ -110,6 +110,8 @@ Repeat 2–4; on an error, read `error.hint` for the next step.
   means more rows follow; fetch the next page with `--offset <offset + count>`.
 - Keep rows small: `--brief` (a documented column preset) or
   `--columns a,b,c` on `groups` and `entries`.
+- Level filters hide DEBUG stack traces; `--with-exception` (any level with an
+  exception) and `--exception TEXT` (substring of `exception_type`) do not.
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).

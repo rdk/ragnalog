@@ -50,3 +50,58 @@ def write_log(path: Path, entries: Iterable[E]) -> Path:
 def long_body(lines: int = 200) -> str:
     """A long continuation text (about 80 characters per line)."""
     return "\n".join(f"    detail {i:05d} " + "y" * 64 for i in range(lines))
+
+
+PLUGIN_TRACE = "\n".join(
+    [
+        "com.qoti.rf.exceptions.InternalException: Cannot compute stat type for customfield_10001",
+        "\tat com.qoti.rf.stats.type.StatTypeHelper.resolve(StatTypeHelper.java:88)",
+        "\tat com.atlassian.jira.issue.fields.CustomFieldImpl.getValue(CustomFieldImpl.java:412)",
+        "\tat org.acme.jira.reports.ReportService.build(ReportService.java:57)",
+        "\tat java.base/java.util.ArrayList.forEach(ArrayList.java:1596)",
+        "\tat com.atlassian.plugin.osgi.hostcomponents.impl.DefaultComponentRegistrar.invoke"
+        "(DefaultComponentRegistrar.java:129)",
+        "\tat org.apache.catalina.core.ApplicationFilterChain.doFilter"
+        "(ApplicationFilterChain.java:166)",
+        "Caused by: java.lang.IllegalArgumentException: unknown stat type 'priority-x'",
+        "\tat com.qoti.rf.stats.type.StatTypes.of(StatTypes.java:31)",
+        "\tat com.google.common.collect.Iterators.transform(Iterators.java:800)",
+        "\tat java.base/java.lang.Thread.run(Thread.java:1583)",
+        "\t... 12 more",
+    ]
+)
+"""A plugin exception whose frames mix plugin code (com.qoti., org.acme.) with platform code."""
+
+SERVER_TRACE = "\n".join(
+    [
+        "java.lang.IllegalStateException: Search index is being rebuilt",
+        "\tat com.atlassian.jira.issue.search.providers.LuceneSearchProvider.search"
+        "(LuceneSearchProvider.java:301)",
+    ]
+)
+
+EXCEPTION_MIX = [
+    E("09:00:00,000", "Caesium-1-1", "INFO", "c.a.jira.Sched", "Job ran"),
+    E(
+        "09:00:01,000",
+        "http-nio-8080-exec-1",
+        "DEBUG",
+        "c.q.r.stats.type.StatTypeHelper",
+        "Stat type failed for field customfield_10001",
+        user="alice",
+        request_id="540x101x1",
+        body=PLUGIN_TRACE,
+    ),
+    E("09:00:02,000", "http-nio-8080-exec-2", "WARN", "c.a.jira.Slow", "Slow query took 1500 ms"),
+    E(
+        "09:00:03,000",
+        "http-nio-8080-exec-3",
+        "ERROR",
+        "c.a.j.rest.ExceptionInterceptor",
+        "Returning internal server error in response",
+        user="bob",
+        request_id="540x102x1",
+        body=SERVER_TRACE,
+    ),
+]
+"""INFO, DEBUG with a plugin exception, WARN without exception, ERROR with an exception."""

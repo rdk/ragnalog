@@ -242,6 +242,20 @@ def _logger_filter(logger: str) -> pl.Expr:
     return (col == logger) | col.str.starts_with(logger + ".")
 
 
+def _icontains(column: str, text: str) -> pl.Expr:
+    """Case-insensitive literal substring test on a (possibly dictionary-encoded) column."""
+    return pl.col(column).cast(pl.String).str.contains(f"(?i){re.escape(text)}")
+
+
+def _exception_filters(with_exception: bool, exception: str | None) -> list[pl.Expr]:
+    out: list[pl.Expr] = []
+    if with_exception:
+        out.append(pl.col("exception_type").is_not_null())
+    if exception is not None:
+        out.append(_icontains("exception_type", exception))
+    return out
+
+
 def _and(exprs: Iterable[pl.Expr]) -> pl.Expr | None:
     result: pl.Expr | None = None
     for e in exprs:
@@ -261,9 +275,12 @@ def _entry_predicate(
     since: datetime | None = None,
     until: datetime | None = None,
     contains: str | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
 ) -> pl.Expr | None:
     """Conjunction of the entry filters of :meth:`LogSet.entries`, or ``None`` when none."""
     filters = _level_filters(level, min_level)
+    filters += _exception_filters(with_exception, exception)
     if signature is not None:
         filters.append(pl.col("signature") == signature)
     if coarse_signature is not None:
@@ -290,9 +307,15 @@ def _group_predicate(
     logger: str | None = None,
     since: datetime | None = None,
     until: datetime | None = None,
+    with_exception: bool = False,
+    exception: str | None = None,
+    contains: str | None = None,
 ) -> pl.Expr | None:
     """Conjunction of the group filters of :meth:`LogSet.groups`, or ``None`` when none."""
     filters = _level_filters(level, min_level)
+    filters += _exception_filters(with_exception, exception)
+    if contains is not None:
+        filters.append(_icontains("template", contains))
     if logger is not None:
         filters.append(_logger_filter(logger))
     if since is not None:
@@ -449,6 +472,9 @@ class LogSet:
         limit: int | None = None,
         offset: int = 0,
         coarse: bool = False,
+        with_exception: bool = False,
+        exception: str | None = None,
+        contains: str | None = None,
     ) -> pl.DataFrame:
         """Return filtered, sorted groups; ``coarse=True`` aggregates by ``coarse_signature``.
 
@@ -470,7 +496,10 @@ class LogSet:
                 ``sources``/``source_count`` are exact; ``user_count``/``thread_count`` are
                 the maximum over members (a lower bound) and ``top_users``/``top_threads``
                 merge the members' top-10 lists. Template, level, logger and exception type
-                come from the largest member.
+                come from the largest member. Filters apply to the member groups.
+            with_exception: Keep groups whose ``exception_type`` is not null (any level).
+            exception: Case-insensitive substring of ``exception_type``.
+            contains: Case-insensitive substring of ``template``.
 
         Raises:
             ValueError: Unknown level name or sort key.
@@ -480,7 +509,14 @@ class LogSet:
             raise ValueError(f"unknown sort {sort!r}; expected one of {', '.join(GROUP_SORTS)}")
         lf = self.groups_lazy()
         cond = _group_predicate(
-            level=level, min_level=min_level, logger=logger, since=since, until=until
+            level=level,
+            min_level=min_level,
+            logger=logger,
+            since=since,
+            until=until,
+            with_exception=with_exception,
+            exception=exception,
+            contains=contains,
         )
         if cond is not None:
             lf = lf.filter(cond)
@@ -508,6 +544,9 @@ class LogSet:
         since: datetime | None = None,
         until: datetime | None = None,
         coarse: bool = False,
+        with_exception: bool = False,
+        exception: str | None = None,
+        contains: str | None = None,
     ) -> int:
         """Count the groups :meth:`groups` would return with the same filters (no limit).
 
@@ -520,7 +559,14 @@ class LogSet:
         """
         lf = self.groups_lazy()
         cond = _group_predicate(
-            level=level, min_level=min_level, logger=logger, since=since, until=until
+            level=level,
+            min_level=min_level,
+            logger=logger,
+            since=since,
+            until=until,
+            with_exception=with_exception,
+            exception=exception,
+            contains=contains,
         )
         if cond is not None:
             lf = lf.filter(cond)
@@ -556,6 +602,8 @@ class LogSet:
         offset: int = 0,
         columns: list[str] | None = None,
         coarse_signature: str | None = None,
+        with_exception: bool = False,
+        exception: str | None = None,
     ) -> pl.DataFrame:
         """Return filtered entries, ordered by timestamp (ties keep file order).
 
@@ -573,6 +621,8 @@ class LogSet:
             offset: Number of rows to skip (in timestamp order) before ``limit`` applies.
             columns: Columns to return (default: all entries.v1 columns).
             coarse_signature: Coarse signature (exact).
+            with_exception: Keep entries whose ``exception_type`` is not null (any level).
+            exception: Case-insensitive substring of ``exception_type``.
 
         Raises:
             ValueError: Unknown level name.
@@ -589,6 +639,8 @@ class LogSet:
             since=since,
             until=until,
             contains=contains,
+            with_exception=with_exception,
+            exception=exception,
         )
         lf = self.entries_lazy()
         if cond is not None:
@@ -613,6 +665,8 @@ class LogSet:
         until: datetime | None = None,
         contains: str | None = None,
         coarse_signature: str | None = None,
+        with_exception: bool = False,
+        exception: str | None = None,
     ) -> int:
         """Count the entries :meth:`entries` would return with the same filters (no limit).
 
@@ -631,6 +685,8 @@ class LogSet:
             since=since,
             until=until,
             contains=contains,
+            with_exception=with_exception,
+            exception=exception,
         )
         lf = self.entries_lazy()
         if cond is not None:
