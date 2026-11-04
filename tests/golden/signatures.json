@@ -1,0 +1,12 @@
+{
+  "signature_v1+mask_rules_v1+L+G+E+F0": {
+    "jira/edge_cases.log": {
+      "count": 15,
+      "xxh3": "b9146de0978e3491"
+    },
+    "jira/sample.log": {
+      "count": 47,
+      "xxh3": "47d34a397fa71f2e"
+    }
+  }
+}
