@@ -16,7 +16,7 @@ Stable read API (used by the CLI and the web app): :meth:`Store.list`,
 :meth:`Store.open` (raising :class:`LogSetNotFound` / :class:`AmbiguousLogSet`,
 both :class:`StoreError`) and the read methods of :class:`LogSet` —
 ``manifest``, ``groups``/``count_groups``/``group``, ``entries``/``count_entries``/
-``entry``, ``histogram``, ``stats`` and ``sql`` — plus :func:`rows` and
+``entry``/``context``, ``histogram``, ``stats`` and ``sql`` — plus :func:`rows` and
 :func:`to_records` to turn frames into Python or JSON-ready dicts.
 """
 

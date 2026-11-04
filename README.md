@@ -97,9 +97,11 @@ atlas-log ingest LOGS/ --name today                         # 1. build the set (
 atlas-log groups today --min-level ERROR --limit 20 --brief # 2. triage: check "total"/"truncated"
 atlas-log show today SIGNATURE --limit 5                    # 3. drill into one group
 atlas-log entries today --signature SIGNATURE --since 2h --raw   # 4. read the raw text
+atlas-log context today ENTRY_ID --before 10                # 5. what the thread did around it
+atlas-log entries today --request-id REQUEST_ID --brief     # 6. the whole HTTP request
 ```
 
-Repeat 2–4; on an error, read `error.hint` for the next step.
+Repeat 2–6; on an error, read `error.hint` for the next step.
 
 ## Quick start (agents)
 

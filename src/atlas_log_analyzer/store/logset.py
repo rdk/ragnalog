@@ -277,10 +277,13 @@ def _entry_predicate(
     contains: str | None = None,
     with_exception: bool = False,
     exception: str | None = None,
+    request_id: str | None = None,
 ) -> pl.Expr | None:
     """Conjunction of the entry filters of :meth:`LogSet.entries`, or ``None`` when none."""
     filters = _level_filters(level, min_level)
     filters += _exception_filters(with_exception, exception)
+    if request_id is not None:
+        filters.append(pl.col("request_id") == request_id)
     if signature is not None:
         filters.append(pl.col("signature") == signature)
     if coarse_signature is not None:
@@ -604,6 +607,7 @@ class LogSet:
         coarse_signature: str | None = None,
         with_exception: bool = False,
         exception: str | None = None,
+        request_id: str | None = None,
     ) -> pl.DataFrame:
         """Return filtered entries, ordered by timestamp (ties keep file order).
 
@@ -623,6 +627,7 @@ class LogSet:
             coarse_signature: Coarse signature (exact).
             with_exception: Keep entries whose ``exception_type`` is not null (any level).
             exception: Case-insensitive substring of ``exception_type``.
+            request_id: Request id from the request context (exact).
 
         Raises:
             ValueError: Unknown level name.
@@ -641,6 +646,7 @@ class LogSet:
             contains=contains,
             with_exception=with_exception,
             exception=exception,
+            request_id=request_id,
         )
         lf = self.entries_lazy()
         if cond is not None:
@@ -667,6 +673,7 @@ class LogSet:
         coarse_signature: str | None = None,
         with_exception: bool = False,
         exception: str | None = None,
+        request_id: str | None = None,
     ) -> int:
         """Count the entries :meth:`entries` would return with the same filters (no limit).
 
@@ -687,6 +694,7 @@ class LogSet:
             contains=contains,
             with_exception=with_exception,
             exception=exception,
+            request_id=request_id,
         )
         lf = self.entries_lazy()
         if cond is not None:
@@ -749,6 +757,53 @@ class LogSet:
             {"bucket": _bucket_iso(b * size), "count": counts.get(b, 0)}
             for b in range(first, last + 1)
         ]
+
+    def context(
+        self,
+        entry_id: str,
+        *,
+        before: int = 5,
+        after: int = 5,
+        same_thread: bool = True,
+        columns: list[str] | None = None,
+    ) -> pl.DataFrame | None:
+        """Return the entries immediately around one entry in time order, the entry included.
+
+        Order is the order of :meth:`entries` (timestamp, ties in file order).
+
+        Args:
+            entry_id: Id of the anchor entry (exact).
+            before: Entries to return before the anchor.
+            after: Entries to return after the anchor.
+            same_thread: Only consider entries of the anchor's thread.
+            columns: Columns to return (default: all entries.v1 columns).
+
+        Returns:
+            At most ``before + 1 + after`` rows, or ``None`` when no entry has this id.
+
+        Raises:
+            ValueError: ``before`` or ``after`` is negative.
+
+        """
+        if before < 0 or after < 0:
+            raise ValueError("before and after must be >= 0")
+        lf = self.entries_lazy().with_row_index("_row")
+        anchor = lf.filter(pl.col("id") == entry_id).select("_row", "thread").head(1).collect()
+        if anchor.height == 0:
+            return None
+        row, thread = anchor.row(0)
+        keys = lf
+        if same_thread:
+            same = pl.col("thread").is_null() if thread is None else pl.col("thread") == thread
+            keys = keys.filter(same)
+        order = keys.select("_row", "ts").sort(["ts", "_row"]).collect()["_row"]
+        pos = int(order.index_of(row) or 0)
+        start = max(0, pos - before)
+        wanted = order.slice(start, pos - start + after + 1)
+        out = lf.filter(pl.col("_row").is_in(wanted.implode())).sort(["ts", "_row"]).drop("_row")
+        if columns is not None:
+            out = out.select(columns)
+        return out.collect()
 
     def entry(self, entry_id: str) -> dict[str, Any] | None:
         """One entry as a dict (all columns), or ``None``.

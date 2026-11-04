@@ -105,3 +105,27 @@ EXCEPTION_MIX = [
     ),
 ]
 """INFO, DEBUG with a plugin exception, WARN without exception, ERROR with an exception."""
+
+
+REQ_A, REQ_B, REQ_C = "540x201x1", "540x202x1", "540x203x1"
+EXEC_1, EXEC_2 = "http-nio-8080-exec-1", "http-nio-8080-exec-2"
+REQUESTS = [
+    E("09:00:00,000", EXEC_1, "INFO", "c.e.reports.Web", "Report started", "alice", REQ_A),
+    E("09:00:00,500", EXEC_2, "INFO", "c.e.reports.Web", "Report started", "bob", REQ_B),
+    E("09:00:01,000", EXEC_1, "DEBUG", "c.e.reports.Stat", "Computing stats", "alice", REQ_A),
+    E("09:00:01,000", EXEC_1, "DEBUG", "c.e.reports.Stat", "Computing more stats", "alice", REQ_A),
+    E("09:00:01,500", "Caesium-1-1", "INFO", "c.a.jira.Sched", "Job ran"),
+    E("09:00:02,000", EXEC_2, "WARN", "c.e.reports.Stat", "Slow stat", "bob", REQ_B),
+    E(
+        "09:00:03,000",
+        EXEC_1,
+        "ERROR",
+        "c.e.reports.Web",
+        "Report failed",
+        "alice",
+        REQ_A,
+        body=SERVER_TRACE,
+    ),
+    E("09:00:05,000", EXEC_1, "INFO", "c.e.reports.Web", "Report started", "alice", REQ_C),
+]
+"""Two interleaved requests on two threads, a scheduler entry, and a later request."""

@@ -171,10 +171,11 @@ cut have neither key, so short entries look exactly as before.
 
 Exit: 0; 1 bad option; 2 no entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
+### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
-`--user`/`--thread` are exact; `--contains` is a case-insensitive substring of
-`raw`; `--columns` selects columns, comma-separated and/or repeated
+`--user`/`--thread`/`--request-id` are exact (`--request-id` is the Jira
+request id of the request context, e.g. `540x101x1`: all entries of one HTTP
+request); `--contains` is a case-insensitive substring of `raw`; `--columns` selects columns, comma-separated and/or repeated
 (`--columns ts,level_name --columns message`; order kept, duplicates dropped).
 An unknown column is error `invalid_value` naming it, with the valid columns
 in `hint`. `--brief` is the preset `id, ts, level_name, thread, logger,
@@ -193,6 +194,22 @@ exception_type, exception_message, exception_chain, signature,
 coarse_signature, template, variables, source_path, source_line,
 source_offset, raw, parse_error`. Exit: 0 (also empty); 1 bad option, unknown
 column, `--brief` with `--columns`; 3.
+
+### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N]`
+
+The entries immediately around one entry in time order (ties in file order),
+restricted to the anchor's thread unless `--any-thread`; the anchor itself is
+included. Entry ids are the `id` column of `entries`/`show` or a group's
+`examples`. `--max-raw` as for `show`.
+
+```json
+{"schema": "entries.v1", "logset": "…", "anchor": "<entry id>", "thread": "http-nio-8080-exec-1",
+ "any_thread": false, "count": 11, "items": [<entries.v1 row>]}
+```
+
+At most `--before + 1 + --after` items. `jsonl`: one row per line, the anchor
+row with an extra `"anchor": true`. The table marks the anchor row with `▶`.
+Exit: 0; 1 bad option; 2 no entry with this id (`not_found`, with a hint); 3.
 
 ### `query SET SQL`
 

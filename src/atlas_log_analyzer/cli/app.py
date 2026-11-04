@@ -764,6 +764,7 @@ def entries(
     logger: str | None = None,
     user: str | None = None,
     thread: str | None = None,
+    request_id: str | None = None,
     since: str | None = None,
     until: str | None = None,
     contains: str | None = None,
@@ -817,6 +818,7 @@ def entries(
         logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
         user: Only this user (exact).
         thread: Only this thread (exact).
+        request_id: Only this request id (exact; the Jira request context, e.g. 540x101x1).
         since: Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or
             30m/2h/1d before the set's last entry.
         until: Only entries before this time (same forms as --since).
@@ -844,6 +846,7 @@ def entries(
         "logger": logger,
         "user": user,
         "thread": thread,
+        "request_id": request_id,
         "since": _when(since, "--since", last),
         "until": _when(until, "--until", last),
         "contains": contains,
@@ -872,6 +875,93 @@ def entries(
         columns=columns or ENTRY_COLUMNS,
         title=f"entries of {ls.manifest.id}",
     )
+
+
+ANCHOR_MARK = "▶"
+"""Marks the anchor row of `context` in table mode."""
+
+
+@app.command
+def context(
+    logset: str,
+    entry_id: str,
+    /,
+    *,
+    before: int = 5,
+    after: int = 5,
+    any_thread: bool = False,
+    max_raw: int | None = None,
+) -> int:
+    """Show the entries immediately around one entry, in time order (same thread by default).
+
+    Answers "what did this request/thread do just before and after?": the
+    --before entries preceding ENTRY_ID and the --after entries following it
+    in time order (ties in file order), restricted to the anchor's thread
+    unless --any-thread. The anchor itself is included. Entry ids come from
+    the "id" column of `entries`, `show` or a group's "examples".
+
+    Output (json):
+      {"schema": "entries.v1", "logset": id, "anchor": <entry id>,
+       "thread": <anchor's thread> | null, "any_thread": bool, "count": int,
+       "items": [<entries.v1 row>, ...]}
+    "items" holds at most --before + 1 + --after rows, the anchor among them.
+    "raw" and "body" are cut as in `entries` (--max-raw, default 4000 in
+    json/jsonl). In jsonl mode one row per line; the anchor row has an extra
+    "anchor": true. The table marks the anchor row with ▶.
+
+    Exit codes: 0 ok; 1 bad option; 2 no entry with this id; 3 unknown set or
+    store error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+        entry_id: Id of the anchor entry (16 hex chars, from `entries`/`show`).
+        before: Entries to show before the anchor.
+        after: Entries to show after the anchor.
+        any_thread: Consider entries of all threads, not only the anchor's thread.
+        max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
+            in json/jsonl mode, no limit in table mode.
+
+    """
+    for flag, value in (("--before", before), ("--after", after)):
+        if value < 0:
+            raise CliError("invalid_value", f"{flag} must be >= 0")
+    cap = _max_raw(max_raw, text=False)
+    ls = _open(logset)
+    df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
+    if df is None:
+        ref = ls.manifest.name or ls.manifest.id
+        raise CliError(
+            "not_found",
+            f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
+            ExitCode.NOT_FOUND,
+            hint=f'entry ids are the "id" column of `atlas-log entries {ref} --brief` '
+            f"or `atlas-log show {ref} SIGNATURE`",
+        )
+    items = _cap_items(jsonable_rows(df), cap)
+    anchor = next(row for row in items if row["id"] == entry_id)
+    thread = anchor.get("thread")
+    out = _out()
+    title = f"context of {entry_id}" + ("" if any_thread else f" (thread {thread})")
+
+    def render(console: Console) -> None:
+        rows = [{"": ANCHOR_MARK if r["id"] == entry_id else "", **r} for r in items]
+        cols = ["", "ts", "level_name", "thread", "user", "logger", "message"]
+        console.print(rows_table(rows, cols, title=title, color=out.color))
+
+    out.emit(
+        "entries.v1",
+        {
+            "logset": ls.manifest.id,
+            "anchor": entry_id,
+            "thread": thread,
+            "any_thread": any_thread,
+            "count": len(items),
+            "items": items,
+        },
+        jsonl_rows=[{**r, "anchor": True} if r["id"] == entry_id else r for r in items],
+        table=render,
+    )
+    return 0
 
 
 @app.command

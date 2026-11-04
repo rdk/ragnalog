@@ -14,6 +14,7 @@ COMMANDS = [
     "groups",
     "show",
     "entries",
+    "context",
     "query",
     "stats",
     "diff",

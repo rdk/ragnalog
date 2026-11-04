@@ -257,10 +257,13 @@ The web app uses only the stable read API: `Store.list()`, `Store.open(ref)`
 cached per `Store` instance and re-read when their file changes) and on `LogSet`:
 `groups(..., limit, offset)`, `count_groups(...)`, `group(signature, coarse=)`,
 `entries(..., limit, offset)`, `count_entries(...)`, `entry(id)`,
+`context(id, before=, after=, same_thread=)` (entries around one entry),
 `histogram(bucket, ...)` (epoch-aligned integer buckets, no tz database),
 `stats()` and `sql(query, max_rows=)` (file access limited to the set's Parquet
 files, configuration locked). `level`/`min_level` accept a `LogLevel`, a name,
-a comma-separated string or an iterable. Uploads go through
+a comma-separated string or an iterable. Group and entry filters also take
+`with_exception=`/`exception=` (and `contains=` on groups, a template
+substring); entry filters take `request_id=`. Uploads go through
 `store.pipeline.ingest_paths(..., progress=)`, which reports `IngestProgress`.
 
 ## 10. Quality
