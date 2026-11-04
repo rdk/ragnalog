@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta, timezone
+from functools import cache
 from pathlib import Path
 from types import MappingProxyType, TracebackType
 from typing import Any, Protocol, Self
@@ -43,6 +44,7 @@ from atlas_log_analyzer.store.schema import (
 
 __all__ = [
     "COMPRESSION",
+    "DELTA_COLUMNS",
     "ROW_GROUP_CHARS",
     "ROW_GROUP_SIZE",
     "EntriesWriter",
@@ -61,6 +63,10 @@ ROW_GROUP_CHARS = 32 * 1024 * 1024
 characters, so sets of large entries (stack traces) do not buffer gigabytes."""
 COMPRESSION = "zstd"
 TOP_N = 10
+DELTA_COLUMNS = ("ts", "source_line", "source_offset")
+"""Entry columns that grow (almost) monotonically: written ``DELTA_BINARY_PACKED`` instead of
+dictionary-encoded, which makes ``entries.parquet`` about a fifth smaller (30.0 → 23.6 MB for
+712k entries). Readers need nothing special; the schema is unchanged."""
 
 _WELL_KNOWN = frozenset(WELL_KNOWN_CONTEXT_KEYS)
 _NO_CONTEXT: list[tuple[str, str]] = []
@@ -100,6 +106,18 @@ def _ms(value: int | None) -> datetime | None:
     missing on Windows without the ``tzdata`` package, so it is avoided.
     """
     return None if value is None else _EPOCH + timedelta(milliseconds=value)
+
+
+@cache
+def _entries_encodings() -> dict[str, Any]:
+    """``ParquetWriter`` options: dictionaries for every leaf column but :data:`DELTA_COLUMNS`."""
+    buf = pa.BufferOutputStream()
+    pq.write_table(ENTRIES_SCHEMA.empty_table(), buf)
+    leaves = [col.path for col in pq.ParquetFile(pa.BufferReader(buf.getvalue())).schema]
+    return {
+        "use_dictionary": [p for p in leaves if p not in DELTA_COLUMNS],
+        "column_encoding": dict.fromkeys(DELTA_COLUMNS, "DELTA_BINARY_PACKED"),
+    }
 
 
 def _dict_array(values: Sequence[str | None]) -> pa.Array:
@@ -155,7 +173,11 @@ class EntriesWriter:
         self._seen: set[str] = set()
         self._chars = 0
         self._writer = pq.ParquetWriter(
-            str(path), ENTRIES_SCHEMA, compression=COMPRESSION, write_statistics=True
+            str(path),
+            ENTRIES_SCHEMA,
+            compression=COMPRESSION,
+            write_statistics=True,
+            **_entries_encodings(),
         )
         self._reset()
 

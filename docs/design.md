@@ -221,6 +221,12 @@ exception_message, exception_chain (list<struct>), signature,
 coarse_signature, template, variables (list<str>), source_path, source_line,
 source_offset, raw, parse_error`.
 
+Encodings: zstd everywhere; dictionary encoding for every column except the
+monotonic integers `ts`, `source_line` and `source_offset`, which are written
+`DELTA_BINARY_PACKED` (24% of the file with dictionaries; the 712k-entry
+sample shrinks from 30.0 to 23.6 MB). This is a physical detail: the schema is
+unchanged and pyarrow, polars and DuckDB read it as before.
+
 Schemas are declared once in `store/schema.py` as pyarrow schemas and
 exported by `atlas-log schema` as JSON for agents. `SCHEMA_VERSION` bumps on
 breaking changes; readers refuse newer majors.

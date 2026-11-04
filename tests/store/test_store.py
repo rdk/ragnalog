@@ -649,3 +649,34 @@ def test_format_docs_up_to_date(name: str) -> None:
     spec.loader.exec_module(mod)
     text = (docs / f"{name}.v1.md").read_text(encoding="utf-8")
     assert text == mod.render(name), "run: uv run python docs/formats/generate.py"
+
+
+def test_monotonic_columns_are_delta_encoded(built: Built) -> None:
+    import duckdb
+
+    from atlas_log_analyzer.store.writer import DELTA_COLUMNS
+
+    path = built.logset.entries_path
+    meta = pq.ParquetFile(path).metadata
+    encodings = {
+        (col := meta.row_group(0).column(i)).path_in_schema: col.encodings
+        for i in range(meta.num_columns)
+    }
+    for name in DELTA_COLUMNS:
+        assert "DELTA_BINARY_PACKED" in encodings[name]
+        assert "RLE_DICTIONARY" not in encodings[name]
+    assert "RLE_DICTIONARY" in encodings["logger"]
+    assert "RLE_DICTIONARY" in encodings["exception_chain.list.element.type"]
+    # every reader decodes the same values
+    expected = pq.read_table(path, columns=list(DELTA_COLUMNS))
+    want = [
+        expected["ts"].cast("int64").to_pylist(),
+        expected["source_line"].to_pylist(),
+        expected["source_offset"].to_pylist(),
+    ]
+    df = pl.read_parquet(path, columns=list(DELTA_COLUMNS))
+    assert [ms(df["ts"]), df["source_line"].to_list(), df["source_offset"].to_list()] == want
+    rows = duckdb.sql(
+        f"select epoch_ms(ts), source_line, source_offset from read_parquet('{path.as_posix()}')"
+    ).fetchall()
+    assert [list(col) for col in zip(*rows, strict=True)] == want
