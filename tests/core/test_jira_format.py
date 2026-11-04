@@ -15,9 +15,11 @@ from atlas_log_analyzer.core.formats.base import (
 )
 from atlas_log_analyzer.core.formats.jira import (
     CTX_SERVICE,
+    HEADER_RE,
     UNKNOWN_TIMESTAMP,
     JiraFormat,
     _iso,
+    match_header,
     parse_timestamp,
 )
 from atlas_log_analyzer.core.models import LogLevel, SourceRef
@@ -205,6 +207,68 @@ def test_header_shapes(
     assert h.message == message
     assert dict(h.context) == context
     assert h.timestamp.tzinfo is not None
+
+
+def _regex_groups(line: str) -> tuple[str | None, ...] | None:
+    m = HEADER_RE.match(line)
+    return None if m is None else m.groups()
+
+
+TS = "2026-10-29 02:19:41,415+0100"
+TRICKY = [
+    *(case[0] for case in HEADERS),
+    f"{TS} t url: INFO [c.a.X] m",  # " url: " runs into the level token
+    f"{TS} t url: INFO x WARN [c.a.X] m",
+    f"{TS} t url:  INFO [c.a.X] m",
+    f"{TS} t url: /a INFO u\t[c.a.X] m",
+    f"{TS} t url: /a INFO \tu [c.a.X] m",  # ctx must not start with a tab
+    f"{TS} t INFO [a b] x WARN [c.a.X] m",
+    f"{TS} t INFO x[c.a.X] WARN [c.b.Y] m",
+    f"{TS} t INFO [] WARN [c.a.X] m",
+    f"{TS} t INFO [c.a.X]m",
+    f"{TS} t INFO [c.a.X]",
+    f"{TS}  INFO [c.a.X] empty thread",
+    f"{TS} INFO [c.a.X] no thread",
+    f"{TS} t INFO\xa0[c.a.X] m",
+    f"{TS} t url: a url: b ERROR [c.a.X] m",
+    f"{TS}t INFO [c.a.X] m",
+    "2026-10-29 02:19:41,415 t INFO [c.a.X] m",
+    "",
+    TS,
+]
+
+
+@pytest.mark.parametrize("line", TRICKY)
+def test_match_header_equals_regex(line: str) -> None:
+    assert match_header(line) == _regex_groups(line)
+
+
+def test_match_header_equals_regex_on_random_lines() -> None:
+    import random
+
+    tokens = [" ", "  ", " url: ", "url:", " INFO", " ERROR ", " WARN", "WARN ", " DEBUG ",
+              "[", "]", "[c.a.X]", "[a b]", "x", "\t", " -", "; user: u", "]x", " FATAL",
+              "\xa0"]  # fmt: skip
+    rng = random.Random(1104)
+    for _ in range(20_000):
+        line = f"{TS} " + "".join(rng.choice(tokens) for _ in range(rng.randint(0, 12)))
+        assert match_header(line) == _regex_groups(line), line
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        f"{TS} t" + " INFO a" * 30_000,  # no [logger]: quadratic for the regex
+        f"{TS} t url: x" + " url: x INFO a" * 15_000,
+        f"{TS} t" + " INFO a[x]" * 20_000 + " INFO [c.a.X] m",
+    ],
+)
+def test_long_non_header_lines_are_fast(jira: JiraFormat, line: str) -> None:
+    import time
+
+    started = time.perf_counter()
+    jira.is_header(line)
+    assert time.perf_counter() - started < 0.5
 
 
 def test_parse_header_without_is_header_call(jira: JiraFormat) -> None:

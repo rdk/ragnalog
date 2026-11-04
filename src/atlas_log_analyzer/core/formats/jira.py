@@ -23,7 +23,7 @@ from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -50,6 +50,7 @@ __all__ = [
     "JIRA_RULES",
     "UNKNOWN_TIMESTAMP",
     "JiraFormat",
+    "match_header",
     "parse_timestamp",
 ]
 
@@ -67,7 +68,83 @@ HEADER_RE = re.compile(
     r" +(?:(?P<ctx>[^\[\s][^\[]*?) +)?"
     r"\[(?P<logger>[^\]\s]+)\] ?(?P<msg>.*)"
 )
-"""Anchored header regex; ``thread``/``url``/``ctx`` are lazy, ``LEVEL`` and ``[logger]`` anchor."""
+"""Anchored header regex; ``thread``/``url``/``ctx`` are lazy, ``LEVEL`` and ``[logger]`` anchor.
+
+The definition of a header. Parsing uses :func:`match_header`, which returns the
+same groups in linear time: the regex backtracks quadratically on long lines that
+start with a timestamp but are no header (seconds for 100 KB).
+"""
+
+_TS_HEAD_RE = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}[+-]\d{4} ")
+_LEVEL_TOKEN_RE = re.compile(r" (TRACE|DEBUG|INFO|WARN|ERROR|FATAL)(?= )")
+_LOGGER_RE = re.compile(r"\[([^\]\s]+)\] ?")
+_SPACES_RE = re.compile(r" +")
+_THREAD_START = 29
+"""Index after ``<ts> ``; the thread has at least one character."""
+
+type HeaderGroups = tuple[str, str, str | None, str, str | None, str, str]
+"""``(ts, thread, url, level, ctx, logger, msg)`` as ``HEADER_RE.match(line).groups()``."""
+
+
+def _tails(line: str, start: int) -> Iterator[tuple[int, str, str | None, str, str]]:
+    """Yield ``(pos, level, ctx, logger, msg)`` of each level token that can end a header.
+
+    Level tokens (`` LEVEL`` at ``pos >= start``) are tried left to right; one can end
+    a header when the rest of :data:`HEADER_RE` (``ctx`` and ``[logger]``) follows it.
+    ``ctx`` cannot contain ``[``, so ``[logger]`` is the first ``[`` after the level;
+    candidates that share it share its verdict, which keeps the scan linear.
+    """
+    bracket = -1
+    logger_m: re.Match[str] | None = None
+    for m in _LEVEL_TOKEN_RE.finditer(line, start):
+        q = m.end()  # the space after the level
+        if bracket < q:
+            bracket = line.find("[", q)
+            if bracket < 0:
+                return
+            logger_m = _LOGGER_RE.match(line, bracket)
+            if line[bracket - 1] != " ":
+                logger_m = None
+        if logger_m is None:
+            continue
+        spaces = _SPACES_RE.match(line, q)
+        j = spaces.end() if spaces is not None else q
+        if j == bracket:
+            ctx = None
+        elif line[j].isspace():
+            continue  # ctx must not start with whitespace
+        else:
+            ctx = line[j:bracket].rstrip(" ")
+        yield m.start(), m.group(1), ctx, logger_m.group(1), line[logger_m.end() :]
+
+
+def match_header(line: str) -> HeaderGroups | None:
+    """Match a header line like :data:`HEADER_RE` but in linear time.
+
+    The regex takes the shortest thread for which the rest matches, trying the
+    ``url:`` segment first at each length: the result is the leftmost level token
+    that ``[logger]`` can follow, with the first `` url: `` before it (and at least
+    one character of URL) splitting thread and URL.
+    """
+    if _TS_HEAD_RE.match(line) is None:
+        return None
+    tails = _tails(line, _THREAD_START + 1)
+    first = next(tails, None)
+    if first is None:
+        return None
+    pos, level, ctx, logger, msg = first
+    url_at = line.find(" url: ", _THREAD_START + 1, pos + 1)
+    if url_at < 0:
+        return line[:28], line[_THREAD_START:pos], None, level, ctx, logger, msg
+    url_end = pos
+    if url_at + 7 > pos:  # " url: " runs into the level token: the URL needs a later one
+        later = next((t for t in tails if t[0] >= url_at + 7), None)
+        if later is None:
+            return line[:28], line[_THREAD_START:pos], None, level, ctx, logger, msg
+        url_end, level, ctx, logger, msg = later
+    url = line[url_at + 6 : url_end]
+    return line[:28], line[_THREAD_START:url_at], url, level, ctx, logger, msg
+
 
 _REQUEST_CTX_RE = re.compile(
     r"(?P<user>\S+) (?P<reqid>\d+x\d+x\d+|-) (?P<session>\S+) (?P<ip>\S+) (?P<url>\S.*)"
@@ -175,32 +252,32 @@ class JiraFormat:
     signature_spec: SignatureSpec = DEFAULT_SPEC
 
     def __init__(self) -> None:
-        # (line, match) of the last successful is_header call; one tuple so that
+        # (line, groups) of the last successful is_header call; one tuple so that
         # concurrent use of an instance can never pair a line with another match.
-        self._last: tuple[str, re.Match[str]] | None = None
+        self._last: tuple[str, HeaderGroups] | None = None
 
     def is_header(self, line: str) -> bool:
         """Full header match (with a cheap ``"20"`` pre-check)."""
         if line[:2] != "20":
             return False
-        m = HEADER_RE.match(line)
-        if m is None:
+        groups = match_header(line)
+        if groups is None:
             return False
-        self._last = (line, m)
+        self._last = (line, groups)
         return True
 
     def parse_header(self, line: str) -> HeaderMatch | None:
         """Parse a header line into its fields; ``None`` when it does not match."""
         last = self._last
         if last is not None and last[0] is line:
-            m: re.Match[str] | None = last[1]
+            groups: HeaderGroups | None = last[1]
         elif line[:2] == "20":
-            m = HEADER_RE.match(line)
+            groups = match_header(line)
         else:
             return None
-        if m is None:
+        if groups is None:
             return None
-        ts, thread, url, level, ctx, logger, msg = m.groups()
+        ts, thread, url, level, ctx, logger, msg = groups
         try:
             timestamp = parse_timestamp(ts)
         except ValueError:

@@ -284,10 +284,14 @@ substring); entry filters take `request_id=`. Uploads go through
   set, so it does not show up in `top_users`. `url:` segments may carry
   `; user: X`, which is stripped; the IP field may be a comma-separated list;
   `-` means no user.
-- **`is_header` is the full regex.** Message bodies can start with a timestamp,
-  so a timestamp-only pre-check would create false headers. The full match is
-  still ~40 MB/s on the sample data; parse + sign + group runs at ~16 MB/s and
-  ingest to Parquet end to end at ~10 MB/s (712k entries from 191 MB in 18 s).
+- **`is_header` is the full header match.** Message bodies can start with a
+  timestamp, so a timestamp-only pre-check would create false headers.
+  `HEADER_RE` defines a header; `match_header` returns the same groups in
+  linear time (the regex backtracks quadratically on long timestamp-led lines
+  that are no header: 36 s for 200 KB). It is checked against the regex on all
+  780k sample lines and on random lines (tests). Parse + sign + group runs at
+  ~16 MB/s and ingest to Parquet end to end at ~10 MB/s (712k entries from
+  191 MB in 18 s).
 - **Signatures.** Hashes are over UTF-8 bytes (`xxhash` 4 no longer hashes
   `str`). When an exception message's first line ends with `:` (Groovy
   `startup failed:`), the next non-empty line joins the signature so different
