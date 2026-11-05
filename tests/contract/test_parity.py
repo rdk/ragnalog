@@ -37,6 +37,7 @@ from atlas_log_analyzer.store.store import Store
 from atlas_log_analyzer.webapp import Settings, create_app
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jira"
+CLUSTER = Path(__file__).resolve().parents[1] / "fixtures" / "cluster"
 
 VOLATILE = frozenset({"created_at", "elapsed_s", "tool_version", "report_url"})
 """Keys dropped at any depth: they differ between runs, not between front ends."""
@@ -296,6 +297,193 @@ CASES: list[Case] = [
     ),
 ]
 
+# The capture views, on a store of their own (cluster_dir): nodes NODE1 and NODE2 of
+# capture "cap-acme" of cluster "acme" (tests/fixtures/cluster) and an earlier NODE1 set
+# (tests/cluster.py), the triage baseline of NODE1. Placeholders: {n1} = the NODE1 set id,
+# {sig} = the heartbeat group (on both nodes), {pfx} = its first 6 characters,
+# {entry} = an entry of NODE1 inside the overlap.
+CLUSTER_CASES: list[Case] = [
+    Case("capture", ["capture", "cluster:acme"], "/api/captures/cluster:acme"),
+    Case(
+        "capture-union-no-triage",
+        ["capture", "capture:cap-a", "--window", "union", "--no-triage"],
+        "/api/captures/capture:cap-a?window=union&triage=false",
+    ),
+    Case(
+        "capture-since-until",
+        ["capture", "cluster:acme@2026-11-02", "--since", "2026-11-02T10:00", "--until", "1h"],
+        "/api/captures/cluster:acme@2026-11-02?since=2026-11-02T10:00&until=1h",
+    ),
+    Case("capture-of-a-member-set", ["capture", "{n1}"], "/api/captures/{n1}"),
+    Case("capture-of-one-set", ["capture", "acme_node1_prev"], "/api/captures/acme_node1_prev"),
+    Case("cluster-timeline", ["timeline", "cluster:acme"], "/api/captures/cluster:acme/timeline"),
+    Case(
+        "cluster-timeline-group",
+        ["timeline", "acme_node1", "--by-node", "--bucket", "15m", "--signature", "{pfx}"],
+        "/api/captures/acme_node1/timeline?bucket=15m&signature={pfx}",
+    ),
+    Case("set-timeline", ["timeline", "acme_node2"], "/api/sets/acme_node2/timeline"),
+    Case(
+        "set-timeline-filters",
+        ["timeline", "acme_node2", "--bucket", "30m", "--min-level", "WARN", "--since", "2h"],
+        "/api/sets/acme_node2/timeline?bucket=30m&min_level=WARN&since=2h",
+    ),
+    Case("matrix", ["matrix", "cluster:acme"], "/api/captures/cluster:acme/matrix"),
+    Case(
+        "matrix-spread-sort-page",
+        ["matrix", "cluster:acme", "--spread", "only", "--sort", "lead", "--limit", "2"],
+        "/api/captures/cluster:acme/matrix?spread=only&sort=lead&limit=2",
+    ),
+    Case(
+        "matrix-filters",
+        ["matrix", "cluster:acme", "--min-level", "WARN", "--node", "NODE1", "--skew-min", "2"],
+        "/api/captures/cluster:acme/matrix?min_level=WARN&node=NODE1&skew_min=2",
+    ),
+    Case(
+        "matrix-signature-window",
+        ["matrix", "cluster:acme", "--signature", "{pfx}", "--window", "union", "--offset", "0"],
+        "/api/captures/cluster:acme/matrix?signature={pfx}&window=union&offset=0",
+    ),
+    Case(
+        "matrix-contains-since",
+        ["matrix", "cluster:acme", "--contains", "deadlock", "--since", "2026-11-02T10:00"],
+        "/api/captures/cluster:acme/matrix?contains=deadlock&since=2026-11-02T10:00",
+    ),
+    Case("events", ["events", "cluster:acme"], "/api/captures/cluster:acme/events"),
+    Case(
+        "events-kinds",
+        ["events", "cluster:acme", "--kind", "index_replay,cluster_lock", "--kind", "start"],
+        "/api/captures/cluster:acme/events?kind=index_replay,cluster_lock&kind=start",
+    ),
+    Case(
+        "interactions", ["interactions", "cluster:acme"], "/api/captures/cluster:acme/interactions"
+    ),
+    Case(
+        "interactions-delta-union",
+        ["interactions", "cluster:acme", "--delta", "120", "--window", "union"],
+        "/api/captures/cluster:acme/interactions?delta=120&window=union",
+    ),
+    Case(
+        "merged-entries",
+        ["entries", "cluster:acme", "--limit", "5"],
+        "/api/captures/cluster:acme/entries?limit=5",
+    ),
+    Case(
+        "merged-entries-page-filters",
+        ["entries", "cluster:acme", "--min-level", "WARN", "--limit", "3", "--offset", "2"],
+        "/api/captures/cluster:acme/entries?min_level=WARN&limit=3&offset=2",
+    ),
+    Case(
+        "merged-entries-window",
+        [
+            "entries",
+            "cluster:acme",
+            "--since",
+            "2026-11-02T10:59:00Z",
+            "--until",
+            "2026-11-02T11:01:00Z",
+            "--brief",
+        ],
+        "/api/captures/cluster:acme/entries?since=2026-11-02T10:59:00Z"
+        "&until=2026-11-02T11:01:00Z&brief=true",
+    ),
+    Case(
+        "merged-entries-columns-signature",
+        ["entries", "cluster:acme", "--columns", "id,ts,node", "--signature", "{pfx}"],
+        "/api/captures/cluster:acme/entries?columns=id,ts,node&signature={pfx}",
+    ),
+    Case(
+        "merged-entries-union-max-raw",
+        ["entries", "cluster:acme", "--window", "union", "--max-raw", "30", "--limit", "4"],
+        "/api/captures/cluster:acme/entries?window=union&max_raw=30&limit=4",
+    ),
+    Case(
+        "context-all-nodes",
+        ["context", "{n1}", "{entry}", "--all-nodes"],
+        "/api/sets/{n1}/entries/{entry}/context?all_nodes=1",
+    ),
+    Case(
+        "context-all-nodes-window",
+        ["context", "acme_node1", "{entry}", "--all-nodes", "--window", "600", "--brief"],
+        "/api/sets/acme_node1/entries/{entry}/context?all_nodes=true&window=600&brief=true",
+    ),
+    # --- errors
+    Case(
+        "error-unknown-capture",
+        ["capture", "cluster:nope"],
+        "/api/captures/cluster:nope",
+        exit=2,
+        status=404,
+        reason="capture_not_found",
+    ),
+    Case(
+        "error-capture-bad-day",
+        ["matrix", "cluster:acme@yesterday"],
+        "/api/captures/cluster:acme@yesterday/matrix",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-capture-unknown-set",
+        ["events", "nope"],
+        "/api/captures/nope/events",
+        exit=3,
+        status=404,
+        reason="set_not_found",
+    ),
+    Case(
+        "error-capture-bad-window",
+        ["interactions", "cluster:acme", "--window", "all"],
+        "/api/captures/cluster:acme/interactions?window=all",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-capture-no-overlap-time",
+        ["capture", "cluster:acme", "--since", "2026-11-03", "--until", "2026-11-02"],
+        "/api/captures/cluster:acme?since=2026-11-03&until=2026-11-02",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-matrix-unknown-node",
+        ["matrix", "cluster:acme", "--node", "NODE9"],
+        "/api/captures/cluster:acme/matrix?node=NODE9",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-matrix-no-group",
+        ["matrix", "cluster:acme", "--signature", "0000000000000000"],
+        "/api/captures/cluster:acme/matrix?signature=0000000000000000",
+        exit=2,
+        status=404,
+        reason="group_not_found",
+    ),
+    Case(
+        "error-events-unknown-kind",
+        ["events", "cluster:acme", "--kind", "reboot"],
+        "/api/captures/cluster:acme/events?kind=reboot",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-context-no-capture",
+        ["context", "acme_node1_prev", "0000000000000000", "--all-nodes"],
+        "/api/sets/acme_node1_prev/entries/0000000000000000/context?all_nodes=1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-context-all-nodes-no-entry",
+        ["context", "acme_node1", "0000000000000000", "--all-nodes"],
+        "/api/sets/acme_node1/entries/0000000000000000/context?all_nodes=1",
+        exit=2,
+        status=404,
+        reason="entry_not_found",
+    ),
+]
+
 HTTP_CAPS: list[Case] = [
     # By design: one HTTP response holds a bounded page; the CLI writes any number of rows.
     Case(
@@ -371,6 +559,49 @@ def store_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
 def client(store_dir: Path) -> Iterator[TestClient]:
     with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))) as c:
         yield c
+
+
+@pytest.fixture(scope="module")
+def cluster_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    """Capture ``cap-acme`` (cluster ``acme``): ``acme_node1``, ``acme_node2``; ``acme_node1_prev``.
+
+    ``acme_node1_prev`` is an earlier NODE1 set in no capture: NODE1's triage baseline.
+    """
+    from tests.cluster import write_node_files
+
+    root = tmp_path_factory.mktemp("cluster-parity")
+    store = Store(root / "store")
+    for node in ("NODE1", "NODE2"):
+        name = f"acme_{node.lower()}"
+        ingest_paths(store, [CLUSTER / node], name=name)
+        store.label(name, node=node, cluster="acme", capture="cap-acme")
+    prev = write_node_files(root / "prev", "NODE1", prefix=False, day="2026-11-01")
+    ingest_paths(store, prev, name="acme_node1_prev")
+    store.label("acme_node1_prev", node="NODE1", cluster="acme")
+    return root / "store"
+
+
+@pytest.fixture(scope="module")
+def cluster_client(cluster_dir: Path) -> Iterator[TestClient]:
+    with TestClient(create_app(Settings(store=cluster_dir, sync_jobs=True))) as c:
+        yield c
+
+
+@pytest.fixture(scope="module")
+def cluster_refs(cluster_dir: Path) -> dict[str, str]:
+    import polars as pl
+
+    store = Store(cluster_dir)
+    n1 = store.open("acme_node1")
+    groups = n1.groups(contains="heartbeat", limit=1)
+    sig = str(groups["signature"][0])
+    inside = n1.entries_lazy().filter(pl.col("ts").dt.hour() == 11).select("id").head(1)
+    return {
+        "n1": n1.manifest.id,
+        "sig": sig,
+        "pfx": sig[:6],
+        "entry": str(inside.collect()["id"][0]),
+    }
 
 
 @pytest.fixture(scope="module")
@@ -465,6 +696,28 @@ def test_cli_and_api_agree(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.delenv("ATLAS_LOG_APP_PACKAGES", raising=False)
+    agree(case, store_dir, client, refs, capsys)
+
+
+@pytest.mark.parametrize("case", CLUSTER_CASES, ids=lambda c: c.id)
+def test_capture_views_agree(
+    case: Case,
+    cluster_dir: Path,
+    cluster_client: TestClient,
+    cluster_refs: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    agree(case, cluster_dir, cluster_client, cluster_refs, capsys)
+
+
+def agree(
+    case: Case,
+    store_dir: Path,
+    client: TestClient,
+    refs: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """Run ``case`` on both front ends and compare (an error: reason, exit code, status)."""
     argv = [a.format(**refs) for a in case.cli]
     code, cli_doc = _cli(store_dir, argv, capsys)
     status, api_doc = _api(client, case.api.format(**refs))

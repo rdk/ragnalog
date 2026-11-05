@@ -30,10 +30,13 @@ from atlas_log_analyzer.webapp import Settings, create_app
 
 from . import test_parity as parity
 
-# the parity store and front ends (module-scoped: this module gets its own store)
+# the parity stores and front ends (module-scoped: this module gets its own stores)
 store_dir = parity.store_dir
 client = parity.client
 refs = parity.refs
+cluster_dir = parity.cluster_dir
+cluster_client = parity.cluster_client
+cluster_refs = parity.cluster_refs
 
 
 # --- a small JSON Schema validator: the keywords msgspec and document_schema emit
@@ -128,6 +131,35 @@ def test_parity_documents_match_their_structs(
     _, api_doc = parity._api(client, case.api.format(**refs))
     check(cli_doc)
     check(api_doc)
+
+
+@pytest.mark.parametrize("case", parity.CLUSTER_CASES, ids=lambda c: c.id)
+def test_capture_view_documents_match_their_structs(
+    case: parity.Case,
+    cluster_dir: Path,
+    cluster_client: TestClient,
+    cluster_refs: dict[str, str],
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    _, cli_doc = parity._cli(cluster_dir, [a.format(**cluster_refs) for a in case.cli], capsys)
+    _, api_doc = parity._api(cluster_client, case.api.format(**cluster_refs))
+    check(cli_doc)
+    check(api_doc)
+
+
+def test_cluster_report_documents(
+    cluster_dir: Path,
+    cluster_client: TestClient,
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    payload = cluster_client.get("/api/captures/cluster:acme/report?examples=2").json()
+    assert check(payload) == "cluster-report.v1"
+    assert payload["urls"]["entries"] == "/api/captures/capture:cap-acme/entries"
+    out = tmp_path / "c.html"
+    _, doc = parity._cli(cluster_dir, ["report", "cluster:acme", "--out", str(out)], capsys)
+    assert check(doc) == "report-file.v1"
+    assert (doc["capture"], doc["nodes"], doc["compare"]) == ("cap-acme", 2, False)
 
 
 # --- the documents the parity cases do not produce
@@ -272,17 +304,23 @@ PARITY_DOCUMENTS = {
 CLUSTER_DOCUMENTS = {
     "capture.v1",
     "cluster-timeline.v1",
+    "timeline.v1",
     "matrix.v1",
     "events.v1",
     "interactions.v1",
-    "cluster-report.v1",
+    "entries.v1",
+    "error.v1",
 }
-"""Built by service/cluster.py, no front end yet: checked in tests/service/test_cluster.py."""
+"""Documents that the capture view cases (``parity.CLUSTER_CASES``) produce."""
 
 
 def test_every_document_has_a_case() -> None:
     others = {e.schema for e in EXTRA} | {"report-file.v1", "job.v1", "jobs.v1", "remove.v1"}
     others.add("upgrade.v1")  # test_ingest_document
     others.add("ingest-capture.v1")  # test_split_ingest_documents
-    others |= CLUSTER_DOCUMENTS
-    assert PARITY_DOCUMENTS | others == set(DOCUMENTS)
+    others.add("cluster-report.v1")  # test_cluster_report_documents
+    produced = {
+        str(c.cli[0]) for c in parity.CLUSTER_CASES if c.exit is None
+    }  # every capture view command has a case
+    assert {"capture", "timeline", "matrix", "events", "interactions", "entries"} <= produced
+    assert PARITY_DOCUMENTS | CLUSTER_DOCUMENTS | others == set(DOCUMENTS)
