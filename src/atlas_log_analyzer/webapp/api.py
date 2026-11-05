@@ -9,12 +9,9 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import Response
 
-from atlas_log_analyzer import __version__
-from atlas_log_analyzer.core.formats import registry
-from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
-from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
-from atlas_log_analyzer.service import queries
-from atlas_log_analyzer.service.errors import OpError, hint
+from atlas_log_analyzer.service import compare, meta, queries
+from atlas_log_analyzer.service import ingest as service_ingest
+from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
     EntryQuery,
@@ -25,21 +22,13 @@ from atlas_log_analyzer.service.params import (
     parse_level,
 )
 from atlas_log_analyzer.service.sets import open_set
-from atlas_log_analyzer.service.views import (
-    diff_warning,
-)
-from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
-from atlas_log_analyzer.store.query import diff as store_diff
-from atlas_log_analyzer.store.query import span_hours, with_rates
-from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
-from atlas_log_analyzer.store.triage import triage as store_triage
+from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.params import query_model
 from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
-__all__ = ["auto_baseline", "manifest_item", "router"]
+__all__ = ["manifest_item", "router"]
 
 
 def _auth(request: Request) -> None:
@@ -69,61 +58,27 @@ def manifest_item(m: LogSetManifest) -> dict[str, Any]:
     return d
 
 
-def auto_baseline(state: AppState, ls: LogSet) -> LogSet | None:
-    """Pick the default baseline of ``ls`` (``store.triage.rank_baselines``).
-
-    The rule of ``atlas-log triage --baseline auto``; ``None`` when no set qualifies.
-    """
-    return _choose(state, ls, "auto")[0]
-
-
-def _choose(
-    state: AppState, ls: LogSet, ref: str | None
-) -> tuple[LogSet | None, BaselineChoice | None]:
-    """Resolve a ``baseline``/``compare`` parameter: ``auto``, ``none``/empty, or a set."""
-    if ref is None or ref in ("", "none"):
-        return None, None
-    if ref == "auto":
-        choice = rank_baselines(state.manifests(), ls.manifest)
-        base = state.open(choice.manifest.id) if choice.manifest is not None else None
-        return base, choice
-    base = open_set(state, ref, front="api")
-    return base, explicit_baseline(ls.manifest, base.manifest)
-
-
 def _baseline(state: AppState, ls: LogSet, ref: str | None) -> LogSet | None:
-    return _choose(state, ls, ref)[0]
+    """Return the set a ``compare`` parameter names: ``auto``, ``none``/empty, or a set."""
+    return compare.choose_baseline(state, ls, ref, front="api")[0]
 
 
 @router.get("/health")
 def health(state: StateDep) -> dict[str, Any]:
     """Liveness and store readability (``health.v1``)."""
-    return {"schema": "health.v1", "status": "ok", "sets": len(state.manifests())}
+    return meta.health(state)
 
 
 @router.get("/version")
 def version() -> dict[str, Any]:
     """Tool and format versions (``version.v1``)."""
-    import sys
-
-    return {
-        "schema": "version.v1",
-        "version": __version__,
-        "schema_version": SCHEMA_VERSION,
-        "signature_version": SIGNATURE_VERSION,
-        "mask_rules_version": MASK_RULES_VERSION,
-        "python": sys.version.split()[0],
-    }
+    return meta.version()
 
 
 @router.get("/formats")
 def formats() -> dict[str, Any]:
     """List the registered log formats (``formats.v1``)."""
-    items = []
-    for fmt_name in registry.names():
-        fmt = registry.get(fmt_name)
-        items.append({"name": fmt.name, "description": getattr(fmt, "description", "")})
-    return {"schema": "formats.v1", "count": len(items), "items": items}
+    return meta.formats()
 
 
 @router.get("/sets")
@@ -152,8 +107,7 @@ def get_set(ref: str, state: StateDep) -> dict[str, Any]:
 @router.delete("/sets/{ref}")
 def delete_set(ref: str, state: StateDep) -> dict[str, Any]:
     """Remove a set (``remove.v1``)."""
-    ls = state.remove(ref)
-    return {"schema": "remove.v1", "removed": ls.manifest.id, "name": ls.manifest.name}
+    return service_ingest.remove(state, ref, front="api")
 
 
 @router.get("/sets/{ref}/stats")
@@ -378,36 +332,17 @@ def diff(
     set's span) to ``changed`` and sorts it by ``rate_ratio``. ``warnings`` is
     present when the spans differ by more than 4x (new/vanished are unreliable).
     """
-    sa, sb = open_set(state, a, front="api"), open_set(state, b, front="api")
-    try:
-        result = store_diff(
-            sa,
-            sb,
-            min_level=parse_level(min_level, "min_level", front="api"),
-            coarse=coarse,
-            force=force,
-        )
-    except ValueError as exc:
-        raise OpError.because(
-            "incompatible_sets", "api", str(exc), hint=hint("incompatible_sets", "api")
-        ) from exc
-    changed = with_rates(result.changed, span_hours(sa), span_hours(sb)) if rate else result.changed
-    parts = {"new": result.new, "vanished": result.vanished, "changed": changed}
-    sections = {k: to_records(f if not limit else f.head(limit)) for k, f in parts.items()}
-    totals = {k: f.height for k, f in parts.items()}
-    doc: dict[str, Any] = {
-        "schema": "diff.v1",
-        "a": result.a,
-        "b": result.b,
-        **sections,
-        "unchanged_count": result.unchanged_count,
-        "totals": totals,
-        "truncated": any(len(sections[k]) < totals[k] for k in totals),
-    }
-    warning = diff_warning(sa, sb)
-    if warning is not None:
-        doc["warnings"] = [warning]
-    return doc
+    return compare.diff(
+        state,
+        a,
+        b,
+        min_level=min_level,
+        coarse=coarse,
+        force=force,
+        limit=limit or None,
+        rate=rate,
+        front="api",
+    )
 
 
 @router.get("/sets/{ref}/triage")
@@ -428,29 +363,21 @@ def triage(
     sets whose spans differ by more than 4x. The document is
     :func:`atlas_log_analyzer.store.triage.triage` plus ``report_url`` links.
     """
-    ls = open_set(state, ref, front="api")
-    lvl = parse_level(min_level, "min_level", front="api")
-    base, choice = _choose(state, ls, baseline)
-    try:
-        doc = store_triage(
-            ls,
-            base,
-            min_level=lvl,
-            grow=grow,
-            limit=limit,
-            resolved_by="auto" if baseline == "auto" else "param",
-            choice=choice,
-        )
-    except ValueError as exc:
-        raise OpError.because("incompatible_sets", "api", str(exc)) from exc
-    me = ls.manifest
-    doc["report_url"] = f"/sets/{me.id}"
+    doc = compare.triage(
+        state,
+        ref,
+        baseline=baseline,
+        min_level=min_level,
+        grow=grow,
+        limit=limit or None,
+        front="api",
+    )
+    me, base = doc["set"], doc["baseline"]
+    doc["report_url"] = f"/sets/{me['id']}"
     if base is not None:
         for key in ("new", "new_exceptions", "grew"):
             for row in doc[key]:
-                row["report_url"] = (
-                    f"/sets/{me.id}?compare={base.manifest.id}#sig={row['signature']}"
-                )
+                row["report_url"] = f"/sets/{me['id']}?compare={base['id']}#sig={row['signature']}"
     return doc
 
 

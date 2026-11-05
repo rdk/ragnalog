@@ -85,12 +85,7 @@ CASES: list[Case] = [
         frozenset({"summary"}),  # as in "sets"
     ),
     Case("version", ["version"], "/api/version"),
-    Case(
-        "formats",
-        ["formats"],
-        "/api/formats",
-        drift="formats.v1 items: the CLI adds signature_spec and mask_rules, the API does not",
-    ),
+    Case("formats", ["formats"], "/api/formats"),
     Case("stats", ["stats", "{edge}"], "/api/sets/{edge}/stats"),  # by id
     # --- groups
     Case("groups", ["groups", "edge"], "/api/sets/edge/groups"),
@@ -180,12 +175,6 @@ CASES: list[Case] = [
         "entries-max-raw",
         ["entries", "edge", "--max-raw", "60", "--limit", "5"],
         "/api/sets/edge/entries?max_raw=60&limit=5",
-    ),
-    Case(
-        "entries-limit-0",
-        ["entries", "edge", "--limit", "0"],
-        "/api/sets/edge/entries?limit=0",
-        drift="entries: CLI --limit 0 = all, the API requires limit >= 1",
     ),
     Case(
         "entries-level-unknown",
@@ -316,6 +305,9 @@ HTTP_CAPS: list[Case] = [
         ["entries", "edge", "--limit", "10001"],
         "/api/sets/edge/entries?limit=10001",
     ),
+    # entries has no "all" page over HTTP: limit=0 is refused (follow next_offset), while
+    # `atlas-log entries --limit 0` writes every entry.
+    Case("entries-limit-0", ["entries", "edge", "--limit", "0"], "/api/sets/edge/entries?limit=0"),
     Case(
         "context-before",
         ["context", "edge", "{entry}", "--before", "10001"],

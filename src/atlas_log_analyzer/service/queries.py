@@ -1,4 +1,4 @@
-"""Read documents: sets, set, stats, groups, group/show, entries, context, frames, timeline.
+"""Read documents: sets, set, stats, groups, group/show, entries, context, frames, timeline, query.
 
 Every builder takes the :class:`~atlas_log_analyzer.service.sets.Sets` to read from,
 the set reference and the request models of :mod:`~atlas_log_analyzer.service.params`,
@@ -10,6 +10,7 @@ serialised once, by :func:`~atlas_log_analyzer.store.logset.to_records` (timesta
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from dataclasses import replace
 from pathlib import Path
@@ -43,13 +44,16 @@ __all__ = [
     "group",
     "group_examples",
     "groups",
+    "query",
     "raw_entries",
     "set_doc",
     "sets_doc",
     "show",
     "show_raw",
+    "sql_hint",
     "stats",
     "timeline",
+    "view_fields",
 ]
 
 type Doc = dict[str, Any]
@@ -392,4 +396,58 @@ def group_examples(sets: Sets, ref: str, signature: str, *, max_raw: int, front:
         "logset": ls.manifest.id,
         "signature": signature,
         "items": example_entries(ls, ids, max_raw=max_raw),
+    }
+
+
+_CANDIDATES_RE = re.compile(r"Candidate bindings: (.+)")
+_COLUMN_ERRORS = ("Binder Error", "ColumnNotFound", "not found in FROM clause", "column named")
+
+
+def view_fields() -> dict[str, tuple[str, ...]]:
+    """Columns of the views of ``query`` (``entries``, ``groups``, ``merges``)."""
+    from atlas_log_analyzer.store.schema import MERGES_SCHEMA
+
+    return {"entries": ENTRY_FIELDS, "groups": GROUP_FIELDS, "merges": tuple(MERGES_SCHEMA.names)}
+
+
+def sql_hint(message: str, views: list[str]) -> str | None:
+    """Next step for a failed query: candidate columns, the views' columns, or the views."""
+    if any(marker in message for marker in _COLUMN_ERRORS):
+        if m := _CANDIDATES_RE.search(message):
+            return (
+                f"candidate columns: {m.group(1).strip()}; all columns: "
+                "`atlas-log query --help` or `atlas-log schema entries|groups`"
+            )
+        fields = view_fields()
+        return "; ".join(f"{v} columns: {', '.join(fields[v])}" for v in views)
+    if "Catalog Error" in message and "does not exist" in message:
+        return f"available views: {', '.join(views)}"
+    return None
+
+
+def query(sets: Sets, ref: str, sql: str, *, front: Front) -> Doc:
+    """``query.v1``: the rows of DuckDB ``sql`` over the set's views (never truncated).
+
+    A rejected query is ``sql_error``; its hint lists candidate columns, the views'
+    columns or the available views.
+    """
+    import duckdb
+    import polars as pl
+
+    ls = open_set(sets, ref, front=front)
+    try:
+        df = ls.sql(sql)
+    except (duckdb.Error, pl.exceptions.PolarsError) as exc:
+        message = str(exc).strip()
+        views = [v for v in view_fields() if v != "merges" or ls.merges_path.exists()]
+        raise OpError("sql_error", message, hint=sql_hint(message, views)) from exc
+    items = _records(df)
+    return {
+        "schema": "query.v1",
+        "logset": ls.manifest.id,
+        "columns": list(df.columns),
+        "count": len(items),
+        "total": len(items),
+        "truncated": False,
+        "items": items,
     }

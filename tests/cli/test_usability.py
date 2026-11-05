@@ -104,7 +104,7 @@ def test_table_error_hint_on_stderr(cli: Invoke, store_dir: Path) -> None:
 def test_ingest_table_next_line(cli: Invoke, store_dir: Path) -> None:
     res = cli("--output", "table", "--store", store_dir, "ingest", MINI_LOG, "--name", "m")
     assert res.code == 0
-    assert "next: atlas-log groups m" in res.stderr
+    assert "next: atlas-log triage m" in res.stderr
 
 
 def test_show_table_header(cli: Invoke, mini: str, store_dir: Path, jcli: Invoke) -> None:

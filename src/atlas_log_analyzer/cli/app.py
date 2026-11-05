@@ -10,11 +10,9 @@ from __future__ import annotations
 
 import dataclasses
 import errno
-import importlib
 import inspect
 import io
 import os
-import re
 import sys
 import textwrap
 from collections.abc import Iterable, Sequence
@@ -35,19 +33,14 @@ from atlas_log_analyzer.cli.output import (
     encode_json,
     entry_to_dict,
     error_from_exception,
-    jsonable_rows,
     mapping_tables,
     rows_table,
 )
 from atlas_log_analyzer.cli.output import _cell as _cell
 from atlas_log_analyzer.config import Settings
-from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
-from atlas_log_analyzer.core.reader import iter_lines
-from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
-from atlas_log_analyzer.service import queries
-from atlas_log_analyzer.service.errors import hint
+from atlas_log_analyzer.service import compare, meta, queries
+from atlas_log_analyzer.service import ingest as service_ingest
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
     EntryQuery,
@@ -63,7 +56,6 @@ from atlas_log_analyzer.service.views import (
     ENTRY_FIELDS,
     GROUP_BRIEF,
     GROUP_FIELDS,
-    diff_warning,
     set_summary,
 )
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
@@ -80,11 +72,6 @@ if TYPE_CHECKING:
 __all__ = ["app", "main", "run"]
 
 STORE_ENV = "ATLAS_LOG_STORE"
-SNIFF_LINES = 200
-"""Number of leading lines of the first source used for format detection."""
-
-SCHEMA_NAMES = ("entries", "groups", "merges", "logset")
-
 GROUP_COLUMNS = (
     "signature",
     "count",
@@ -98,12 +85,6 @@ GROUP_COLUMNS = (
 ENTRY_COLUMNS = ("ts", "level_name", "thread", "user", "logger", "message", "variables")
 MERGE_FIELDS: tuple[str, ...] = tuple(MERGES_SCHEMA.names)
 """Columns of merges.v1."""
-VIEW_FIELDS: dict[str, tuple[str, ...]] = {
-    "entries": ENTRY_FIELDS,
-    "groups": GROUP_FIELDS,
-    "merges": MERGE_FIELDS,
-}
-"""Columns of the views of `query`, from ``store/schema.py``."""
 
 
 def _fill_doc(func: Any, **columns: Sequence[str]) -> None:
@@ -269,49 +250,15 @@ def _limit(value: int) -> int | None:
 
 def _select(paths: Sequence[Path], name: str | None, *, force: bool = False) -> SourceSelection:
     """Files and format of `ingest`/`parse`; foreign files found in directories are skipped."""
-    from atlas_log_analyzer.store.pipeline import (
-        FormatNotDetected,
-        NoSourcesFound,
-        NotInFormat,
-        select_sources,
-    )
-
-    if not paths:
-        raise OpError("usage", "at least one PATH is required")
-    try:
-        selection = select_sources(paths, name, force=force)
-    except NoSourcesFound as exc:
-        raise OpError("no_sources", str(exc)) from exc
-    except FormatNotDetected as exc:
-        raise OpError("format_not_detected", str(exc)) from exc
-    except NotInFormat as exc:
-        raise OpError(
-            "not_in_format",
-            str(exc),
-            hint="name the right file or --format, or pass --force to read it anyway",
-        ) from exc
+    selection = service_ingest.select(paths, name, force=force, front="cli")
     if selection.skipped:
-        names = ", ".join(s.path.name for s in selection.skipped[:5])
+        names = ", ".join(src.path.name for src in selection.skipped[:5])
         more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
         _out().info(
             f"skipped {len(selection.skipped)} file(s) that are not {selection.fmt.name} "
             f"logs: {names}{more}"
         )
     return selection
-
-
-def _manifest_dict(logset: LogSet) -> dict[str, Any]:
-    data: dict[str, Any] = dict(logset.manifest.to_dict())
-    data.pop("schema", None)
-    return data
-
-
-def _format_spec(format_name: str) -> SignatureSpec:
-    try:
-        spec: SignatureSpec = formats.get(format_name).signature_spec
-    except UnknownFormatError:
-        spec = DEFAULT_SPEC
-    return spec
 
 
 # --- meta app
@@ -434,73 +381,50 @@ def ingest(
             in the format.
 
     """
-    from atlas_log_analyzer.store.pipeline import ingest_sources
-
     out = _out()
-    if frames is not None and frames < 0:
-        raise OpError("invalid_value", "--frames must be >= 0")
     selection = _select(paths, format, force=force)
-    sources, fmt = selection.sources, selection.fmt
     store = _store(create=True)
-    total = sum(s.size for s in sources)
-    out.info(f"ingesting {len(sources)} file(s), {total / 1e6:.1f} MB, format {fmt.name}")
+    total = sum(src.size for src in selection.sources)
+    out.info(
+        f"ingesting {len(selection.sources)} file(s), {total / 1e6:.1f} MB, "
+        f"format {selection.fmt.name}"
+    )
 
     def progress(p: IngestProgress) -> None:
         if p.entries % 100_000 == 0:
             out.info(f"  {p.entries:,} entries")
 
-    result = ingest_sources(
-        store, sources, fmt, name=name, frames=frames, overwrite=overwrite, progress=progress
+    doc = service_ingest.ingest(
+        store,
+        selection,
+        name=name,
+        frames=frames,
+        overwrite=overwrite,
+        mine=mine,
+        progress=progress,
+        front="cli",
     )
-    result = dataclasses.replace(result, skipped=tuple(str(s.path) for s in selection.skipped))
-    logset = result.logset
-    doc = _manifest_dict(logset)
-    doc["ingest"] = result.ingest_dict()
-    if result.existing:
-        out.info(f"log set {logset.manifest.id} already exists; use --overwrite to rebuild it")
+    info, ref = doc["ingest"], doc["name"] or doc["id"]
+    if info["existing"]:
+        out.info(f"log set {doc['id']} already exists; use --overwrite to rebuild it")
     else:
         out.info(
-            f"ingested {result.parsed_entries:,} entries into {logset.manifest.id} "
-            f"({logset.manifest.group_count:,} groups) in {result.elapsed_s:.1f} s"
+            f"ingested {info['parsed_entries']:,} entries into {doc['id']} "
+            f"({doc['group_count']:,} groups) in {info['elapsed_s']:.1f} s"
         )
-    for warning in result.warnings:
+    for warning in info["warnings"]:
         out.warn(warning)
-    if result.parse_errors:
-        out.warn(f"{result.parse_errors:,} entries could not be parsed (parse_error is set)")
-    if mine:
-        doc["merges"] = _mine(logset)
-    out.emit("logset.v1", doc, items=None, title=f"log set {logset.manifest.id}")
-    if out.mode == "table" and logset.manifest.entry_count:
-        out.info(f"next: atlas-log groups {logset.manifest.name or logset.manifest.id}")
-    if logset.manifest.entry_count == 0:
+    if info["parse_errors"]:
+        out.warn(f"{info['parse_errors']:,} entries could not be parsed (parse_error is set)")
+    if "merges" in doc:
+        out.info(f"{len(doc['merges'])} merge proposal(s) written to merges.parquet")
+    out.document(doc, items=None, title=f"log set {doc['id']}")
+    if out.mode == "table" and doc["entry_count"]:
+        out.info(f"next: atlas-log triage {ref}")
+    if doc["entry_count"] == 0:
         out.warn("no entries were parsed")
         return int(ExitCode.NOT_FOUND)
     return 0
-
-
-def _mine(logset: LogSet) -> list[dict[str, Any]]:
-    from atlas_log_analyzer.store.writer import write_merges
-
-    try:
-        mining = importlib.import_module("atlas_log_analyzer.core.mining")
-        pairs = list(logset.groups().select("signature", "template").iter_rows())
-        proposals = list(mining.propose_merges(pairs))
-    except ImportError as exc:
-        raise OpError(
-            "missing_dependency",
-            f"--mine needs the optional 'mine' extra (drain3): {exc}. "
-            "Install it with `uv sync --extra mine`.",
-        ) from exc
-    write_merges(logset.merges_path, proposals)
-    _out().info(f"{len(proposals)} merge proposal(s) written to merges.parquet")
-    return [
-        {
-            "cluster_id": p.cluster_id,
-            "signatures": list(p.signatures),
-            "drain_template": p.drain_template,
-        }
-        for p in proposals
-    ]
 
 
 @app.command
@@ -1008,47 +932,8 @@ def query(logset: str, sql: str, /) -> None:
         sql: The SQL query (quote it as one argument).
 
     """
-    import duckdb
-    import polars as pl
-
-    ls = _open(logset)
-    try:
-        df = ls.sql(sql)
-    except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        message = str(exc).strip()
-        views = [v for v in VIEW_FIELDS if v != "merges" or ls.merges_path.exists()]
-        raise OpError("sql_error", message, hint=_sql_hint(message, views)) from exc
-    items = jsonable_rows(df)
-    _out().emit(
-        "query.v1",
-        {
-            "logset": ls.manifest.id,
-            "columns": list(df.columns),
-            "count": len(items),
-            "total": len(items),
-            "truncated": False,
-            "items": items,
-        },
-        title="query result",
-    )
-
-
-_CANDIDATES_RE = re.compile(r"Candidate bindings: (.+)")
-_COLUMN_ERRORS = ("Binder Error", "ColumnNotFound", "not found in FROM clause", "column named")
-
-
-def _sql_hint(message: str, views: Sequence[str]) -> str | None:
-    """Next step for a failed query: candidate columns, the views' columns, or the views."""
-    if any(marker in message for marker in _COLUMN_ERRORS):
-        if m := _CANDIDATES_RE.search(message):
-            return (
-                f"candidate columns: {m.group(1).strip()}; all columns: "
-                "`atlas-log query --help` or `atlas-log schema entries|groups`"
-            )
-        return "; ".join(f"{v} columns: {', '.join(VIEW_FIELDS[v])}" for v in views)
-    if "Catalog Error" in message and "does not exist" in message:
-        return f"available views: {', '.join(views)}"
-    return None
+    doc = queries.query(_store(), logset, sql, front="cli")
+    _out().document(doc, title="query result")
 
 
 _fill_doc(entries, ENTRIES_COLUMNS=ENTRY_FIELDS)
@@ -1167,45 +1052,23 @@ def diff(
             rate_ratio, for sets of different length.
 
     """
-    from atlas_log_analyzer.store import diff as store_diff
-    from atlas_log_analyzer.store.query import span_hours, with_rates
-
-    min_lvl, lim = _level(min_level), _limit(limit)
-    a, b = _open(set_a), _open(set_b)
-    try:
-        result = store_diff(a, b, min_level=min_lvl, coarse=coarse, force=force)
-    except ValueError as exc:  # the only ValueError left: the sets are not comparable
-        raise OpError.because(
-            "incompatible_sets", "cli", str(exc), hint=hint("incompatible_sets", "cli")
-        ) from exc
-    changed = with_rates(result.changed, span_hours(a), span_hours(b)) if rate else result.changed
-    sections = {
-        name: jsonable_rows(frame if lim is None else frame.head(lim))
-        for name, frame in (
-            ("new", result.new),
-            ("vanished", result.vanished),
-            ("changed", changed),
-        )
-    }
-    totals = {
-        "new": result.new.height,
-        "vanished": result.vanished.height,
-        "changed": result.changed.height,
-    }
-    doc = {
-        "a": result.a,
-        "b": result.b,
-        **sections,
-        "unchanged_count": result.unchanged_count,
-        "totals": totals,
-        "truncated": any(len(sections[k]) < totals[k] for k in totals),
-    }
-    warning = diff_warning(a, b)
+    doc = compare.diff(
+        _store(),
+        set_a,
+        set_b,
+        min_level=min_level,
+        coarse=coarse,
+        force=force,
+        limit=_limit(limit),
+        rate=rate,
+        front="cli",
+    )
     out = _out()
-    if warning is not None:
-        doc["warnings"] = [warning]
-        if out.mode != "json":
+    if out.mode != "json":
+        for warning in doc.get("warnings", ()):
             out.warn(warning)
+    sections = {name: doc[name] for name in compare.DIFF_SECTIONS}
+    totals = doc["totals"]
     jsonl = [{"change": name, **row} for name, rows in sections.items() for row in rows]
 
     def render(console: Console) -> None:
@@ -1216,9 +1079,9 @@ def diff(
             cols = [c for c in DIFF_COLUMNS if c in rows[0]]
             shown = f"{len(rows)} of {totals[name]}" if len(rows) < totals[name] else len(rows)
             console.print(rows_table(rows, cols, title=f"{name} ({shown})", color=out.color))
-        console.print(f"unchanged: {result.unchanged_count}")
+        console.print(f"unchanged: {doc['unchanged_count']}")
 
-    out.emit("diff.v1", doc, items=None, jsonl_rows=jsonl, table=render)
+    out.document(doc, items=None, jsonl_rows=jsonl, table=render)
 
 
 NEW_COLUMNS = (
@@ -1307,29 +1170,21 @@ def triage(
 
     Args:
         logset: The log set to judge (id, id prefix or name).
-        baseline: Baseline set (id, id prefix or name), or auto.
+        baseline: Baseline set (id, id prefix or name), auto, or none (verdict no_baseline).
         min_level: Only groups of this level or more severe count as new/grew/vanished.
         grow: Minimum hourly-rate factor for "grew" (> 1).
         limit: Maximum rows per list; 0 = all.
 
     """
-    from atlas_log_analyzer.store.triage import explicit_baseline, rank_baselines
-    from atlas_log_analyzer.store.triage import triage as store_triage
-
-    lvl, lim = _level(min_level), _limit(limit)
-    if not grow > 1:
-        raise OpError("invalid_value", "--grow must be > 1")
-    ls = _open(logset)
-    if baseline == "auto":
-        choice = rank_baselines(_store().list(), ls.manifest)
-        base = _open(choice.manifest.id) if choice.manifest is not None else None
-    else:
-        base = _open(baseline)
-        choice = explicit_baseline(ls.manifest, base.manifest)
-    try:
-        doc = store_triage(ls, base, min_level=lvl, grow=grow, limit=lim, choice=choice)
-    except ValueError as exc:  # options are checked above: the sets are not comparable
-        raise OpError.because("incompatible_sets", "cli", str(exc)) from exc
+    doc = compare.triage(
+        _store(),
+        logset,
+        baseline=baseline,
+        min_level=min_level,
+        grow=grow,
+        limit=_limit(limit),
+        front="cli",
+    )
     out = _out()
     if out.mode == "table":
         for warning in doc["warnings"]:
@@ -1371,13 +1226,7 @@ def triage(
                 continue
             console.print(rows_table(rows, cols, title=name, color=out.color))
 
-    body = {k: v for k, v in doc.items() if k != "schema"}
-    out.emit("triage.v1", body, items=None, table=render)
-
-
-def _report_filename(logset: LogSet) -> Path:
-    stem = re.sub(r"[^\w.-]+", "_", logset.manifest.name or logset.manifest.id).strip("._")
-    return Path((stem or logset.manifest.id) + ".html")
+    out.document(doc, items=None, table=render)
 
 
 @app.command
@@ -1425,53 +1274,31 @@ def report(
         open_: Open the report in the default web browser.
 
     """
-    from atlas_log_analyzer.report import write_report
-
-    min_lvl = _level(min_level)
-    for flag, value in (
-        ("--examples", examples),
-        ("--max-raw", max_raw),
-        ("--max-groups", max_groups),
-    ):
-        if value < 0:
-            raise OpError("invalid_value", f"{flag} must be >= 0")
-    ls = _open(logset)
-    baseline = _open(compare) if compare is not None else None
-    path = out if out is not None else _report_filename(ls)
-    try:
-        info = write_report(
-            ls,
-            path,
-            compare=baseline,
-            min_level=min_lvl,
-            examples=examples,
-            max_raw=max_raw,
-            max_groups=max_groups or None,
-        )
-    except ValueError as exc:  # options are checked above: the sets are not comparable
-        raise OpError.because("incompatible_sets", "cli", str(exc)) from exc
-    resolved = info.path.resolve()
-    doc = {
-        "path": resolved.as_posix(),
-        "bytes": info.bytes,
-        "groups": info.groups,
-        "entries": info.entries,
-        "compare": info.compare,
-    }
+    doc = service_ingest.report_file(
+        _store(),
+        logset,
+        out=out,
+        compare=compare,
+        min_level=min_level,
+        examples=examples,
+        max_raw=max_raw,
+        max_groups=max_groups,
+        front="cli",
+    )
     output = _out()
 
     def render(console: Console) -> None:
         extra = f", compared with {compare}" if compare is not None else ""
         output.write_line(
-            f"wrote {resolved} ({info.bytes:,} bytes, {info.groups:,} groups, "
-            f"{info.entries:,} example entries{extra})"
+            f"wrote {Path(doc['path'])} ({doc['bytes']:,} bytes, {doc['groups']:,} groups, "
+            f"{doc['entries']:,} example entries{extra})"
         )
 
-    output.emit("report-file.v1", doc, items=None, table=render)
+    output.document(doc, items=None, table=render)
     if open_:
         import webbrowser
 
-        webbrowser.open(resolved.as_uri())
+        webbrowser.open(Path(doc["path"]).as_uri())
 
 
 @app.command
@@ -1546,15 +1373,10 @@ def regroup(logset: str, /, *, frames: int = 0, no_exceptions: bool = False) -> 
         no_exceptions: Leave the exception chain out of the signature (like --coarse).
 
     """
-    if frames < 0:
-        raise OpError("invalid_value", "--frames must be >= 0")
-    ls = _open(logset)
-    store = _store()
-    spec = dataclasses.replace(
-        _format_spec(ls.manifest.format), frames=frames, include_exceptions=not no_exceptions
+    doc = service_ingest.regroup(
+        _store(), logset, frames=frames, no_exceptions=no_exceptions, front="cli"
     )
-    updated = store.regroup(ls.manifest.id, spec)
-    _out().emit("logset.v1", _manifest_dict(updated), items=None, title=f"log set {ls.manifest.id}")
+    _out().document(doc, items=None, title=f"log set {doc['id']}")
 
 
 UPGRADE_COLUMNS = ("id", "name", "status", "reason", "recipe_key", "previous_recipe_key")
@@ -1589,35 +1411,11 @@ def upgrade(*logsets: str, all: bool = False) -> None:
         all: Upgrade every set in the store.
 
     """
-    store = _store()
-    if all and logsets:
-        raise OpError("invalid_value", "give SET arguments or --all, not both")
-    if all:
-        refs = [m.id for m in store.list()]
-    elif logsets:
-        refs = [_open(ref).manifest.id for ref in logsets]
-    else:
-        raise OpError("invalid_value", "give one or more SETs, or --all")
-    items = []
-    for set_id in dict.fromkeys(refs):
-        result = store.upgrade(set_id)
-        item = {k: v for k, v in result.manifest.to_dict().items() if k != "schema"}
-        item["status"] = "upgraded" if result.upgraded else "skipped"
-        item["reason"] = result.reason
-        item["previous_recipe_key"] = result.previous_recipe_key
-        items.append(item)
-        if not result.upgraded and result.reason != "current":
-            _out().warn(f"{set_id}: skipped, {result.reason}")
-    _out().emit(
-        "upgrade.v1",
-        {
-            "count": len(items),
-            "upgraded": sum(1 for i in items if i["status"] == "upgraded"),
-            "items": items,
-        },
-        columns=UPGRADE_COLUMNS,
-        title="upgrade",
-    )
+    doc = service_ingest.upgrade(_store(), logsets, all_sets=all, front="cli")
+    for item in doc["items"]:
+        if item["status"] == "skipped" and item["reason"] != "current":
+            _out().warn(f"{item['id']}: skipped, {item['reason']}")
+    _out().document(doc, columns=UPGRADE_COLUMNS, title="upgrade")
 
 
 @app.command(name="formats")
@@ -1636,28 +1434,9 @@ def formats_(*, sample: Path | None = None) -> None:
         sample: A log file to test every format against.
 
     """
-    lines: list[str] | None = None
-    if sample is not None:
-        lines = [line.text for line in islice(iter_lines(sample), SNIFF_LINES)]
-    items: list[dict[str, Any]] = []
-    for fmt_name in formats.names():
-        fmt = formats.get(fmt_name)
-        item: dict[str, Any] = {
-            "name": fmt.name,
-            "description": getattr(fmt, "description", ""),
-            "signature_spec": fmt.signature_spec.key,
-            "mask_rules": [rule.name for rule in fmt.mask_rules],
-        }
-        if lines is not None:
-            item["confidence"] = round(float(fmt.sniff(lines)), 3)
-        items.append(item)
-    if lines is not None:
-        items.sort(key=lambda i: -float(i["confidence"]))
-    _out().emit(
-        "formats.v1",
-        {"count": len(items), "items": items},
-        columns=("name", "description", "confidence", "signature_spec"),
-        title="formats",
+    doc = meta.formats(sample)
+    _out().document(
+        doc, columns=("name", "description", "confidence", "signature_spec"), title="formats"
     )
 
 
@@ -1684,30 +1463,12 @@ def schema(name: str | None = None, /) -> None:
         name: A table (entries, groups, merges, logset) or a document, e.g. triage.v1.
 
     """
-    from atlas_log_analyzer.service.documents import document_names, document_schema
-    from atlas_log_analyzer.store.schema import schema_json
-
-    documents = document_names()
-    doc: dict[str, Any]
-    if name is None:
-        doc = {"definitions": {n: schema_json(n) for n in SCHEMA_NAMES}, "documents": documents}
-    elif name in SCHEMA_NAMES:
-        doc = {"definitions": {name: schema_json(name)}}
-    elif name in documents:
-        doc = {"definitions": {name: document_schema(name)}}
-    else:
-        tables = ", ".join(f'"{n}"' for n in SCHEMA_NAMES)
-        raise OpError(
-            "usage",
-            f"unknown schema {name!r}; expected a table ({tables}) or a document name "
-            'such as "triage.v1" (listed under "documents" by `atlas-log schema`)',
-            hint="atlas-log schema --help",
-        )
+    doc = meta.schema(name, front="cli")
     out = _out()
     if out.mode == "table":
-        out.write_line(encode_json({"schema": "schema.v1", **doc}, indent=2))
+        out.write_line(encode_json(doc, indent=2))
         return
-    out.emit("schema.v1", doc, items=None)
+    out.document(doc, items=None)
 
 
 @app.command
@@ -1756,10 +1517,9 @@ def remove(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    ls = _open(logset)
-    _store().remove(ls.manifest.id)
-    _out().info(f"removed log set {ls.manifest.id}")
-    _out().emit("remove.v1", {"removed": ls.manifest.id, "name": ls.manifest.name}, items=None)
+    doc = service_ingest.remove(_store(), logset, front="cli")
+    _out().info(f"removed log set {doc['removed']}")
+    _out().document(doc, items=None)
 
 
 @app.command
@@ -1841,22 +1601,7 @@ def version() -> None:
 
     Exit codes: 0 ok.
     """
-    from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
-    from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
-    from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-
-    _out().emit(
-        "version.v1",
-        {
-            "version": __version__,
-            "schema_version": SCHEMA_VERSION,
-            "signature_version": SIGNATURE_VERSION,
-            "mask_rules_version": MASK_RULES_VERSION,
-            "python": sys.version.split()[0],
-        },
-        items=None,
-        title="atlas-log",
-    )
+    _out().document(meta.version(), items=None, title="atlas-log")
 
 
 # --- entry points

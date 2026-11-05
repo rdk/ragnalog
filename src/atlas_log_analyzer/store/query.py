@@ -12,6 +12,7 @@ from atlas_log_analyzer.store.manifest import LogSetManifest
 __all__ = [
     "COVERAGE_FACTOR",
     "DiffResult",
+    "IncompatibleSets",
     "coverage_warning",
     "diff",
     "manifest_span_hours",
@@ -105,14 +106,18 @@ class DiffResult:
     unchanged_count: int
 
 
+class IncompatibleSets(ValueError):
+    """Two sets were signed with different recipes, so their signatures do not match."""
+
+
 def _check_compatible(a: LogSet, b: LogSet) -> None:
-    """Raise ``ValueError`` naming the recipe parts in which the sets differ."""
+    """Raise :class:`IncompatibleSets` naming the recipe parts in which the sets differ."""
     from atlas_log_analyzer.core.pipeline import recipe_differences
 
     ma, mb = a.manifest, b.manifest
     problems = recipe_differences(ma.recipe_key, mb.recipe_key)
     if problems:
-        raise ValueError(
+        raise IncompatibleSets(
             "log sets are not comparable (recipe "
             + "; ".join(problems)
             + "); rebuild the older set with `atlas-log upgrade SET` (same spec) or "
@@ -144,7 +149,7 @@ def diff(
 ) -> DiffResult:
     """Compare group tables of two log sets.
 
-    Raises ``ValueError`` when signature/mask-rule versions or specs differ,
+    Raises :class:`IncompatibleSets` (a ``ValueError``) when the recipes differ,
     unless ``force`` is true.
 
     Args:

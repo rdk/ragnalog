@@ -319,9 +319,7 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
     if _is(exc, store, "AmbiguousLogSet"):
         return OpError.because("ambiguous_ref", front, str(exc))
     if _is(exc, "atlas_log_analyzer.store.query", "IncompatibleSets"):
-        return OpError.because(
-            "incompatible_sets", front, str(exc), hint=hint("incompatible_sets", front)
-        )
+        return OpError.because("incompatible_sets", front, str(exc))
     if _is(exc, "atlas_log_analyzer.store.levels", "InvalidLevel"):
         return OpError("invalid_level", str(exc))
     for name, code in _PIPELINE_CODES:

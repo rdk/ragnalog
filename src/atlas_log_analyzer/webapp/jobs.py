@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Any, Literal
 
 from atlas_log_analyzer.service.errors import OpError, from_exception
-from atlas_log_analyzer.store.pipeline import IngestProgress, IngestResult, ingest_paths
+from atlas_log_analyzer.service.ingest import ingest_paths
+from atlas_log_analyzer.store.pipeline import IngestProgress
 from atlas_log_analyzer.store.store import Store, StoreError
 
 __all__ = ["UPLOADS_DIR", "Job", "JobCancelled", "JobManager", "JobState", "safe_filename"]
@@ -207,34 +208,26 @@ class JobManager:
             job.current_file = Path(p.current_file).name
 
         try:
-            result = self._ingest(job, paths, progress)
+            doc = self._ingest(job, paths, progress)
         except JobCancelled:
             self._finish(job, "cancelled")
             return
-        except ImportError as exc:
-            job.error = {"code": "missing_dependency", "message": str(exc)}
-            self._finish(job, "failed")
-            return
-        except (StoreError, OSError, ValueError, LookupError) as exc:
+        except (OpError, StoreError, OSError, ValueError, LookupError) as exc:
             err = from_exception(exc, "api") or OpError("store_error", str(exc))
             job.error = err.envelope()["error"]
             self._finish(job, "failed")
             return
-        manifest = dict(result.logset.manifest.to_dict())
-        manifest["ingest"] = result.ingest_dict()
-        if result.merges is not None:
-            manifest["merges"] = result.merges
-        job.result = manifest
-        job.entries = result.logset.manifest.entry_count
+        job.result = doc
+        job.entries = int(doc["entry_count"])
         job.bytes_read = job.bytes_total
         job.current_file = None
         if self._on_done is not None:
-            self._on_done(result.logset.manifest.id)
+            self._on_done(str(doc["id"]))
         self._finish(job, "succeeded")
 
     def _ingest(
         self, job: Job, paths: list[Path], progress: Callable[[IngestProgress], None]
-    ) -> IngestResult:
+    ) -> dict[str, Any]:
         opts = job.options
         return ingest_paths(
             self.store,
@@ -247,4 +240,5 @@ class JobManager:
             force=bool(opts.get("force")),
             progress=progress,
             progress_every=20_000,
+            front="api",
         )

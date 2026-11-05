@@ -301,6 +301,29 @@ exposes the store over FastAPI with the CLI's JSON documents; see
 `docs/webapp.md`. Nothing in `core`/`store`/`report` may import from `cli` or
 `webapp`.
 
+### Service layer
+
+`service/` builds every JSON document once, for both front ends; it sits above
+`store` and `report` and imports no cyclopts, FastAPI or rich. A builder takes
+the sets to read (the `Sets` protocol, `open(ref)` and `manifests()`: `Store`,
+or the web app's cached `AppState`), the set reference, the request models of
+`service/params.py` and `front` (`"cli"` or `"api"`, which picks error codes
+and how messages spell parameters), and returns the document:
+
+| Module | Documents |
+|---|---|
+| `queries.py` | `sets.v1`, `logset.v1` (+ `summary`), `stats.v1`, `groups.v1`, `entries.v1` (`entries`, `show`, `context`), `group.v1`, `frames.v1`, `timeline.v1`, `query.v1`, `report-entries.v1` |
+| `compare.py` | `diff.v1`, `triage.v1` (and the choice of a baseline) |
+| `ingest.py` | `logset.v1` of `ingest`/`regroup`, `upgrade.v1`, `remove.v1`, `report-file.v1` |
+| `meta.py` | `version.v1`, `formats.v1`, `schema.v1`, `health.v1` |
+
+Front-end differences are explicit arguments: `TextCap.how` (`use --max-raw 0`
+or `use max_raw=0`), the `store` label of `sets.v1`, the summary function (the
+web app caches it), and the API's `report_url` links, added after building.
+Rows are serialised by one function (`store.logset.to_records`). Errors are
+`OpError` (`service/errors.py`, see section 10, "CLI and API parity"); the
+settings of both front ends are `config.Settings`.
+
 The web app uses only the stable read API: `Store.list()`, `Store.open(ref)`
 (raises `LogSetNotFound` / `AmbiguousLogSet`, both `StoreError`; manifests are
 cached per `Store` instance and re-read when their file changes) and on `LogSet`:
@@ -317,7 +340,8 @@ passed as `where=` (`store/filters.py`: `GroupFilter`, `EntryFilter`, each with
 `LogLevel`, a name, a comma-separated string or an iterable. Group and entry
 filters also take `with_exception`/`exception` (and `contains` on groups, a
 template substring); entry filters take `request_id`. Uploads go through
-`store.pipeline.ingest_paths(..., progress=)`, which reports `IngestProgress`.
+`service.ingest.ingest_paths(..., progress=)` (over `store.pipeline`), which
+reports `IngestProgress`.
 
 ## 10. Quality
 

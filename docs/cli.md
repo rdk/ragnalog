@@ -505,14 +505,16 @@ mode the sentence is printed on stderr (`warning: …`) instead. Exit: 0; 1 sets
 message names the parts, e.g. `signature_spec: L+G+E+F0 != L+G+E+F2`, and
 suggests `upgrade` or `regroup`) without `--force`; 3.
 
-### `triage SET [--baseline SET|auto] [--min-level WARN] [--grow 2.0] [--limit 50]`
+### `triage SET [--baseline SET|auto|none] [--min-level WARN] [--grow 2.0] [--limit 50]`
 
 "Are there new kinds of errors since the baseline?" in one document — the same
 `triage.v1` as `GET /api/sets/SET/triage` of the web app, without its
 `report_url` links. It compares the baseline with SET like
 `diff BASELINE SET --min-level L` and sorts the result for a decision.
 
-`--baseline auto` (default) ranks the other sets of the same format with
+`--baseline none` (also blank) judges SET without a baseline (verdict
+`no_baseline`), as `baseline=none` does in the API. `--baseline auto` (default)
+ranks the other sets of the same format with
 `store.triage.rank_baselines`, the rule the web app uses too. A candidate is
 rejected, with `reason`:
 
