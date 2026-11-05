@@ -121,6 +121,7 @@ __all__ = [
     "matrix",
     "merged_entries",
     "open_capture",
+    "resolve_signature",
     "resolve_window",
 ]
 
@@ -880,6 +881,17 @@ def _resolve_signature(db: _Db, signature: str, front: Front) -> str:
     )
 
 
+def resolve_signature(capture: Capture, signature: str, *, front: Front = "api") -> str:
+    """Return the full signature of ``signature`` (or of a unique prefix) in any member set.
+
+    Raises:
+        OpError: Reasons ``ambiguous_signature`` (``candidates``) and ``group_not_found``.
+
+    """
+    with _Db(capture) as db:
+        return _resolve_signature(db, signature, front)
+
+
 def _level_case() -> str:
     return (
         "CASE WHEN level >= 50 THEN 'ERROR' WHEN level >= 40 THEN 'WARN' "
@@ -1114,6 +1126,7 @@ def matrix(
     limit: int | None = 50,
     offset: int = 0,
     skew_min: float = SKEW_MIN,
+    signature: str | None = None,
     front: Front = "api",
 ) -> ClusterMatrix:
     """``matrix.v1``: one row per group with its count, rate and first/last entry per node.
@@ -1129,11 +1142,13 @@ def matrix(
         limit: Rows per page (``None`` or 0 = all).
         offset: Rows to skip.
         skew_min: Skew from which a group present on all nodes is ``skewed``.
+        signature: Only this group (a signature or a unique prefix of one).
         front: The front end the errors are for.
 
     Raises:
         OpError: ``invalid_value`` for an unknown spread, node or sort, a negative
-            limit/offset or ``skew_min`` under 1; ``invalid_level`` from ``where``.
+            limit/offset or ``skew_min`` under 1; ``invalid_level`` from ``where``;
+            reasons ``ambiguous_signature`` and ``group_not_found`` for ``signature``.
 
     """
     if spread is not None and spread not in SPREADS:
@@ -1160,7 +1175,10 @@ def matrix(
 
     try:
         with _Db(capture) as db:
+            sig = _resolve_signature(db, signature, front) if signature is not None else None
             items = _matrix_items(db, window, skew_min, where, node)
+            if sig is not None:
+                items = [r for r in items if r.signature == sig]
     except InvalidLevel as exc:
         raise OpError("invalid_level", str(exc)) from exc
     if spread is not None:
@@ -1577,18 +1595,20 @@ def context_all_nodes(
     *,
     window_s: float = 30,
     max_raw: int | None = DEFAULT_MAX_RAW,
+    columns: Sequence[str] | None = None,
     front: Front = "api",
 ) -> Entries:
     """``entries.v1`` with ``anchor``: what every node logged within ``window_s`` of one entry.
 
     ``set_id`` is the anchor's set (id or name of a member). Rows are in ``ts``, node,
     file order and add ``node`` and ``set``; at most :data:`CONTEXT_MAX_ROWS`, the ones
-    nearest the anchor (``truncated`` then says so).
+    nearest the anchor (``truncated`` then says so). ``columns`` selects entries.v1
+    columns, as in :func:`merged_entries`.
 
     Raises:
         OpError: reason ``set_not_found`` when the set is not a member,
             ``entry_not_found`` when it has no such entry; ``invalid_value`` for a
-            negative window.
+            negative window or an unknown column.
 
     """
     import polars as pl
@@ -1615,6 +1635,7 @@ def context_all_nodes(
             hint=hint("entry_not_found", front, set=ref, id=member.logset.id),
         )
     cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front=front)
+    cols = _entry_columns(columns, front)
     at = anchor["ts"]
     span = timedelta(seconds=window_s)
     keys = _keys(capture, pl.col("ts").is_between(at - span, at + span, closed="both"))
@@ -1627,7 +1648,7 @@ def context_all_nodes(
     order = [(int(n), int(r)) for n, r in zip(keys["_n"], keys["_row"], strict=True)]
     for n, r in order:
         wanted[n].append(r)
-    found = _rows_by_index(capture, wanted, None)
+    found = _rows_by_index(capture, wanted, cols)
     items = cap.rows([found[k] for k in order if k in found])
     return Entries(
         logset=member.logset.id,
@@ -1696,7 +1717,8 @@ def cluster_payload(
         window: The window of every part.
         examples: Example entries per group and node (first ones and the last); 0 = none.
         max_raw: Characters of ``raw`` kept per example; 0 = all.
-        max_groups: Largest groups kept (``options.truncated_groups`` counts the rest).
+        max_groups: Largest groups kept, 0 = all (``options.truncated_groups`` counts the
+            rest).
         store: When given, each node is triaged against its own baseline (``capture``).
         front: The front end the errors are for.
 
@@ -1719,8 +1741,9 @@ def cluster_payload(
         summary = _summary(db, window, store)
         timeline = _timeline(db, window, bucket, size, None, front)
         rows = _matrix_items(db, window, SKEW_MIN)
-        truncated = max(0, len(rows) - max_groups)
-        rows = rows[:max_groups]
+        keep = max_groups or len(rows)
+        truncated = max(0, len(rows) - keep)
+        rows = rows[:keep]
         signatures = [r.signature for r in rows]
         hourly = _hourly(db, window, size, signatures)
         ids = _example_ids(db, window, signatures, examples)

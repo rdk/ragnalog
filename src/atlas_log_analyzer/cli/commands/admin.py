@@ -78,7 +78,7 @@ def schema(name: str | None = None, /) -> None:
 
 
 def manifest(command: str | None = None, /) -> None:
-    """Print how an agent uses atlas-log: workflow, commands and documents (about 7 KB).
+    """Print how an agent uses atlas-log: workflow, commands and documents (about 10 KB).
 
     The workflow in order with a one-line purpose per step, when to use the
     other commands, every command (usage with types and defaults, output

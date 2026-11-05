@@ -29,6 +29,21 @@
     "compare": {
       "description": "Compared with --compare.",
       "type": "boolean"
+    },
+    "capture": {
+      "description": "report CAPTURE: the capture id (the cluster page).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "nodes": {
+      "description": "report CAPTURE: nodes on the page.",
+      "type": "integer"
     }
   },
   "required": [

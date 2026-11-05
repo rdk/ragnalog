@@ -1,7 +1,7 @@
 """The ``atlas-log`` command line application: root app, global options, entry points.
 
 The commands live in :mod:`atlas_log_analyzer.cli.commands` (``ingest``, ``browse``,
-``compare``, ``admin``) and are registered here by import path, so a command loads
+``cluster``, ``compare``, ``admin``) and are registered here by import path, so a command loads
 only its own module. Each is a thin adapter: it parses its options into the request
 models of :mod:`atlas_log_analyzer.service.params`, calls a builder of
 :mod:`atlas_log_analyzer.service` and renders the document
@@ -69,6 +69,7 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ("sets", "browse:sets"),
     ("set", "browse:set_"),
     ("captures", "browse:captures"),
+    ("capture", "cluster:capture"),
     ("label", "ingest:label"),
     ("groups", "browse:groups"),
     ("show", "browse:show"),
@@ -77,6 +78,10 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ("frames", "browse:frames"),
     ("query", "browse:query"),
     ("stats", "browse:stats"),
+    ("timeline", "cluster:timeline"),
+    ("matrix", "cluster:matrix"),
+    ("events", "cluster:events"),
+    ("interactions", "cluster:interactions"),
     ("diff", "compare:diff"),
     ("triage", "compare:triage"),
     ("report", "compare:report"),

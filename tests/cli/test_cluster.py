@@ -175,3 +175,82 @@ def test_table_output(cli: Invoke, archive: Path, store_dir: Path) -> None:
     assert cli(*base, "ingest", archive).code == 0
     shown = cli(*base, "captures")
     assert shown.code == 0 and "NODE1, NODE2" in shown.stdout and JOB_ID in shown.stdout
+
+
+# --- the capture views (documents: tests/contract; here the CLI-only behaviour)
+
+
+@pytest.fixture
+def captured(jcli: Invoke, archive: Path) -> str:
+    """A store holding the export of two nodes; returns its cluster reference."""
+    assert jcli("ingest", archive, "--cluster", "jira-test").code == 0
+    return "cluster:jira-test"
+
+
+def test_capture_views_from_the_cli(jcli: Invoke, captured: str, tmp_path: Path) -> None:
+    doc = jcli("capture", captured).json()
+    assert doc["schema"] == "capture.v1" and doc["capture"] == JOB_ID
+    assert [n["node"] for n in doc["nodes"]] == ["NODE1", "NODE2"]
+    assert {n["verdict"] for n in doc["nodes"]} == {"no_baseline"}  # triage is on by default
+    assert {n["verdict"] for n in jcli("capture", captured, "--no-triage").json()["nodes"]} == {
+        None
+    }
+    # a member set stands for its capture
+    assert jcli("capture", "jira-test_node2").json()["capture"] == JOB_ID
+    only = jcli("matrix", captured, "--spread", "only").json()
+    assert only["schema"] == "matrix.v1" and {r["spread"] for r in only["items"]} == {"only"}
+    merged = jcli("entries", captured, "--window", "union", "--columns", "ts,node").json()
+    assert merged["logset"] == f"capture:{JOB_ID}" and merged["total"] > 0
+    assert {r["node"] for r in merged["items"]} == {"NODE1", "NODE2"}
+    assert set(merged["items"][0]) == {"ts", "node", "set"}
+    raw = jcli("--color", "always", "entries", captured, "--window", "union", "--raw")
+    assert raw.code == 0 and "NODE2 NODE2_atlassian-jira.log.2:" in raw.stdout  # the rule
+    page = tmp_path / "cluster.html"
+    written = jcli("report", captured, "--out", page).json()
+    assert written["capture"] == JOB_ID and written["nodes"] == 2 and page.stat().st_size > 0
+    assert 'id="cluster-data"' in page.read_text(encoding="utf-8")
+
+
+def test_capture_usage_errors(jcli: Invoke, captured: str) -> None:
+    triage = jcli("triage", captured)
+    assert triage.code == 1 and triage.json()["error"]["code"] == "usage"
+    assert f"atlas-log capture {captured} --triage" in triage.json()["error"]["hint"]
+    for argv in (
+        ("entries", "jira-test_node1", "--window", "union"),
+        ("timeline", captured, "--level", "ERROR"),
+        ("timeline", "jira-test_node1", "--window", "union"),
+        ("report", captured, "--compare", "jira-test_node1"),
+        ("report", "jira-test_node1", "--window", "union"),
+    ):
+        result = jcli(*argv)
+        assert (result.code, result.json()["error"]["code"]) == (1, "usage"), argv
+    unknown = jcli("capture", "capture:0000")
+    assert unknown.code == 2 and unknown.json()["error"]["reason"] == "capture_not_found"
+
+
+def test_context_all_nodes_needs_a_capture(jcli: Invoke, tmp_path: Path) -> None:
+    files = write_node_files(tmp_path / "one", "NODE1", prefix=False)
+    entry = jcli("ingest", *files, "--name", "lone").json()
+    first = jcli("entries", "lone", "--limit", "1", "--columns", "id").json()["items"][0]["id"]
+    result = jcli("context", "lone", first, "--all-nodes")
+    error = result.json()["error"]
+    assert result.code == 1 and error["code"] == "invalid_value"
+    assert "atlas-log label lone" in error["hint"] and entry["capture"] is None
+
+
+def test_capture_tables(cli: Invoke, archive: Path, store_dir: Path) -> None:
+    base = ("--output", "table", "--width", "200", "--store", store_dir)
+    assert cli(*base, "ingest", archive, "--cluster", "jira-test").code == 0
+    ref = "cluster:jira-test"
+    expected = {
+        "capture": "nodes",
+        "matrix": "groups by node",
+        "events": "events",
+        "interactions": "mentions",
+        "timeline": "entries per 1h and node",
+        "entries": "entries of capture:",
+    }
+    for command, text in expected.items():
+        window = () if command in ("matrix", "entries") else ("--window", "union")
+        result = cli(*base, command, ref, *window)
+        assert result.code == 0 and text in result.stdout, (command, result.stderr)

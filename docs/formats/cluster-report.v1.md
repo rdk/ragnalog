@@ -138,7 +138,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `options.window` | `"explicit" \| "overlap" \| "union"` | yes | Window mode. |
 | `options.examples` | `integer` | yes | Example entries per group and node. |
 | `options.max_raw` | `integer` | yes | Characters of raw kept; 0 = all. |
-| `options.max_groups` | `integer` | yes | Largest groups kept. |
+| `options.max_groups` | `integer` | yes | Largest groups kept; 0 = all. |
 | `options.truncated_groups` | `integer` | yes | Groups cut by max_groups. |
 | `urls` | `ClusterReportUrls \| null` | yes | null; the web app fills it. |
 | `urls.entries` | `string` | yes | Merged entries of the capture. |

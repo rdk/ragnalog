@@ -690,6 +690,10 @@ class ReportFile(Struct, kw_only=True, tag_field="schema", tag="report-file.v1")
     groups: Annotated[int, _d("Groups in the report.")]
     entries: Annotated[int, _d("Embedded example entries.")]
     compare: Annotated[bool, _d("Compared with --compare.")]
+    capture: (
+        Annotated[str | None, _d("report CAPTURE: the capture id (the cluster page).")] | UnsetType
+    ) = UNSET
+    nodes: Annotated[int, _d("report CAPTURE: nodes on the page.")] | UnsetType = UNSET
 
 
 class ReportEntries(Struct, kw_only=True, tag_field="schema", tag="report-entries.v1"):
@@ -1166,7 +1170,7 @@ class ClusterReportOptions(Struct, kw_only=True):
     window: Annotated[Literal["overlap", "union", "explicit"], _d("Window mode.")]
     examples: Annotated[int, _d("Example entries per group and node.")]
     max_raw: Annotated[int, _d("Characters of raw kept; 0 = all.")]
-    max_groups: Annotated[int, _d("Largest groups kept.")]
+    max_groups: Annotated[int, _d("Largest groups kept; 0 = all.")]
     truncated_groups: Annotated[int, _d("Groups cut by max_groups.")]
 
 

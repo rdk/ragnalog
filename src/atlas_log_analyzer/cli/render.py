@@ -26,15 +26,21 @@ __all__ = [
     "GREW_COLUMNS",
     "GROUP_COLUMNS",
     "NEW_COLUMNS",
+    "NODE_ENTRY_COLUMNS",
     "SET_COLUMNS",
     "SPARK",
     "UPGRADE_COLUMNS",
     "VANISHED_COLUMNS",
+    "capture",
     "captures",
+    "cluster_timeline",
     "context",
     "diff",
+    "events",
     "frames",
     "hour_days",
+    "interactions",
+    "matrix",
     "show",
     "stats",
     "triage",
@@ -53,6 +59,8 @@ GROUP_COLUMNS = (
     "last_seen",
 )
 ENTRY_COLUMNS = ("ts", "level_name", "thread", "user", "logger", "message", "variables")
+NODE_ENTRY_COLUMNS = ("ts", "node", "level_name", "thread", "logger", "message")
+"""Default columns of entries of several nodes (a capture's merged entries, context)."""
 SET_COLUMNS = (
     "id",
     "name",
@@ -236,3 +244,160 @@ def triage(console: Console, doc: Doc, *, color: bool) -> None:
             console.print(f"{name}: none")
             continue
         console.print(rows_table(rows, cols, title=name, color=color))
+
+
+# --- captures
+
+
+def _window(doc: Doc) -> str:
+    w = doc["window"]
+    return f"window {w['mode']} {_cell(w['since'])} .. {_cell(w['until'])}"
+
+
+def _duration(ms: int | None) -> str:
+    """``+3 h``, ``+40 s``: a lead or lag in the largest whole unit."""
+    if ms is None:
+        return ""
+    sign = "-" if ms < 0 else "+"
+    ms = abs(ms)
+    for unit, size in (("d", 86_400_000), ("h", 3_600_000), ("min", 60_000), ("s", 1000)):
+        if ms >= size:
+            return f"{sign}{ms / size:.3g} {unit}"
+    return f"{sign}{ms} ms"
+
+
+def capture(console: Console, doc: Doc) -> None:
+    """``capture``: the window, one row per node, then the clock skew estimate."""
+    from rich.text import Text
+
+    name = doc["cluster"] or "capture"
+    console.print(
+        Text(f"{name} {doc['capture'] or ''}".strip(), style="bold") + f"  {_window(doc)}"
+    )
+    rows = []
+    for n in doc["nodes"]:
+        cover = n["coverage"]
+        top = n["top_error"]
+        base = n["baseline"]
+        rows.append(
+            {
+                "node": n["node"],
+                "set": n["set"]["name"] or n["set"]["id"],
+                "entries": n["entries"],
+                "errors": n["errors"],
+                "warnings": n["warnings"],
+                "errors/h": n["errors_per_hour"],
+                "coverage": f"{_cell(cover['since'])} .. {_cell(cover['until'])}" if cover else "",
+                "gaps": len(n["gaps"]),
+                "verdict": n["verdict"] or "",
+                "baseline": (base["name"] or base["id"]) if base else "",
+                "events": ", ".join(f"{k} {v}" for k, v in n["events"].items()),
+                "top error": f"{top['count']}x {top['template']}" if top else "",
+            }
+        )
+    console.print(rows_table(rows, title="nodes"))
+    for s in doc["skew"]:
+        console.print(
+            f"clock skew {s['b']} - {s['a']}: {_duration(s['offset_ms'])} "
+            f"({s['pairs']} event pairs; an estimate, not applied)"
+        )
+
+
+def cluster_timeline(console: Console, doc: Doc) -> None:
+    """``timeline`` of a capture: one row per bucket, the entries of each node (and errors)."""
+    nodes = doc["nodes"]
+    one = "signature" in doc
+    rows = []
+    for i, bucket in enumerate(doc["buckets"]):
+        row: dict[str, Any] = {"bucket": bucket}
+        for node, t in nodes.items():
+            levels = t["levels"]
+            cover = t["coverage"]
+            inside = cover is not None and cover[0] <= i <= cover[1]
+            row[node] = sum(v[i] for v in levels.values()) if inside else None
+            if not one:
+                row[f"{node} ERROR"] = levels["ERROR"][i] if inside else None
+        rows.append(row)
+    what = f"group {doc['signature']}" if one else "entries"
+    console.print(rows_table(rows, title=f"{what} per {doc['bucket']} and node (blank: no logs)"))
+
+
+def matrix(console: Console, doc: Doc, *, color: bool) -> None:
+    """``matrix``: one row per group with a count column per node, spread and lead."""
+    rows = []
+    for r in doc["items"]:
+        row: dict[str, Any] = {"signature": r["signature"], "level_name": r["level_name"]}
+        row["total"] = r["total"]
+        row.update({node: c["count"] for node, c in r["per_node"].items()})
+        row["spread"] = r["spread"]
+        row["skew"] = r["skew"]
+        row["first"] = r["first_node"]
+        row["lead"] = _duration(r["lead_ms"])
+        row["template"] = r["template"]
+        rows.append(row)
+    shown = (
+        f"{doc['count']} of {doc['total']}" if doc["truncated"] or doc["offset"] else doc["total"]
+    )
+    title = f"groups by node ({shown}); {_window(doc)}"
+    if not rows:
+        console.print(f"{title}: none")
+        return
+    console.print(rows_table(rows, title=title, color=color))
+
+
+def events(console: Console, doc: Doc) -> None:
+    """``events``: the events in time order, then the pairs as sentences."""
+    rows = [
+        {
+            "ts": e["ts"],
+            "node": e["node"],
+            "kind": e["kind"],
+            "subject": e["subject"],
+            "count": e["count"],
+            "text": e["text"],
+        }
+        for e in doc["items"]
+    ]
+    if rows:
+        cols = ("ts", "node", "kind", "subject", "count", "text")
+        console.print(rows_table(rows, cols, title=f"events ({doc['count']})"))
+    else:
+        console.print("events: none")
+    for p in doc["pairs"]:
+        a, b = p["a"], p["b"]
+        console.print(
+            f"{a['kind']} on {a['node']} is followed by {b['kind']} on {b['node']} within 60 s, "
+            f"{p['count']} of {p['of']} times (median {_duration(p['median_lag_ms'])}, "
+            f"lift x{p['lift']:.3g})"
+        )
+
+
+def interactions(console: Console, doc: Doc) -> None:
+    """``interactions``: mentions, co-bursts as sentences, concurrent jobs, sessions, jobs."""
+    if doc["mentions"]:
+        rows = [{**m, "groups": len(m["groups"])} for m in doc["mentions"]]
+        console.print(rows_table(rows, ("from", "to", "count", "groups"), title="mentions"))
+    else:
+        console.print("mentions: none")
+    minutes = doc["delta_s"] // 60
+    for c in doc["co_bursts"]:
+        a, b = c["a"], c["b"]
+        console.print(
+            f"when {a['template']} [{a['signature']}] bursts on {a['node']}, "
+            f"{b['template']} [{b['signature']}] bursts on {b['node']} within {minutes} min, "
+            f"{c['hits']} of {c['of']} times (median {_duration(c['median_lag_ms'])}, "
+            f"lift x{c['lift']:.3g})"
+        )
+    if not doc["co_bursts"]:
+        console.print("co-bursts: none")
+    for key, cols in (
+        ("concurrent_jobs", ("job", "nodes", "slots", "examples")),
+        ("sessions", ("nodes", "count")),
+    ):
+        if doc[key]:
+            console.print(rows_table(doc[key], cols, title=key.replace("_", " ")))
+        else:
+            console.print(f"{key.replace('_', ' ')}: none")
+    if doc["jobs"]:
+        rows = [{"job": j["job"], **j["runs"]} for j in doc["jobs"]]
+        console.print(rows_table(rows, title="job runs per node"))

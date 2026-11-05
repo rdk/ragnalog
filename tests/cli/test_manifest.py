@@ -37,7 +37,7 @@ def test_manifest_is_a_valid_small_document(cli: Invoke) -> None:
     assert result.code == 0 and result.stderr == ""
     doc = result.json()
     assert isinstance(convert(doc), Manifest)
-    assert len(result.stdout.strip().encode()) < 9 * 1024
+    assert len(result.stdout.strip().encode()) < 10 * 1024
     assert doc == msgspec.to_builtins(build_manifest())
 
 

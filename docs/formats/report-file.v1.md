@@ -12,3 +12,5 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `groups` | `integer` | yes | Groups in the report. |
 | `entries` | `integer` | yes | Embedded example entries. |
 | `compare` | `boolean` | yes | Compared with --compare. |
+| `capture` | `string \| null` | no | report CAPTURE: the capture id (the cluster page). |
+| `nodes` | `integer` | no | report CAPTURE: nodes on the page. |

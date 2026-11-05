@@ -56,14 +56,16 @@ def write_node_files(
     parts: int = 3,
     prefix: bool = True,
     names: str | None = None,
+    day: str = "2026-11-05",
 ) -> list[Path]:
-    """Write ``[NODE_]atlassian-jira.log``, ``.1`` … ``.{parts-1}`` of one node."""
+    """Write ``[NODE_]atlassian-jira.log``, ``.1`` … ``.{parts-1}`` of one node (on ``day``)."""
     directory.mkdir(parents=True, exist_ok=True)
     stem = f"{node}_{LOG}" if prefix else LOG
     paths = []
     for part in range(parts):
         path = directory / (stem if part == 0 else f"{stem}.{part}")
-        path.write_text(node_lines(node, part, names=names), encoding="utf-8", newline="\n")
+        text = node_lines(node, part, day=day, names=names)
+        path.write_text(text, encoding="utf-8", newline="\n")
         paths.append(path)
     return paths
 

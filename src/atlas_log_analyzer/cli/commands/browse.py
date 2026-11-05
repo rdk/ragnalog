@@ -1,4 +1,8 @@
-"""Commands that read one set: sets, set, groups, show, entries, context, frames, query, stats."""
+"""Commands that read one set: sets, set, groups, show, entries, context, frames, query, stats.
+
+``entries`` also reads all nodes of a capture, and ``context --all-nodes`` the nodes of
+the set's capture (:mod:`atlas_log_analyzer.service.capture_queries`).
+"""
 
 from __future__ import annotations
 
@@ -9,7 +13,8 @@ from cyclopts import Parameter
 from atlas_log_analyzer.cli import context as ctx
 from atlas_log_analyzer.cli import params, render
 from atlas_log_analyzer.service import queries
-from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page, Select
+from atlas_log_analyzer.service.errors import OpError
+from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page, Select, TextCap
 from atlas_log_analyzer.service.views import (
     DETAIL_BRIEF,
     ENTRY_BRIEF,
@@ -277,8 +282,9 @@ def entries(
     offset: int = 0,
     raw: bool = False,
     max_raw: int | None = None,
+    window: Literal["overlap", "union"] | None = None,
 ) -> None:
-    """List entries of a log set, filtered, ordered by time.
+    """List entries of a log set (or of all nodes of a capture), filtered, ordered by time.
 
     Output (json):
       {"schema": "entries.v1", "logset": id, "count": int, "total": int,
@@ -306,13 +312,21 @@ def entries(
     "… [truncated: N chars total, use --max-raw 0]" and its row gets
     "body_truncated": true and "raw_chars": <original length of raw> (of body
     when raw is not among --columns); both keys appear only on cut rows.
+    A capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the entries of all
+    its nodes interleaved by time (then node): "logset" is capture:ID and each
+    row adds "node" and "set" (the node's set id). They are taken from the
+    capture's window: --since/--until, else --window (overlap, the time all
+    nodes have logs for, by default; union); --signature is resolved in any
+    node's groups; --columns may name node and set. With --raw and colour on,
+    each entry's rule names its node.
 
     Exit codes: 0 ok (also when nothing matches); 1 bad option, unknown
-    column, --brief with --columns, or ambiguous --signature prefix; 3
-    unknown set or store error.
+    column, --brief with --columns, --window with a set, or ambiguous
+    --signature prefix; 2 unknown capture; 3 unknown set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name; or a capture (capture:ID,
+            cluster:NAME[@YYYY-MM-DD]).
         q: Entry filters (the options --signature to --exception, see EntryQuery).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         brief: Only id, ts, level_name, thread, user, request_id, logger, message,
@@ -322,18 +336,57 @@ def entries(
         raw: Print the raw log text of the entries (highlighted when colour is on).
         max_raw: Characters kept of raw and body per entry; 0 = no limit. Default: 4000
             in json/jsonl mode, no limit in table and --raw mode.
+        window: overlap or union (a capture only; default overlap, unless --since/--until).
 
     """
+    from atlas_log_analyzer.service.captures import is_capture_ref
+
     page = Page.parse(limit, offset, front="cli")
     sel = Select(columns=columns, brief=brief)
-    shown = sel.resolve(ENTRY_FIELDS, ENTRY_BRIEF, front="cli")
     cap = params.cap(max_raw, text=raw)
+    if is_capture_ref(logset):
+        _capture_entries(logset, q, page, sel, cap, raw=raw, window=window or "overlap")
+        return
+    shown = sel.resolve(ENTRY_FIELDS, ENTRY_BRIEF, front="cli")
+    if window is not None:
+        raise OpError(
+            "usage",
+            "--window applies to a capture",
+            hint="pass a capture (capture:ID, cluster:NAME), or --since/--until",
+        )
     if raw:
         ctx.out().raw_entries(queries.raw_entries(ctx.store(), logset, q, page, cap, front="cli"))
         return
     doc = queries.entries(ctx.store(), logset, q, page, sel, cap, front="cli")
     ctx.out().document(
         doc, columns=shown or render.ENTRY_COLUMNS, title=f"entries of {doc['logset']}"
+    )
+
+
+def _capture_entries(
+    ref: str,
+    q: EntryQuery,
+    page: Page,
+    sel: Select,
+    cap: TextCap,
+    *,
+    raw: bool,
+    window: Literal["overlap", "union"],
+) -> None:
+    """``entries CAPTURE``: the merged entries of all nodes."""
+    from atlas_log_analyzer.service import capture_queries
+
+    store, out = ctx.store(), ctx.out()
+    shown = sel.resolve((*ENTRY_FIELDS, *capture_queries.NODE_COLUMNS), ENTRY_BRIEF, front="cli")
+    if raw:
+        out.raw_entries(
+            capture_queries.raw_entries(store, ref, q, page, cap, window=window, front="cli")
+        )
+        return
+    doc = capture_queries.entries(store, ref, q, page, sel, cap, window=window, front="cli")
+    columns = shown if shown is None or "node" in shown else [*shown, "node"]
+    out.document(
+        doc, columns=columns or render.NODE_ENTRY_COLUMNS, title=f"entries of {doc['logset']}"
     )
 
 
@@ -348,6 +401,8 @@ def context(
     max_raw: int | None = None,
     columns: list[str] | None = None,
     brief: bool = False,
+    all_nodes: bool = False,
+    window: float = 30,
 ) -> int:
     """Show the entries immediately around one entry, in time order (same thread by default).
 
@@ -369,9 +424,15 @@ def context(
     is the preset --columns id,ts,level_name,thread,user,request_id,logger,
     message,exception_type,signature,variables; --brief with --columns is a
     usage error.
+    --all-nodes answers "what did every node do at that moment?": the entries
+    of all nodes of the set's capture within --window seconds before and
+    after the anchor (all threads; --before/--after/--any-thread do not
+    apply), in time then node order, at most 2000 (the nearest; "truncated"
+    and "total" say so); rows add "node" and "set", "any_thread" is true.
 
-    Exit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;
-    2 no entry with this id; 3 unknown set or store error.
+    Exit codes: 0 ok; 1 bad option, unknown column, --brief with --columns, or
+    --all-nodes for a set in no capture; 2 no entry with this id; 3 unknown
+    set or store error.
 
     Args:
         logset: Log set id, unique id prefix or name.
@@ -384,10 +445,32 @@ def context(
         columns: Columns to return: comma-separated (ts,message) and/or repeated.
         brief: Only id, ts, level_name, thread, user, request_id, logger, message,
             exception_type, signature, variables.
+        all_nodes: What every node logged around the anchor (the set's capture).
+        window: With --all-nodes: seconds before and after the anchor.
 
     """
     cap = params.cap(max_raw, text=False)
     sel = Select(columns=columns, brief=brief)
+    out = ctx.out()
+    if all_nodes:
+        from atlas_log_analyzer.service import capture_queries
+
+        valid = (*ENTRY_FIELDS, *capture_queries.NODE_COLUMNS)
+        shown = sel.resolve(valid, DETAIL_BRIEF, front="cli")
+        doc, at = capture_queries.context(
+            ctx.store(), logset, entry_id, window_s=window, sel=sel, cap=cap, front="cli"
+        )
+        cols = [*shown, "node"] if shown and "node" not in shown else shown
+        out.document(
+            doc,
+            jsonl_rows=[
+                {**r, "anchor": True} if i == at else r for i, r in enumerate(doc["items"])
+            ],
+            table=lambda console: render.context(
+                console, doc, at, cols or render.NODE_ENTRY_COLUMNS, color=out.color
+            ),
+        )
+        return 0
     shown = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front="cli")
     doc, at = queries.context(
         ctx.store(),
@@ -400,7 +483,6 @@ def context(
         cap=cap,
         front="cli",
     )
-    out = ctx.out()
     out.document(
         doc,
         jsonl_rows=[{**r, "anchor": True} if i == at else r for i, r in enumerate(doc["items"])],

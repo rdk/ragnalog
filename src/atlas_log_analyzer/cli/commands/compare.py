@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 from cyclopts import Parameter
 
@@ -11,6 +11,7 @@ from atlas_log_analyzer.cli import context as ctx
 from atlas_log_analyzer.cli import params, render
 from atlas_log_analyzer.service import compare as service_compare
 from atlas_log_analyzer.service import ingest as service_ingest
+from atlas_log_analyzer.service.errors import OpError
 
 # polars, DuckDB, rich and the ingest pipeline are imported by the code that needs them.
 
@@ -160,9 +161,12 @@ def triage(
     jsonl mode prints the document on one line. Table mode prints the
     verdict, the summary and one table per list; the warnings go to stderr.
 
+    SET is one set: a capture reference is a usage error, as `capture REF
+    --triage` gives the verdict of each node against its own previous set.
+
     Exit codes: 0 ok, whatever the verdict (also no_baseline); 1 bad option,
-    invalid level, or the sets were built with different signature/mask-rule
-    versions or specs; 3 unknown set or store error.
+    invalid level, a capture reference, or the sets were built with different
+    signature/mask-rule versions or specs; 3 unknown set or store error.
 
     Args:
         logset: The log set to judge (id, id prefix or name).
@@ -199,10 +203,11 @@ def report(
     min_level: str | None = None,
     examples: int = 3,
     max_raw: int = 4000,
-    max_groups: int = 0,
+    max_groups: int | None = None,
+    window: Literal["overlap", "union"] | None = None,
     open_: Annotated[bool, Parameter(name="--open")] = False,
 ) -> None:
-    """Write a self-contained HTML report of a log set (optionally compared with another).
+    """Write a self-contained HTML report of a set or capture (the cluster page).
 
     The page needs no network access (CSS, JS and data are inlined) and works
     from a file share or an e-mail attachment: overview tiles, a per-hour
@@ -211,42 +216,80 @@ def report(
     equivalent CLI commands. The embedded data is the "report.v1" payload
     (docs/formats/report.v1.md). With --compare SET_B the report shows the
     groups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).
+    A capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the cluster page
+    (the "cluster-report.v1" payload, docs/cluster.md): node cards with each
+    node's triage verdict, a timeline band per node with its events, the
+    groups by node, interactions and the example entries of all nodes, within
+    --window (overlap by default, or union). The default file is
+    <cluster>_<capture id>.html; --compare and --min-level apply to sets only.
 
     Output (json):
       {"schema": "report-file.v1", "path": str, "bytes": int, "groups": int,
-       "entries": int, "compare": bool}
+       "entries": int, "compare": bool, "capture"?: str | null, "nodes"?: int}
     "groups" is the number of groups in the report, "entries" the number of
-    embedded example entries. Table mode prints one line.
+    embedded example entries; a capture adds "capture" (its id) and "nodes".
+    Table mode prints one line.
 
     Exit codes: 0 ok; 1 bad option, invalid level, or the sets were built with
     different signature/mask-rule versions or specs; 2 the output directory
-    does not exist; 3 unknown set or store error.
+    does not exist or unknown capture; 3 unknown set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name; or a capture (capture:ID,
+            cluster:NAME[@YYYY-MM-DD]).
         out: Output file; default <name or id>.html in the current directory.
         compare: Baseline log set to compare with (id, id prefix or name).
         min_level: Only groups of this level or more severe (e.g. WARN); the
             overview always covers the whole set.
-        examples: Example entries per group; 0 = none.
+        examples: Example entries per group (a capture: per group and node); 0 = none.
         max_raw: Truncate each example's raw text to this many characters; 0 = no limit.
-        max_groups: Only the N largest groups; 0 = all.
+        max_groups: Only the N largest groups; 0 = all. Default: all (a capture: 500).
+        window: overlap or union (a capture only; default overlap).
         open_: Open the report in the default web browser.
 
     """
-    doc = service_ingest.report_file(
-        ctx.store(),
-        logset,
-        out=out,
-        compare=compare,
-        min_level=min_level,
-        examples=examples,
-        max_raw=max_raw,
-        max_groups=max_groups,
-        front="cli",
-    )
+    from atlas_log_analyzer.service.captures import is_capture_ref
+
     output = ctx.out()
-    extra = f", compared with {compare}" if compare is not None else ""
+    if is_capture_ref(logset):
+        if compare is not None or min_level is not None:
+            raise OpError(
+                "usage",
+                "--compare and --min-level apply to the report of a set, not of a capture",
+                hint="each node is triaged against its own previous set on the cluster page",
+            )
+        from atlas_log_analyzer.service import capture_queries
+
+        doc = capture_queries.report_file(
+            ctx.store(),
+            logset,
+            capture_queries.CaptureWindow(window=window or "overlap"),
+            out=out,
+            examples=examples,
+            max_raw=max_raw,
+            max_groups=500 if max_groups is None else max_groups,
+            front="cli",
+        )
+        extra = f", {doc['nodes']} nodes"
+    else:
+        if window is not None:
+            raise OpError(
+                "usage",
+                "--window applies to a capture",
+                hint="pass a capture (capture:ID, cluster:NAME)",
+            )
+        doc = service_ingest.report_file(
+            ctx.store(),
+            logset,
+            out=out,
+            compare=compare,
+            min_level=min_level,
+            examples=examples,
+            max_raw=max_raw,
+            max_groups=max_groups or 0,
+            front="cli",
+        )
+        extra = f", compared with {compare}" if compare is not None else ""
     line = (
         f"wrote {Path(doc['path'])} ({doc['bytes']:,} bytes, {doc['groups']:,} groups, "
         f"{doc['entries']:,} example entries{extra})"

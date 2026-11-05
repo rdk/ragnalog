@@ -310,6 +310,12 @@ def test_matrix_filters_sort_and_page(capture: C.Capture, window: C.Window) -> N
         )
     bad_level = error(lambda: C.matrix(capture, window=window, where=GroupFilter(level="LOUD")))
     assert bad_level.code == "invalid_level"
+    sig = beats["items"][0]["signature"]
+    one = doc(C.matrix(capture, window=window, signature=sig[:6]))
+    assert [r["signature"] for r in one["items"]] == [sig] and one["total"] == 1
+    assert C.resolve_signature(capture, sig[:6]) == sig
+    missing = error(lambda: C.matrix(capture, window=window, signature="0" * 16))
+    assert missing.reason == "group_not_found"
 
 
 # --- events.v1
@@ -468,6 +474,8 @@ def test_context_all_nodes(capture: C.Capture, window: C.Window) -> None:
     assert (d["total"], d["truncated"]) == (4, False)
     by_name = C.context_all_nodes(capture, "acme-node1", snapshot.entry_id, window_s=0)
     assert by_name.count == 1
+    cols = doc(C.context_all_nodes(capture, set_id, snapshot.entry_id, columns=["ts"]))
+    assert set(cols["items"][0]) == {"ts", "node", "set"}
     assert error(lambda: C.context_all_nodes(capture, "nope", snapshot.entry_id)).reason == (
         "set_not_found"
     )
@@ -546,6 +554,10 @@ def test_cluster_payload_options(capture: C.Capture) -> None:
     assert all(len(e["raw"]) <= 10 for e in d["entries"].values())
     none = doc(C.cluster_payload(capture, window=union, examples=0))
     assert none["entries"] == {} and all(g["examples"] == {} for g in none["groups"])
+    every = doc(C.cluster_payload(capture, window=union, examples=0, max_groups=0))
+    assert every["options"]["truncated_groups"] == 0 and len(every["groups"]) == len(
+        doc(C.matrix(capture, window=union, limit=0))["items"]
+    )
     assert error(lambda: C.cluster_payload(capture, window=union, max_groups=-1)).code == (
         "invalid_value"
     )

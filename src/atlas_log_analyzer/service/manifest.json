@@ -46,6 +46,22 @@
   ],
   "when": [
    {
+    "run": "capture cluster:NAME",
+    "purpose": "cluster nodes side by side, verdict per node"
+   },
+   {
+    "run": "matrix CAPTURE --spread only",
+    "purpose": "groups on one node only"
+   },
+   {
+    "run": "events CAPTURE",
+    "purpose": "what each node did, when"
+   },
+   {
+    "run": "interactions CAPTURE",
+    "purpose": "how the nodes affect each other"
+   },
+   {
     "run": "query LOGSET SQL",
     "purpose": "aggregates no command gives (DuckDB SQL)"
    },
@@ -95,6 +111,16 @@
      3
     ]
    },
+   "capture": {
+    "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--triage]",
+    "output": "capture.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
    "label": {
     "summary": "Label a log set",
     "usage": "LOGSET [--node str] [--cluster str] [--capture str]",
@@ -125,16 +151,17 @@
     ]
    },
    "entries": {
-    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int]",
+    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
     "output": "entries.v1",
     "exit": [
      0,
      1,
+     2,
      3
     ]
    },
    "context": {
-    "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief]",
+    "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief] [--all-nodes] [--window float=30]",
     "output": "entries.v1",
     "exit": [
      0,
@@ -171,6 +198,47 @@
      3
     ]
    },
+   "timeline": {
+    "summary": "Count entries per time bucket",
+    "usage": "REF [--bucket str=1h] [--signature str] [--level str] [--min-level str] [--since str] [--until str] [--window overlap|union] [--by-node]",
+    "output": "timeline.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "matrix": {
+    "usage": "REF [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--window overlap|union=overlap] [--node str] [--spread all|only|skewed] [--sort count|skew|lead=count] [--skew-min float=4.0] [--signature str] [--limit int=50] [--offset int=0]",
+    "output": "matrix.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "events": {
+    "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--kind str*]",
+    "output": "events.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "interactions": {
+    "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--delta int=300]",
+    "output": "interactions.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
    "diff": {
     "usage": "SET_A SET_B [--min-level str] [--coarse] [--force] [--limit int=50] [--rate]",
     "output": "diff.v1",
@@ -190,8 +258,8 @@
     ]
    },
    "report": {
-    "summary": "Write a self-contained HTML report of a log set",
-    "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int=0] [--open]",
+    "summary": "Write a self-contained HTML report of a set or capture",
+    "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int] [--window overlap|union] [--open]",
     "output": "report-file.v1",
     "exit": [
      0,
@@ -298,11 +366,14 @@
    "--force": "Read a named file over 64 MiB even if",
    "--brief": "Only id, ts, level_name, thread, user",
    "LOGSET": "Log set id, unique id prefix or name",
+   "REF": "Capture or log set",
+   "--window": "overlap or union",
+   "--since": "From this time: ISO 8601, YYYY-MM-DD",
+   "--until": "Up to this time",
+   "--triage": "Verdict per node vs its own previous set",
    "--level": "Only these levels, e.g. ERROR or",
    "--min-level": "Only this level or more severe",
    "--logger": "Logger name or package prefix",
-   "--since": "Only groups with an entry at/after this",
-   "--until": "Only groups first seen before this time",
    "--with-exception": "Only groups with an exception, any level",
    "--exception": "Only groups whose exception_type",
    "--contains": "Only groups whose template contains this",
@@ -320,9 +391,13 @@
    "--before": "Entries to show before the anchor",
    "--after": "Entries to show after the anchor",
    "--any-thread": "Consider entries of all threads",
-   "REF": "Entry id, or group signature or unique",
+   "--all-nodes": "What every node logged around the anchor",
    "--all": "Return every frame and all application",
    "SQL": "The SQL query",
+   "--spread": "Only rows with this spread",
+   "--skew-min": "Rate ratio from which a group is skewed",
+   "--kind": "Only these kinds",
+   "--delta": "Co-burst window in seconds",
    "SET_A": "Baseline log set",
    "SET_B": "Log set to compare against the baseline",
    "--rate": "Add hourly rates to \"changed\" and sort",
@@ -558,6 +633,48 @@
     }
    ]
   },
+  "capture": {
+   "schema": "manifest-command.v1",
+   "command": "capture",
+   "version": "",
+   "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--triage]",
+   "description": "Show the nodes of a capture side by side: coverage, volume, top error, events, verdict.\n\nREF is a capture (capture:ID, a unique id prefix; cluster:NAME, its newest\ncapture; cluster:NAME@YYYY-MM-DD) or a log set: the capture the set belongs\nto, else that set as a capture of one node. Every capture view counts\nwithin one window: --window overlap (default; the time all nodes have logs\nfor, so a group is not \"only on NODE2\" because NODE1's files start later),\nunion, or --since/--until. Each node is triaged against its own previous\nset (never another node); --no-triage skips it.\n\nOutput (json):\n  {\"schema\": \"capture.v1\", \"capture\": id | null, \"cluster\": str | null,\n   \"window\": {\"mode\": \"overlap\" | \"union\" | \"explicit\", \"since\", \"until\"},\n   \"nodes\": [{\"node\", \"set\": {\"id\", \"name\"}, \"first_ts\", \"last_ts\",\n              \"coverage\": {\"since\", \"until\"} | null, \"gaps\": [[since, until]],\n              \"entries\", \"errors\", \"warnings\", \"errors_per_hour\",\n              \"warnings_per_hour\",\n              \"top_error\": {\"signature\", \"template\", \"count\"} | null,\n              \"verdict\": str | null, \"baseline\": {\"id\", \"name\", \"reason\"} | null,\n              \"events\": {kind: count}}],\n   \"skew\": [{\"a\", \"b\", \"offset_ms\", \"pairs\"}]}\n\"coverage\" is the node's first to last entry within the window, \"gaps\"\nruns of at least 15 minutes without entries inside it; rates are per hour\nof coverage. \"verdict\" is the node's triage verdict (as `triage`;\nno_baseline when it has no earlier set; null with --no-triage). \"skew\" is\na clock skew estimate from paired events, shown, never applied.\n\nExit codes: 0 ok; 1 bad option or time, or the nodes' logs do not\noverlap (use --window union); 2 unknown capture; 3 unknown set or store\nerror.",
+   "output": "capture.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) or log set."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "default": "overlap",
+     "help": "overlap or union (overlap: the latest first entry to the earliest last entry of the nodes, the time all of them have logs for; union: earliest to latest)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the capture's last entry (an explicit window instead of --window)."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Up to this time (same forms as --since)."
+    },
+    {
+     "name": "--triage",
+     "type": "flag",
+     "help": "Verdict per node vs its own previous set (triage)."
+    }
+   ]
+  },
   "label": {
    "schema": "manifest-command.v1",
    "command": "label",
@@ -742,19 +859,20 @@
    "schema": "manifest-command.v1",
    "command": "entries",
    "version": "",
-   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int]",
-   "description": "List entries of a log set, filtered, ordered by time.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"items\": [<entries.v1 row>, ...]}\n\"total\" counts the matching entries before --offset/--limit; \"offset\"\nechoes --offset; \"truncated\" is true when more entries follow this page\nand \"next_offset\" is where it starts (offset + count; null on the last\npage). --coarse-signature takes the signature of `groups --coarse`. With\n--raw the raw log text of the entries is printed instead (as `show --raw`;\n--offset/--limit apply).\nRows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,\nlevel numeric) unless --columns is given:\n  id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n  request_id, session, ip, url, request_url, context, exception_type,\n  exception_message, exception_chain, signature, coarse_signature, template,\n  variables, source_path, source_line, source_offset, raw, parse_error\n--columns takes comma-separated names and/or is repeated\n(--columns ts,level_name --columns message); an unknown name is error\n\"invalid_value\" whose \"hint\" lists the valid columns. --brief is the\npreset --columns id,ts,level_name,thread,user,request_id,logger,message,\nexception_type,signature; --brief with --columns is a usage error.\n--with-exception keeps entries with an exception (exception_type not\nnull) at any level; --exception TEXT matches a case-insensitive substring\nof exception_type (the outermost exception).\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in\njson/jsonl, no limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (of body\nwhen raw is not among --columns); both keys appear only on cut rows.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, unknown\ncolumn, --brief with --columns, or ambiguous --signature prefix; 3\nunknown set or store error.",
+   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
+   "description": "List entries of a log set (or of all nodes of a capture), filtered, ordered by time.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"items\": [<entries.v1 row>, ...]}\n\"total\" counts the matching entries before --offset/--limit; \"offset\"\nechoes --offset; \"truncated\" is true when more entries follow this page\nand \"next_offset\" is where it starts (offset + count; null on the last\npage). --coarse-signature takes the signature of `groups --coarse`. With\n--raw the raw log text of the entries is printed instead (as `show --raw`;\n--offset/--limit apply).\nRows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,\nlevel numeric) unless --columns is given:\n  id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n  request_id, session, ip, url, request_url, context, exception_type,\n  exception_message, exception_chain, signature, coarse_signature, template,\n  variables, source_path, source_line, source_offset, raw, parse_error\n--columns takes comma-separated names and/or is repeated\n(--columns ts,level_name --columns message); an unknown name is error\n\"invalid_value\" whose \"hint\" lists the valid columns. --brief is the\npreset --columns id,ts,level_name,thread,user,request_id,logger,message,\nexception_type,signature; --brief with --columns is a usage error.\n--with-exception keeps entries with an exception (exception_type not\nnull) at any level; --exception TEXT matches a case-insensitive substring\nof exception_type (the outermost exception).\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in\njson/jsonl, no limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (of body\nwhen raw is not among --columns); both keys appear only on cut rows.\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the entries of all\nits nodes interleaved by time (then node): \"logset\" is capture:ID and each\nrow adds \"node\" and \"set\" (the node's set id). They are taken from the\ncapture's window: --since/--until, else --window (overlap, the time all\nnodes have logs for, by default; union); --signature is resolved in any\nnode's groups; --columns may name node and set. With --raw and colour on,\neach entry's rule names its node.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, unknown\ncolumn, --brief with --columns, --window with a set, or ambiguous\n--signature prefix; 2 unknown capture; 3 unknown set or store error.",
    "output": "entries.v1",
    "exit": [
     0,
     1,
+    2,
     3
    ],
    "params": [
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name; or a capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
     },
     {
      "name": "--signature",
@@ -852,6 +970,11 @@
      "name": "--max-raw",
      "type": "int",
      "help": "Characters kept of raw and body per entry; 0 = no limit. Default: 4000 in json/jsonl mode, no limit in table and --raw mode."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "help": "overlap or union (a capture only; default overlap, unless --since/--until)."
     }
    ]
   },
@@ -859,8 +982,8 @@
    "schema": "manifest-command.v1",
    "command": "context",
    "version": "",
-   "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief]",
-   "description": "Show the entries immediately around one entry, in time order (same thread by default).\n\nAnswers \"what did this request/thread do just before and after?\": the\n--before entries preceding ENTRY_ID and the --after entries following it\nin time order (ties in file order), restricted to the anchor's thread\nunless --any-thread. The anchor itself is included. Entry ids come from\nthe \"id\" column of `entries`, `show` or a group's \"examples\".\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"anchor\": <entry id>,\n   \"thread\": <anchor's thread> | null, \"any_thread\": bool, \"count\": int,\n   \"items\": [<entries.v1 row>, ...]}\n\"items\" holds at most --before + 1 + --after rows, the anchor among them.\n\"raw\" and \"body\" are cut as in `entries` (--max-raw, default 4000 in\njson/jsonl). In jsonl mode one row per line; the anchor row has an extra\n\"anchor\": true. The table marks the anchor row with ▶.\n--columns keeps only the named columns (as `entries --columns`); --brief\nis the preset --columns id,ts,level_name,thread,user,request_id,logger,\nmessage,exception_type,signature,variables; --brief with --columns is a\nusage error.\n\nExit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;\n2 no entry with this id; 3 unknown set or store error.",
+   "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief] [--all-nodes] [--window float=30]",
+   "description": "Show the entries immediately around one entry, in time order (same thread by default).\n\nAnswers \"what did this request/thread do just before and after?\": the\n--before entries preceding ENTRY_ID and the --after entries following it\nin time order (ties in file order), restricted to the anchor's thread\nunless --any-thread. The anchor itself is included. Entry ids come from\nthe \"id\" column of `entries`, `show` or a group's \"examples\".\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"anchor\": <entry id>,\n   \"thread\": <anchor's thread> | null, \"any_thread\": bool, \"count\": int,\n   \"items\": [<entries.v1 row>, ...]}\n\"items\" holds at most --before + 1 + --after rows, the anchor among them.\n\"raw\" and \"body\" are cut as in `entries` (--max-raw, default 4000 in\njson/jsonl). In jsonl mode one row per line; the anchor row has an extra\n\"anchor\": true. The table marks the anchor row with ▶.\n--columns keeps only the named columns (as `entries --columns`); --brief\nis the preset --columns id,ts,level_name,thread,user,request_id,logger,\nmessage,exception_type,signature,variables; --brief with --columns is a\nusage error.\n--all-nodes answers \"what did every node do at that moment?\": the entries\nof all nodes of the set's capture within --window seconds before and\nafter the anchor (all threads; --before/--after/--any-thread do not\napply), in time then node order, at most 2000 (the nearest; \"truncated\"\nand \"total\" say so); rows add \"node\" and \"set\", \"any_thread\" is true.\n\nExit codes: 0 ok; 1 bad option, unknown column, --brief with --columns, or\n--all-nodes for a set in no capture; 2 no entry with this id; 3 unknown\nset or store error.",
    "output": "entries.v1",
    "exit": [
     0,
@@ -910,6 +1033,17 @@
      "name": "--brief",
      "type": "flag",
      "help": "Only id, ts, level_name, thread, user, request_id, logger, message, exception_type, signature, variables."
+    },
+    {
+     "name": "--all-nodes",
+     "type": "flag",
+     "help": "What every node logged around the anchor (the set's capture)."
+    },
+    {
+     "name": "--window",
+     "type": "float",
+     "default": "30",
+     "help": "With --all-nodes: seconds before and after the anchor."
     }
    ]
   },
@@ -994,6 +1128,259 @@
     }
    ]
   },
+  "timeline": {
+   "schema": "manifest-command.v1",
+   "command": "timeline",
+   "version": "",
+   "usage": "REF [--bucket str=1h] [--signature str] [--level str] [--min-level str] [--since str] [--until str] [--window overlap|union] [--by-node]",
+   "description": "Count entries per time bucket: of a log set, or per node of a capture.\n\nA log set gives timeline.v1 (as GET /api/sets/{ref}/timeline). A capture\nreference (capture:ID, cluster:NAME[@DAY]), or a set with --by-node, gives\ncluster-timeline.v1 of its capture: per node and bucket the entries by\nlevel, or with --signature the entries of that group; buckets run over the\nwindow (--window overlap|union, --since/--until, as `capture`).\n\nOutput (json):\n  {\"schema\": \"timeline.v1\", \"logset\": id, \"bucket\": str, \"count\": int,\n   \"items\": [{\"bucket\", \"count\"}]}\n  {\"schema\": \"cluster-timeline.v1\", \"bucket\": str, \"buckets\": [iso],\n   \"nodes\": {NODE: {\"levels\": {\"ERROR\"|\"WARN\"|\"INFO\"|\"DEBUG\"|\"OTHER\": [n]},\n                    \"coverage\": [first, last] | null}},\n   \"signature\"?: str}\nBucket times are UTC, aligned to the epoch. \"coverage\" gives the first and\nlast bucket index in which the node has logs; with --signature \"levels\"\nhas only \"count\". Table mode prints one row per bucket (a capture: one\ncolumn per node).\n\nExit codes: 0 ok; 1 bad option, bucket, level or time, --level with a\ncapture, --window with a set, or an ambiguous signature prefix; 2 unknown\ncapture or group; 3 unknown set or store error.",
+   "output": "timeline.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Log set, or capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
+    },
+    {
+     "name": "--bucket",
+     "type": "str",
+     "default": "1h",
+     "help": "Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d)."
+    },
+    {
+     "name": "--signature",
+     "type": "str",
+     "help": "Only entries of this group (signature or unique prefix)."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "A set only: only these levels, e.g. ERROR or WARN,ERROR."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "A set only: only this level or more severe."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the last entry."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Up to this time (same forms as --since)."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "help": "overlap or union (a capture only; default overlap)."
+    },
+    {
+     "name": "--by-node",
+     "type": "flag",
+     "help": "Per node of the set's capture (a set in no capture: that one node)."
+    }
+   ]
+  },
+  "matrix": {
+   "schema": "manifest-command.v1",
+   "command": "matrix",
+   "version": "",
+   "usage": "REF [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--window overlap|union=overlap] [--node str] [--spread all|only|skewed] [--sort count|skew|lead=count] [--skew-min float=4.0] [--signature str] [--limit int=50] [--offset int=0]",
+   "description": "Compare the groups of the nodes of a capture: one row per group, a column per node.\n\nAnswers \"is it cluster-wide or one node's problem, and which node saw it\nfirst?\". Counts are restricted to the window (--window, or --since/--until\nas the window); the other filters are those of `groups`. \"spread\" is only\n(on one node), skewed (missing from a node that has logs, or the max/min\nof count / node entries is at least --skew-min) or all; \"lead_ms\" is the\ngap between the first two nodes' first entries.\n\nOutput (json):\n  {\"schema\": \"matrix.v1\", \"window\": {\"mode\", \"since\", \"until\"},\n   \"nodes\": [NODE], \"count\": int, \"total\": int, \"offset\": int,\n   \"truncated\": bool,\n   \"items\": [{\"signature\", \"template\", \"level\", \"level_name\", \"logger\",\n              \"exception_type\", \"total\",\n              \"per_node\": {NODE: {\"count\", \"rate_per_hour\", \"first_seen\",\n                                  \"last_seen\"}},\n              \"spread\": \"all\" | \"only\" | \"skewed\", \"skew\": float | null,\n              \"first_node\": str | null, \"lead_ms\": int | null}]}\nRows are sorted by --sort (count = total, skew, lead; descending), at most\n--limit from --offset; \"total\" counts the matching rows. Rates are per\nhour of each node's coverage.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, level, time,\nnode or ambiguous signature prefix; 2 unknown capture or group; 3 unknown\nset or store error.",
+   "output": "matrix.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) or log set."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL; UNKNOWN = entries whose header could not be parsed)."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only this level or more severe, e.g. WARN."
+    },
+    {
+     "name": "--logger",
+     "type": "str",
+     "help": "Logger name or package prefix (c.a.jira matches c.a.jira.Foo)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "Only groups with an entry at/after this time (last_seen >= since): ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Only groups first seen before this time (same forms as --since)."
+    },
+    {
+     "name": "--with-exception",
+     "type": "flag",
+     "help": "Only groups with an exception (exception_type not null), any level."
+    },
+    {
+     "name": "--exception",
+     "type": "str",
+     "help": "Only groups whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--contains",
+     "type": "str",
+     "help": "Only groups whose template contains this text (case-insensitive)."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "default": "overlap",
+     "help": "overlap or union (--since/--until make the window explicit)."
+    },
+    {
+     "name": "--node",
+     "type": "str",
+     "help": "Only groups present on this node."
+    },
+    {
+     "name": "--spread",
+     "type": "all|only|skewed",
+     "help": "Only rows with this spread: all, only (one node), skewed."
+    },
+    {
+     "name": "--sort",
+     "type": "count|skew|lead",
+     "default": "count",
+     "help": "count (total), skew, lead (lead_ms); descending."
+    },
+    {
+     "name": "--skew-min",
+     "type": "float",
+     "default": "4.0",
+     "help": "Rate ratio from which a group is skewed (rates per node entries)."
+    },
+    {
+     "name": "--signature",
+     "type": "str",
+     "help": "Only this group (signature or unique prefix)."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "50",
+     "help": "Maximum number of rows; 0 = all."
+    },
+    {
+     "name": "--offset",
+     "type": "int",
+     "default": "0",
+     "help": "Skip this many rows first (paging: next offset = offset + count)."
+    }
+   ]
+  },
+  "events": {
+   "schema": "manifest-command.v1",
+   "command": "events",
+   "version": "",
+   "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--kind str*]",
+   "description": "List what every node of a capture did: restarts, index, locks, health checks, jobs.\n\nEvents come from rules over the group templates of the format (Jira:\nstart, stop, health_failed, cache_replication, index_replication,\nindex_snapshot, index_restore, index_replay, reindex, cluster_lock,\ncache_peer, job_run). Entries of one node, kind and subject close in time\nfold into one event; \"pairs\" are kinds on different nodes that follow each\nother within 60 s more often than by chance.\n\nOutput (json):\n  {\"schema\": \"events.v1\", \"rules_version\": int, \"count\": int,\n   \"items\": [{\"node\", \"ts\", \"last_ts\", \"kind\", \"subject\", \"subject_node\",\n              \"signature\", \"entry_id\", \"count\", \"text\"}],\n   \"pairs\": [{\"a\": {\"node\", \"kind\"}, \"b\": {\"node\", \"kind\"}, \"count\", \"of\",\n              \"median_lag_ms\", \"lift\", \"examples\": [[ts_a, ts_b]]}]}\n\"subject\" is the node, check, lock or job the event names; \"subject_node\"\nthe member node it names. Items are in time order.\n\nExit codes: 0 ok (also when there are none); 1 bad option, kind or time;\n2 unknown capture; 3 unknown set or store error.",
+   "output": "events.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) or log set."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "default": "overlap",
+     "help": "overlap or union (overlap: the latest first entry to the earliest last entry of the nodes, the time all of them have logs for; union: earliest to latest)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the capture's last entry (an explicit window instead of --window)."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Up to this time (same forms as --since)."
+    },
+    {
+     "name": "--kind",
+     "type": "str*",
+     "help": "Only these kinds (comma-separated and/or repeated)."
+    }
+   ]
+  },
+  "interactions": {
+   "schema": "manifest-command.v1",
+   "command": "interactions",
+   "version": "",
+   "usage": "REF [--window overlap|union=overlap] [--since str] [--until str] [--delta int=300]",
+   "description": "Show how the nodes of a capture affect each other.\n\n\"mentions\": entries on one node naming another node id, with the groups\nbehind each edge. \"co_bursts\": a group bursting on one node followed by a\ngroup bursting on another within --delta seconds, at least 3 times and 3\ntimes more often than chance. \"concurrent_jobs\": one job key run on two or\nmore nodes within a minute. \"sessions\": a session seen on two nodes within\nan hour (lost sticky session or failover). \"jobs\": job runs per node.\n\nOutput (json):\n  {\"schema\": \"interactions.v1\", \"delta_s\": int,\n   \"mentions\": [{\"from\", \"to\", \"count\", \"groups\": [sig]}],\n   \"co_bursts\": [{\"a\": {\"node\", \"signature\", \"template\", \"groups\"},\n                  \"b\": {...}, \"hits\", \"of\", \"median_lag_ms\", \"lift\"}],\n   \"concurrent_jobs\": [{\"job\", \"nodes\", \"slots\", \"examples\": [ts]}],\n   \"sessions\": [{\"nodes\": [a, b], \"count\"}],\n   \"jobs\": [{\"job\", \"runs\": {NODE: n}}]}\n\nExit codes: 0 ok; 1 bad option or time; 2 unknown capture; 3 unknown set\nor store error.",
+   "output": "interactions.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) or log set."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "default": "overlap",
+     "help": "overlap or union (overlap: the latest first entry to the earliest last entry of the nodes, the time all of them have logs for; union: earliest to latest)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the capture's last entry (an explicit window instead of --window)."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Up to this time (same forms as --since)."
+    },
+    {
+     "name": "--delta",
+     "type": "int",
+     "default": "300",
+     "help": "Co-burst window in seconds (b bursts at most this long after a)."
+    }
+   ]
+  },
   "diff": {
    "schema": "manifest-command.v1",
    "command": "diff",
@@ -1050,7 +1437,7 @@
    "command": "triage",
    "version": "",
    "usage": "LOGSET [--baseline str=auto] [--min-level str=WARN] [--grow float=2.0] [--limit int=50]",
-   "description": "Answer \"are there new kinds of errors since the baseline?\" in one document.\n\nCompares SET with a baseline (as `diff BASELINE SET --min-level L`) and\nsorts the result for a decision: new groups (most severe first), new\ngroups of a lower level that carry an exception, groups whose hourly rate\ngrew, vanished groups. --baseline auto (default) ranks the other sets of\nthe same format (the web app's rule): it rejects a set signed with\nanother recipe_key (reason \"stale\", hint `upgrade`; or \"recipe\"), whose\nsources are a superset or subset of SET's (\"superset\"/\"subset\"; partial\noverlap is fine), that ends after SET (\"later\"), that has under 1% of\nSET's entries (\"tiny\") or a span more than 16x longer or shorter\n(\"span\"); of the rest it prefers a set that ends before SET starts, then\nthe span closest to SET's, then the newest. With none left the verdict\nis no_baseline and \"warnings\" lists the rejected sets. An explicit\n--baseline is used as given, with a warning when it is stale, contained\nor tiny.\n\nOutput (json):\n  {\"schema\": \"triage.v1\",\n   \"set\": {\"id\", \"name\", \"first_ts\", \"last_ts\", \"entries\"},\n   \"baseline\": {\"id\", \"name\", \"first_ts\", \"last_ts\",\n                \"resolved_by\": \"auto\" | \"param\", \"reason\": str,\n                \"entries\": int, \"shared_sources\": int,\n                \"candidates\": [{\"id\", \"name\", \"reason\", \"detail\",\n                                \"hint\"?}, ...]} | null,\n   \"min_level\": \"WARN\",\n   \"verdict\": \"new_errors\" | \"new_warnings\" | \"new_exceptions\" | \"clean\"\n              | \"no_baseline\",\n   \"summary\": {\"new\", \"new_by_level\": {\"ERROR\": n, ...}, \"new_exceptions\",\n               \"grew\", \"vanished\", \"changed\", \"unchanged\"} | null,\n   \"coverage\": {\"hours_baseline\", \"hours_set\", \"ratio\"},\n   \"warnings\": [str, ...],\n   \"new\": [<diff row> + \"rate_per_hour\"],\n   \"new_exceptions\": [<diff row> + \"rate_per_hour\"],\n   \"grew\": [<diff row> + \"ratio\", \"rate_a\", \"rate_b\", \"rate_ratio\"],\n   \"vanished\": [<diff row>]}\nDiff rows are those of `diff` (signature, template, level, level_name,\nlogger, exception_type, count_a, count_b, first/last_seen_a/b); set and\nbaseline timestamps are written as in their manifests.\n\"new\": groups at/above --min-level only in SET; \"new_exceptions\": new\ngroups of ANY level with an exception that are not in \"new\" (a new DEBUG\nstack trace); \"grew\": changed groups whose hourly rate rose at least --grow\ntimes (rates as `diff --rate`, which normalise different spans), highest\nrate_ratio first; \"vanished\": groups at\n/above --min-level only in the baseline. \"verdict\": new_errors (a new\nERROR/FATAL group), new_warnings (other new groups), new_exceptions (no\nnew group but a new exception at a lower level), clean, no_baseline.\n\"coverage\" gives both spans in hours and ratio = hours_set /\nhours_baseline; when they differ by more than 4x either way \"warnings\"\nsays that \"new\"/\"vanished\" are unreliable (a nightly set lacks daytime\ngroups). \"baseline.reason\" says why the baseline was chosen,\n\"shared_sources\" counts the source files both sets share and\n\"candidates\" lists up to 5 rejected sets (auto only). Lists hold at most\n--limit rows; \"summary\" counts all.\njsonl mode prints the document on one line. Table mode prints the\nverdict, the summary and one table per list; the warnings go to stderr.\n\nExit codes: 0 ok, whatever the verdict (also no_baseline); 1 bad option,\ninvalid level, or the sets were built with different signature/mask-rule\nversions or specs; 3 unknown set or store error.",
+   "description": "Answer \"are there new kinds of errors since the baseline?\" in one document.\n\nCompares SET with a baseline (as `diff BASELINE SET --min-level L`) and\nsorts the result for a decision: new groups (most severe first), new\ngroups of a lower level that carry an exception, groups whose hourly rate\ngrew, vanished groups. --baseline auto (default) ranks the other sets of\nthe same format (the web app's rule): it rejects a set signed with\nanother recipe_key (reason \"stale\", hint `upgrade`; or \"recipe\"), whose\nsources are a superset or subset of SET's (\"superset\"/\"subset\"; partial\noverlap is fine), that ends after SET (\"later\"), that has under 1% of\nSET's entries (\"tiny\") or a span more than 16x longer or shorter\n(\"span\"); of the rest it prefers a set that ends before SET starts, then\nthe span closest to SET's, then the newest. With none left the verdict\nis no_baseline and \"warnings\" lists the rejected sets. An explicit\n--baseline is used as given, with a warning when it is stale, contained\nor tiny.\n\nOutput (json):\n  {\"schema\": \"triage.v1\",\n   \"set\": {\"id\", \"name\", \"first_ts\", \"last_ts\", \"entries\"},\n   \"baseline\": {\"id\", \"name\", \"first_ts\", \"last_ts\",\n                \"resolved_by\": \"auto\" | \"param\", \"reason\": str,\n                \"entries\": int, \"shared_sources\": int,\n                \"candidates\": [{\"id\", \"name\", \"reason\", \"detail\",\n                                \"hint\"?}, ...]} | null,\n   \"min_level\": \"WARN\",\n   \"verdict\": \"new_errors\" | \"new_warnings\" | \"new_exceptions\" | \"clean\"\n              | \"no_baseline\",\n   \"summary\": {\"new\", \"new_by_level\": {\"ERROR\": n, ...}, \"new_exceptions\",\n               \"grew\", \"vanished\", \"changed\", \"unchanged\"} | null,\n   \"coverage\": {\"hours_baseline\", \"hours_set\", \"ratio\"},\n   \"warnings\": [str, ...],\n   \"new\": [<diff row> + \"rate_per_hour\"],\n   \"new_exceptions\": [<diff row> + \"rate_per_hour\"],\n   \"grew\": [<diff row> + \"ratio\", \"rate_a\", \"rate_b\", \"rate_ratio\"],\n   \"vanished\": [<diff row>]}\nDiff rows are those of `diff` (signature, template, level, level_name,\nlogger, exception_type, count_a, count_b, first/last_seen_a/b); set and\nbaseline timestamps are written as in their manifests.\n\"new\": groups at/above --min-level only in SET; \"new_exceptions\": new\ngroups of ANY level with an exception that are not in \"new\" (a new DEBUG\nstack trace); \"grew\": changed groups whose hourly rate rose at least --grow\ntimes (rates as `diff --rate`, which normalise different spans), highest\nrate_ratio first; \"vanished\": groups at\n/above --min-level only in the baseline. \"verdict\": new_errors (a new\nERROR/FATAL group), new_warnings (other new groups), new_exceptions (no\nnew group but a new exception at a lower level), clean, no_baseline.\n\"coverage\" gives both spans in hours and ratio = hours_set /\nhours_baseline; when they differ by more than 4x either way \"warnings\"\nsays that \"new\"/\"vanished\" are unreliable (a nightly set lacks daytime\ngroups). \"baseline.reason\" says why the baseline was chosen,\n\"shared_sources\" counts the source files both sets share and\n\"candidates\" lists up to 5 rejected sets (auto only). Lists hold at most\n--limit rows; \"summary\" counts all.\njsonl mode prints the document on one line. Table mode prints the\nverdict, the summary and one table per list; the warnings go to stderr.\n\nSET is one set: a capture reference is a usage error, as `capture REF\n--triage` gives the verdict of each node against its own previous set.\n\nExit codes: 0 ok, whatever the verdict (also no_baseline); 1 bad option,\ninvalid level, a capture reference, or the sets were built with different\nsignature/mask-rule versions or specs; 3 unknown set or store error.",
    "output": "triage.v1",
    "exit": [
     0,
@@ -1093,8 +1480,8 @@
    "schema": "manifest-command.v1",
    "command": "report",
    "version": "",
-   "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int=0] [--open]",
-   "description": "Write a self-contained HTML report of a log set (optionally compared with another).\n\nThe page needs no network access (CSS, JS and data are inlined) and works\nfrom a file share or an e-mail attachment: overview tiles, a per-hour\ntimeline by level (drag to select a time window), the filterable group\ntable and a detail drawer per group with example entries and the\nequivalent CLI commands. The embedded data is the \"report.v1\" payload\n(docs/formats/report.v1.md). With --compare SET_B the report shows the\ngroups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).\n\nOutput (json):\n  {\"schema\": \"report-file.v1\", \"path\": str, \"bytes\": int, \"groups\": int,\n   \"entries\": int, \"compare\": bool}\n\"groups\" is the number of groups in the report, \"entries\" the number of\nembedded example entries. Table mode prints one line.\n\nExit codes: 0 ok; 1 bad option, invalid level, or the sets were built with\ndifferent signature/mask-rule versions or specs; 2 the output directory\ndoes not exist; 3 unknown set or store error.",
+   "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int] [--window overlap|union] [--open]",
+   "description": "Write a self-contained HTML report of a set or capture (the cluster page).\n\nThe page needs no network access (CSS, JS and data are inlined) and works\nfrom a file share or an e-mail attachment: overview tiles, a per-hour\ntimeline by level (drag to select a time window), the filterable group\ntable and a detail drawer per group with example entries and the\nequivalent CLI commands. The embedded data is the \"report.v1\" payload\n(docs/formats/report.v1.md). With --compare SET_B the report shows the\ngroups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the cluster page\n(the \"cluster-report.v1\" payload, docs/cluster.md): node cards with each\nnode's triage verdict, a timeline band per node with its events, the\ngroups by node, interactions and the example entries of all nodes, within\n--window (overlap by default, or union). The default file is\n<cluster>_<capture id>.html; --compare and --min-level apply to sets only.\n\nOutput (json):\n  {\"schema\": \"report-file.v1\", \"path\": str, \"bytes\": int, \"groups\": int,\n   \"entries\": int, \"compare\": bool, \"capture\"?: str | null, \"nodes\"?: int}\n\"groups\" is the number of groups in the report, \"entries\" the number of\nembedded example entries; a capture adds \"capture\" (its id) and \"nodes\".\nTable mode prints one line.\n\nExit codes: 0 ok; 1 bad option, invalid level, or the sets were built with\ndifferent signature/mask-rule versions or specs; 2 the output directory\ndoes not exist or unknown capture; 3 unknown set or store error.",
    "output": "report-file.v1",
    "exit": [
     0,
@@ -1106,7 +1493,7 @@
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name; or a capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
     },
     {
      "name": "--out",
@@ -1127,7 +1514,7 @@
      "name": "--examples",
      "type": "int",
      "default": "3",
-     "help": "Example entries per group; 0 = none."
+     "help": "Example entries per group (a capture: per group and node); 0 = none."
     },
     {
      "name": "--max-raw",
@@ -1138,8 +1525,12 @@
     {
      "name": "--max-groups",
      "type": "int",
-     "default": "0",
-     "help": "Only the N largest groups; 0 = all."
+     "help": "Only the N largest groups; 0 = all. Default: all (a capture: 500)."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "help": "overlap or union (a capture only; default overlap)."
     },
     {
      "name": "--open",
@@ -1282,7 +1673,7 @@
    "command": "manifest",
    "version": "",
    "usage": "COMMAND",
-   "description": "Print how an agent uses atlas-log: workflow, commands and documents (about 7 KB).\n\nThe workflow in order with a one-line purpose per step, when to use the\nother commands, every command (usage with types and defaults, output\ndocument, exit codes), one-line help per parameter, the documents\n(`atlas-log schema NAME`), the --brief presets, the environment variables\nand the global options. Bare `atlas-log` prints the same document when\nstdout is not a terminal; GET /api/manifest of the web app too.\n`manifest COMMAND` prints one command in full instead: its --help text and\nevery parameter with type, default and help (GET /api/manifest/COMMAND).\n\nOutput (json):\n  {\"schema\": \"manifest.v1\", \"tool\", \"version\", \"usage\", \"notes\",\n   \"workflow\": [{\"run\", \"purpose\"}], \"when\": [{\"run\", \"purpose\"}],\n   \"commands\": {<name>: {\"summary\", \"usage\", \"output\", \"exit\": [int]}},\n   \"help\": {<parameter>: str}, \"global_options\", \"exit_codes\",\n   \"documents\": {\"get\", \"names\"}, \"presets\", \"env\"}\n  {\"schema\": \"manifest-command.v1\", \"command\", \"version\", \"usage\",\n   \"description\", \"output\", \"exit\": [int],\n   \"params\": [{\"name\", \"type\", \"default\", \"help\"}]}\nIn table mode the same document is pretty-printed as JSON.\n\nExit codes: 0 ok; 2 unknown COMMAND.",
+   "description": "Print how an agent uses atlas-log: workflow, commands and documents (about 10 KB).\n\nThe workflow in order with a one-line purpose per step, when to use the\nother commands, every command (usage with types and defaults, output\ndocument, exit codes), one-line help per parameter, the documents\n(`atlas-log schema NAME`), the --brief presets, the environment variables\nand the global options. Bare `atlas-log` prints the same document when\nstdout is not a terminal; GET /api/manifest of the web app too.\n`manifest COMMAND` prints one command in full instead: its --help text and\nevery parameter with type, default and help (GET /api/manifest/COMMAND).\n\nOutput (json):\n  {\"schema\": \"manifest.v1\", \"tool\", \"version\", \"usage\", \"notes\",\n   \"workflow\": [{\"run\", \"purpose\"}], \"when\": [{\"run\", \"purpose\"}],\n   \"commands\": {<name>: {\"summary\", \"usage\", \"output\", \"exit\": [int]}},\n   \"help\": {<parameter>: str}, \"global_options\", \"exit_codes\",\n   \"documents\": {\"get\", \"names\"}, \"presets\", \"env\"}\n  {\"schema\": \"manifest-command.v1\", \"command\", \"version\", \"usage\",\n   \"description\", \"output\", \"exit\": [int],\n   \"params\": [{\"name\", \"type\", \"default\", \"help\"}]}\nIn table mode the same document is pretty-printed as JSON.\n\nExit codes: 0 ok; 2 unknown COMMAND.",
    "output": "manifest.v1",
    "exit": [
     0,

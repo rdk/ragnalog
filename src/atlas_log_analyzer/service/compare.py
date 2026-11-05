@@ -106,10 +106,24 @@ def triage(
     ``baseline`` is ``auto`` (``store.triage.rank_baselines``), a set reference, or
     ``none``/blank for no baseline (verdict ``no_baseline``). The web API adds its
     ``report_url`` links after building.
+
+    A capture reference is a ``usage`` error: per-node verdicts are part of
+    ``capture.v1`` (docs/cluster.md, section 5).
     """
+    from atlas_log_analyzer.service.captures import is_capture_ref
     from atlas_log_analyzer.store.query import IncompatibleSets
     from atlas_log_analyzer.store.triage import triage as store_triage
 
+    if is_capture_ref(ref):
+        raise OpError(
+            "usage",
+            f"triage judges one set, and {ref!r} is a capture",
+            hint=(
+                f"`atlas-log capture {ref} --triage` gives per-node verdicts"
+                if front == "cli"
+                else f"GET /api/captures/{ref}?triage=true gives per-node verdicts"
+            ),
+        )
     lvl = parse_level(min_level, "min_level", front=front)
     if not grow > 1:
         raise OpError("invalid_value", f"{flag('grow', front)} must be > 1")

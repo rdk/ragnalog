@@ -1,4 +1,4 @@
-"""The ``manifest.v1`` document: how an agent uses ``atlas-log``, in about 7 KB of JSON.
+"""The ``manifest.v1`` document: how an agent uses ``atlas-log``, in about 10 KB of JSON.
 
 Generated from the cyclopts app (commands, parameters with type, default and
 help, the output document named in each docstring, exit codes), from
@@ -63,6 +63,10 @@ WORKFLOW: tuple[tuple[str, str], ...] = (
 """The usual order of commands with a one-line purpose (hand-written)."""
 
 WHEN: tuple[tuple[str, str], ...] = (
+    ("capture cluster:NAME", "cluster nodes side by side, verdict per node"),
+    ("matrix CAPTURE --spread only", "groups on one node only"),
+    ("events CAPTURE", "what each node did, when"),
+    ("interactions CAPTURE", "how the nodes affect each other"),
     ("query LOGSET SQL", "aggregates no command gives (DuckDB SQL)"),
     ("batch", "several commands in one process"),
     ("sets --brief", "what is in the store"),
