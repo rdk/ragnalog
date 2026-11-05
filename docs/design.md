@@ -23,13 +23,18 @@ atlas-log-analyzer/
 │   │   ├── parser.py              lines → LogEntry (multi-line assembly)
 │   │   ├── masking.py             MaskRule, Masker: message → (template, variables)
 │   │   ├── signature.py           entry → Signature (hash + canonical text)
-│   │   ├── grouping.py            SignedEntry, Group, Grouper: entries → group stats (streaming)
+│   │   ├── grouping.py            SignedEntry, Group, Grouper: entries → group stats (streaming),
+│   │   │                          Grouper.merge (per-file groupers in file order)
+│   │   ├── pipeline.py            Recipe (format, spec, extra rules → masker/signer/grouper,
+│   │   │                          recipe key), unique_entries
 │   │   └── mining.py              optional Drain3 adapter proposing merges
 │   ├── store/                     persistence of log sets
 │   │   ├── schema.py              Arrow schemas + SCHEMA_VERSION
-│   │   ├── logset.py              manifest, directory conventions, LogSet read API
+│   │   ├── manifest.py            logset.v1 manifest (recipe_key), directory file names
+│   │   ├── logset.py              LogSet read API
 │   │   │                          (groups/entries/counts/group/histogram/stats/sql)
-│   │   ├── store.py               Store: list/open (typed errors), ingest, regroup, remove
+│   │   ├── store.py               Store: list/open (typed errors), ingest, regroup, upgrade, remove
+│   │   ├── regroup.py             column-wise re-signing of entries.parquet (regroup, upgrade)
 │   │   ├── pipeline.py            ingest_paths/ingest_sources: discover → parse → sign → store
 │   │   ├── writer.py              batches of entries/groups/merges → Parquet; Parquet → entries
 │   │   ├── query.py               diff() of two log sets, span/coverage helpers
@@ -169,9 +174,20 @@ kept per entry (`variables` column) for later queries ("which issues failed?").
 `Signature = (hash: str, template: str, parts: tuple[str, ...])`. The hash is
 xxh3-64 hex (16 chars) of the canonical parts joined with `\x1f`, so it is
 stable across runs, files, machines and versions of the tool as long as the
-rule set is unchanged. The rule-set version is recorded in the manifest
-(`signature_version`); a diff between sets with different signature versions
-is refused unless `--force`.
+rule set is unchanged.
+
+Everything that decides a signature is one `Recipe(fmt, spec, extra_rules)`
+(`core/pipeline.py`), which builds the masker, signer and grouper and names
+them in a key such as `jira@1|L+G+E+F0|sig1|mask1`: format name and version
+(a format's optional integer `version`, default 1, read with `getattr` so the
+registry's `isinstance` check still accepts formats without it), spec,
+`SIGNATURE_VERSION`, `MASK_RULES_VERSION`, plus `|rules:<xxh3>` of extra
+masking rules when there are any. The manifest records it as `recipe_key`
+(derived from the version fields for older manifests); `diff` refuses sets
+whose keys differ unless `--force`, naming the parts that differ. A set whose
+key differs from the current recipe for its format and spec is *stale*
+(`sets` items carry `stale`); `atlas-log upgrade` rebuilds it with its own
+spec.
 
 Two signature granularities are stored per entry: `signature` (default spec)
 and `coarse_signature` (format + level + logger + masked message only) so that
@@ -205,7 +221,8 @@ A *log set* is a directory:
 ```
 <store>/<logset-id>/
 ├── manifest.json        logset.v1: id, name, format, sources[{path,size,xxh3,first_ts,last_ts}],
-│                        time_range, entry_count, tool_version, schema_version, signature_version, created_at
+│                        time_range, entry_count, tool_version, schema_version, signature_version,
+│                        recipe_key, created_at
 ├── entries.parquet      entries.v1 (one row per entry, zstd, row groups ~64k)
 ├── groups.parquet       groups.v1 (one row per signature)
 └── merges.parquet       merges.v1 (optional, from `mine`)
@@ -264,6 +281,7 @@ otherwise), `--quiet`, `--store DIR` (env `ATLAS_LOG_STORE`, default
 | `diff SET_A SET_B [--level ERROR]` | New / vanished / changed-count signatures. |
 | `parse PATH... [--format jira]` | One-shot stream to JSONL, no store. |
 | `regroup SET [--frames N]` | Recompute groups with another signature spec. |
+| `upgrade [SET...] [--all]` | Rebuild stale sets at the current recipe, each with its own spec. |
 | `formats`, `schema [entries/groups/logset]` | Introspection for agents. |
 
 Exit codes: 0 ok, 1 usage error, 2 nothing found / parse failure, 3 store
@@ -381,7 +399,15 @@ Struct fails it.
   LDAP-sync plugin produced 4,000 single-user groups. `Masker` caches results
   (`cache_size`).
 - **Store.** `regroup` rewrites `entries.parquet` as well as `groups.parquet`
-  (signature, template and variables change) and drops `merges.parquet`.
+  (signature, template and variables change) and drops `merges.parquet`. It
+  does not rebuild a `LogEntry` per row (14.0 s for 712k entries, 5.6 s of it
+  object building): polars selects the columns the signer reads (level,
+  logger, message, exception types and messages, top frames for an `F>0`
+  spec), each of the 105,883 distinct keys is signed once (3.9 s), and every
+  row group is rewritten with only the four derived columns replaced; groups
+  come from `groups_from_entries`, which reproduces the `Grouper` exactly
+  (`most_common` tie order, empty users/threads not counted, first `N-1` plus
+  last examples). Same tables as the object-based path; 5.2 s in all.
   The ingest pipeline drops repeated entry ids before the grouper
   (`unique_entries`) and writes with `dedupe=False`, so one id set is held and
   group counts always match; `Store.ingest` still recomputes groups from the

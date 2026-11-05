@@ -30,14 +30,8 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from atlas_log_analyzer.store.logset import (
-        LevelSpec,
-        LogSet,
-        LogSetManifest,
-        SourceInfo,
-        rows,
-        to_records,
-    )
+    from atlas_log_analyzer.store.logset import LevelSpec, LogSet, rows, to_records
+    from atlas_log_analyzer.store.manifest import LogSetManifest, SourceInfo
     from atlas_log_analyzer.store.pipeline import (
         FormatNotDetected,
         IngestProgress,
@@ -53,8 +47,8 @@ if TYPE_CHECKING:
 _EXPORTS: dict[str, str] = {
     "LevelSpec": "logset",
     "LogSet": "logset",
-    "LogSetManifest": "logset",
-    "SourceInfo": "logset",
+    "LogSetManifest": "manifest",
+    "SourceInfo": "manifest",
     "rows": "logset",
     "to_records": "logset",
     "FormatNotDetected": "pipeline",

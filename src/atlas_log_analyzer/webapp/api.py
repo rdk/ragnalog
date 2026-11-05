@@ -158,8 +158,10 @@ def formats() -> dict[str, Any]:
 def list_sets(state: StateDep, brief: bool = False) -> dict[str, Any]:
     """All sets, newest first (``sets.v1``); each item adds ``summary`` (errors/warnings).
 
-    ``brief`` keeps only ``id``, ``name``, ``first_ts``, ``last_ts``, ``entry_count``,
-    ``group_count`` and ``summary`` per item, as ``atlas-log sets --brief``.
+    ``stale`` is true when the set's ``recipe_key`` is older than the recipe for its
+    format and spec (rebuild with ``atlas-log upgrade``). ``brief`` keeps only ``id``,
+    ``name``, ``first_ts``, ``last_ts``, ``entry_count``, ``group_count``, ``summary``
+    and ``stale`` per item, as ``atlas-log sets --brief``.
     """
     items = []
     for m in state.manifests():

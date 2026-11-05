@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from atlas_log_analyzer.core.java import is_app_frame
@@ -80,6 +81,7 @@ SET_BRIEF: tuple[str, ...] = (
     "entry_count",
     "group_count",
     "summary",
+    "stale",
 )
 """Keys of a ``sets --brief`` / ``brief=true`` item (no ``sources``, no versions)."""
 
@@ -87,36 +89,47 @@ DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
 
 
-def set_summary(ls: LogSet) -> dict[str, int]:
+def set_summary(ls: LogSet | Path) -> dict[str, int]:
     """Entry counts by severity of a set, from its groups table.
 
     ``errors`` counts ERROR and FATAL entries, ``warnings`` WARN entries and
     ``error_groups`` the groups at ERROR or above. The ``summary`` of ``sets`` /
     ``set`` items and of ``GET /api/sets`` (the web app caches it per set version).
+    ``ls`` may also be the set's directory (:meth:`Store.set_dir`): reading two
+    columns with pyarrow loads no polars, which keeps ``atlas-log sets`` fast.
     """
-    import polars as pl
+    import pyarrow.parquet as pq
 
-    df = (
-        ls.groups_lazy()
-        .select(
-            pl.col("count").filter(pl.col("level") >= 50).sum().alias("errors"),
-            pl.col("count").filter(pl.col("level") == 40).sum().alias("warnings"),
-            pl.col("count").filter(pl.col("level") >= 50).len().alias("error_groups"),
-        )
-        .collect()
-    )
-    return {k: int(v or 0) for k, v in df.row(0, named=True).items()}
+    from atlas_log_analyzer.store.manifest import GROUPS_FILE
+
+    path = ls / GROUPS_FILE if isinstance(ls, Path) else ls.groups_path
+    with pq.ParquetFile(path) as pf:  # unlike read_table, loads no pyarrow.compute/dataset
+        table = pf.read(columns=["level", "count"])
+    errors = warnings = error_groups = 0
+    for level, count in zip(table["level"].to_pylist(), table["count"].to_pylist(), strict=True):
+        if level >= 50:
+            errors += count
+            error_groups += 1
+        elif level == 40:
+            warnings += count
+    return {"errors": errors, "warnings": warnings, "error_groups": error_groups}
 
 
 def set_item(
     manifest: dict[str, Any], summary: dict[str, int] | None, *, brief: bool
 ) -> dict[str, Any]:
-    """One ``sets.v1`` item: the manifest without ``schema`` plus ``summary``.
+    """One ``sets.v1`` item: the manifest without ``schema`` plus ``summary`` and ``stale``.
 
+    ``stale`` is true when the set's ``recipe_key`` differs from the recipe this tool
+    signs its format and spec with today (rebuild it with ``atlas-log upgrade``).
     With ``brief`` only the :data:`SET_BRIEF` keys are kept.
     """
+    from atlas_log_analyzer.store.manifest import current_recipe_key
+
     item = {k: v for k, v in manifest.items() if k != "schema"}
     item["summary"] = summary
+    current = current_recipe_key(str(item.get("format")), str(item.get("signature_spec")))
+    item["stale"] = current is not None and current != item.get("recipe_key")
     return {k: item.get(k) for k in SET_BRIEF} if brief else item
 
 

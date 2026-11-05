@@ -178,10 +178,20 @@ entries count in `ingest.parse_errors`.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
+ "recipe_key": "jira@1|L+G+E+F0|sig1|mask1",
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
  "merges": [{"cluster_id", "signatures": [], "drain_template"}]}
 ```
+
+`recipe_key` names everything that decides signatures: format and format
+version, signature spec, signature and masking-rule versions, and a digest of
+extra masking rules when there are any (`|rules:<xxh3>`). Two sets are
+comparable (`diff`, `triage`) exactly when their recipe keys are equal.
+Manifests written before `recipe_key` existed get it derived from their version
+fields (format version 1). Lines before a file's first header become one
+parse-error entry at the epoch; it is stored but does not count for
+`first_ts`/`last_ts` (of the set or of its `sources`).
 
 `ingest.warnings` lists requests that were not honoured, also printed on stderr:
 re-ingesting existing files with another `--name` keeps the set's name and
@@ -196,14 +206,21 @@ files, format not detected, a large named file not in the format
 
 ```json
 {"schema": "sets.v1", "store": "…", "count": 1,
- "items": [<manifest without "schema"> + "summary": {"errors", "warnings", "error_groups"}]}
+ "items": [<manifest without "schema"> + "summary": {"errors", "warnings", "error_groups"}
+           + "stale": false]}
 ```
 
 Newest first. `summary` counts the entries at ERROR/FATAL (`errors`), at WARN
 (`warnings`) and the groups at ERROR/FATAL (`error_groups`), computed from the
 group table as `GET /api/sets` does (`null` when a set cannot be read).
+`stale` is true when the set's `recipe_key` differs from the recipe this
+version signs its format and spec with (a format, signature or masking-rule
+version changed since it was built): such a set is not comparable with new
+ones, triage skips it as a baseline, and `upgrade` rebuilds it.
 `--brief` keeps only `id, name, first_ts, last_ts, entry_count, group_count,
-summary` per item (no `sources`, no versions). Exit: 0 (also empty); 3.
+summary, stale` per item (no `sources`, no versions). Listing reads only the
+manifests and two columns of each group table, without polars. Exit: 0 (also
+empty); 3.
 
 ### `set SET`
 
@@ -424,8 +441,9 @@ lengths of time (`ratio` compares raw counts).
 B differ by more than 4x either way: one sentence saying that new/vanished
 groups are unreliable, because groups that occur only at certain times of day
 (daytime traffic, nightly jobs) look new or vanished. In `table` and `jsonl`
-mode the sentence is printed on stderr (`warning: …`) instead. Exit: 0; 1 sets signed differently (signature/mask-rule version or
-spec) without `--force`; 3.
+mode the sentence is printed on stderr (`warning: …`) instead. Exit: 0; 1 sets signed differently (their `recipe_key`s differ; the
+message names the parts, e.g. `signature_spec: L+G+E+F0 != L+G+E+F2`, and
+suggests `upgrade` or `regroup`) without `--force`; 3.
 
 ### `triage SET [--baseline SET|auto] [--min-level WARN] [--grow 2.0] [--limit 50]`
 
@@ -524,8 +542,29 @@ Exit: 0; 1 unknown format; 2 no files / not detected / `not_in_format` / no entr
 ### `regroup SET [--frames N] [--no-exceptions]`
 
 Re-signs the stored entries with another signature spec and rewrites the
-groups (any `merges.parquet` is dropped). Prints the manifest (`logset.v1`).
-Diffs against sets with a different spec then need `--force`. Exit: 0; 1; 3.
+groups (any `merges.parquet` is dropped). Each distinct (level, logger,
+message, exception chain) is signed once and only the `signature`,
+`coarse_signature`, `template` and `variables` columns of `entries.parquet`
+are replaced (712k entries: about 5 s). Prints the manifest (`logset.v1`, new
+`signature_spec` and `recipe_key`). Diffs against sets with a different spec
+then need `--force`. Exit: 0; 1; 3.
+
+### `upgrade [SET...] [--all]`
+
+Rebuilds stale sets (see `sets`) at the current recipe, each with its own
+signature spec, by re-signing their entries as `regroup` does. Sets that are
+current, or whose format is not registered, are skipped with a reason (an
+unknown format is also printed on stderr).
+
+```json
+{"schema": "upgrade.v1", "count": 1, "upgraded": 1,
+ "items": [<manifest without "schema"> + "status": "upgraded|skipped",
+           "reason": null | "current" | "format 'x' or signature spec … is unknown",
+           "previous_recipe_key": "jira@1|L+G+E+F0|sig1|mask0"]}
+```
+
+Items follow the SET arguments (`--all`: the `sets` order). Exit: 0 (also when
+all are skipped); 1 neither SET nor `--all`, or both; 3 unknown set.
 
 ### `formats [--sample FILE]`
 

@@ -218,6 +218,10 @@ class Store:
         manifests = [m for _, m in self._load_all()]
         return sorted(manifests, key=lambda m: m.created_at, reverse=True)
 
+    def set_dir(self, set_id: str) -> Path:
+        """Directory of the set with id ``set_id`` (whether or not it exists)."""
+        return self.root / set_id
+
     def open(self, ref: str) -> LogSet:
         """Open a log set by id, unique id prefix, or name.
 

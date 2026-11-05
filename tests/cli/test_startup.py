@@ -62,3 +62,11 @@ def test_json_groups_loads_no_writer_sql_or_tables(mini_store: Path) -> None:
 def test_metadata_commands_load_no_polars(command: list[str], tmp_path: Path) -> None:
     argv = ["--output", "json", "--store", str(tmp_path / "none"), *command]
     assert _loaded_after(argv, ("polars", *HEAVY_FOR_READS)) == (0, [])
+
+
+def test_sets_reads_manifests_without_polars(mini_store: Path) -> None:
+    """``sets`` lists manifests and summarises groups with pyarrow only (no polars)."""
+    argv = ["--output", "json", "--store", str(mini_store), "sets"]
+    assert _loaded_after(argv, ("polars", *HEAVY_FOR_READS)) == (0, [])
+    brief = [*argv, "--brief"]
+    assert _loaded_after(brief, ("polars", *HEAVY_FOR_READS)) == (0, [])

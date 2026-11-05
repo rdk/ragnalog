@@ -131,6 +131,7 @@ SET_COLUMNS = (
     "first_ts",
     "last_ts",
     "created_at",
+    "stale",
 )
 DIFF_COLUMNS = (
     "signature",
@@ -605,19 +606,22 @@ def sets(*, brief: bool = False) -> None:
 
     Output (json):
       {"schema": "sets.v1", "store": str, "count": int,
-       "items": [<logset.v1 manifest without "schema"> + "summary", ...]}
+       "items": [<logset.v1 manifest without "schema"> + "summary" + "stale"]}
     Each item has id, name, format, sources, first_ts, last_ts, entry_count,
     group_count, created_at, tool_version, schema_version, signature_version,
-    mask_rules_version, signature_spec and
+    mask_rules_version, signature_spec, recipe_key,
     "summary": {"errors", "warnings", "error_groups"} (entries at ERROR/FATAL,
-    entries at WARN, groups at ERROR/FATAL; null when the set cannot be read).
-    --brief keeps only id, name, first_ts, last_ts, entry_count, group_count
-    and summary. An empty or missing store gives count 0.
+    entries at WARN, groups at ERROR/FATAL; null when the set cannot be read)
+    and "stale": true when recipe_key differs from the recipe this version
+    signs the set's format and spec with (rebuild with `upgrade`; triage
+    does not use stale sets as baselines). --brief keeps only id, name,
+    first_ts, last_ts, entry_count, group_count, summary and stale. An empty
+    or missing store gives count 0.
 
     Exit codes: 0 ok (also when empty); 3 store error.
 
     Args:
-        brief: Only id, name, first_ts, last_ts, entry_count, group_count, summary.
+        brief: Only id, name, first_ts, last_ts, entry_count, group_count, summary, stale.
 
     """
     store = _store()
@@ -625,7 +629,7 @@ def sets(*, brief: bool = False) -> None:
     for m in store.list():
         summary: dict[str, int] | None
         try:
-            summary = set_summary(store.open(m.id))
+            summary = set_summary(store.set_dir(m.id))  # pyarrow only: no polars
         except Exception:  # a damaged set must not break the listing (as GET /api/sets)
             summary = None
         items.append(set_item(m.to_dict(), summary, brief=brief))
@@ -1767,9 +1771,11 @@ def parse(*paths: Path, format: str | None = None, limit: int = 0, force: bool =
 def regroup(logset: str, /, *, frames: int = 0, no_exceptions: bool = False) -> None:
     """Recompute the groups of a stored log set with another signature spec.
 
-    Rewrites groups.parquet (entries are kept); signatures change, so diffs
-    against sets built with another spec need --force. Prints the updated
-    manifest.
+    Re-signs the stored entries (each distinct level, logger, message and
+    exception chain once) and rewrites the signature columns of
+    entries.parquet and groups.parquet; every other column is kept.
+    Signatures change, so diffs against sets built with another spec need
+    --force. Prints the updated manifest (new signature_spec and recipe_key).
 
     Output (json): the manifest, {"schema": "logset.v1", ...} (see `ingest`).
 
@@ -1790,6 +1796,69 @@ def regroup(logset: str, /, *, frames: int = 0, no_exceptions: bool = False) -> 
     )
     updated = store.regroup(ls.manifest.id, spec)
     _out().emit("logset.v1", _manifest_dict(updated), items=None, title=f"log set {ls.manifest.id}")
+
+
+UPGRADE_COLUMNS = ("id", "name", "status", "reason", "recipe_key", "previous_recipe_key")
+
+
+@app.command
+def upgrade(*logsets: str, all: bool = False) -> None:
+    """Rebuild stale log sets at the current recipe, each with its own spec.
+
+    A set is stale ("stale": true in `sets`) when its recipe_key (format
+    version, signature spec, signature and masking-rule versions) differs from
+    the recipe this version signs its format and spec with; stale sets are not
+    comparable with new ones, and triage skips them as baselines. upgrade
+    re-signs the stored entries as `regroup` does, keeping each set's
+    signature spec. Sets that are current, or whose format is not
+    registered, are skipped with a reason.
+
+    Output (json):
+      {"schema": "upgrade.v1", "count": int, "upgraded": int,
+       "items": [<logset.v1 manifest without "schema"> +
+                 {"status": "upgraded" | "skipped", "reason": str | null,
+                  "previous_recipe_key": str}, ...]}
+    "reason" is null for an upgraded set, "current" for a set already at the
+    current recipe, or names the unknown format or spec. Items follow the
+    order of SET arguments (with --all: the `sets` order, newest first).
+
+    Exit codes: 0 ok (also when everything was skipped); 1 no SET and no
+    --all; 3 unknown set or store error.
+
+    Args:
+        logsets: Log sets to upgrade (id, unique id prefix or name).
+        all: Upgrade every set in the store.
+
+    """
+    store = _store()
+    if all and logsets:
+        raise CliError("invalid_value", "give SET arguments or --all, not both")
+    if all:
+        refs = [m.id for m in store.list()]
+    elif logsets:
+        refs = [_open(ref).manifest.id for ref in logsets]
+    else:
+        raise CliError("invalid_value", "give one or more SETs, or --all")
+    items = []
+    for set_id in dict.fromkeys(refs):
+        result = store.upgrade(set_id)
+        item = {k: v for k, v in result.manifest.to_dict().items() if k != "schema"}
+        item["status"] = "upgraded" if result.upgraded else "skipped"
+        item["reason"] = result.reason
+        item["previous_recipe_key"] = result.previous_recipe_key
+        items.append(item)
+        if not result.upgraded and result.reason != "current":
+            _out().warn(f"{set_id}: skipped, {result.reason}")
+    _out().emit(
+        "upgrade.v1",
+        {
+            "count": len(items),
+            "upgraded": sum(1 for i in items if i["status"] == "upgraded"),
+            "items": items,
+        },
+        columns=UPGRADE_COLUMNS,
+        title="upgrade",
+    )
 
 
 @app.command(name="formats")

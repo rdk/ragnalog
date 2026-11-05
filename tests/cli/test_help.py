@@ -23,6 +23,7 @@ COMMANDS = [
     "triage",
     "parse",
     "regroup",
+    "upgrade",
     "report",
     "serve",
     "formats",
