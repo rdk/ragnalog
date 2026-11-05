@@ -422,3 +422,4 @@ They match group templates, never raw text.
   embedded, or web with `data-report-url`.
 - A sample payload `tests/report/data/cluster_payload.json` uses two invented
   nodes, `NODE1` and `NODE2`, and is the fixture of the page tests.
+- Implemented; what the page does and reads is in `report.md` §5.

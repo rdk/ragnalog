@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="atlas-log cluster report">
+<title>__REPORT_TITLE__</title>
+<script>
+/* Theme before first paint: #theme=dark|light override, then localStorage, else the OS. */
+(function () {
+  var t = null;
+  var m = /(?:^#|&)theme=(dark|light)(?:&|$)/.exec(location.hash);
+  if (m) { t = m[1]; } else { try { t = localStorage.getItem("atlas-log-report-theme"); } catch (e) { t = null; } }
+  if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+})();
+</script>
+<style>
+/*__REPORT_CSS__*/
+</style>
+<style>
+/*__CLUSTER_CSS__*/
+</style>
+</head>
+<body class="cluster">
+<svg class="svg-defs" width="0" height="0" aria-hidden="true" focusable="false">
+  <defs>
+    <pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern>
+    <pattern id="hatch-nolog" width="6" height="6" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-nolog" x1="0" y1="0" x2="0" y2="6"/></pattern>
+  </defs>
+</svg>
+<header class="top" id="top">
+  <div class="top-id">
+    <h1 id="c-title">atlas-log cluster</h1>
+    <span class="muted mono" id="c-capture"></span>
+  </div>
+  <div class="c-chips" id="c-nodes" aria-label="Nodes"></div>
+  <div class="top-meta" id="c-meta"></div>
+  <div class="top-actions">
+    <button type="button" class="btn" id="btn-help" title="Keyboard shortcuts (?)">? Shortcuts</button>
+    <button type="button" class="btn" id="btn-theme" title="Switch theme">Theme</button>
+    <button type="button" class="btn" id="btn-data" title="Download the cluster-report.v1 payload as JSON">Data</button>
+  </div>
+</header>
+
+<main id="app">
+  <section class="c-cards" id="c-cards" aria-label="Nodes"></section>
+
+  <section class="card c-tl-card" aria-label="Timeline per node">
+    <div class="card-head">
+      <h2>Entries per <span id="tl-bin">hour</span> by level, one band per node</h2>
+      <div class="legend" id="tl-legend"></div>
+      <span class="grow"></span>
+      <div class="seg" id="tl-y" role="group" aria-label="Y scale"></div>
+      <button type="button" class="btn small toggle" id="tl-arrows" aria-pressed="true" title="Show mention arrows between the nodes' event lanes">Arrows</button>
+    </div>
+    <div class="c-tl-sub">
+      <div class="tl-window" id="tl-window"></div>
+      <div class="c-sel" id="tl-sel"></div>
+    </div>
+    <div class="c-timeline" id="c-timeline" aria-label="Timeline; drag across a band to select a time window"></div>
+    <div class="c-tl-foot legend" id="tl-events"></div>
+  </section>
+
+  <section class="filters c-bar" id="filters" aria-label="Views and filters">
+    <div class="f-row c-tabs" role="tablist" aria-label="Views" id="c-tabs">
+      <button type="button" role="tab" id="tab-g" data-tab="g" aria-controls="p-groups">Groups by node <span class="n" id="tab-g-n"></span></button>
+      <button type="button" role="tab" id="tab-i" data-tab="i" aria-controls="p-inter">Interactions <span class="n" id="tab-i-n"></span></button>
+      <button type="button" role="tab" id="tab-l" data-tab="l" aria-controls="p-log">Merged log <span class="n" id="tab-l-n"></span></button>
+      <span class="grow"></span>
+      <button type="button" class="btn link" id="f-reset" title="Reset all filters, the window and the selection">Reset</button>
+    </div>
+    <div class="f-row" id="fg-row">
+      <input type="search" id="f-search" placeholder="Search template, logger, exception — sig:abc" aria-label="Search groups" autocomplete="off" spellcheck="false">
+      <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
+      <div class="seg" id="f-spread" role="group" aria-label="Spread"></div>
+      <label class="sel"><span>Node</span><select id="f-node" aria-label="Node"></select></label>
+      <label class="sel f-end"><span>Sort</span><select id="f-sort" aria-label="Sort"></select></label>
+    </div>
+    <div class="f-row" id="fl-row" hidden>
+      <input type="search" id="l-search" placeholder="Search message, logger, thread" aria-label="Search the merged log" autocomplete="off" spellcheck="false">
+      <div class="seg" id="l-level" role="group" aria-label="Minimum level"></div>
+      <div class="chips" id="l-nodes" role="group" aria-label="Nodes"></div>
+    </div>
+    <div class="print-only" id="f-print"></div>
+  </section>
+
+  <section class="body" id="p-groups" role="tabpanel" aria-labelledby="tab-g">
+    <div class="table-wrap" id="table-wrap">
+      <div class="table-head-line">
+        <span id="t-summary" class="muted"></span>
+        <span class="pager" id="pager-top"></span>
+      </div>
+      <table class="groups c-groups" id="groups">
+        <thead id="t-head"></thead>
+        <tbody id="t-body"></tbody>
+      </table>
+      <div class="empty" id="t-empty" hidden></div>
+      <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
+    </div>
+    <aside class="drawer" id="drawer" hidden aria-label="Group detail">
+      <div class="drawer-bar">
+        <button type="button" class="btn" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <span class="d-pos muted" id="d-pos" aria-live="polite"></span>
+        <button type="button" class="btn" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
+        <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
+          <button type="button" data-jump="d-s-nodes">Nodes</button><button type="button" data-jump="d-s-hourly">Hourly</button><button type="button" data-jump="d-s-examples">Examples</button><button type="button" data-jump="d-s-links">Related</button><button type="button" data-jump="d-s-cli">CLI</button>
+        </nav>
+        <span class="grow"></span>
+        <button type="button" class="btn" id="d-close" title="Close (Esc)">Close</button>
+      </div>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+  </section>
+
+  <section class="c-inter" id="p-inter" role="tabpanel" aria-labelledby="tab-i" hidden></section>
+
+  <section class="c-log" id="p-log" role="tabpanel" aria-labelledby="tab-l" hidden>
+    <div class="table-head-line">
+      <span id="l-summary" class="muted"></span>
+      <span class="c-lchips" id="l-active"></span>
+    </div>
+    <div class="ml" id="ml" role="list"></div>
+    <div class="ml-foot" id="ml-foot"></div>
+  </section>
+</main>
+
+<footer class="foot" id="foot"></footer>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<div class="toast" id="toast" hidden></div>
+<dialog id="help">
+  <h2>Keyboard</h2>
+  <dl class="keys">
+    <dt><kbd>/</kbd></dt><dd>Focus the search of the current view</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group or log row</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Open the selected group / expand the log row</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
+    <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
+    <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page of groups</dd>
+    <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Groups / Interactions / Merged log</dd>
+    <dt><kbd>?</kbd></dt><dd>This help</dd>
+  </dl>
+  <p class="muted">Timeline: drag across any band to set the time window of every view; click to clear.
+  Hover an event glyph for its text; click it to open the merged log at that moment.
+  The view (tab, filters, window, selection, y-scale) is kept in the URL — bookmark or paste it.</p>
+  <form method="dialog"><button class="btn">Close</button></form>
+</dialog>
+<pre id="fatal" hidden></pre>
+<script type="application/json" id="cluster-data">__REPORT_DATA__</script>
+<script>
+/*__CLUSTER_JS__*/
+</script>
+</body>
+</html>

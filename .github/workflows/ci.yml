@@ -42,7 +42,9 @@ jobs:
         run: uv run mypy
 
       - name: Report script syntax
-        run: node --check src/atlas_log_analyzer/report/assets/report.js
+        run: |
+          node --check src/atlas_log_analyzer/report/assets/report.js
+          node --check src/atlas_log_analyzer/report/assets/cluster.js
 
       - name: Tests
         run: uv run pytest

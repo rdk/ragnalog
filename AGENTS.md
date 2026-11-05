@@ -16,7 +16,8 @@ src/atlas_log_analyzer/
              typed filters (filters.py), DuckDB queries, diff, regroup (column-wise
              re-signing), triage (triage.v1 and rank_baselines, shared by the CLI and the
              web app)
-  report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
+  report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js;
+             cluster.html/css/js: the cluster page of a cluster-report.v1 payload)
   service/   builds every JSON document for both front ends (no cyclopts/fastapi/rich):
              queries.py, compare.py, ingest.py, meta.py (the builders), params.py (request
              models: GroupQuery, EntryQuery, Page, Select, TextCap), errors.py (OpError,
