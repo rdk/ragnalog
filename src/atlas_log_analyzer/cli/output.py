@@ -66,10 +66,6 @@ type OutputMode = Literal["table", "json", "jsonl"]
 MAX_CELL = 80
 """Table cells longer than this are truncated with an ellipsis."""
 
-ISO_FORMAT = "%Y-%m-%dT%H:%M:%S%.3f%:z"
-"""chrono format for timezone-aware datetime columns: ISO 8601 with milliseconds and offset,
-as :func:`atlas_log_analyzer.store.logset.to_records` (the web API) writes them."""
-
 _ISO_RE = re.compile(r"^(\d{4}-\d\d-\d\d)T(\d\d:\d\d:\d\d)(?:\.\d+)?(Z|[+-]\d\d:\d\d)?$")
 
 DEFAULT_WIDTH = 160
@@ -178,20 +174,18 @@ def _normalise(obj: Any) -> Any:
 def jsonable_rows(data: pl.DataFrame | Iterable[Mapping[str, Any]]) -> list[dict[str, Any]]:
     """Rows of a DataFrame or an iterable of mappings as a list of plain dicts.
 
-    Timezone-aware datetime columns are rendered as ISO 8601 strings by polars
-    itself: converting them to Python objects would need ``zoneinfo`` data,
-    which is missing on Windows unless ``tzdata`` is installed.
+    A DataFrame goes through :func:`atlas_log_analyzer.store.logset.to_records`, the
+    one row serialiser of both front ends: datetimes become ISO 8601 strings in UTC
+    with milliseconds (naive values taken as UTC), maps become dicts. No ``zoneinfo``
+    data is needed, which Windows lacks unless ``tzdata`` is installed.
     """
     if "polars" in sys.modules:  # a DataFrame implies polars was imported
         import polars as pl
 
         if isinstance(data, pl.DataFrame):
-            aware = [
-                pl.col(name).dt.to_string(ISO_FORMAT)
-                for name, dtype in data.schema.items()
-                if isinstance(dtype, pl.Datetime) and dtype.time_zone is not None
-            ]
-            return (data.with_columns(aware) if aware else data).to_dicts()
+            from atlas_log_analyzer.store.logset import to_records
+
+            return to_records(data)
     return [dict(row) for row in data]
 
 
@@ -607,6 +601,28 @@ class Output:
             return
         for tbl in mapping_tables(doc, title=title):
             console.print(tbl)
+
+    def document(
+        self,
+        doc: Mapping[str, Any],
+        *,
+        items: str | None = "items",
+        columns: Sequence[str] | None = None,
+        title: str | None = None,
+        jsonl_rows: Iterable[Mapping[str, Any]] | None = None,
+        table: Callable[[Console], None] | None = None,
+    ) -> None:
+        """Write a complete document (``"schema"`` included) as :meth:`emit` does."""
+        body = {k: v for k, v in doc.items() if k != "schema"}
+        self.emit(
+            str(doc["schema"]),
+            body,
+            items=items,
+            columns=columns,
+            title=title,
+            jsonl_rows=jsonl_rows,
+            table=table,
+        )
 
     def error(self, err: OpError) -> int:
         """Report ``err`` (stdout envelope in json/jsonl mode, stderr in table mode)."""

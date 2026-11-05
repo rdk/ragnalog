@@ -9,7 +9,6 @@ Each command is a thin wrapper over :mod:`atlas_log_analyzer.core` and
 from __future__ import annotations
 
 import dataclasses
-import difflib
 import errno
 import importlib
 import inspect
@@ -19,7 +18,6 @@ import re
 import sys
 import textwrap
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime, timedelta
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -48,24 +46,26 @@ from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
+from atlas_log_analyzer.service import queries
 from atlas_log_analyzer.service.errors import hint
-from atlas_log_analyzer.service.views import (
+from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
+    EntryQuery,
+    GroupQuery,
+    Page,
+    Select,
+    TextCap,
+    parse_level,
+)
+from atlas_log_analyzer.service.views import (
     DETAIL_BRIEF,
     ENTRY_BRIEF,
     ENTRY_FIELDS,
     GROUP_BRIEF,
     GROUP_FIELDS,
-    cap_text,
-    cap_texts,
     diff_warning,
-    frames_view,
-    resolve_signature,
-    set_item,
     set_summary,
 )
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 
 # Startup time: the log-set reader (polars), the ingest pipeline and Parquet writer,
@@ -242,123 +242,33 @@ def _store(*, create: bool = False) -> Store:
 def _open(ref: str) -> LogSet:
     from atlas_log_analyzer.service.sets import open_set
 
-    try:
-        return open_set(_store(), ref, front="cli")
-    except OpError as exc:
-        if exc.reason == "set_not_found":
-            exc.extra.setdefault("store", _ctx().store.as_posix())
-        raise
+    return open_set(_store(), ref, front="cli")
 
 
-_RELATIVE_RE = re.compile(r"^(\d+)\s*([smhd])$")
-_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+ALL_GROUPS = GroupQuery()
+"""No group filters (default of the flattened ``groups`` options)."""
+ALL_ENTRIES = EntryQuery()
+"""No entry filters (default of the flattened ``entries`` options)."""
 
 
-def _when(value: str | None, flag: str, anchor: datetime | None) -> datetime | None:
-    """Parse a --since/--until value: ISO 8601, YYYY-MM-DD, or Nm/Nh/Nd before ``anchor``."""
-    if value is None:
-        return None
-    text = value.strip()
-    if m := _RELATIVE_RE.match(text.lower()):
-        base = anchor if anchor is not None else datetime.now(UTC)
-        base = base if base.tzinfo is not None else base.replace(tzinfo=UTC)
-        return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
-    try:
-        return _aware(datetime.fromisoformat(text))
-    except ValueError:
-        raise OpError(
-            "invalid_value",
-            f"{flag} {value!r} is not a time; use ISO 8601 (2026-10-29T09:00, naive = UTC), "
-            "a date (2026-10-29) or a duration before the last entry of the set "
-            "(30m, 2h, 1d)",
-        ) from None
-
-
-def _level(value: str | None) -> str | None:
-    """Parse a level option (``store.levels``: names, ``WARNING``, ``UNKNOWN``; blank = unset)."""
-    try:
-        return parse_levels(value)
-    except InvalidLevel as exc:
-        raise OpError("invalid_level", str(exc)) from None
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if value is None or value.tzinfo is not None:
-        return value
-    return value.replace(tzinfo=UTC)
-
-
-def _limit(value: int) -> int | None:
-    if value < 0:
-        raise OpError("invalid_value", "--limit must be >= 0 (0 = no limit)")
-    return value or None
-
-
-def _offset(value: int) -> int:
-    if value < 0:
-        raise OpError("invalid_value", "--offset must be >= 0")
-    return value
-
-
-def _max_raw(value: int | None, *, text: bool) -> int | None:
+def _cap(value: int | None, *, text: bool) -> TextCap:
     """Resolve ``--max-raw``: explicit value (0 = no limit), else 4000 for json/jsonl.
 
     ``text`` is true for the plain-text modes (``--raw`` and table), which default
     to no limit.
     """
-    if value is not None:
-        if value < 0:
-            raise OpError("invalid_value", "--max-raw must be >= 0 (0 = no limit)")
-        return value or None
-    if text or _out().mode == "table":
-        return None
-    return DEFAULT_MAX_RAW
+    default = None if text or _out().mode == "table" else DEFAULT_MAX_RAW
+    return TextCap.parse(value, default=default, front="cli")
 
 
-_cap_items = cap_texts
+def _level(value: str | None, name: str = "min_level") -> str | None:
+    """Parse a level option (``store.levels``: names, ``WARNING``, ``UNKNOWN``; blank = unset)."""
+    return parse_level(value, name, front="cli")
 
 
-def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | None:
-    """Parse ``--columns``: repeated options and/or comma-separated names, validated.
-
-    Returns ``None`` when the option was not given; duplicates are dropped, order is kept.
-    """
-    if not values:
-        return None
-    chosen: list[str] = []
-    for value in values:
-        for part in value.split(","):
-            name = part.strip()
-            if not name:
-                continue
-            if name not in valid:
-                close = difflib.get_close_matches(name, valid, n=1)
-                guess = f" (did you mean {close[0]!r}?)" if close else ""
-                raise OpError(
-                    "invalid_value",
-                    f"unknown column {name!r} in --columns{guess}",
-                    hint=f"valid columns: {', '.join(valid)}",
-                )
-            if name not in chosen:
-                chosen.append(name)
-    if not chosen:
-        raise OpError(
-            "invalid_value", "--columns is empty", hint=f"valid columns: {', '.join(valid)}"
-        )
-    return chosen
-
-
-def _selection(
-    columns: Sequence[str] | None, brief: bool, valid: Sequence[str], preset: Sequence[str]
-) -> list[str] | None:
-    """Columns chosen by ``--columns`` or ``--brief`` (``None`` = all); both is a usage error."""
-    if brief and columns:
-        raise OpError(
-            "usage",
-            "--brief and --columns cannot be combined",
-            hint=f"--brief is --columns {','.join(preset)}",
-        )
-    return list(preset) if brief else _columns(columns, valid)
+def _limit(value: int) -> int | None:
+    """``--limit`` (0 = no limit)."""
+    return Page.parse(value, front="cli").limit
 
 
 def _select(paths: Sequence[Path], name: str | None, *, force: bool = False) -> SourceSelection:
@@ -452,6 +362,8 @@ def _meta(
         err = error_from_exception(exc)
         if err is None:
             raise
+        if err.reason == "set_not_found":
+            err.extra.setdefault("store", _CTX.store.as_posix())
         return out.error(err)
     return int(result) if isinstance(result, int) else 0
 
@@ -612,20 +524,13 @@ def sets(*, brief: bool = False) -> None:
 
     """
     store = _store()
-    items = []
-    for m in store.list():
-        summary: dict[str, int] | None
-        try:
-            summary = set_summary(store.set_dir(m.id))  # pyarrow only: no polars
-        except Exception:  # a damaged set must not break the listing (as GET /api/sets)
-            summary = None
-        items.append(set_item(m.to_dict(), summary, brief=brief))
-    _out().emit(
-        "sets.v1",
-        {"store": _ctx().store.as_posix(), "count": len(items), "items": items},
-        columns=SET_COLUMNS,
-        title="log sets",
+    doc = queries.sets_doc(
+        store,
+        brief=brief,
+        store=_ctx().store.as_posix(),
+        summary=lambda m: set_summary(store.set_dir(m.id)),  # pyarrow only: no polars
     )
+    _out().document(doc, columns=SET_COLUMNS, title="log sets")
 
 
 @app.command(name="set")
@@ -645,9 +550,8 @@ def set_(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    ls = _open(logset)
-    doc = {**_manifest_dict(ls), "summary": set_summary(ls)}
-    _out().emit("logset.v1", doc, items=None, title=f"log set {ls.manifest.id}")
+    doc = queries.set_doc(_store(), logset, front="cli")
+    _out().document(doc, items=None, title=f"log set {doc['id']}")
 
 
 @app.command
@@ -655,14 +559,7 @@ def groups(
     logset: str,
     /,
     *,
-    level: str | None = None,
-    min_level: str | None = None,
-    logger: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
-    contains: str | None = None,
+    q: Annotated[GroupQuery, Parameter(name="*")] = ALL_GROUPS,
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: int = 50,
     offset: int = 0,
@@ -707,16 +604,7 @@ def groups(
 
     Args:
         logset: Log set id, unique id prefix or name.
-        level: Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL;
-            UNKNOWN = entries whose header could not be parsed).
-        min_level: Only this level or more severe, e.g. WARN.
-        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
-        since: Only groups with an entry at/after this time (last_seen >= since): ISO 8601
-            (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry.
-        until: Only groups first seen before this time (same forms as --since).
-        with_exception: Only groups with an exception (exception_type not null), any level.
-        exception: Only groups whose exception_type contains this text (case-insensitive).
-        contains: Only groups whose template contains this text (case-insensitive).
+        q: Group filters (the options --level to --contains, see GroupQuery).
         sort: count, last_seen (newest first), first_seen (oldest first), signature, template.
         limit: Maximum number of rows; 0 = all.
         offset: Skip this many rows first (paging: next offset = offset + count).
@@ -726,38 +614,12 @@ def groups(
             first_seen, last_seen.
 
     """
-    lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
+    page = Page.parse(limit, offset, front="cli")
+    sel = Select(columns=columns, brief=brief)
+    doc = queries.groups(_store(), logset, q, page, sel, sort=sort, coarse=coarse, front="cli")
     valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
-    columns = _selection(columns, brief, valid, GROUP_BRIEF)
-    ls = _open(logset)
-    last = ls.manifest.last_ts
-    where = GroupFilter(
-        level=lvl,
-        min_level=min_lvl,
-        logger=logger,
-        since=_when(since, "--since", last),
-        until=_when(until, "--until", last),
-        with_exception=with_exception,
-        exception=exception,
-        contains=contains,
-    )
-    df = ls.groups(where=where, coarse=coarse, sort=sort, limit=lim, offset=skip)
-    complete = skip == 0 and (lim is None or df.height < lim)
-    total = df.height if complete else ls.count_groups(where=where, coarse=coarse)
-    items = jsonable_rows(df if columns is None else df.select(columns))
-    _out().emit(
-        "groups.v1",
-        {
-            "logset": ls.manifest.id,
-            "count": len(items),
-            "total": total,
-            "offset": skip,
-            "truncated": skip + len(items) < total,
-            "items": items,
-        },
-        columns=columns or GROUP_COLUMNS,
-        title=f"groups of {ls.manifest.id}",
-    )
+    shown = sel.resolve(valid, GROUP_BRIEF, front="cli") or GROUP_COLUMNS
+    _out().document(doc, columns=shown, title=f"groups of {doc['logset']}")
 
 
 @app.command
@@ -815,30 +677,19 @@ def show(
             exception_type, signature, variables; "group" in its --brief form.
 
     """
-    lim = _limit(limit)
-    cap = _max_raw(max_raw, text=raw)
-    columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = _open(logset)
-    signature = resolve_signature(ls, signature)
-    df = ls.entries(signature=signature, limit=lim, columns=None if raw else columns)
-    if df.height == 0:
-        raise OpError.because(
-            "group_not_found",
-            "cli",
-            f"no entries with signature {signature!r} in log set {ls.manifest.id}",
-            hint=hint("group_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
-        )
+    page = Page.parse(limit, front="cli")
+    cap = _cap(max_raw, text=raw)
+    sel = Select(columns=columns, brief=brief)
+    columns = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front="cli")
     out = _out()
     if raw:
-        out.raw_entries(_raw_pairs(df, cap))
+        pairs = queries.show_raw(
+            _store(), logset, signature, limit=page.limit, cap=cap, front="cli"
+        )
+        out.raw_entries(pairs)
         return 0
-    import polars as pl
-
-    group_rows = jsonable_rows(ls.groups_lazy().filter(pl.col("signature") == signature).collect())
-    items = _cap_items(jsonable_rows(df), cap)
-    group = group_rows[0] if group_rows else None
-    if group is not None and brief:
-        group = {k: group[k] for k in GROUP_BRIEF}
+    doc = queries.show(_store(), logset, signature, limit=page.limit, sel=sel, cap=cap, front="cli")
+    group, items = doc["group"], doc["items"]
 
     def render(console: Console) -> None:
         from rich.text import Text
@@ -852,20 +703,11 @@ def show(
                 f"  last {_cell(group.get('last_seen'))}"
             )
         cols = columns or [c for c in ENTRY_COLUMNS if not items or c in items[0]]
-        console.print(rows_table(items, cols, title=f"entries of {signature}", color=out.color))
+        title = f"entries of {doc['signature']}"
+        console.print(rows_table(items, cols, title=title, color=out.color))
 
-    out.emit(
-        "entries.v1",
-        {
-            "logset": ls.manifest.id,
-            "signature": signature,
-            "group": group,
-            "count": len(items),
-            "items": items,
-        },
-        columns=columns or ENTRY_COLUMNS,
-        title=f"entries of {signature}",
-        table=render,
+    out.document(
+        doc, columns=columns or ENTRY_COLUMNS, title=f"entries of {doc['signature']}", table=render
     )
     return 0
 
@@ -875,18 +717,7 @@ def entries(
     logset: str,
     /,
     *,
-    signature: str | None = None,
-    level: str | None = None,
-    min_level: str | None = None,
-    logger: str | None = None,
-    user: str | None = None,
-    thread: str | None = None,
-    request_id: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    contains: str | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
+    q: Annotated[EntryQuery, Parameter(name="*")] = ALL_ENTRIES,
     columns: list[str] | None = None,
     brief: bool = False,
     limit: int = 100,
@@ -898,10 +729,12 @@ def entries(
 
     Output (json):
       {"schema": "entries.v1", "logset": id, "count": int, "total": int,
-       "offset": int, "truncated": bool, "items": [<entries.v1 row>, ...]}
+       "offset": int, "next_offset": int | null, "truncated": bool,
+       "items": [<entries.v1 row>, ...]}
     "total" counts the matching entries before --offset/--limit; "offset"
     echoes --offset; "truncated" is true when more entries follow this page
-    (offset + count < total; the next page starts at offset + count). With
+    and "next_offset" is where it starts (offset + count; null on the last
+    page). --coarse-signature takes the signature of `groups --coarse`. With
     --raw the raw log text of the entries is printed instead (as `show --raw`;
     --offset/--limit apply).
     Rows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,
@@ -927,19 +760,7 @@ def entries(
 
     Args:
         logset: Log set id, unique id prefix or name.
-        signature: Only entries of this group signature (or unique prefix, 4+ hex chars).
-        level: Only these levels, e.g. ERROR or WARN,ERROR.
-        min_level: Only this level or more severe.
-        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
-        user: Only this user (exact).
-        thread: Only this thread (exact).
-        request_id: Only this request id (exact; the Jira request context, e.g. 540x101x1).
-        since: Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or
-            30m/2h/1d before the set's last entry.
-        until: Only entries before this time (same forms as --since).
-        contains: Only entries whose raw text contains this text (case-insensitive).
-        with_exception: Only entries with an exception (exception_type not null), any level.
-        exception: Only entries whose exception_type contains this text (case-insensitive).
+        q: Entry filters (the options --signature to --exception, see EntryQuery).
         columns: Columns to return: comma-separated (ts,level_name) and/or repeated.
         brief: Only id, ts, level_name, thread, user, request_id, logger, message,
             exception_type, signature.
@@ -950,47 +771,15 @@ def entries(
             in json/jsonl mode, no limit in table and --raw mode.
 
     """
-    lvl, min_lvl, lim, skip = _level(level), _level(min_level), _limit(limit), _offset(offset)
-    columns = _selection(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
-    cap = _max_raw(max_raw, text=raw)
-    ls = _open(logset)
-    last = ls.manifest.last_ts
-    where = EntryFilter(
-        signature=resolve_signature(ls, signature) if signature else signature,
-        level=lvl,
-        min_level=min_lvl,
-        logger=logger,
-        user=user,
-        thread=thread,
-        request_id=request_id,
-        since=_when(since, "--since", last),
-        until=_when(until, "--until", last),
-        contains=contains,
-        with_exception=with_exception,
-        exception=exception,
-    )
+    page = Page.parse(limit, offset, front="cli")
+    sel = Select(columns=columns, brief=brief)
+    shown = sel.resolve(ENTRY_FIELDS, ENTRY_BRIEF, front="cli")
+    cap = _cap(max_raw, text=raw)
     if raw:
-        cols = ["raw", "source_path", "source_line"]
-        page = ls.entries(where=where, limit=lim, offset=skip, columns=cols)
-        _out().raw_entries(_raw_pairs(page, cap))
+        _out().raw_entries(queries.raw_entries(_store(), logset, q, page, cap, front="cli"))
         return
-    df = ls.entries(where=where, limit=lim, offset=skip, columns=columns)
-    complete = skip == 0 and (lim is None or df.height < lim)
-    total = df.height if complete else ls.count_entries(where=where)
-    items = _cap_items(jsonable_rows(df), cap)
-    _out().emit(
-        "entries.v1",
-        {
-            "logset": ls.manifest.id,
-            "count": len(items),
-            "total": total,
-            "offset": skip,
-            "truncated": skip + len(items) < total,
-            "items": items,
-        },
-        columns=columns or ENTRY_COLUMNS,
-        title=f"entries of {ls.manifest.id}",
-    )
+    doc = queries.entries(_store(), logset, q, page, sel, cap, front="cli")
+    _out().document(doc, columns=shown or ENTRY_COLUMNS, title=f"entries of {doc['logset']}")
 
 
 ANCHOR_MARK = "▶"
@@ -1047,41 +836,31 @@ def context(
             exception_type, signature, variables.
 
     """
-    for flag, value in (("--before", before), ("--after", after)):
-        if value < 0:
-            raise OpError("invalid_value", f"{flag} must be >= 0")
-    cap = _max_raw(max_raw, text=False)
-    columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = _open(logset)
-    df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
-    if df is None:
-        raise OpError.because(
-            "entry_not_found",
-            "cli",
-            f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
-            hint=hint("entry_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
-        )
-    at = df["id"].to_list().index(entry_id)
-    thread = df["thread"][at]
-    items = _cap_items(jsonable_rows(df if columns is None else df.select(columns)), cap)
+    cap = _cap(max_raw, text=False)
+    sel = Select(columns=columns, brief=brief)
+    columns = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front="cli")
+    doc, at = queries.context(
+        _store(),
+        logset,
+        entry_id,
+        before=before,
+        after=after,
+        any_thread=any_thread,
+        sel=sel,
+        cap=cap,
+        front="cli",
+    )
+    items: list[dict[str, Any]] = doc["items"]
     out = _out()
-    title = f"context of {entry_id}" + ("" if any_thread else f" (thread {thread})")
+    title = f"context of {entry_id}" + ("" if any_thread else f" (thread {doc['thread']})")
 
     def render(console: Console) -> None:
         rows = [{"": ANCHOR_MARK if i == at else "", **r} for i, r in enumerate(items)]
         default = ["ts", "level_name", "thread", "user", "logger", "message"]
         console.print(rows_table(rows, ["", *(columns or default)], title=title, color=out.color))
 
-    out.emit(
-        "entries.v1",
-        {
-            "logset": ls.manifest.id,
-            "anchor": entry_id,
-            "thread": thread,
-            "any_thread": any_thread,
-            "count": len(items),
-            "items": items,
-        },
+    out.document(
+        doc,
         jsonl_rows=[{**r, "anchor": True} if i == at else r for i, r in enumerate(items)],
         table=render,
     )
@@ -1139,16 +918,16 @@ def frames(
         all_: Return every frame (with an "app" flag) and all application frames.
 
     """
-    lim = _limit(limit)
-    ls = _open(logset)
-    doc = frames_view(ls, ref, limit=lim, all_frames=all_, app_packages=app_packages())
-    if doc is None:
-        raise OpError.because(
-            "ref_not_found",
-            "cli",
-            f"no entry or group {ref!r} in log set {ls.manifest.id}",
-            hint=hint("ref_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
-        )
+    page = Page.parse(limit, front="cli")
+    doc = queries.frames(
+        _store(),
+        logset,
+        ref,
+        limit=page.limit,
+        all_frames=all_,
+        app_packages=app_packages(),
+        front="cli",
+    )
     items: list[dict[str, Any]] = doc["items"]
     out = _out()
     if not items:
@@ -1178,7 +957,7 @@ def frames(
                 )
             )
 
-    out.emit("frames.v1", doc, table=render)
+    out.document(doc, table=render)
     return 0
 
 
@@ -1291,21 +1070,18 @@ def stats(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    ls = _open(logset)
-    data = dict(ls.stats())
-    data.pop("schema", None)
-    doc = {"logset": ls.manifest.id, **data}
-    out = _out()
+    doc = queries.stats(_store(), logset, front="cli")
+    title = f"stats {doc['logset']}"
 
     def render(console: Console) -> None:
-        compact = {k: v for k, v in doc.items() if k != "hours"}
-        for tbl in mapping_tables(compact, title=f"stats {ls.manifest.id}"):
+        compact = {k: v for k, v in doc.items() if k not in ("schema", "hours")}
+        for tbl in mapping_tables(compact, title=title):
             console.print(tbl)
-        days = _hour_days(data.get("hours") or [])
+        days = _hour_days(doc.get("hours") or [])
         if days:
             console.print(rows_table(days, ("day", "count", "max/h", "hours 00-23"), title="hours"))
 
-    out.emit("stats.v1", doc, items=None, title=f"stats {ls.manifest.id}", table=render)
+    _out().document(doc, items=None, title=title, table=render)
 
 
 SPARK = " ▁▂▃▄▅▆▇█"
@@ -1331,20 +1107,6 @@ def _hour_days(hours: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for day, counts in sorted(by_day.items())
     ]
-
-
-def _raw_pairs(df: Any, max_raw: int | None = None) -> list[tuple[str, str | None]]:
-    """``(raw, "source:line")`` pairs of an entries frame; raw cut to ``max_raw`` chars."""
-    pairs = []
-    cols = [c for c in ("raw", "source_path", "source_line") if c in df.columns]
-    for row in df.select(cols).iter_rows(named=True):
-        path, line = row.get("source_path"), row.get("source_line")
-        label = f"{Path(path).name}:{line}" if path else None
-        raw = str(row["raw"])
-        if max_raw is not None:
-            raw = cap_text(raw, max_raw)
-        pairs.append((raw, label))
-    return pairs
 
 
 @app.command
@@ -2150,8 +1912,8 @@ def _unexpected(command: str, unused: Sequence[str], tokens: Sequence[str]) -> s
     before = tokens[at[-1] - 1] if at and at[-1] > 0 else ""
     if before.startswith("--") and "=" not in before:
         name = before[2:].replace("-", "_")
-        flag = params.get(name) or params.get(name + "_")
-        if flag is not None and isinstance(flag.default, bool):
+        defaults = _option_defaults(params.values())
+        if isinstance(defaults.get(name, defaults.get(name + "_")), bool):
             return f"{what}; {before} is a flag and takes no value"
     kinds = (inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD)
     names = [p.name.upper() for p in params.values() if p.kind in kinds]
@@ -2159,6 +1921,17 @@ def _unexpected(command: str, unused: Sequence[str], tokens: Sequence[str]) -> s
         return f"{what}; {command} takes no arguments"
     count = f"{len(names)} argument{'s' if len(names) > 1 else ''}"
     return f"{what}; {command} takes {count}: {' '.join(names)}"
+
+
+def _option_defaults(params: Iterable[inspect.Parameter]) -> dict[str, Any]:
+    """Default of every option, the fields of flattened dataclasses (``name="*"``) included."""
+    out: dict[str, Any] = {}
+    for p in params:
+        if dataclasses.is_dataclass(p.default) and not isinstance(p.default, type):
+            out.update({f.name: getattr(p.default, f.name) for f in dataclasses.fields(p.default)})
+        else:
+            out[p.name] = p.default
+    return out
 
 
 def _utf8_streams() -> None:

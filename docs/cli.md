@@ -172,9 +172,14 @@ unknown signature. Prefixes shorter than 4 characters are not looked up.
 
 ### Filters
 
+The filters of `groups` and `entries` are one request model each
+(`service/params.py`: `GroupQuery`, `EntryQuery`), bound to these options and to
+the query parameters of the web API, so both front ends parse them alike. A
+blank value (`--since ""`, `?logger=`) means the filter is not set.
+
 | Option | Semantics |
 |---|---|
-| `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. Names: `TRACE`, `DEBUG`, `INFO`, `WARN` (also `WARNING`), `ERROR`, `FATAL` and `UNKNOWN` (entries whose header could not be parsed: `parse_error` rows, level 0). A blank value means no filter. Anything else (also `SEVERE`, `FINE`) → error `invalid_level`. The web API and `LogSet` use the same parser (`store/levels.py`). |
+| `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. Names: `TRACE`, `DEBUG`, `INFO`, `WARN` (also `WARNING`), `ERROR`, `FATAL` and `UNKNOWN` (entries whose header could not be parsed: `parse_error` rows, level 0). Anything else (also `SEVERE`, `FINE`) → error `invalid_level` (`--level: unknown level 'SEVERE'; …`). The web API and `LogSet` use the same parser (`store/levels.py`). |
 | `--min-level L` | This level or more severe (one name, as `--level`; `UNKNOWN` entries are never included). |
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
 | `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
@@ -322,11 +327,11 @@ repeats the stack trace in `raw`, `body`, `exception_chain` and
 Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no
 entries with this signature; 3.
 
-### `entries SET [--signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
+### `entries SET [--signature] [--coarse-signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
 
 `--user`/`--thread`/`--request-id` are exact (`--request-id` is the Jira
 request id of the request context, e.g. `540x101x1`: all entries of one HTTP
-request); `--contains` is a case-insensitive substring of `raw`; `--columns` selects columns, comma-separated and/or repeated
+request); `--coarse-signature` is exact too (the signature of `groups --coarse`); `--contains` is a case-insensitive substring of `raw`; `--columns` selects columns, comma-separated and/or repeated
 (`--columns ts,level_name --columns message`; order kept, duplicates dropped).
 An unknown column is error `invalid_value` naming it, with the valid columns
 in `hint`. `--brief` is the preset `id, ts, level_name, thread, user,
@@ -337,8 +342,11 @@ request_id, logger, message, exception_type, signature` (not combinable with
 
 ```json
 {"schema": "entries.v1", "logset": "…", "count": 10, "total": 42, "offset": 0,
- "truncated": true, "items": [<entries.v1 row>]}
+ "next_offset": 10, "truncated": true, "items": [<entries.v1 row>]}
 ```
+
+`next_offset` is where the next page starts (`offset + count`), `null` on the
+last page, as in `GET /api/sets/{ref}/entries`.
 
 <!-- generated:entries-columns by docs/formats/generate.py from store/schema.py -->
 entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,

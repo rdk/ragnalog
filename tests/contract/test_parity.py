@@ -66,9 +66,6 @@ class Case:
     """Known drift: the case is ``xfail(strict=True)`` with this reason."""
 
 
-NEXT_OFFSET = frozenset({"next_offset"})
-"""Masked in the entries cases; the drift itself is the "entries-next-offset" case."""
-
 # The parity contract. Placeholders: {edge} {sample} = set ids, {sig} = an ERROR group
 # signature of "edge" with an exception, {entry} = an entry id of that group.
 CASES: list[Case] = [
@@ -156,41 +153,33 @@ CASES: list[Case] = [
     ),
     # --- entries
     Case(
-        "entries-next-offset",
-        ["entries", "edge", "--limit", "5"],
-        "/api/sets/edge/entries?limit=5",
-        drift="entries.v1: the API adds next_offset (null on the last page), the CLI does not",
+        "entries-next-offset", ["entries", "edge", "--limit", "5"], "/api/sets/edge/entries?limit=5"
     ),
-    Case("entries", ["entries", "edge"], "/api/sets/edge/entries", masked=NEXT_OFFSET),
+    Case("entries", ["entries", "edge"], "/api/sets/edge/entries"),
     Case(
         "entries-filters",
         ["entries", "sample", "--min-level", "WARN", "--with-exception", "--limit", "5"],
         "/api/sets/sample/entries?min_level=WARN&with_exception=true&limit=5",
-        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-signature-contains",
         ["entries", "edge", "--signature", "{sig}", "--contains", "script"],
         "/api/sets/edge/entries?signature={sig}&contains=script",
-        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-columns",
         ["entries", "sample", "--columns", "id,ts,level_name", "--limit", "5", "--offset", "3"],
         "/api/sets/sample/entries?columns=id,ts,level_name&limit=5&offset=3",
-        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-brief",
         ["entries", "sample", "--brief", "--limit", "5"],
         "/api/sets/sample/entries?brief=true&limit=5",
-        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-max-raw",
         ["entries", "edge", "--max-raw", "60", "--limit", "5"],
         "/api/sets/edge/entries?max_raw=60&limit=5",
-        masked=NEXT_OFFSET,
     ),
     Case(
         "entries-limit-0",
@@ -202,13 +191,14 @@ CASES: list[Case] = [
         "entries-level-unknown",
         ["entries", "edge", "--level", "UNKNOWN"],
         "/api/sets/edge/entries?level=UNKNOWN",
-        masked=NEXT_OFFSET,
     ),
     Case(
-        "entries-empty-since",
-        ["entries", "edge", "--since", ""],
-        "/api/sets/edge/entries?since=",
-        drift="empty since=: the CLI rejects it (invalid_value), the API ignores it",
+        "entries-empty-since", ["entries", "edge", "--since", ""], "/api/sets/edge/entries?since="
+    ),
+    Case(
+        "groups-blank-filters",
+        ["groups", "sample", "--until", " ", "--logger", "", "--level", ""],
+        "/api/sets/sample/groups?until=%20&logger=&level=",
     ),
     Case(
         "context",
@@ -502,15 +492,8 @@ def _frames() -> list[Any]:
     return [
         pytest.param(pl.DataFrame({"t": [aware, None]}), id="aware-datetime"),
         pytest.param(pl.DataFrame({"d": [aware.date()]}), id="date"),
-        pytest.param(
-            pl.DataFrame({"t": [aware.replace(tzinfo=None)]}),
-            id="naive-datetime",
-            marks=pytest.mark.xfail(
-                strict=True,
-                reason="naive datetimes: CLI 2026-10-29T09:00:00.123000, API ...09:00:00.123+00:00 "
-                "(no stored column is naive today; DuckDB or new columns could be)",
-            ),
-        ),
+        # naive values are taken as UTC by both (one serialiser, store.logset.to_records)
+        pytest.param(pl.DataFrame({"t": [aware.replace(tzinfo=None)]}), id="naive-datetime"),
     ]
 
 

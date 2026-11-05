@@ -14,6 +14,7 @@ from starlette.responses import HTMLResponse, Response
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.report import asset_text, render_html
+from atlas_log_analyzer.service import queries
 from atlas_log_analyzer.webapp import api
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
@@ -53,7 +54,12 @@ templates.env.filters.update(num=_fmt_int, ts=_fmt_ts, size=_fmt_bytes)
 @router.get("/")
 def index(request: Request, state: StateDep) -> Response:
     """Render the sets index with upload form and per-set triage verdicts (loaded by the page)."""
-    doc = api.list_sets(state)
+    doc = queries.sets_doc(
+        state,
+        brief=False,
+        store=state.store.root.name,
+        summary=lambda m: state.summary(state.open(m.id)),
+    )
     for item in doc["items"]:
         item["bytes"] = sum(int(s.get("size") or 0) for s in item.get("sources") or [])
     return templates.TemplateResponse(

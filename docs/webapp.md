@@ -119,10 +119,16 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 accept a unique signature prefix of at least 4 hex characters (409 `ambiguous`
 with up to 5 `candidates` when several groups match), as in the CLI.
 
-`since` and `until` accept ISO 8601 (naive = UTC), `YYYY-MM-DD`, or `30m`/`2h`/`1d`
-before the set's last entry; blank means unset. `level` and `min_level` take
-the CLI's level names (`TRACE` … `FATAL`, `WARNING` = `WARN`, `UNKNOWN` for
-`parse_error` rows; blank = unset; anything else is `invalid_level`).
+The filters of `/groups` and `/entries` and the column selection are the
+request models of the CLI (`service/params.py`: `GroupQuery`, `EntryQuery`,
+`Select`), read from the query string by `webapp/params.py` (`query_model`), so
+they parse as the CLI options do and their OpenAPI descriptions are the CLI's
+`--help` texts. A blank value means unset. `since` and `until` accept ISO 8601
+(naive = UTC), `YYYY-MM-DD`, or `30m`/`2h`/`1d` before the set's last entry.
+`level` and `min_level` take the CLI's level names (`TRACE` … `FATAL`, `WARNING`
+= `WARN`, `UNKNOWN` for `parse_error` rows; anything else is `invalid_level`).
+`columns` takes comma-separated and/or repeated names; an unknown one is
+`invalid_value` with "did you mean" and the valid columns in `hint`.
 
 Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
 `atlas-log schema NAME`); `/openapi.json` holds the same schemas as components

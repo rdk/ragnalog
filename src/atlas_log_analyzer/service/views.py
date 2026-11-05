@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from atlas_log_analyzer.core.java import is_app_frame
+from atlas_log_analyzer.service.params import DEFAULT_MAX_RAW
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA
 
 if TYPE_CHECKING:
@@ -20,6 +21,7 @@ if TYPE_CHECKING:
 
 # polars and the log-set reader are imported where used: the CLI imports this module
 # for its column presets, and commands that read no set should not load polars.
+# DEFAULT_MAX_RAW lives in service.params (TextCap) and is re-exported here.
 
 __all__ = [
     "DEFAULT_MAX_RAW",
@@ -84,9 +86,6 @@ SET_BRIEF: tuple[str, ...] = (
     "stale",
 )
 """Keys of a ``sets --brief`` / ``brief=true`` item (no ``sources``, no versions)."""
-
-DEFAULT_MAX_RAW = 4000
-"""Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
 
 
 def set_summary(ls: LogSet | Path) -> dict[str, int]:

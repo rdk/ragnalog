@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import re
-from collections.abc import Sequence
-from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -17,25 +14,21 @@ from atlas_log_analyzer.core.formats import registry
 from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
-from atlas_log_analyzer.report import example_entries
+from atlas_log_analyzer.service import queries
 from atlas_log_analyzer.service.errors import OpError, hint
+from atlas_log_analyzer.service.params import (
+    DEFAULT_MAX_RAW,
+    EntryQuery,
+    GroupQuery,
+    Page,
+    Select,
+    TextCap,
+    parse_level,
+)
 from atlas_log_analyzer.service.sets import open_set
 from atlas_log_analyzer.service.views import (
-    DEFAULT_MAX_RAW,
-    DETAIL_BRIEF,
-    ENTRY_BRIEF,
-    ENTRY_FIELDS,
-    GROUP_BRIEF,
-    GROUP_FIELDS,
-    cap_texts,
     diff_warning,
-    frames_view,
-    resolve_signature,
-    select_columns,
-    set_item,
 )
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
 from atlas_log_analyzer.store.query import span_hours, with_rates
@@ -43,10 +36,11 @@ from atlas_log_analyzer.store.schema import SCHEMA_VERSION
 from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
 from atlas_log_analyzer.store.triage import triage as store_triage
 from atlas_log_analyzer.webapp.jobs import safe_filename
+from atlas_log_analyzer.webapp.params import query_model
 from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
-__all__ = ["auto_baseline", "manifest_item", "parse_time", "router"]
+__all__ = ["auto_baseline", "manifest_item", "router"]
 
 
 def _auth(request: Request) -> None:
@@ -67,36 +61,6 @@ def _auth(request: Request) -> None:
 
 router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=[Depends(_auth)])
 StateDep = Annotated[AppState, Depends(get_state)]
-
-_RELATIVE = re.compile(r"^(\d+)\s*([smhd])$")
-_UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
-
-
-def parse_time(value: str | None, name: str, anchor: datetime | None) -> datetime | None:
-    """Parse ISO 8601 (naive = UTC), ``YYYY-MM-DD`` or ``30m/2h/1d`` before ``anchor``."""
-    if value is None or not value.strip():
-        return None
-    text = value.strip()
-    if m := _RELATIVE.match(text.lower()):
-        base = anchor or datetime.now(UTC)
-        base = base if base.tzinfo else base.replace(tzinfo=UTC)
-        return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
-    try:
-        parsed = datetime.fromisoformat(text)
-    except ValueError:
-        raise OpError(
-            "invalid_value",
-            f"{name}={value!r} is not a time; use ISO 8601, YYYY-MM-DD or 30m/2h/1d",
-        ) from None
-    return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
-
-
-def _levels(value: str | None, name: str) -> str | None:
-    """Parse a level parameter as the CLI does (``store.levels``; blank = unset)."""
-    try:
-        return parse_levels(value)
-    except InvalidLevel as exc:
-        raise OpError("invalid_level", f"{name}: {exc}") from None
 
 
 def manifest_item(m: LogSetManifest) -> dict[str, Any]:
@@ -172,29 +136,18 @@ def list_sets(state: StateDep, brief: bool = False) -> dict[str, Any]:
     ``name``, ``first_ts``, ``last_ts``, ``entry_count``, ``group_count``, ``summary``
     and ``stale`` per item, as ``atlas-log sets --brief``.
     """
-    items = []
-    for m in state.manifests():
-        summary: dict[str, int] | None
-        try:
-            summary = state.summary(state.open(m.id))
-        except Exception:
-            summary = None
-        items.append(set_item(m.to_dict(), summary, brief=brief))
-    return {
-        "schema": "sets.v1",
-        "store": state.store.root.name,
-        "count": len(items),
-        "items": items,
-    }
+    return queries.sets_doc(
+        state,
+        brief=brief,
+        store=state.store.root.name,
+        summary=lambda m: state.summary(state.open(m.id)),
+    )
 
 
 @router.get("/sets/{ref}")
 def get_set(ref: str, state: StateDep) -> dict[str, Any]:
     """One manifest (``logset.v1``) plus ``summary``."""
-    ls = open_set(state, ref, front="api")
-    doc = dict(ls.manifest.to_dict())
-    doc["summary"] = state.summary(ls)
-    return doc
+    return queries.set_doc(state, ref, front="api", summary=state.summary)
 
 
 @router.delete("/sets/{ref}")
@@ -207,56 +160,19 @@ def delete_set(ref: str, state: StateDep) -> dict[str, Any]:
 @router.get("/sets/{ref}/stats")
 def stats(ref: str, state: StateDep) -> dict[str, Any]:
     """Statistics of a set (``stats.v1``)."""
-    ls = open_set(state, ref, front="api")
-    return {"schema": "stats.v1", "logset": ls.manifest.id, **ls.stats()}
-
-
-def _columns(
-    columns: list[str] | None, brief: bool, valid: Sequence[str], preset: Sequence[str]
-) -> list[str] | None:
-    """Columns chosen by ``columns`` (comma-separated and/or repeated) or ``brief``."""
-    if brief and columns:
-        raise OpError(
-            "usage", "brief and columns cannot be combined", hint=f"brief is {','.join(preset)}"
-        )
-    if brief:
-        return list(preset)
-    chosen, unknown = select_columns(columns, valid)
-    if unknown:
-        raise OpError(
-            "invalid_value",
-            f"unknown column(s) {', '.join(map(repr, unknown))} in columns",
-            hint=f"valid columns: {', '.join(valid)}",
-        )
-    return chosen
-
-
-def _max_raw(value: int) -> int | None:
-    return value or None
-
-
-MAX_RAW_HOW = "use max_raw=0"
-"""How to get the full text, in the marker of a cut ``raw``/``body``."""
+    return queries.stats(state, ref, front="api")
 
 
 @router.get("/sets/{ref}/groups")
 def groups(
     ref: str,
     state: StateDep,
-    level: str | None = None,
-    min_level: str | None = None,
-    logger: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
-    contains: str | None = None,
+    q: Annotated[GroupQuery, Depends(query_model(GroupQuery))],
+    sel: Annotated[Select, Depends(query_model(Select))],
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: Annotated[int, Query(ge=0, le=100_000)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
     coarse: bool = False,
-    columns: Annotated[list[str] | None, Query()] = None,
-    brief: bool = False,
 ) -> dict[str, Any]:
     """List the groups of a set (``groups.v1``), as ``atlas-log groups``.
 
@@ -266,32 +182,8 @@ def groups(
     (both case-insensitive). ``columns`` (comma-separated and/or repeated) or
     ``brief`` select the columns.
     """
-    valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
-    cols = _columns(columns, brief, valid, GROUP_BRIEF)
-    ls = open_set(state, ref, front="api")
-    last = ls.manifest.last_ts
-    where = GroupFilter(
-        level=_levels(level, "level"),
-        min_level=_levels(min_level, "min_level"),
-        logger=logger,
-        since=parse_time(since, "since", last),
-        until=parse_time(until, "until", last),
-        with_exception=with_exception,
-        exception=exception,
-        contains=contains,
-    )
-    df = ls.groups(where=where, coarse=coarse, sort=sort, limit=limit or None, offset=offset)
-    total = ls.count_groups(where=where, coarse=coarse)
-    items = to_records(df if cols is None else df.select(cols))
-    return {
-        "schema": "groups.v1",
-        "logset": ls.manifest.id,
-        "count": len(items),
-        "total": total,
-        "offset": offset,
-        "truncated": offset + len(items) < total,
-        "items": items,
-    }
+    page = Page(limit or None, offset)
+    return queries.groups(state, ref, q, page, sel, sort=sort, coarse=coarse, front="api")
 
 
 @router.get("/sets/{ref}/groups/{signature}")
@@ -299,11 +191,10 @@ def group(
     ref: str,
     signature: str,
     state: StateDep,
+    sel: Annotated[Select, Depends(query_model(Select))],
     limit: Annotated[int, Query(ge=0, le=10_000)] = 20,
     coarse: bool = False,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
-    columns: Annotated[list[str] | None, Query()] = None,
-    brief: bool = False,
 ) -> dict[str, Any]:
     """One group with its hourly histogram and first entries (``group.v1``).
 
@@ -315,32 +206,10 @@ def group(
     ``atlas-log show --columns/--brief``; ``brief`` also cuts ``group`` to the
     ``groups`` brief columns.
     """
-    cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = open_set(state, ref, front="api")
-    signature = resolve_signature(ls, signature, coarse=coarse)
-    row = ls.group(signature, coarse=coarse)
-    if row is None:
-        raise OpError.because(
-            "group_not_found",
-            "api",
-            f"no group {signature!r} in log set {ls.manifest.id}",
-            hint=hint("group_not_found", "api", id=ls.manifest.id),
-        )
-    if coarse:
-        df = ls.entries(coarse_signature=signature, limit=limit or None, columns=cols)
-    else:
-        df = ls.entries(signature=signature, limit=limit or None, columns=cols)
-    entries = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
-    if brief:
-        row = {k: row[k] for k in (*GROUP_BRIEF, "signatures") if k in row}
-    return {
-        "schema": "group.v1",
-        "logset": ls.manifest.id,
-        "group": row,
-        "histogram": [] if coarse else ls.histogram("1h", signature=signature),
-        "count": len(entries),
-        "items": entries,
-    }
+    cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
+    return queries.group(
+        state, ref, signature, limit=limit or None, coarse=coarse, sel=sel, cap=cap, front="api"
+    )
 
 
 @router.get("/sets/{ref}/groups/{signature}/examples")
@@ -354,40 +223,15 @@ def group_examples(
 
     The report page loads these lazily when its payload was built without examples.
     """
-    ls = open_set(state, ref, front="api")
-    row = ls.group(signature)
-    if row is None:
-        raise OpError.because(
-            "group_not_found", "api", f"no group {signature!r} in log set {ls.manifest.id}"
-        )
-    ids = [str(i) for i in row.get("examples") or []]
-    return {
-        "schema": "report-entries.v1",
-        "logset": ls.manifest.id,
-        "signature": signature,
-        "items": example_entries(ls, ids, max_raw=max_raw),
-    }
+    return queries.group_examples(state, ref, signature, max_raw=max_raw, front="api")
 
 
 @router.get("/sets/{ref}/entries")
 def entries(
     ref: str,
     state: StateDep,
-    signature: str | None = None,
-    coarse_signature: str | None = None,
-    level: str | None = None,
-    min_level: str | None = None,
-    logger: str | None = None,
-    user: str | None = None,
-    thread: str | None = None,
-    request_id: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
-    contains: str | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
-    columns: Annotated[list[str] | None, Query()] = None,
-    brief: bool = False,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
+    sel: Annotated[Select, Depends(query_model(Select))],
     limit: Annotated[int, Query(ge=1, le=10_000)] = 100,
     offset: Annotated[int, Query(ge=0)] = 0,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
@@ -400,38 +244,8 @@ def entries(
     ``max_raw`` characters (default 4000, 0 = all); a cut row gets
     ``body_truncated`` and ``raw_chars``.
     """
-    cols = _columns(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
-    ls = open_set(state, ref, front="api")
-    last = ls.manifest.last_ts
-    where = EntryFilter(
-        signature=resolve_signature(ls, signature) if signature else signature,
-        coarse_signature=coarse_signature,
-        level=_levels(level, "level"),
-        min_level=_levels(min_level, "min_level"),
-        logger=logger,
-        user=user,
-        thread=thread,
-        request_id=request_id,
-        since=parse_time(since, "since", last),
-        until=parse_time(until, "until", last),
-        contains=contains,
-        with_exception=with_exception,
-        exception=exception,
-    )
-    df = ls.entries(where=where, limit=limit, offset=offset, columns=cols)
-    total = ls.count_entries(where=where)
-    items = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
-    nxt = offset + len(items)
-    return {
-        "schema": "entries.v1",
-        "logset": ls.manifest.id,
-        "count": len(items),
-        "total": total,
-        "offset": offset,
-        "next_offset": nxt if nxt < total else None,
-        "truncated": nxt < total,
-        "items": items,
-    }
+    cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
+    return queries.entries(state, ref, q, Page(limit, offset), sel, cap, front="api")
 
 
 @router.get("/sets/{ref}/entries/{entry_id}/context")
@@ -439,12 +253,11 @@ def context(
     ref: str,
     entry_id: str,
     state: StateDep,
+    sel: Annotated[Select, Depends(query_model(Select))],
     before: Annotated[int, Query(ge=0, le=10_000)] = 5,
     after: Annotated[int, Query(ge=0, le=10_000)] = 5,
     any_thread: bool = False,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
-    columns: Annotated[list[str] | None, Query()] = None,
-    brief: bool = False,
 ) -> dict[str, Any]:
     """Return the entries around one entry in time order (``entries.v1``), as ``context``.
 
@@ -452,30 +265,19 @@ def context(
     ``any_thread``), the anchor included; ``raw``/``body`` cut as in ``entries``;
     ``columns`` or ``brief`` select the columns as ``atlas-log context``.
     """
-    cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = open_set(state, ref, front="api")
-    df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
-    if df is None:
-        raise OpError.because(
-            "entry_not_found",
-            "api",
-            f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
-            hint=hint("entry_not_found", "api", id=ls.manifest.id),
-        )
-    at = df["id"].to_list().index(entry_id)
-    thread = df["thread"][at]
-    items = cap_texts(
-        to_records(df if cols is None else df.select(cols)), _max_raw(max_raw), how=MAX_RAW_HOW
+    cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
+    doc, _ = queries.context(
+        state,
+        ref,
+        entry_id,
+        before=before,
+        after=after,
+        any_thread=any_thread,
+        sel=sel,
+        cap=cap,
+        front="api",
     )
-    return {
-        "schema": "entries.v1",
-        "logset": ls.manifest.id,
-        "anchor": entry_id,
-        "thread": thread,
-        "any_thread": any_thread,
-        "count": len(items),
-        "items": items,
-    }
+    return doc
 
 
 @router.get("/sets/{ref}/frames/{item}")
@@ -493,18 +295,15 @@ def frames(
     exception (0 = all), ``all`` adds every frame with an ``app`` flag.
     ``ATLAS_LOG_APP_PACKAGES`` of the server process defines application code when set.
     """
-    ls = open_set(state, ref, front="api")
-    doc = frames_view(
-        ls, item, limit=limit or None, all_frames=all, app_packages=app_packages_from_env()
+    return queries.frames(
+        state,
+        ref,
+        item,
+        limit=limit or None,
+        all_frames=all,
+        app_packages=app_packages_from_env(),
+        front="api",
     )
-    if doc is None:
-        raise OpError.because(
-            "ref_not_found",
-            "api",
-            f"no entry or group {item!r} in log set {ls.manifest.id}",
-            hint=hint("ref_not_found", "api", id=ls.manifest.id),
-        )
-    return {"schema": "frames.v1", **doc}
 
 
 @router.get("/sets/{ref}/timeline")
@@ -519,26 +318,8 @@ def timeline(
     until: str | None = None,
 ) -> dict[str, Any]:
     """Entry counts per time bucket (``timeline.v1``)."""
-    ls = open_set(state, ref, front="api")
-    last = ls.manifest.last_ts
-    try:
-        items = ls.histogram(
-            bucket,
-            signature=signature,
-            level=_levels(level, "level"),
-            min_level=_levels(min_level, "min_level"),
-            since=parse_time(since, "since", last),
-            until=parse_time(until, "until", last),
-        )
-    except ValueError as exc:
-        raise OpError("invalid_value", str(exc)) from exc
-    return {
-        "schema": "timeline.v1",
-        "logset": ls.manifest.id,
-        "bucket": bucket,
-        "count": len(items),
-        "items": items,
-    }
+    q = EntryQuery(signature=signature, level=level, min_level=min_level, since=since, until=until)
+    return queries.timeline(state, ref, q, bucket=bucket, front="api")
 
 
 @router.get("/sets/{ref}/report")
@@ -556,6 +337,7 @@ async def report(
     ``compare`` is a set reference, ``auto`` (the default baseline) or omitted.
     Payloads are cached per set version and options.
     """
+    lvl = parse_level(min_level, "min_level", front="api")
 
     def build() -> bytes:
         ls = open_set(state, ref, front="api")
@@ -564,13 +346,13 @@ async def report(
             return state.report_bytes(
                 ls,
                 compare=base,
-                min_level=_levels(min_level, "min_level"),
+                min_level=lvl,
                 examples=examples,
                 max_raw=max_raw,
                 max_groups=max_groups or None,
                 entries_url=f"/api/sets/{ls.manifest.id}/groups/{{sig}}/examples",
             )
-        except ValueError as exc:
+        except ValueError as exc:  # options are valid: the sets are not comparable
             raise OpError.because("incompatible_sets", "api", str(exc)) from exc
 
     data = await run_in_threadpool(build)
@@ -600,7 +382,11 @@ def diff(
     sa, sb = open_set(state, a, front="api"), open_set(state, b, front="api")
     try:
         result = store_diff(
-            sa, sb, min_level=_levels(min_level, "min_level"), coarse=coarse, force=force
+            sa,
+            sb,
+            min_level=parse_level(min_level, "min_level", front="api"),
+            coarse=coarse,
+            force=force,
         )
     except ValueError as exc:
         raise OpError.because(
@@ -644,7 +430,7 @@ def triage(
     :func:`atlas_log_analyzer.store.triage.triage` plus ``report_url`` links.
     """
     ls = open_set(state, ref, front="api")
-    lvl = _levels(min_level, "min_level")
+    lvl = parse_level(min_level, "min_level", front="api")
     base, choice = _choose(state, ls, baseline)
     try:
         doc = store_triage(

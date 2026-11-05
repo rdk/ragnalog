@@ -41,7 +41,7 @@ def test_unknown_level_names(jcli: Invoke, pe: str, name: str) -> None:
     err = res.json()["error"]
     assert err["code"] == "invalid_level"
     assert err["message"] == (
-        f"unknown level {name!r}; expected one of TRACE, DEBUG, INFO, WARN, ERROR, FATAL, "
+        f"--level: unknown level {name!r}; expected one of TRACE, DEBUG, INFO, WARN, ERROR, FATAL, "
         "UNKNOWN (WARNING = WARN)"
     )
 

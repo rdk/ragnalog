@@ -138,6 +138,10 @@ def test_missing_argument_is_usage_error(cli: Invoke) -> None:
             ["frames", "x", "y", "--all", "z"],
             "unexpected argument 'z'; --all is a flag and takes no value",
         ),
+        (
+            ["groups", "x", "--with-exception", "yes"],
+            "unexpected argument 'yes'; --with-exception is a flag and takes no value",
+        ),
     ],
 )
 def test_unexpected_arguments(cli: Invoke, argv: list[str], message: str) -> None:
