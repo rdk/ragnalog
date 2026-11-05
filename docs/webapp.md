@@ -95,7 +95,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/health` | | `health.v1` |
 | `GET /api/version` | | `version.v1` |
 | `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `atlas-log manifest`) |
-| `GET /api/formats` | | `formats.v1` |
+| `GET /api/formats` | | `formats.v1` (as `atlas-log formats`: `name`, `description`, `signature_spec`, `mask_rules`) |
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
@@ -108,14 +108,14 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
 | `GET /api/sets/{ref}/timeline` | `bucket` (`1h`, `15m`, `1d` …), `signature`, `level`, `min_level`, `since`, `until` | `timeline.v1`: `[{bucket, count}]` |
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
-| `GET /api/sets/{ref}/triage` | `baseline` (`auto` or a set), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
+| `GET /api/sets/{ref}/triage` | `baseline` (`auto`, a set, or `none`/empty for no baseline), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
 | `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
 | `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `frames`, `mine`, `overwrite`, `force` as form fields or query (as the `ingest` options) | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |
 
-`{sig}` in `/groups/{sig}`, `{id-or-sig}` in `/frames/…` and `entries?signature=`
+`{sig}` in `/groups/{sig}`, `{id-or-sig}` in `/frames/…`, `entries?signature=` and `timeline?signature=`
 accept a unique signature prefix of at least 4 hex characters (409 `ambiguous`
 with up to 5 `candidates` when several groups match), as in the CLI.
 
