@@ -11,6 +11,6 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items` | `list<FormatInfo>` | yes | The formats (sorted by confidence with --sample). |
 | `items[].name` | `string` | yes | Format name (--format). |
 | `items[].description` | `string` | yes | What the format reads. |
-| `items[].signature_spec` | `string` | no | CLI: default signature spec. |
-| `items[].mask_rules` | `list<string>` | no | CLI: masking rule names. |
+| `items[].signature_spec` | `string` | no | Default signature spec. |
+| `items[].mask_rules` | `list<string>` | no | Masking rule names. |
 | `items[].confidence` | `number` | no | With --sample: 0..1. |

@@ -42,11 +42,11 @@
           "type": "string"
         },
         "signature_spec": {
-          "description": "CLI: default signature spec.",
+          "description": "Default signature spec.",
           "type": "string"
         },
         "mask_rules": {
-          "description": "CLI: masking rule names.",
+          "description": "Masking rule names.",
           "type": "array",
           "items": {
             "type": "string"

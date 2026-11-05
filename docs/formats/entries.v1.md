@@ -62,7 +62,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `total` | `integer` | no | entries: matches before offset/limit. |
 | `offset` | `integer` | no | entries: echo of --offset. |
 | `truncated` | `boolean` | no | entries: more rows follow. |
-| `next_offset` | `integer \| null` | no | API entries: next page. |
+| `next_offset` | `integer \| null` | no | entries: where the next page starts; null on the last. |
 | `signature` | `string` | no | show: the full signature. |
 | `group` | `GroupRow \| null` | no | show: the groups.v1 row. |
 | `anchor` | `string` | no | context: the anchor entry id. |

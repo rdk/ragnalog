@@ -46,7 +46,7 @@
           "type": "string"
         },
         "reason": {
-          "description": "Finer cause within the code.",
+          "description": "The same in the CLI and the API where their codes differ, e.g. set_not_found (CLI store_error, API not_found); see service/errors.py REASONS.",
           "type": "string"
         },
         "store": {

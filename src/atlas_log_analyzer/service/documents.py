@@ -106,7 +106,16 @@ class ErrorInfo(Struct, kw_only=True):
     code: Annotated[str, _d("Stable error code, e.g. usage, invalid_value, not_found.")]
     message: Annotated[str, _d("What went wrong.")]
     hint: Annotated[str, _d("Suggested next step.")] | UnsetType = UNSET
-    reason: Annotated[str, _d("Finer cause within the code.")] | UnsetType = UNSET
+    reason: (
+        Annotated[
+            str,
+            _d(
+                "The same in the CLI and the API where their codes differ, e.g. set_not_found "
+                "(CLI store_error, API not_found); see service/errors.py REASONS."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
     store: Annotated[str, _d("The store searched (CLI, unknown set).")] | UnsetType = UNSET
     candidates: (
         Annotated[list[str], _d("Matching signatures of an ambiguous prefix (up to 5).")]
@@ -330,7 +339,10 @@ class Entries(Struct, kw_only=True, tag_field="schema", tag="entries.v1"):
     total: Annotated[int, _d("entries: matches before offset/limit.")] | UnsetType = UNSET
     offset: Annotated[int, _d("entries: echo of --offset.")] | UnsetType = UNSET
     truncated: Annotated[bool, _d("entries: more rows follow.")] | UnsetType = UNSET
-    next_offset: Annotated[int | None, _d("API entries: next page.")] | UnsetType = UNSET
+    next_offset: (
+        Annotated[int | None, _d("entries: where the next page starts; null on the last.")]
+        | UnsetType
+    ) = UNSET
     signature: Annotated[str, _d("show: the full signature.")] | UnsetType = UNSET
     group: Annotated[GroupRow | None, _d("show: the groups.v1 row.")] | UnsetType = UNSET
     anchor: Annotated[str, _d("context: the anchor entry id.")] | UnsetType = UNSET
@@ -503,8 +515,8 @@ class FormatInfo(Struct, kw_only=True):
 
     name: Annotated[str, _d("Format name (--format).")]
     description: Annotated[str, _d("What the format reads.")]
-    signature_spec: Annotated[str, _d("CLI: default signature spec.")] | UnsetType = UNSET
-    mask_rules: Annotated[list[str], _d("CLI: masking rule names.")] | UnsetType = UNSET
+    signature_spec: Annotated[str, _d("Default signature spec.")] | UnsetType = UNSET
+    mask_rules: Annotated[list[str], _d("Masking rule names.")] | UnsetType = UNSET
     confidence: Annotated[float, _d("With --sample: 0..1.")] | UnsetType = UNSET
 
 

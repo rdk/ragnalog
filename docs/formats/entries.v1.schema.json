@@ -38,7 +38,7 @@
       "type": "boolean"
     },
     "next_offset": {
-      "description": "API entries: next page.",
+      "description": "entries: where the next page starts; null on the last.",
       "anyOf": [
         {
           "type": "integer"

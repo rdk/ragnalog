@@ -27,7 +27,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `error.code` | `string` | yes | Stable error code, e.g. usage, invalid_value, not_found. |
 | `error.message` | `string` | yes | What went wrong. |
 | `error.hint` | `string` | no | Suggested next step. |
-| `error.reason` | `string` | no | Finer cause within the code. |
+| `error.reason` | `string` | no | The same in the CLI and the API where their codes differ, e.g. set_not_found (CLI store_error, API not_found); see service/errors.py REASONS. |
 | `error.store` | `string` | no | The store searched (CLI, unknown set). |
 | `error.candidates` | `list<string>` | no | Matching signatures of an ambiguous prefix (up to 5). |
 
