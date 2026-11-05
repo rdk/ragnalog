@@ -325,3 +325,5 @@ table.mx .mx-corner { font-weight: 400; color: var(--muted); }
   .c-timeline svg, .d-chart svg { width: 100%; height: auto; }
   .ml-row { break-inside: avoid; }
 }
+
+.ev-key.off { opacity: .45; text-decoration: line-through; }

@@ -318,6 +318,7 @@
       y: Y_MODES.includes(get("y")) ? get("y") : "shared",
       fit: get("fit") !== "0",
       arrows: get("arrows") !== "0",
+      jobs: get("jobs") === "1",
       ml: LOG_LEVELS.includes(get("ml")) ? get("ml") : "",
       mn: mn.length ? new Set(mn) : null,
       mq: get("mq"),
@@ -341,6 +342,7 @@
     if (s.y !== "shared") p.set("y", s.y);
     if (!s.fit) p.set("fit", "0");
     if (!s.arrows) p.set("arrows", "0");
+    if (s.jobs) p.set("jobs", "1");
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.ex) p.set("ex", s.ex);
@@ -374,11 +376,11 @@
   let qTimer = 0;
   function onNav() {
     clearTimeout(qTimer);
-    const prevY = S.y + S.fit + S.arrows + S.sig + S.t;
+    const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t;
     S = parseHash();
     $("f-search").value = S.q;
     $("l-search").value = S.mq;
-    update(prevY !== S.y + S.fit + S.arrows + S.sig + S.t);
+    update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t);
   }
   window.addEventListener("popstate", onNav);
   window.addEventListener("hashchange", () => {
@@ -676,6 +678,7 @@
       // events
       const rg = tRange();
       for (const e of EVN[n]) {
+        if (e.kind === "job_run" && !S.jobs) continue; // routine; would hide the rare events
         const x = xOfMs(e.ms);
         if (x < padL - 2 || x > xEnd + 2) continue;
         P.push(glyph(e.kind, x, laneY, rg && !inRange(e.ms, rg) ? " dim" : ""));
@@ -750,7 +753,7 @@
       `<span title="Time a node has no logs for: before its oldest or after its newest entry, and gaps"><svg width="12" height="12" aria-hidden="true"><rect class="nolog-bg" width="12" height="12"/><rect class="nolog" width="12" height="12"/></svg>no logs</span>`;
     const counts = new Map();
     for (const e of EVENTS) counts.set(e.kind, (counts.get(e.kind) || 0) + 1);
-    const ev = KINDS.map((kd) => `<span class="ev-key" title="${esc(kd)}">${glyphKey(kd)}${esc(kindLabel(kd))} <span class="muted">${fmt(counts.get(kd))}</span></span>`);
+    const ev = KINDS.map((kd) => `<span class="ev-key${kd === "job_run" && !S.jobs ? " off" : ""}" title="${esc(kd === "job_run" && !S.jobs ? "job runs are hidden from the lanes: Job runs button" : kd)}">${glyphKey(kd)}${esc(kindLabel(kd))} <span class="muted">${fmt(counts.get(kd))}</span></span>`);
     const arrows = EVENTS.some((e) => e.subject && e.subject !== e.node && NIDX.has(e.subject)) || MENT.length;
     if (arrows) ev.push(`<span class="ev-key" title="An entry on one node names another node: arrow from the reporting node to the node it names">↕ mention (from the node that logs it to the node it names)</span>`);
     $("tl-events").innerHTML = ev.length
@@ -875,6 +878,9 @@
     const ab = $("tl-arrows");
     ab.setAttribute("aria-pressed", String(S.arrows));
     ab.hidden = !(MENT.length || EVENTS.some((e) => e.subject));
+    const jb = $("tl-jobs");
+    jb.setAttribute("aria-pressed", String(S.jobs));
+    jb.hidden = !EVENTS.some((e) => e.kind === "job_run");
     const w = $("tl-window");
     if (!S.t) {
       w.innerHTML = NB ? `<span class="muted">Drag across any band to set the time window of every view</span>` : "";
@@ -1663,7 +1669,7 @@
     compute();
     renderTabs();
     renderTimelineControls();
-    const tlKey = [S.y, S.fit, S.sig, S.arrows].join("|");
+    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs].join("|");
     if (forceTl || tlKey !== lastTl) {
       lastTl = tlKey;
       renderTimeline();
@@ -1925,6 +1931,7 @@
       if (b) commit({ y: b.dataset.y }, { keepPage: true, replace: true });
     });
     $("tl-arrows").onclick = () => commit({ arrows: !S.arrows }, { keepPage: true, replace: true });
+    $("tl-jobs").onclick = () => commit({ jobs: !S.jobs }, { keepPage: true, replace: true });
     $("l-level").addEventListener("click", (e) => {
       const b = e.target.closest("[data-ml]");
       if (b) commit({ ml: b.dataset.ml }, { keepPage: true });

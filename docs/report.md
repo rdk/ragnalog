@@ -225,7 +225,7 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   hairlines at its edges. Arrows go from the lane of the node that logs a mention to
   the lane of the node it names: one per event with `subject_node`, plus fainter ones
   per bucket for `interactions.mentions` groups (from their `hourly` on the reporting
-  node) where no event arrow exists; "Arrows" hides them. y-scale: shared, per node,
+  node) where no event arrow exists; "Arrows" hides them. Job runs (`job_run`) are left out of the lanes unless "Job runs" is on (`#jobs=1`): they repeat on a schedule and would hide the rare events. y-scale: shared, per node,
   or % of node (counts over the node's entries in the range). A selected group is drawn
   as a line on every band, on the same axis over faded columns; "Fit y to group" (on by
   default) scales the axis to the group and drops the columns. Hover shows the bucket's
