@@ -733,6 +733,32 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 {"schema": "version.v1", "version": "0.1.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 1, "python": "3.14.2"}
 ```
 
+### `batch`
+
+Runs many commands in one process, to avoid the start-up cost of each call
+(about 0.45 s, mostly imports). stdin is JSON Lines, one command per line as a
+JSON array of its arguments, without `atlas-log` and without global options:
+
+```sh
+printf '%s\n' '["groups", "prod", "--brief", "--limit", "5"]' '["stats", "nope"]' '["version"]' \
+  | atlas-log --store /data/store batch
+```
+
+Each line runs with the global options of the `batch` call (`--store`, `--quiet`,
+…) and `--output json`, and writes exactly one JSON document to stdout, in input
+order: the command's usual document, or `error.v1` when it fails — including a
+line that is not a JSON array of strings, one that sets a global option, asks for
+`--help`/`--version`, or runs `batch`, `parse`, `serve` or a `--raw` listing (none
+of which write one document). Blank lines are skipped. A failed line never stops
+the batch; the exit code is 0 unless stdin cannot be read (not UTF-8: exit 1).
+Diagnostics of the commands go to stderr as usual.
+
+```json
+{"schema": "groups.v1", "logset": "…", "count": 5, …}
+{"schema": "error.v1", "error": {"code": "store_error", "reason": "set_not_found", …}}
+{"schema": "version.v1", …}
+```
+
 ## Recipes
 
 ```sh

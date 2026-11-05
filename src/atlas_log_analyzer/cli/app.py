@@ -12,10 +12,11 @@ import dataclasses
 import errno
 import inspect
 import io
+import json
 import os
 import sys
 import textwrap
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Any, Literal
@@ -305,6 +306,17 @@ def _meta(
     if not tokens and out.mode != "table":  # bare `atlas-log` on a pipe: the agent manifest
         _emit_manifest(out)
         return 0
+    return _dispatch(tokens, _CTX, unexpected=None)
+
+
+def _dispatch(
+    tokens: Sequence[str], ctx: _Context, *, unexpected: Callable[[Exception], OpError] | None
+) -> int:
+    """Run one command line in ``ctx``; report known errors and return the exit code.
+
+    Unknown exceptions propagate, unless ``unexpected`` maps them (``batch`` keeps going).
+    """
+    out = ctx.output
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
     except CycloptsError as exc:
@@ -312,9 +324,11 @@ def _meta(
     except Exception as exc:
         err = error_from_exception(exc)
         if err is None:
-            raise
+            if unexpected is None:
+                raise
+            err = unexpected(exc)
         if err.reason == "set_not_found":
-            err.extra.setdefault("store", _CTX.store.as_posix())
+            err.extra.setdefault("store", ctx.store.as_posix())
         return out.error(err)
     return int(result) if isinstance(result, int) else 0
 
@@ -1602,6 +1616,100 @@ def version() -> None:
     Exit codes: 0 ok.
     """
     _out().document(meta.version(), items=None, title="atlas-log")
+
+
+BATCH_REFUSED = frozenset({"batch", "parse", "serve"})
+"""Commands that do not write one JSON document and so cannot run in ``batch``."""
+
+
+@app.command
+def batch() -> int:
+    """Run many commands in one process: argv arrays in, one JSON document per line out.
+
+    Reads JSON Lines from stdin, one command per line as a JSON array of its
+    arguments without "atlas-log" and without global options, e.g.
+      ["groups", "prod", "--brief", "--limit", "5"]
+      ["show", "prod", "0a1b2c3d"]
+    Each runs in this process with the global --store (and the other global
+    options) and --output json, and writes exactly one JSON document per line
+    to stdout, in input order: its usual document, or error.v1 when it fails
+    (a line that is not a JSON array of strings, a global option, --help, or
+    batch/parse/serve, which do not write one document, are usage errors).
+    Blank lines are skipped. A failed line never stops the batch.
+    Use it to avoid the start-up cost of the CLI (about 0.45 s per call) when
+    an agent runs several commands.
+
+    Output: one document per input line, each with its own "schema"
+    ("groups.v1", "entries.v1", ..., "error.v1"); diagnostics on stderr.
+
+    Exit codes: 0 when the input was read, whatever each line returned; 1 the
+    input could not be read (not UTF-8, or a read error).
+    """
+    outer = _ctx()
+    stdin = sys.stdin
+    if isinstance(stdin, io.TextIOWrapper):
+        stdin.reconfigure(encoding="utf-8", errors="strict")
+    try:
+        for number, line in enumerate(stdin, start=1):
+            if line.strip():
+                outer.output.write_line(_batch_line(outer, number, line))
+                outer.output.out.flush()
+    except (OSError, UnicodeDecodeError) as exc:
+        raise OpError("usage", f"cannot read the batch input: {exc}") from exc
+    return 0
+
+
+def _batch_line(outer: _Context, number: int, line: str) -> str:
+    """Run one ``batch`` line; return its one-line JSON document (``error.v1`` on failure)."""
+    global _CTX
+
+    def refused(message: str) -> str:
+        return encode_json(OpError("usage", f"line {number}: {message}").envelope())
+
+    try:
+        argv = json.loads(line)
+    except json.JSONDecodeError as exc:
+        return refused(f"not JSON ({exc})")
+    if not argv or not isinstance(argv, list) or not all(isinstance(a, str) for a in argv):
+        return refused("expected a JSON array of strings: the arguments of one command")
+    if argv[0] in BATCH_REFUSED:
+        return refused(f"{argv[0]} does not write one JSON document and cannot run in batch")
+    if any(a in ("--help", "-h", "--version") for a in argv):
+        return refused("--help and --version are not available in batch")
+    buffer = io.StringIO()
+    o = outer.output
+    inner = Output(
+        "json",
+        quiet=o.quiet,
+        width=o.width,
+        color_mode="never",
+        app_packages=o.app_packages,
+        stdout=buffer,
+        stderr=o.err,
+    )
+    _CTX = _Context(inner, outer.settings)
+    try:
+        _dispatch(argv, _CTX, unexpected=_internal_error)
+    finally:
+        _CTX = outer
+    text = buffer.getvalue().strip()
+    if not _one_document(text):  # e.g. --raw text
+        return refused(f"{argv[0]} did not write one JSON document")
+    return text
+
+
+def _one_document(text: str) -> bool:
+    if not text or len(text.splitlines()) > 1:
+        return False
+    try:
+        doc = json.loads(text)
+    except json.JSONDecodeError:
+        return False
+    return isinstance(doc, dict) and "schema" in doc
+
+
+def _internal_error(exc: Exception) -> OpError:
+    return OpError("internal_error", f"{type(exc).__name__}: {exc} (set ATLAS_LOG_DEBUG=1)")
 
 
 # --- entry points

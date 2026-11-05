@@ -125,6 +125,16 @@ Repeat 3–4; on an error, read `error.hint` for the next step. `SIGNATURE`
 may be a unique prefix (4+ hex characters); `atlas-log sets --brief` lists the
 sets with their error and warning counts, `atlas-log set SET` shows one.
 
+Every call pays the start-up of the CLI (about 0.45 s). For several commands in
+a row, `atlas-log batch` reads one JSON array of arguments per line on stdin
+and writes one JSON document per line (`error.v1` for a failed line, which
+never stops the batch):
+
+```sh
+printf '%s\n' '["groups", "today", "--brief", "--limit", "5"]' '["show", "today", "83d1"]' \
+  | atlas-log --store "$ATLAS_LOG_STORE" batch
+```
+
 ## Quick start (agents)
 
 - Set `ATLAS_LOG_STORE` (or pass `--store DIR`) to a directory outside any
@@ -142,7 +152,8 @@ sets with their error and warning counts, `atlas-log set SET` shows one.
   frames (JDK and Jira platform packages skipped; set `ATLAS_LOG_APP_PACKAGES=
   com.acme.,org.example.` to name your own packages instead).
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
-  stdout; exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
+  stdout (`"reason"`, when present, is the same in the CLI and the web API, e.g.
+  `set_not_found`); exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
   `3` store error. Diagnostics go to stderr (`--quiet` silences them).
 - Long entries are cut in JSON: `raw` and `body` keep 4000 characters
   (`--max-raw N`, `0` = all); cut rows carry `"body_truncated": true` and

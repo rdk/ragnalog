@@ -31,6 +31,7 @@ COMMANDS = [
     "manifest",
     "remove",
     "version",
+    "batch",
 ]
 
 
