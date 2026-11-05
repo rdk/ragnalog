@@ -144,6 +144,7 @@ EXTRA: list[Extra] = [
     Extra("schema.v1", cli=["schema"]),
     Extra("schema.v1", cli=["schema", "entries"]),
     Extra("schema.v1", cli=["schema", "triage.v1"]),
+    Extra("manifest.v1", cli=["manifest"]),
     Extra("health.v1", api="/api/health"),
     Extra("timeline.v1", api="/api/sets/edge/timeline"),
     Extra("report.v1", api="/api/sets/edge/report?compare=sample"),
@@ -241,5 +242,4 @@ PARITY_DOCUMENTS = {
 
 def test_every_document_has_a_case() -> None:
     others = {e.schema for e in EXTRA} | {"report-file.v1", "job.v1", "jobs.v1", "remove.v1"}
-    others.add("manifest.v1")  # TODO
     assert PARITY_DOCUMENTS | others == set(DOCUMENTS)

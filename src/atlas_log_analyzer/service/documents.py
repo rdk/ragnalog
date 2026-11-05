@@ -567,27 +567,22 @@ class ManifestStep(Struct, kw_only=True):
     """One step of the workflow, or one situation of `when`."""
 
     run: Annotated[str, _d("Command line, e.g. triage SET.")]
-    purpose: Annotated[str, _d("What it answers.")]
-    output: Annotated[str | None, _d("Document printed.")] = None
-
-
-class ManifestParam(Struct, array_like=True, omit_defaults=True):
-    """`[name, type, default, help]`; help omitted when it is in `common`."""
-
-    name: str
-    type: Annotated[str, _d("str, int, float, path, flag, a|b|c choices; * = repeatable.")]
-    default: Any = None
-    help: str = ""
+    purpose: Annotated[str, _d("What it is for.")]
 
 
 class ManifestCommand(Struct, kw_only=True, omit_defaults=True):
     """One command."""
 
-    summary: Annotated[str, _d("First line of --help.")]
-    args: Annotated[list[str], _d("Positional arguments; help in common.")] = []
-    params: Annotated[list[ManifestParam], _d("Options.")] = []
-    output: Annotated[str | None, _d("Document printed.")] = None
-    exit: Annotated[list[int], _d("Possible exit codes.")] = []
+    summary: Annotated[str, _d("First line of --help; omitted for workflow/when steps.")] = ""
+    usage: Annotated[
+        str,
+        _d(
+            "Arguments (UPPERCASE, ... = several) and [--option TYPE[=DEFAULT]]: TYPE str, int, "
+            "float, path or choices a|b|c, * = repeatable; [--flag] takes no value."
+        ),
+    ] = ""
+    output: Annotated[str | None, _d("Document printed (atlas-log schema NAME).")] = None
+    exit: Annotated[list[int], _d("Possible exit codes (see exit_codes).")] = []
 
 
 class ManifestDocuments(Struct, kw_only=True):
@@ -598,7 +593,7 @@ class ManifestDocuments(Struct, kw_only=True):
 
 
 class Manifest(Struct, kw_only=True, tag_field="schema", tag="manifest.v1"):
-    """How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `/api/manifest`."""
+    """How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `GET /api/manifest`."""
 
     tool: Annotated[str, _d("Command name.")]
     version: Annotated[str, _d("Tool version.")]
@@ -607,8 +602,15 @@ class Manifest(Struct, kw_only=True, tag_field="schema", tag="manifest.v1"):
     workflow: Annotated[list[ManifestStep], _d("The usual order of commands.")]
     when: Annotated[list[ManifestStep], _d("Commands for other situations.")]
     commands: Annotated[dict[str, ManifestCommand], _d("Every command by name.")]
-    common: Annotated[dict[str, str], _d("Help of arguments and options shared by commands.")]
-    global_options: Annotated[list[ManifestParam], _d("Options of every command.")]
+    help: Annotated[
+        dict[str, str],
+        _d(
+            "One-line help by parameter name, as most commands give it (atlas-log COMMAND "
+            "--help has each command's own): names several commands share and the "
+            "parameters of the workflow and when commands."
+        ),
+    ]
+    global_options: Annotated[dict[str, str], _d('"TYPE[=DEFAULT]: help" of each option.')]
     exit_codes: Annotated[dict[str, str], _d("Meaning of each exit code.")]
     documents: Annotated[ManifestDocuments, _d("The output documents and their schemas.")]
     presets: Annotated[dict[str, list[str]], _d("Columns of the --brief presets.")]

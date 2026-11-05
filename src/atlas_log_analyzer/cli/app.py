@@ -161,7 +161,8 @@ app = App(
         'Errors in json/jsonl mode: {"schema": "error.v1", "error": {"code", "message"}}\n'
         "on stdout. Exit codes: 0 ok, 1 usage error, 2 nothing found / parse failure,\n"
         "3 store error. SET arguments accept a log-set id, a unique id prefix or a name;\n"
-        "signatures may be given as a unique prefix of at least 4 hex characters."
+        "signatures may be given as a unique prefix of at least 4 hex characters.\n"
+        "Agents: `manifest` prints all of this as JSON (so does bare `atlas-log` on a pipe)."
     ),
     version=__version__,
     default_parameter=Parameter(negative=()),
@@ -452,6 +453,9 @@ def _meta(
     if store is None:
         store = _env_store()
     _CTX = _Context(out, store or DEFAULT_STORE, store is None)
+    if not tokens and out.mode != "table":  # bare `atlas-log` on a pipe: the agent manifest
+        _emit_manifest(out)
+        return 0
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
     except CycloptsError as exc:
@@ -1876,6 +1880,40 @@ def schema(name: str | None = None, /) -> None:
         out.write_line(encode_json({"schema": "schema.v1", **doc}, indent=2))
         return
     out.emit("schema.v1", doc, items=None)
+
+
+@app.command
+def manifest() -> None:
+    """Print how an agent uses atlas-log: workflow, commands and documents (about 7 KB).
+
+    The workflow in order with a one-line purpose per step, when to use the
+    other commands, every command (usage with types and defaults, output
+    document, exit codes), one-line help per parameter, the documents
+    (`atlas-log schema NAME`), the --brief presets, the environment variables
+    and the global options. Bare `atlas-log` prints the same document when
+    stdout is not a terminal; GET /api/manifest of the web app too.
+
+    Output (json):
+      {"schema": "manifest.v1", "tool", "version", "usage", "notes",
+       "workflow": [{"run", "purpose"}], "when": [{"run", "purpose"}],
+       "commands": {<name>: {"summary", "usage", "output", "exit": [int]}},
+       "help": {<parameter>: str}, "global_options", "exit_codes",
+       "documents": {"get", "names"}, "presets", "env"}
+    In table mode the same document is pretty-printed as JSON.
+
+    Exit codes: 0 ok.
+    """
+    _emit_manifest(_out())
+
+
+def _emit_manifest(out: Output) -> None:
+    from atlas_log_analyzer.cli.manifest import manifest_document
+
+    doc = {k: v for k, v in manifest_document().items() if k != "schema"}
+    if out.mode == "table":
+        out.write_line(encode_json({"schema": "manifest.v1", **doc}, indent=2))
+        return
+    out.emit("manifest.v1", doc, items=None)
 
 
 @app.command

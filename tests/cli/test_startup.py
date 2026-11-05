@@ -56,7 +56,9 @@ def test_json_groups_loads_no_writer_sql_or_tables(mini_store: Path) -> None:
     assert _loaded_after(argv, HEAVY_FOR_READS) == (0, [])
 
 
-@pytest.mark.parametrize("command", [["version"], ["formats"], ["schema", "triage.v1"]])
+@pytest.mark.parametrize(
+    "command", [["version"], ["formats"], ["schema", "triage.v1"], ["manifest"], []]
+)
 def test_metadata_commands_load_no_polars(command: list[str], tmp_path: Path) -> None:
     argv = ["--output", "json", "--store", str(tmp_path / "none"), *command]
     assert _loaded_after(argv, ("polars", *HEAVY_FOR_READS)) == (0, [])

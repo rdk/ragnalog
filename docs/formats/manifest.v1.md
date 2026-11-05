@@ -1,6 +1,6 @@
 # manifest.v1
 
-How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `/api/manifest`.
+How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `GET /api/manifest`.
 
 Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`manifest.v1.schema.json`](manifest.v1.schema.json), also `atlas-log schema manifest.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
@@ -13,20 +13,17 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `notes` | `list<string>` | yes | Conventions every command follows. |
 | `workflow` | `list<ManifestStep>` | yes | The usual order of commands. |
 | `workflow[].run` | `string` | yes | Command line, e.g. triage SET. |
-| `workflow[].purpose` | `string` | yes | What it answers. |
-| `workflow[].output` | `string \| null` | no | Document printed. |
+| `workflow[].purpose` | `string` | yes | What it is for. |
 | `when` | `list<ManifestStep>` | yes | Commands for other situations. |
 | `when[].run` | `string` | yes | Command line, e.g. triage SET. |
-| `when[].purpose` | `string` | yes | What it answers. |
-| `when[].output` | `string \| null` | no | Document printed. |
+| `when[].purpose` | `string` | yes | What it is for. |
 | `commands` | `map<string, ManifestCommand>` | yes | Every command by name. |
-| `commands.*.summary` | `string` | yes | First line of --help. |
-| `commands.*.args` | `list<string>` | no | Positional arguments; help in common. |
-| `commands.*.params` | `list<ManifestParam>` | no | Options. |
-| `commands.*.output` | `string \| null` | no | Document printed. |
-| `commands.*.exit` | `list<integer>` | no | Possible exit codes. |
-| `common` | `map<string, string>` | yes | Help of arguments and options shared by commands. |
-| `global_options` | `list<ManifestParam>` | yes | Options of every command. |
+| `commands.*.summary` | `string` | no | First line of --help; omitted for workflow/when steps. |
+| `commands.*.usage` | `string` | no | Arguments (UPPERCASE, ... = several) and [--option TYPE[=DEFAULT]]: TYPE str, int, float, path or choices a\|b\|c, * = repeatable; [--flag] takes no value. |
+| `commands.*.output` | `string \| null` | no | Document printed (atlas-log schema NAME). |
+| `commands.*.exit` | `list<integer>` | no | Possible exit codes (see exit_codes). |
+| `help` | `map<string, string>` | yes | One-line help by parameter name, as most commands give it (atlas-log COMMAND --help has each command's own): names several commands share and the parameters of the workflow and when commands. |
+| `global_options` | `map<string, string>` | yes | "TYPE[=DEFAULT]: help" of each option. |
 | `exit_codes` | `map<string, string>` | yes | Meaning of each exit code. |
 | `documents` | `ManifestDocuments` | yes | The output documents and their schemas. |
 | `documents.get` | `string` | yes | How to get a schema. |

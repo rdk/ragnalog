@@ -27,6 +27,7 @@ COMMANDS = [
     "serve",
     "formats",
     "schema",
+    "manifest",
     "remove",
     "version",
 ]

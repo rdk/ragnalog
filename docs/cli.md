@@ -16,7 +16,10 @@ Typical flow:
    an entry) drill into one group.
 5. `diff A B --rate` compares two sets.
 
-`sets --brief` and `set SET` show what is in the store.
+`sets --brief` and `set SET` show what is in the store. Agents start with
+`atlas-log manifest` (bare `atlas-log` prints the same JSON when stdout is not a
+terminal): the workflow, every command with its usage, output document and exit
+codes, and where the document schemas are.
 
 ## Conventions
 
@@ -544,6 +547,32 @@ prints the document's JSON Schema (draft 2020-12, the same as
 optional). Without an argument: the four tables plus `"documents"`, the list of
 document names. Table mode prints the same JSON indented. Exit: 0; 1 unknown
 name (`usage`).
+
+### `manifest`
+
+`manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 7 KB
+of compact JSON (under 8 KB), for agents:
+
+```json
+{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.1.0", "usage": "...", "notes": [str],
+ "workflow": [{"run": "triage LOGSET", "purpose": "new kinds of errors since the previous set?"}, ...],
+ "when": [{"run": "query LOGSET SQL", "purpose": "..."}],
+ "commands": {"groups": {"usage": "LOGSET [--level str] ... [--limit int=50] ... [--brief]", "output": "groups.v1", "exit": [0, 1, 3]}, ...},
+ "help": {"--limit": "Maximum number of rows; 0 = all", ...},
+ "global_options": {"--output": "table|json|jsonl: Output mode", ...},
+ "exit_codes": {"0": "ok", ...}, "documents": {"get": "atlas-log schema NAME ...", "names": [...]},
+ "presets": {"groups": [...], "entries": [...], "show, context": [...]}, "env": {"ATLAS_LOG_STORE": "...", ...}}
+```
+
+Generated from the command definitions (usage with types and defaults, the
+output document named in each `--help`, exit codes, parameter help), the
+document Structs and the `--brief` presets; only the workflow, `when`, `notes`
+and `env` are written by hand (`cli/manifest.py`). A command of the workflow
+or `when` has no `summary` (its `purpose` says it). `help` gives each
+parameter name once, as most commands word it; `atlas-log COMMAND --help` has
+each command's own. Bare `atlas-log` prints this document when stdout is not
+a terminal (with `--output table`, or on a terminal, it prints the text help);
+the web app serves it at `GET /api/manifest`. Exit: 0.
 
 ### `remove SET`
 
