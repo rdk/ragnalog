@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime, timedelta
 
 from atlas_log_analyzer.store.manifest import LogSetManifest, SourceInfo
@@ -152,3 +153,48 @@ def test_explicit_baseline_warnings() -> None:
     assert "is tiny (5 entries, under 1% of this set's 1,000)" in sub.warnings[1]
     later = explicit_baseline(ME, m("later", 120, 8))
     assert later.warnings == ()  # an explicit later set is the caller's choice
+
+
+# --- nodes (docs/cluster.md, §5)
+
+
+def on(node: str | None, x: LogSetManifest) -> LogSetManifest:
+    return dataclasses.replace(x, node=node)
+
+
+def test_another_node_is_rejected_after_the_recipe_rules() -> None:
+    me = on("NODE1", ME)
+    other = on("NODE2", m("other", 80, 8))
+    stale = on("NODE2", m("stale", 80, 8, key="jira@1|L+G+E+F0|sig1|mask0"))
+    choice = rank_baselines([me, other, stale], me)
+    assert choice.manifest is None
+    found = {r.manifest.name: (r.reason, r.detail) for r in choice.rejected}
+    assert found["stale"][0] == "stale"  # the recipe rules come first
+    assert found["other"] == ("other_node", "logs of node NODE2, while this set is node NODE1")
+    assert "other (other_node: logs of node NODE2" in choice.warnings[0]
+
+
+def test_the_node_rule_needs_a_node_on_both_sides() -> None:
+    assert rank_baselines([ME, on("NODE2", m("x", 80, 8))], ME).manifest is not None
+    me = on("NODE1", ME)
+    plain = m("plain", 80, 8)
+    assert rank_baselines([me, plain], me).manifest is plain
+
+
+def test_same_node_is_preferred_before_the_span_rule() -> None:
+    me = on("NODE1", ME)
+    plain = m("plain", 80, 8)  # node-less, best span
+    mine = on("NODE1", m("mine", 70, 2))  # same node, worse span
+    choice = rank_baselines([me, plain, mine], me)
+    assert choice.manifest is mine and choice.reason is not None
+    assert "same node NODE1" in choice.reason
+    # "ends before" still comes first: an overlapping same-node set loses to an earlier one
+    overlap = on("NODE1", m("overlap", 99, 8.5))
+    assert rank_baselines([me, plain, overlap], me).manifest is plain
+    # without a node on this set, nothing changes
+    assert rank_baselines([ME, plain, on("NODE1", m("mine", 70, 2))], ME).manifest is plain
+
+
+def test_explicit_baseline_of_another_node_is_used_as_given() -> None:
+    choice = explicit_baseline(on("NODE1", ME), on("NODE2", m("other", 80, 8)))
+    assert choice.manifest is not None and choice.warnings == ()

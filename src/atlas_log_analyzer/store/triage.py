@@ -47,7 +47,16 @@ MAX_SPAN_RATIO = 16.0
 MAX_LISTED_CANDIDATES = 5
 """Rejected sets listed in ``baseline.candidates``."""
 
-REJECTION_REASONS = ("stale", "recipe", "superset", "subset", "later", "tiny", "span")
+REJECTION_REASONS = (
+    "stale",
+    "recipe",
+    "other_node",
+    "superset",
+    "subset",
+    "later",
+    "tiny",
+    "span",
+)
 """Values of ``baseline.candidates[].reason``, in the order the checks run."""
 
 
@@ -133,6 +142,14 @@ def _recipe_rejection(
     )
 
 
+def _node_rejection(me: LogSetManifest, other: LogSetManifest) -> Rejection | None:
+    if me.node is None or other.node is None or me.node == other.node:
+        return None
+    return Rejection(
+        other, "other_node", f"logs of node {other.node}, while this set is node {me.node}"
+    )
+
+
 def _containment(me: LogSetManifest, other: LogSetManifest) -> Rejection | None:
     mine, theirs = _digests(me), _digests(other)
     if not mine or not theirs:
@@ -177,7 +194,11 @@ def _rejection(
     me: LogSetManifest, other: LogSetManifest, current: dict[tuple[str, str], str | None]
 ) -> Rejection | None:
     """Return the first rule ``other`` fails as a baseline of ``me`` (``None``: eligible)."""
-    found = _recipe_rejection(me, other, current) or _containment(me, other)
+    found = (
+        _recipe_rejection(me, other, current)
+        or _node_rejection(me, other)
+        or _containment(me, other)
+    )
     if found is not None:
         return found
     if me.last_ts is not None and other.last_ts is not None and other.last_ts > me.last_ts:
@@ -210,17 +231,20 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
     2. A candidate must have the same ``recipe_key``; otherwise it is rejected as
        ``stale`` (one of the two was built with an older recipe; the hint names
        ``atlas-log upgrade``) or ``recipe`` (another spec or extra rules).
-    3. Containment: a candidate whose source digests are a superset or subset of
+    3. When both sets have a ``node``, a candidate of another node is rejected
+       (``other_node``): each node is compared with its own past.
+    4. Containment: a candidate whose source digests are a superset or subset of
        this set's is rejected (``superset``/``subset``): an overlapping snapshot of
        the same files is no baseline. Partial overlap (rolling snapshots share most
        rotated files) is allowed and reported as ``shared_sources``.
-    4. A candidate that ends after this set ends is rejected (``later``).
-    5. A candidate with fewer than :data:`MIN_ENTRY_SHARE` of this set's entries is
+    5. A candidate that ends after this set ends is rejected (``later``).
+    6. A candidate with fewer than :data:`MIN_ENTRY_SHARE` of this set's entries is
        rejected (``tiny``), as is one whose span differs by more than
        :data:`MAX_SPAN_RATIO` either way (``span``).
-    6. Of the rest, prefer a set that ends before this one starts, then the span
-       ratio closest to 1 (``|log(h_a / h_b)|``, rounded to 0.1 so spans within
-       about 10% count as equal), then the newest (``last_ts``, then ``created_at``).
+    7. Of the rest, prefer a set that ends before this one starts, then (when this set
+       has a node) one of the same node over one without, then the span ratio closest
+       to 1 (``|log(h_a / h_b)|``, rounded to 0.1 so spans within about 10% count as
+       equal), then the newest (``last_ts``, then ``created_at``).
 
     Returns:
         The choice; its ``manifest`` is ``None`` when nothing qualifies, and then
@@ -249,10 +273,14 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
     def ends_before(m: LogSetManifest) -> bool:
         return m.last_ts is not None and m.last_ts <= start
 
-    def preference(m: LogSetManifest) -> tuple[int, float, float, float]:
+    def same_node(m: LogSetManifest) -> bool:
+        return me.node is not None and m.node == me.node
+
+    def preference(m: LogSetManifest) -> tuple[int, int, float, float, float]:
         last = m.last_ts.timestamp() if m.last_ts is not None else float("-inf")
         ratio = round(_log_ratio(me, m), 1)
-        return (0 if ends_before(m) else 1, ratio, -last, -m.created_at.timestamp())
+        node_rank = 0 if me.node is None or same_node(m) else 1
+        return (0 if ends_before(m) else 1, node_rank, ratio, -last, -m.created_at.timestamp())
 
     best = min(eligible, key=preference)
     shared = len(_digests(me) & _digests(best))
@@ -261,6 +289,7 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
         "ends before this set starts"
         if ends_before(best)
         else "overlaps this set (no earlier set qualifies)",
+        *([f"same node {me.node}"] if same_node(best) else []),
         f"span {_span_text(manifest_span_hours(best))} vs {_span_text(manifest_span_hours(me))}",
     ]
     if shared:

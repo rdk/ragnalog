@@ -118,6 +118,8 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   When both sets have a `node`, a candidate from another node is rejected
   with reason `other_node`. An explicit `--baseline` still wins. This stops a
   node being compared with its neighbour's logs, which is what happens today.
+  When the set has a node, a candidate of the same node is preferred to one
+  without a node (after "ends before", before the span rule).
 - `triage CAPTURE` triages each node against that node's previous set. The
   cluster verdict is the worst of the node verdicts. Each `new` row gets a
   `nodes` list: new on NODE2 only, or new on all nodes.

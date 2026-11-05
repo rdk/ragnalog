@@ -82,6 +82,16 @@ def test_cluster_is_remembered_per_node(jcli: Invoke, tmp_path: Path) -> None:
     assert [c["capture"] for c in listed["items"]] == [NEXT_JOB, JOB_ID]
 
 
+def test_triage_compares_each_node_with_its_own_past(jcli: Invoke, tmp_path: Path) -> None:
+    jcli("ingest", write_export(tmp_path / "a"), "--cluster", "jira-test")
+    sets = jcli("ingest", next_day_export(tmp_path / "b"), "--name", "next").json()["sets"]
+    doc = jcli("triage", sets[0]["id"]).json()
+    assert doc["baseline"]["name"] == "jira-test_node1"
+    assert "same node NODE1" in doc["baseline"]["reason"]
+    rejected = {c["name"]: c["reason"] for c in doc["baseline"]["candidates"]}
+    assert rejected["jira-test_node2"] == "other_node"
+
+
 def test_prefix_and_dir_splits(jcli: Invoke, tmp_path: Path) -> None:
     for node in ("NODE1", "NODE2"):
         write_node_files(tmp_path / "flat", node)

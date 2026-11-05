@@ -625,15 +625,18 @@ rejected, with `reason`:
 1. `stale` / `recipe`: its `recipe_key` differs from SET's. `stale` when one
    of the two was built with an older recipe (the `hint` names
    `atlas-log upgrade SET`), `recipe` for another signature spec or extra rules.
-2. `superset` / `subset`: its source digests (`sources[].xxh3`) contain all of
+2. `other_node`: both sets have a `node` and they differ. Each node is
+   compared with its own past, never with its neighbour's logs.
+3. `superset` / `subset`: its source digests (`sources[].xxh3`) contain all of
    SET's, or all of its files are part of SET. An overlapping snapshot of the
    same files is no baseline; partial overlap (rolling snapshots share most
    rotated files) is allowed and counted in `shared_sources`.
-3. `later`: it ends after SET ends.
-4. `tiny`: fewer than 1% of SET's entries; `span`: its span is more than 16x
+4. `later`: it ends after SET ends.
+5. `tiny`: fewer than 1% of SET's entries; `span`: its span is more than 16x
    longer or shorter than SET's.
 
-Of the rest it prefers a set that ends before SET starts, then the span closest
+Of the rest it prefers a set that ends before SET starts, then (when SET has a
+node) one of the same node over one without a node, then the span closest
 to SET's (`|log(h_a/h_b)|`, rounded to 0.1 so spans within about 10% count as
 equal), then the newest. When nothing is left the verdict is `no_baseline` and
 `warnings` names every rejected set with its reason. An explicit `--baseline
