@@ -106,6 +106,8 @@ Start with `atlas-log manifest` (bare `atlas-log` prints the same when stdout is
 not a terminal): about 7 KB of JSON with this workflow, every command's usage,
 output document and exit codes, one-line help per parameter, the `--brief`
 presets and where the document schemas are (`atlas-log schema triage.v1`).
+`atlas-log manifest COMMAND` gives one command in full (every parameter with its
+type, default and help) when you are about to run it.
 
 ```sh
 atlas-log manifest                                          # 0. how to use the tool (manifest.v1)

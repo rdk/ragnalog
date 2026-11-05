@@ -95,6 +95,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/health` | | `health.v1` |
 | `GET /api/version` | | `version.v1` |
 | `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `atlas-log manifest`) |
+| `GET /api/manifest/{command}` | | `manifest-command.v1`: one command in full (as `atlas-log manifest COMMAND`) |
 | `GET /api/formats` | | `formats.v1` (as `atlas-log formats`: `name`, `description`, `signature_spec`, `mask_rules`) |
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
@@ -210,9 +211,9 @@ run next to the server.
 
 ## Design notes
 
-- **Dependencies:** `webapp` imports `core`, `store`, `report` and `service`; it
-  imports `cli` only in `GET /api/manifest`, whose document describes the CLI's
-  commands.
+- **Dependencies:** `webapp` imports `core`, `store`, `report` and `service`,
+  never `cli` (`tests/test_layers.py`): `GET /api/manifest[/{command}]` serves the
+  generated `service/manifest.json`.
   The CLI imports FastAPI and uvicorn only inside `serve`, and fails with exit 1
   and an install hint when the `web` extra is missing.
 - **Concurrency:** request threads and the ingest worker share one `Store`.

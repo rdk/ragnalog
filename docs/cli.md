@@ -697,12 +697,21 @@ of compact JSON (under 8 KB), for agents:
 Generated from the command definitions (usage with types and defaults, the
 output document named in each `--help`, exit codes, parameter help), the
 document Structs and the `--brief` presets; only the workflow, `when`, `notes`
-and `env` are written by hand (`cli/manifest.py`). A command of the workflow
+and `env` are written by hand (`cli/manifest.py`). The documents are generated
+into the package (`service/manifest.json`, by `docs/formats/generate.py`; a test
+fails when it is out of date) and read from there. A command of the workflow
 or `when` has no `summary` (its `purpose` says it). `help` gives each
 parameter name once, as most commands word it; `atlas-log COMMAND --help` has
 each command's own. Bare `atlas-log` prints this document when stdout is not
 a terminal (with `--output table`, or on a terminal, it prints the text help);
-the web app serves it at `GET /api/manifest`. Exit: 0.
+the web app serves it at `GET /api/manifest`.
+
+`manifest COMMAND` prints one command in full (`manifest-command.v1`): its
+`--help` text without the parameter list (`description`, with the output shape
+and exit codes), `usage`, `output`, `exit` and every parameter with `type`,
+`default` and its whole `help`; `GET /api/manifest/{command}` is its twin. An
+agent reads the manifest once, then `manifest COMMAND` for the commands it runs.
+Exit: 0; 2 unknown COMMAND (`not_found`).
 
 ### `remove SET`
 

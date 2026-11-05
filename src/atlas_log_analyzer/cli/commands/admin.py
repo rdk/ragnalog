@@ -77,7 +77,7 @@ def schema(name: str | None = None, /) -> None:
     out.document(doc, items=None)
 
 
-def manifest() -> None:
+def manifest(command: str | None = None, /) -> None:
     """Print how an agent uses atlas-log: workflow, commands and documents (about 7 KB).
 
     The workflow in order with a one-line purpose per step, when to use the
@@ -86,6 +86,8 @@ def manifest() -> None:
     (`atlas-log schema NAME`), the --brief presets, the environment variables
     and the global options. Bare `atlas-log` prints the same document when
     stdout is not a terminal; GET /api/manifest of the web app too.
+    `manifest COMMAND` prints one command in full instead: its --help text and
+    every parameter with type, default and help (GET /api/manifest/COMMAND).
 
     Output (json):
       {"schema": "manifest.v1", "tool", "version", "usage", "notes",
@@ -93,22 +95,33 @@ def manifest() -> None:
        "commands": {<name>: {"summary", "usage", "output", "exit": [int]}},
        "help": {<parameter>: str}, "global_options", "exit_codes",
        "documents": {"get", "names"}, "presets", "env"}
+      {"schema": "manifest-command.v1", "command", "version", "usage",
+       "description", "output", "exit": [int],
+       "params": [{"name", "type", "default", "help"}]}
     In table mode the same document is pretty-printed as JSON.
 
-    Exit codes: 0 ok.
+    Exit codes: 0 ok; 2 unknown COMMAND.
+
+    Args:
+        command: One command to describe in full (default: the whole manifest).
+
     """
-    emit_manifest(ctx.out())
+    emit_manifest(ctx.out(), command)
 
 
-def emit_manifest(out: Output) -> None:
-    """Write ``manifest.v1`` (``manifest`` and the bare call on a pipe)."""
-    from atlas_log_analyzer.cli.manifest import manifest_document
+def emit_manifest(out: Output, command: str | None = None) -> None:
+    """Write ``manifest.v1``, or ``manifest-command.v1`` of ``command``."""
+    from atlas_log_analyzer.service import manifest as service_manifest
 
-    doc = {k: v for k, v in manifest_document().items() if k != "schema"}
+    if command is None:
+        full = service_manifest.manifest_document()
+    else:
+        full = service_manifest.command_document(command)
     if out.mode == "table":
-        out.write_line(encode_json({"schema": "manifest.v1", **doc}, indent=2))
+        out.write_line(encode_json(full, indent=2))
         return
-    out.emit("manifest.v1", doc, items=None)
+    schema = str(full["schema"])
+    out.emit(schema, {k: v for k, v in full.items() if k != "schema"}, items=None)
 
 
 def remove(logset: str, /) -> None:

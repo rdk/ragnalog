@@ -1,0 +1,1280 @@
+{
+ "manifest": {
+  "schema": "manifest.v1",
+  "tool": "atlas-log",
+  "version": "",
+  "usage": "atlas-log [GLOBAL OPTIONS] COMMAND ARGS... [OPTIONS]",
+  "notes": [
+   "JSON on a pipe: \"schema\" names the document, listings have \"items\"",
+   "errors: error.v1 on stdout with a hint",
+   "paging: \"truncated\"; next --offset = offset + count",
+   "times: ISO 8601, YYYY-MM-DD or 2h/1d before the last entry"
+  ],
+  "workflow": [
+   {
+    "run": "ingest PATH... --name N",
+    "purpose": "parse logs into a stored set"
+   },
+   {
+    "run": "triage LOGSET",
+    "purpose": "new kinds of errors since the previous set?"
+   },
+   {
+    "run": "groups LOGSET --brief",
+    "purpose": "groups by count; --with-exception: any stack trace"
+   },
+   {
+    "run": "show LOGSET SIGNATURE --brief",
+    "purpose": "entries of one group"
+   },
+   {
+    "run": "frames LOGSET SIGNATURE",
+    "purpose": "its stack trace, application frames first"
+   },
+   {
+    "run": "context LOGSET ENTRY_ID",
+    "purpose": "what the thread did around one entry"
+   },
+   {
+    "run": "entries LOGSET --request-id ID",
+    "purpose": "one request"
+   },
+   {
+    "run": "diff SET_A SET_B --rate",
+    "purpose": "compare two sets of any length"
+   }
+  ],
+  "when": [
+   {
+    "run": "query LOGSET SQL",
+    "purpose": "aggregates no command gives (DuckDB SQL)"
+   },
+   {
+    "run": "batch",
+    "purpose": "several commands in one process"
+   },
+   {
+    "run": "sets --brief",
+    "purpose": "what is in the store"
+   }
+  ],
+  "commands": {
+   "ingest": {
+    "usage": "PATHS... [--format str] [--name str] [--frames int] [--overwrite] [--mine] [--force]",
+    "output": "logset.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "sets": {
+    "usage": "[--brief]",
+    "output": "sets.v1",
+    "exit": [
+     0,
+     3
+    ]
+   },
+   "set": {
+    "summary": "Print one log set: its manifest plus the severity",
+    "usage": "LOGSET",
+    "output": "logset.v1",
+    "exit": [
+     0,
+     3
+    ]
+   },
+   "groups": {
+    "usage": "LOGSET [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--sort count|last_seen|first_seen|signature|template=count] [--limit int=50] [--offset int=0] [--coarse] [--columns str*] [--brief]",
+    "output": "groups.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "show": {
+    "usage": "LOGSET SIGNATURE [--limit int=20] [--raw] [--max-raw int] [--columns str*] [--brief]",
+    "output": "entries.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "entries": {
+    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int]",
+    "output": "entries.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "context": {
+    "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief]",
+    "output": "entries.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "frames": {
+    "usage": "LOGSET REF [--limit int=10] [--all]",
+    "output": "frames.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "query": {
+    "usage": "LOGSET SQL",
+    "output": "query.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "stats": {
+    "summary": "Print summary statistics of a log set",
+    "usage": "LOGSET",
+    "output": "stats.v1",
+    "exit": [
+     0,
+     3
+    ]
+   },
+   "diff": {
+    "usage": "SET_A SET_B [--min-level str] [--coarse] [--force] [--limit int=50] [--rate]",
+    "output": "diff.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "triage": {
+    "usage": "LOGSET [--baseline str=auto] [--min-level str=WARN] [--grow float=2.0] [--limit int=50]",
+    "output": "triage.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "report": {
+    "summary": "Write a self-contained HTML report of a log set",
+    "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int=0] [--open]",
+    "output": "report-file.v1",
+    "exit": [
+     0,
+     1,
+     2,
+     3
+    ]
+   },
+   "parse": {
+    "summary": "Parse log files and stream the entries as JSON Lines to",
+    "usage": "PATHS... [--format str] [--limit int=0] [--force]",
+    "exit": [
+     0,
+     1,
+     2
+    ]
+   },
+   "regroup": {
+    "summary": "Recompute the groups of a stored log set with another",
+    "usage": "LOGSET [--frames int=0] [--no-exceptions]",
+    "output": "logset.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "upgrade": {
+    "summary": "Rebuild stale log sets at the current recipe",
+    "usage": "LOGSETS... [--all]",
+    "output": "upgrade.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "formats": {
+    "summary": "List the supported log formats",
+    "usage": "[--sample path]",
+    "output": "formats.v1",
+    "exit": [
+     0,
+     2
+    ]
+   },
+   "schema": {
+    "summary": "Print the JSON description of a stored table or the JSON",
+    "usage": "NAME",
+    "output": "schema.v1",
+    "exit": [
+     0,
+     1
+    ]
+   },
+   "manifest": {
+    "summary": "Print how an agent uses atlas-log",
+    "usage": "COMMAND",
+    "output": "manifest.v1",
+    "exit": [
+     0,
+     2
+    ]
+   },
+   "remove": {
+    "summary": "Delete a log set from the store",
+    "usage": "LOGSET",
+    "output": "remove.v1",
+    "exit": [
+     0,
+     3
+    ]
+   },
+   "serve": {
+    "summary": "Run the web app over the store",
+    "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--reload]",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
+   "version": {
+    "summary": "Print tool, schema and signature versions",
+    "output": "version.v1",
+    "exit": [
+     0
+    ]
+   },
+   "batch": {
+    "exit": [
+     0,
+     1
+    ]
+   }
+  },
+  "help": {
+   "PATHS...": "Log files and/or directories",
+   "--format": "Format name; default: detected from the",
+   "--name": "Human-readable alias for the set",
+   "--frames": "Add the top N stack frames to",
+   "--overwrite": "Rebuild the set if one with the same id",
+   "--mine": "Propose group merges with Drain3",
+   "--force": "Read a named file over 64 MiB even if",
+   "--brief": "Only id, ts, level_name, thread, user",
+   "LOGSET": "Log set id, unique id prefix or name",
+   "--level": "Only these levels, e.g. ERROR or",
+   "--min-level": "Only this level or more severe",
+   "--logger": "Logger name or package prefix",
+   "--since": "Only groups with an entry at/after this",
+   "--until": "Only groups first seen before this time",
+   "--with-exception": "Only groups with an exception, any level",
+   "--exception": "Only groups whose exception_type",
+   "--contains": "Only groups whose template contains this",
+   "--sort": "count, last_seen, first_seen, signature",
+   "--limit": "Maximum number of rows; 0 = all",
+   "--offset": "Skip this many rows first",
+   "--coarse": "Group by coarse signature",
+   "--columns": "Columns to return: comma-separated",
+   "SIGNATURE": "Group signature or a unique prefix of it",
+   "--raw": "Print the raw log text of the entries",
+   "--max-raw": "Characters kept of raw and body per",
+   "--signature": "Only entries of this group signature",
+   "--coarse-signature": "Only entries of this coarse signature",
+   "ENTRY_ID": "Id of the anchor entry",
+   "--before": "Entries to show before the anchor",
+   "--after": "Entries to show after the anchor",
+   "--any-thread": "Consider entries of all threads",
+   "REF": "Entry id, or group signature or unique",
+   "--all": "Return every frame and all application",
+   "SQL": "The SQL query",
+   "SET_A": "Baseline log set",
+   "SET_B": "Log set to compare against the baseline",
+   "--rate": "Add hourly rates to \"changed\" and sort",
+   "--baseline": "Baseline set, auto, or none",
+   "--grow": "Minimum hourly-rate factor for \"grew\""
+  },
+  "global_options": {
+   "--output": "table|json|jsonl: Output mode",
+   "--store": "path: Store directory holding log sets",
+   "--quiet": "flag: Suppress progress and",
+   "--width": "int: Table width; default",
+   "--color": "auto|always|never=auto: Colour tables and raw entries"
+  },
+  "exit_codes": {
+   "0": "ok",
+   "1": "usage error",
+   "2": "nothing found / parse failure",
+   "3": "store error"
+  },
+  "documents": {
+   "get": "atlas-log schema NAME (JSON Schema); web app: GET /openapi.json",
+   "names": [
+    "diff.v1",
+    "entries.v1",
+    "error.v1",
+    "formats.v1",
+    "frames.v1",
+    "group.v1",
+    "groups.v1",
+    "health.v1",
+    "job.v1",
+    "jobs.v1",
+    "logset.v1",
+    "manifest-command.v1",
+    "manifest.v1",
+    "query.v1",
+    "remove.v1",
+    "report-entries.v1",
+    "report-file.v1",
+    "report.v1",
+    "schema.v1",
+    "sets.v1",
+    "stats.v1",
+    "timeline.v1",
+    "triage.v1",
+    "upgrade.v1",
+    "version.v1"
+   ]
+  },
+  "presets": {
+   "groups": [
+    "signature",
+    "template",
+    "level_name",
+    "logger",
+    "exception_type",
+    "count",
+    "first_seen",
+    "last_seen"
+   ],
+   "entries": [
+    "id",
+    "ts",
+    "level_name",
+    "thread",
+    "user",
+    "request_id",
+    "logger",
+    "message",
+    "exception_type",
+    "signature"
+   ],
+   "show, context": [
+    "id",
+    "ts",
+    "level_name",
+    "thread",
+    "user",
+    "request_id",
+    "logger",
+    "message",
+    "exception_type",
+    "signature",
+    "variables"
+   ]
+  },
+  "env": {
+   "ATLAS_LOG_STORE": "default of --store",
+   "ATLAS_LOG_APP_PACKAGES": "frames: application package prefixes",
+   "ATLAS_LOG_DEBUG": "traceback of an internal_error",
+   "ATLAS_LOG_TOKEN": "default of serve --token",
+   "ATLAS_LOG_MAX_UPLOAD_MB": "default of serve --max-upload-mb",
+   "ATLAS_LOG_REPORT_CACHE": "serve: reports kept in memory",
+   "NO_COLOR": "--color auto: no colour",
+   "COLUMNS": "default of --width"
+  }
+ },
+ "commands": {
+  "ingest": {
+   "schema": "manifest-command.v1",
+   "command": "ingest",
+   "version": "",
+   "usage": "PATHS... [--format str] [--name str] [--frames int] [--overwrite] [--mine] [--force]",
+   "description": "Parse log files into a stored log set and print its manifest.\n\nPATHs are files or directories (directories are scanned non-recursively for\n*.log*; rotated files x.log.N are read oldest first). Files found in a\ndirectory that the format does not recognise in their first 200 lines\n(access, GC or JSON logs next to atlassian-jira.log) are skipped and\nlisted in \"ingest.skipped\"; files named explicitly are read, except one over\n64 MiB that the format does not recognise at all (error \"not_in_format\";\n--force reads it). Lines over 1 MiB are cut, and an entry keeps at most\n4 Mi characters and 100,000 lines (\"parse_error\": \"entry truncated: N\nlines, M bytes\"). The log-set id is derived from the file digests, so\ningesting the same files again is a no-op that prints the existing\nmanifest (use --overwrite to rebuild it). Progress goes to stderr.\n\nOutput (json): the manifest, schema \"logset.v1\":\n  {\"schema\": \"logset.v1\", \"id\", \"name\", \"format\",\n   \"sources\": [{\"path\", \"size\", \"xxh3\", \"first_ts\", \"last_ts\", \"entries\"}],\n   \"first_ts\", \"last_ts\", \"entry_count\", \"group_count\", \"created_at\",\n   \"tool_version\", \"schema_version\", \"signature_version\",\n   \"mask_rules_version\", \"signature_spec\",\n   \"ingest\": {\"parsed_entries\", \"parse_errors\", \"elapsed_s\", \"existing\",\n              \"skipped\": [path, ...], \"warnings\": [str, ...]},\n   \"merges\": [{\"cluster_id\", \"signatures\": [str], \"drain_template\"}]}\n\"merges\" is present only with --mine; the proposals are also stored in\nmerges.parquet (the \"merges\" view of `query`).\n\"ingest.existing\" is true when the set already existed and was reused;\n\"ingest.warnings\" then says when --name was ignored (also on stderr).\n\nWithout --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git\nwork tree it is not created (error \"store_error\": real logs could be\ncommitted), but an existing ./.atlas-log is used.\n\nExit codes: 0 ok; 1 unknown --format or bad option; 2 no files found, format\nnot detected, a large named file not in the format, or no entries parsed\n(manifest still printed); 3 store error (including a refused default store\ninside a git work tree).",
+   "output": "logset.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "PATHS...",
+     "type": "path*",
+     "help": "Log files and/or directories."
+    },
+    {
+     "name": "--format",
+     "type": "str",
+     "help": "Format name (see `formats`); default: detected from the first 200 lines of the first file a format recognises (named files first)."
+    },
+    {
+     "name": "--name",
+     "type": "str",
+     "help": "Human-readable alias for the set, usable wherever SET is expected."
+    },
+    {
+     "name": "--frames",
+     "type": "int",
+     "help": "Add the top N stack frames to signatures (finer groups); default 0."
+    },
+    {
+     "name": "--overwrite",
+     "type": "flag",
+     "help": "Rebuild the set if one with the same id already exists."
+    },
+    {
+     "name": "--mine",
+     "type": "flag",
+     "help": "Propose group merges with Drain3 (needs extra \"mine\": uv sync --extra mine)."
+    },
+    {
+     "name": "--force",
+     "type": "flag",
+     "help": "Read a named file over 64 MiB even if none of its first 200 lines is in the format."
+    }
+   ]
+  },
+  "sets": {
+   "schema": "manifest-command.v1",
+   "command": "sets",
+   "version": "",
+   "usage": "[--brief]",
+   "description": "List the log sets in the store, newest first.\n\nOutput (json):\n  {\"schema\": \"sets.v1\", \"store\": str, \"count\": int,\n   \"items\": [<logset.v1 manifest without \"schema\"> + \"summary\" + \"stale\"]}\nEach item has id, name, format, sources, first_ts, last_ts, entry_count,\ngroup_count, created_at, tool_version, schema_version, signature_version,\nmask_rules_version, signature_spec, recipe_key,\n\"summary\": {\"errors\", \"warnings\", \"error_groups\"} (entries at ERROR/FATAL,\nentries at WARN, groups at ERROR/FATAL; null when the set cannot be read)\nand \"stale\": true when recipe_key differs from the recipe this version\nsigns the set's format and spec with (rebuild with `upgrade`; triage\ndoes not use stale sets as baselines). --brief keeps only id, name,\nfirst_ts, last_ts, entry_count, group_count, summary and stale. An empty\nor missing store gives count 0.\n\nExit codes: 0 ok (also when empty); 3 store error.",
+   "output": "sets.v1",
+   "exit": [
+    0,
+    3
+   ],
+   "params": [
+    {
+     "name": "--brief",
+     "type": "flag",
+     "help": "Only id, name, first_ts, last_ts, entry_count, group_count, summary, stale."
+    }
+   ]
+  },
+  "set": {
+   "schema": "manifest-command.v1",
+   "command": "set",
+   "version": "",
+   "usage": "LOGSET",
+   "description": "Print one log set: its manifest plus the severity summary of `sets`.\n\nOutput (json):\n  {\"schema\": \"logset.v1\", <manifest keys, see `ingest`>,\n   \"summary\": {\"errors\", \"warnings\", \"error_groups\"}}\n\"summary\" counts the entries at ERROR/FATAL, the entries at WARN and the\ngroups at ERROR/FATAL, as in `sets` and GET /api/sets/{ref}. Table mode\nprints the manifest as tables.\n\nExit codes: 0 ok; 3 unknown set or store error.",
+   "output": "logset.v1",
+   "exit": [
+    0,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    }
+   ]
+  },
+  "groups": {
+   "schema": "manifest-command.v1",
+   "command": "groups",
+   "version": "",
+   "usage": "LOGSET [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--sort count|last_seen|first_seen|signature|template=count] [--limit int=50] [--offset int=0] [--coarse] [--columns str*] [--brief]",
+   "description": "List the groups (one per message signature) of a log set.\n\nA group collects all entries whose level, logger, masked message and\nexception chain are equal; its \"signature\" (16 hex chars) is stable across\nsets, so it can be used with `show`, `entries --signature` and `diff`.\n\nOutput (json):\n  {\"schema\": \"groups.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"truncated\": bool, \"items\": [\n    {\"signature\", \"coarse_signature\", \"template\", \"level\", \"logger\",\n     \"level_name\", \"exception_type\", \"count\", \"first_seen\", \"last_seen\",\n     ...}, ...]}\n\"level\" is numeric (ERROR=50), \"level_name\" the name. \"items\" holds the\ngroups.v1 columns (`atlas-log schema groups`: also user_count, thread_count,\nsource_count, top_users, top_threads, sources, examples), at most --limit\nrows starting at --offset (in --sort order). \"total\" is the number of\nmatching groups before --offset/--limit, \"offset\" echoes --offset and\n\"truncated\" is true when more rows follow this page (offset + count <\ntotal; the next page starts at offset + count). With --coarse, \"signature\"\nis the coarse signature and \"signatures\" lists the member signatures.\n--columns keeps only the named columns (comma-separated and/or repeated;\nunknown name: error \"invalid_value\", \"hint\" lists the valid ones).\n--brief is the preset --columns signature,template,level_name,logger,\nexception_type,count,first_seen,last_seen; --brief with --columns is a\nusage error.\n--with-exception keeps groups that carry an exception (exception_type not\nnull) at any level, so a DEBUG entry with a stack trace is found even\nthough --min-level WARN would hide it. --exception TEXT matches a\ncase-insensitive substring of exception_type (the outermost exception);\n--contains TEXT a case-insensitive substring of template. With --coarse\nall filters apply to the member groups.\n\nExit codes: 0 ok (also when no group matches); 1 bad option, unknown\ncolumn, or --brief with --columns; 3 unknown set or store error.",
+   "output": "groups.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL; UNKNOWN = entries whose header could not be parsed)."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only this level or more severe, e.g. WARN."
+    },
+    {
+     "name": "--logger",
+     "type": "str",
+     "help": "Logger name or package prefix (c.a.jira matches c.a.jira.Foo)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "Only groups with an entry at/after this time (last_seen >= since): ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Only groups first seen before this time (same forms as --since)."
+    },
+    {
+     "name": "--with-exception",
+     "type": "flag",
+     "help": "Only groups with an exception (exception_type not null), any level."
+    },
+    {
+     "name": "--exception",
+     "type": "str",
+     "help": "Only groups whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--contains",
+     "type": "str",
+     "help": "Only groups whose template contains this text (case-insensitive)."
+    },
+    {
+     "name": "--sort",
+     "type": "count|last_seen|first_seen|signature|template",
+     "default": "count",
+     "help": "count, last_seen (newest first), first_seen (oldest first), signature, template."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "50",
+     "help": "Maximum number of rows; 0 = all."
+    },
+    {
+     "name": "--offset",
+     "type": "int",
+     "default": "0",
+     "help": "Skip this many rows first (paging: next offset = offset + count)."
+    },
+    {
+     "name": "--coarse",
+     "type": "flag",
+     "help": "Group by coarse signature (level + logger + masked message; no exceptions)."
+    },
+    {
+     "name": "--columns",
+     "type": "str*",
+     "help": "Columns to return: comma-separated (signature,count) and/or repeated."
+    },
+    {
+     "name": "--brief",
+     "type": "flag",
+     "help": "Only signature, template, level_name, logger, exception_type, count, first_seen, last_seen."
+    }
+   ]
+  },
+  "show": {
+   "schema": "manifest-command.v1",
+   "command": "show",
+   "version": "",
+   "usage": "LOGSET SIGNATURE [--limit int=20] [--raw] [--max-raw int] [--columns str*] [--brief]",
+   "description": "Show the entries of one group, with the variables extracted from each message.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"signature\": str,\n   \"group\": {<groups.v1 row>} | null, \"count\": int,\n   \"items\": [{<entries.v1 row: id, ts, level, level_name, thread, logger,\n              message, body, user, ..., exception_type, signature,\n              template, variables, source_path, source_line, raw, ...>}, ...]}\n\"variables\" lists the values that masking replaced in the template, in\norder (issue keys, numbers, ids ...). Entries are ordered by time.\nSIGNATURE may be a unique prefix of at least 4 hex characters (resolved\nvia the groups table; \"signature\" echoes the full one); a prefix that\nmatches several groups is error \"ambiguous\" listing up to 5 \"candidates\".\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in json/jsonl,\nno limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (both keys\nonly on cut rows).\nWith --raw the original log text of each entry is printed instead (any\n--output mode), entries separated by a blank line (or, when colour is on,\nhighlighted and separated by a source:line rule).\n--columns keeps only the named entry columns (as `entries --columns`).\n--brief is the preset --columns id,ts,level_name,thread,user,request_id,\nlogger,message,exception_type,signature,variables and also cuts \"group\"\nto signature,template,level_name,logger,exception_type,count,first_seen,\nlast_seen; --brief with --columns is a usage error.\n\nExit codes: 0 ok; 1 bad option, unknown column, --brief with --columns, or\nambiguous signature prefix; 2 no entries with this signature; 3 unknown set\nor store error.",
+   "output": "entries.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "SIGNATURE",
+     "type": "str",
+     "help": "Group signature (from `groups`) or a unique prefix of it (4+ hex chars)."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "20",
+     "help": "Maximum number of entries; 0 = all."
+    },
+    {
+     "name": "--raw",
+     "type": "flag",
+     "help": "Print the raw log text of the entries (highlighted when colour is on)."
+    },
+    {
+     "name": "--max-raw",
+     "type": "int",
+     "help": "Characters kept of raw and body per entry; 0 = no limit. Default: 4000 in json/jsonl mode, no limit in table and --raw mode."
+    },
+    {
+     "name": "--columns",
+     "type": "str*",
+     "help": "Entry columns to return: comma-separated (ts,message) and/or repeated."
+    },
+    {
+     "name": "--brief",
+     "type": "flag",
+     "help": "Only id, ts, level_name, thread, user, request_id, logger, message, exception_type, signature, variables; \"group\" in its --brief form."
+    }
+   ]
+  },
+  "entries": {
+   "schema": "manifest-command.v1",
+   "command": "entries",
+   "version": "",
+   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int]",
+   "description": "List entries of a log set, filtered, ordered by time.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"items\": [<entries.v1 row>, ...]}\n\"total\" counts the matching entries before --offset/--limit; \"offset\"\nechoes --offset; \"truncated\" is true when more entries follow this page\nand \"next_offset\" is where it starts (offset + count; null on the last\npage). --coarse-signature takes the signature of `groups --coarse`. With\n--raw the raw log text of the entries is printed instead (as `show --raw`;\n--offset/--limit apply).\nRows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,\nlevel numeric) unless --columns is given:\n  id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n  request_id, session, ip, url, request_url, context, exception_type,\n  exception_message, exception_chain, signature, coarse_signature, template,\n  variables, source_path, source_line, source_offset, raw, parse_error\n--columns takes comma-separated names and/or is repeated\n(--columns ts,level_name --columns message); an unknown name is error\n\"invalid_value\" whose \"hint\" lists the valid columns. --brief is the\npreset --columns id,ts,level_name,thread,user,request_id,logger,message,\nexception_type,signature; --brief with --columns is a usage error.\n--with-exception keeps entries with an exception (exception_type not\nnull) at any level; --exception TEXT matches a case-insensitive substring\nof exception_type (the outermost exception).\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in\njson/jsonl, no limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (of body\nwhen raw is not among --columns); both keys appear only on cut rows.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, unknown\ncolumn, --brief with --columns, or ambiguous --signature prefix; 3\nunknown set or store error.",
+   "output": "entries.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "--signature",
+     "type": "str",
+     "help": "Only entries of this group signature (or unique prefix, 4+ hex chars)."
+    },
+    {
+     "name": "--coarse-signature",
+     "type": "str",
+     "help": "Only entries of this coarse signature (exact; the signature of groups --coarse)."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "Only these levels, e.g. ERROR or WARN,ERROR."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only this level or more severe."
+    },
+    {
+     "name": "--logger",
+     "type": "str",
+     "help": "Logger name or package prefix (c.a.jira matches c.a.jira.Foo)."
+    },
+    {
+     "name": "--user",
+     "type": "str",
+     "help": "Only this user (exact)."
+    },
+    {
+     "name": "--thread",
+     "type": "str",
+     "help": "Only this thread (exact)."
+    },
+    {
+     "name": "--request-id",
+     "type": "str",
+     "help": "Only this request id (exact; the Jira request context, e.g. 540x101x1)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Only entries before this time (same forms as --since)."
+    },
+    {
+     "name": "--contains",
+     "type": "str",
+     "help": "Only entries whose raw text contains this text (case-insensitive)."
+    },
+    {
+     "name": "--with-exception",
+     "type": "flag",
+     "help": "Only entries with an exception (exception_type not null), any level."
+    },
+    {
+     "name": "--exception",
+     "type": "str",
+     "help": "Only entries whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--columns",
+     "type": "str*",
+     "help": "Columns to return: comma-separated (ts,level_name) and/or repeated."
+    },
+    {
+     "name": "--brief",
+     "type": "flag",
+     "help": "Only id, ts, level_name, thread, user, request_id, logger, message, exception_type, signature."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "100",
+     "help": "Maximum number of rows; 0 = all."
+    },
+    {
+     "name": "--offset",
+     "type": "int",
+     "default": "0",
+     "help": "Skip this many entries first (paging: next offset = offset + count)."
+    },
+    {
+     "name": "--raw",
+     "type": "flag",
+     "help": "Print the raw log text of the entries (highlighted when colour is on)."
+    },
+    {
+     "name": "--max-raw",
+     "type": "int",
+     "help": "Characters kept of raw and body per entry; 0 = no limit. Default: 4000 in json/jsonl mode, no limit in table and --raw mode."
+    }
+   ]
+  },
+  "context": {
+   "schema": "manifest-command.v1",
+   "command": "context",
+   "version": "",
+   "usage": "LOGSET ENTRY_ID [--before int=5] [--after int=5] [--any-thread] [--max-raw int] [--columns str*] [--brief]",
+   "description": "Show the entries immediately around one entry, in time order (same thread by default).\n\nAnswers \"what did this request/thread do just before and after?\": the\n--before entries preceding ENTRY_ID and the --after entries following it\nin time order (ties in file order), restricted to the anchor's thread\nunless --any-thread. The anchor itself is included. Entry ids come from\nthe \"id\" column of `entries`, `show` or a group's \"examples\".\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"anchor\": <entry id>,\n   \"thread\": <anchor's thread> | null, \"any_thread\": bool, \"count\": int,\n   \"items\": [<entries.v1 row>, ...]}\n\"items\" holds at most --before + 1 + --after rows, the anchor among them.\n\"raw\" and \"body\" are cut as in `entries` (--max-raw, default 4000 in\njson/jsonl). In jsonl mode one row per line; the anchor row has an extra\n\"anchor\": true. The table marks the anchor row with ▶.\n--columns keeps only the named columns (as `entries --columns`); --brief\nis the preset --columns id,ts,level_name,thread,user,request_id,logger,\nmessage,exception_type,signature,variables; --brief with --columns is a\nusage error.\n\nExit codes: 0 ok; 1 bad option, unknown column, or --brief with --columns;\n2 no entry with this id; 3 unknown set or store error.",
+   "output": "entries.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "ENTRY_ID",
+     "type": "str",
+     "help": "Id of the anchor entry (16 hex chars, from `entries`/`show`)."
+    },
+    {
+     "name": "--before",
+     "type": "int",
+     "default": "5",
+     "help": "Entries to show before the anchor."
+    },
+    {
+     "name": "--after",
+     "type": "int",
+     "default": "5",
+     "help": "Entries to show after the anchor."
+    },
+    {
+     "name": "--any-thread",
+     "type": "flag",
+     "help": "Consider entries of all threads, not only the anchor's thread."
+    },
+    {
+     "name": "--max-raw",
+     "type": "int",
+     "help": "Characters kept of raw and body per entry; 0 = no limit. Default: 4000 in json/jsonl mode, no limit in table mode."
+    },
+    {
+     "name": "--columns",
+     "type": "str*",
+     "help": "Columns to return: comma-separated (ts,message) and/or repeated."
+    },
+    {
+     "name": "--brief",
+     "type": "flag",
+     "help": "Only id, ts, level_name, thread, user, request_id, logger, message, exception_type, signature, variables."
+    }
+   ]
+  },
+  "frames": {
+   "schema": "manifest-command.v1",
+   "command": "frames",
+   "version": "",
+   "usage": "LOGSET REF [--limit int=10] [--all]",
+   "description": "Show the exception chain of one entry with its application frames first.\n\nREF is an entry id or a group signature (16 hex chars; entry ids are tried\nfirst), or a unique signature prefix of at least 4 hex characters. For a\nsignature the group's first example entry is used. Each\nexception of the chain (outermost first, then each \"Caused by:\") lists its\nfirst --limit application frames: frames whose class is outside the\nlibrary packages (JDK, Groovy, Jira platform: com.atlassian., org.ofbiz.,\nwebwork., org.apache., com.google., JDBC drivers, ...), so plugin code\nstands out. With the environment variable ATLAS_LOG_APP_PACKAGES set\n(comma-separated prefixes, e.g. com.acme.,org.example.) an application\nframe is one that starts with one of those prefixes instead.\n\nOutput (json):\n  {\"schema\": \"frames.v1\", \"logset\": id, \"entry\": <entry id>,\n   \"signature\": str, \"ts\": str, \"level_name\": str, \"logger\": str,\n   \"message\": str, \"app_packages\": [str] | null, \"count\": int,\n   \"items\": [{\"type\", \"message\",\n              \"app_frames\": [{\"location\", \"file\", \"line\"}, ...],\n              \"app_frames_total\": int, \"frames_total\": int,\n              \"omitted_frames\": int,\n              \"frames\": [{\"location\", \"file\", \"line\", \"app\": bool}]}]}\n\"items\" is the chain (count = its length; empty when the entry has no\nparsed exception). \"app_frames\" holds at most --limit frames and\n\"app_frames_total\" counts all of them; \"frames_total\" is the number of\nframes printed in the log, \"omitted_frames\" the \"... N more\" count.\n\"frames\" (every frame with an \"app\" flag) and all application frames are\nreturned only with --all.\n\"app_packages\" echoes ATLAS_LOG_APP_PACKAGES. In jsonl mode one exception\nper line; the table prints each exception and its frames as text.\n\nExit codes: 0 ok (also when the entry has no exception); 1 bad option or\nambiguous signature prefix (error \"ambiguous\" with \"candidates\"); 2 no\nentry or group REF; 3 unknown set or store error.",
+   "output": "frames.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "REF",
+     "type": "str",
+     "help": "Entry id, or group signature or unique prefix (its first example entry is used)."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "10",
+     "help": "Application frames per exception; 0 = all."
+    },
+    {
+     "name": "--all",
+     "type": "flag",
+     "help": "Return every frame (with an \"app\" flag) and all application frames."
+    }
+   ]
+  },
+  "query": {
+   "schema": "manifest-command.v1",
+   "command": "query",
+   "version": "",
+   "usage": "LOGSET SQL",
+   "description": "Run DuckDB SQL over a log set and print the result rows.\n\nViews: \"entries\" (entries.v1), \"groups\" (groups.v1) and \"merges\" (merges.v1,\nonly when present). Their columns (types and descriptions: `atlas-log\nschema entries|groups|merges`):\n  entries:\n    id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n    request_id, session, ip, url, request_url, context, exception_type,\n    exception_message, exception_chain, signature, coarse_signature, template,\n    variables, source_path, source_line, source_offset, raw, parse_error\n  groups:\n    signature, coarse_signature, template, level, level_name, logger,\n    exception_type, count, first_seen, last_seen, user_count, thread_count,\n    source_count, top_users, top_threads, sources, examples\n  merges:\n    cluster_id, drain_template, signatures\nlevel is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),\nts/first_seen/last_seen are UTC timestamps, variables a list of strings.\nThe session time zone is UTC whatever the machine's zone: result\ntimestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets\nat UTC midnight.\n\nSQL examples:\n  select level, count(*) n from entries group by 1 order by 2 desc\n  select unnest(variables) v, count(*) n from entries\n    where signature = '0123456789abcdef' group by 1 order by 2 desc\n  select signature, count, template from groups where exception_type is not null\n    order by count desc limit 20\n\nOutput (json):\n  {\"schema\": \"query.v1\", \"logset\": id, \"columns\": [str, ...], \"count\": int,\n   \"total\": int, \"truncated\": false, \"items\": [{<column>: value, ...}, ...]}\nThe CLI never truncates query results (\"total\" = \"count\"); use LIMIT in SQL.\n\nErrors: \"sql_error\"; for an unknown column its \"hint\" lists DuckDB's\ncandidate columns (or the columns of the views), for an unknown table the\navailable views.\n\nExit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or\nstore error.",
+   "output": "query.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "SQL",
+     "type": "str",
+     "help": "The SQL query (quote it as one argument)."
+    }
+   ]
+  },
+  "stats": {
+   "schema": "manifest-command.v1",
+   "command": "stats",
+   "version": "",
+   "usage": "LOGSET",
+   "description": "Print summary statistics of a log set.\n\nCounts per level, per logger (top N) and per hour, the time range and the\nsources, as computed by the store.\n\nOutput (json): {\"schema\": \"stats.v1\", \"logset\": id, <store statistics...>}\nTable mode shows the hours as one row per day with a sparkline of the\nhourly counts; JSON keeps the full \"hours\" list.\n\nExit codes: 0 ok; 3 unknown set or store error.",
+   "output": "stats.v1",
+   "exit": [
+    0,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    }
+   ]
+  },
+  "diff": {
+   "schema": "manifest-command.v1",
+   "command": "diff",
+   "version": "",
+   "usage": "SET_A SET_B [--min-level str] [--coarse] [--force] [--limit int=50] [--rate]",
+   "description": "Compare the groups of two log sets (A = before, B = after).\n\n\"new\": signatures present only in B; \"vanished\": only in A; \"changed\": in\nboth with a different count (ratio = count_b / count_a). Only the stored\ngroup tables are compared, never the raw logs.\n\nOutput (json):\n  {\"schema\": \"diff.v1\", \"a\": id_a, \"b\": id_b,\n   \"new\": [row], \"vanished\": [row], \"changed\": [row], \"unchanged_count\": int,\n   \"totals\": {\"new\": int, \"vanished\": int, \"changed\": int}, \"truncated\": bool,\n   \"warnings\": [str]}\nEach section holds at most --limit rows (default 50, 0 = all); \"totals\"\nare the section sizes before --limit and \"truncated\" is true when any\nsection was cut.\nEach row has signature, template, level, level_name, logger,\nexception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b,\nlast_seen_b (counts are 0 on the missing side); \"changed\" rows also have\nratio. \"new\" is sorted by count_b, \"vanished\" by count_a, \"changed\" by\n|log(ratio)|, all descending. With --rate \"changed\" rows also have rate_a\nand rate_b (count per hour of each set's span, first to last entry) and\nrate_ratio = rate_b / rate_a, and \"changed\" is sorted by rate_ratio\ndescending: use it when the sets cover different lengths of time.\n\"warnings\" is present only when the spans of A and B differ by more than\n4x either way: one sentence saying that new/vanished groups are\nunreliable (groups that occur only at certain times of day). In table and\njsonl mode the sentence goes to stderr. In jsonl mode one row per line\nwith an extra \"change\" key (new / vanished / changed).\n\nExit codes: 0 ok; 1 the sets were built with different signature/mask-rule\nversions or specs (use --force); 3 unknown set or store error.",
+   "output": "diff.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "SET_A",
+     "type": "str",
+     "help": "Baseline log set (id, id prefix or name)."
+    },
+    {
+     "name": "SET_B",
+     "type": "str",
+     "help": "Log set to compare against the baseline."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only groups of this level or more severe (e.g. ERROR)."
+    },
+    {
+     "name": "--coarse",
+     "type": "flag",
+     "help": "Compare by coarse signature (exception chain ignored)."
+    },
+    {
+     "name": "--force",
+     "type": "flag",
+     "help": "Compare even if signature versions or specs differ."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "50",
+     "help": "Maximum rows per section (new, vanished, changed); 0 = all."
+    },
+    {
+     "name": "--rate",
+     "type": "flag",
+     "help": "Add hourly rates (rate_a, rate_b, rate_ratio) to \"changed\" and sort it by rate_ratio, for sets of different length."
+    }
+   ]
+  },
+  "triage": {
+   "schema": "manifest-command.v1",
+   "command": "triage",
+   "version": "",
+   "usage": "LOGSET [--baseline str=auto] [--min-level str=WARN] [--grow float=2.0] [--limit int=50]",
+   "description": "Answer \"are there new kinds of errors since the baseline?\" in one document.\n\nCompares SET with a baseline (as `diff BASELINE SET --min-level L`) and\nsorts the result for a decision: new groups (most severe first), new\ngroups of a lower level that carry an exception, groups whose hourly rate\ngrew, vanished groups. --baseline auto (default) ranks the other sets of\nthe same format (the web app's rule): it rejects a set signed with\nanother recipe_key (reason \"stale\", hint `upgrade`; or \"recipe\"), whose\nsources are a superset or subset of SET's (\"superset\"/\"subset\"; partial\noverlap is fine), that ends after SET (\"later\"), that has under 1% of\nSET's entries (\"tiny\") or a span more than 16x longer or shorter\n(\"span\"); of the rest it prefers a set that ends before SET starts, then\nthe span closest to SET's, then the newest. With none left the verdict\nis no_baseline and \"warnings\" lists the rejected sets. An explicit\n--baseline is used as given, with a warning when it is stale, contained\nor tiny.\n\nOutput (json):\n  {\"schema\": \"triage.v1\",\n   \"set\": {\"id\", \"name\", \"first_ts\", \"last_ts\", \"entries\"},\n   \"baseline\": {\"id\", \"name\", \"first_ts\", \"last_ts\",\n                \"resolved_by\": \"auto\" | \"param\", \"reason\": str,\n                \"entries\": int, \"shared_sources\": int,\n                \"candidates\": [{\"id\", \"name\", \"reason\", \"detail\",\n                                \"hint\"?}, ...]} | null,\n   \"min_level\": \"WARN\",\n   \"verdict\": \"new_errors\" | \"new_warnings\" | \"new_exceptions\" | \"clean\"\n              | \"no_baseline\",\n   \"summary\": {\"new\", \"new_by_level\": {\"ERROR\": n, ...}, \"new_exceptions\",\n               \"grew\", \"vanished\", \"changed\", \"unchanged\"} | null,\n   \"coverage\": {\"hours_baseline\", \"hours_set\", \"ratio\"},\n   \"warnings\": [str, ...],\n   \"new\": [<diff row> + \"rate_per_hour\"],\n   \"new_exceptions\": [<diff row> + \"rate_per_hour\"],\n   \"grew\": [<diff row> + \"ratio\", \"rate_a\", \"rate_b\", \"rate_ratio\"],\n   \"vanished\": [<diff row>]}\nDiff rows are those of `diff` (signature, template, level, level_name,\nlogger, exception_type, count_a, count_b, first/last_seen_a/b); set and\nbaseline timestamps are written as in their manifests.\n\"new\": groups at/above --min-level only in SET; \"new_exceptions\": new\ngroups of ANY level with an exception that are not in \"new\" (a new DEBUG\nstack trace); \"grew\": changed groups whose hourly rate rose at least --grow\ntimes (rates as `diff --rate`, which normalise different spans), highest\nrate_ratio first; \"vanished\": groups at\n/above --min-level only in the baseline. \"verdict\": new_errors (a new\nERROR/FATAL group), new_warnings (other new groups), new_exceptions (no\nnew group but a new exception at a lower level), clean, no_baseline.\n\"coverage\" gives both spans in hours and ratio = hours_set /\nhours_baseline; when they differ by more than 4x either way \"warnings\"\nsays that \"new\"/\"vanished\" are unreliable (a nightly set lacks daytime\ngroups). \"baseline.reason\" says why the baseline was chosen,\n\"shared_sources\" counts the source files both sets share and\n\"candidates\" lists up to 5 rejected sets (auto only). Lists hold at most\n--limit rows; \"summary\" counts all.\njsonl mode prints the document on one line. Table mode prints the\nverdict, the summary and one table per list; the warnings go to stderr.\n\nExit codes: 0 ok, whatever the verdict (also no_baseline); 1 bad option,\ninvalid level, or the sets were built with different signature/mask-rule\nversions or specs; 3 unknown set or store error.",
+   "output": "triage.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "The log set to judge (id, id prefix or name)."
+    },
+    {
+     "name": "--baseline",
+     "type": "str",
+     "default": "auto",
+     "help": "Baseline set (id, id prefix or name), auto, or none (verdict no_baseline)."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "default": "WARN",
+     "help": "Only groups of this level or more severe count as new/grew/vanished."
+    },
+    {
+     "name": "--grow",
+     "type": "float",
+     "default": "2.0",
+     "help": "Minimum hourly-rate factor for \"grew\" (> 1)."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "50",
+     "help": "Maximum rows per list; 0 = all."
+    }
+   ]
+  },
+  "report": {
+   "schema": "manifest-command.v1",
+   "command": "report",
+   "version": "",
+   "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int=0] [--open]",
+   "description": "Write a self-contained HTML report of a log set (optionally compared with another).\n\nThe page needs no network access (CSS, JS and data are inlined) and works\nfrom a file share or an e-mail attachment: overview tiles, a per-hour\ntimeline by level (drag to select a time window), the filterable group\ntable and a detail drawer per group with example entries and the\nequivalent CLI commands. The embedded data is the \"report.v1\" payload\n(docs/formats/report.v1.md). With --compare SET_B the report shows the\ngroups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).\n\nOutput (json):\n  {\"schema\": \"report-file.v1\", \"path\": str, \"bytes\": int, \"groups\": int,\n   \"entries\": int, \"compare\": bool}\n\"groups\" is the number of groups in the report, \"entries\" the number of\nembedded example entries. Table mode prints one line.\n\nExit codes: 0 ok; 1 bad option, invalid level, or the sets were built with\ndifferent signature/mask-rule versions or specs; 2 the output directory\ndoes not exist; 3 unknown set or store error.",
+   "output": "report-file.v1",
+   "exit": [
+    0,
+    1,
+    2,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "--out",
+     "type": "path",
+     "help": "Output file; default <name or id>.html in the current directory."
+    },
+    {
+     "name": "--compare",
+     "type": "str",
+     "help": "Baseline log set to compare with (id, id prefix or name)."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only groups of this level or more severe (e.g. WARN); the overview always covers the whole set."
+    },
+    {
+     "name": "--examples",
+     "type": "int",
+     "default": "3",
+     "help": "Example entries per group; 0 = none."
+    },
+    {
+     "name": "--max-raw",
+     "type": "int",
+     "default": "4000",
+     "help": "Truncate each example's raw text to this many characters; 0 = no limit."
+    },
+    {
+     "name": "--max-groups",
+     "type": "int",
+     "default": "0",
+     "help": "Only the N largest groups; 0 = all."
+    },
+    {
+     "name": "--open",
+     "type": "flag",
+     "help": "Open the report in the default web browser."
+    }
+   ]
+  },
+  "parse": {
+   "schema": "manifest-command.v1",
+   "command": "parse",
+   "version": "",
+   "usage": "PATHS... [--format str] [--limit int=0] [--force]",
+   "description": "Parse log files and stream the entries as JSON Lines to stdout (no store).\n\nAlways writes JSONL, one entry per line, regardless of --output:\n  {\"id\", \"format\", \"timestamp\" (ISO 8601 with offset), \"level\" (name),\n   \"thread\", \"logger\", \"message\", \"body\", \"exception_type\",\n   \"exceptions\": [{\"type\", \"message\", \"frames\": [{\"location\", \"file\",\n                   \"line\", \"module\"}], \"omitted_frames\"}],\n   \"context\": {\"user\", \"request_id\", \"session\", \"ip\", \"url\", \"request_url\", ...},\n   \"source\": {\"path\", \"line\", \"offset\"}, \"raw\", \"parse_error\"}\nEntries whose header could not be parsed have \"parse_error\" set. Files\nfound in a directory that are not in the format are skipped, and a large\nnamed file not in the format is refused (as `ingest`).\n\nExit codes: 0 ok; 1 unknown --format; 2 no files, format not detected, a\nlarge named file not in the format, or no entries.",
+   "exit": [
+    0,
+    1,
+    2
+   ],
+   "params": [
+    {
+     "name": "PATHS...",
+     "type": "path*",
+     "help": "Log files and/or directories."
+    },
+    {
+     "name": "--format",
+     "type": "str",
+     "help": "Format name; detected from the first 200 lines when omitted."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "0",
+     "help": "Stop after this many entries; 0 = all."
+    },
+    {
+     "name": "--force",
+     "type": "flag",
+     "help": "Read a named file over 64 MiB even if it is not in the format."
+    }
+   ]
+  },
+  "regroup": {
+   "schema": "manifest-command.v1",
+   "command": "regroup",
+   "version": "",
+   "usage": "LOGSET [--frames int=0] [--no-exceptions]",
+   "description": "Recompute the groups of a stored log set with another signature spec.\n\nRe-signs the stored entries (each distinct level, logger, message and\nexception chain once) and rewrites the signature columns of\nentries.parquet and groups.parquet; every other column is kept.\nSignatures change, so diffs against sets built with another spec need\n--force. Prints the updated manifest (new signature_spec and recipe_key).\n\nOutput (json): the manifest, {\"schema\": \"logset.v1\", ...} (see `ingest`).\n\nExit codes: 0 ok; 1 bad option; 3 unknown set or store error.",
+   "output": "logset.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "--frames",
+     "type": "int",
+     "default": "0",
+     "help": "Include the top N stack frames of each exception in the signature."
+    },
+    {
+     "name": "--no-exceptions",
+     "type": "flag",
+     "help": "Leave the exception chain out of the signature (like --coarse)."
+    }
+   ]
+  },
+  "upgrade": {
+   "schema": "manifest-command.v1",
+   "command": "upgrade",
+   "version": "",
+   "usage": "LOGSETS... [--all]",
+   "description": "Rebuild stale log sets at the current recipe, each with its own spec.\n\nA set is stale (\"stale\": true in `sets`) when its recipe_key (format\nversion, signature spec, signature and masking-rule versions) differs from\nthe recipe this version signs its format and spec with; stale sets are not\ncomparable with new ones, and triage skips them as baselines. upgrade\nre-signs the stored entries as `regroup` does, keeping each set's\nsignature spec. Sets that are current, or whose format is not\nregistered, are skipped with a reason.\n\nOutput (json):\n  {\"schema\": \"upgrade.v1\", \"count\": int, \"upgraded\": int,\n   \"items\": [<logset.v1 manifest without \"schema\"> +\n             {\"status\": \"upgraded\" | \"skipped\", \"reason\": str | null,\n              \"previous_recipe_key\": str}, ...]}\n\"reason\" is null for an upgraded set, \"current\" for a set already at the\ncurrent recipe, or names the unknown format or spec. Items follow the\norder of SET arguments (with --all: the `sets` order, newest first).\n\nExit codes: 0 ok (also when everything was skipped); 1 no SET and no\n--all; 3 unknown set or store error.",
+   "output": "upgrade.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSETS...",
+     "type": "str*",
+     "help": "Log sets to upgrade (id, unique id prefix or name)."
+    },
+    {
+     "name": "--all",
+     "type": "flag",
+     "help": "Upgrade every set in the store."
+    }
+   ]
+  },
+  "formats": {
+   "schema": "manifest-command.v1",
+   "command": "formats",
+   "version": "",
+   "usage": "[--sample path]",
+   "description": "List the supported log formats.\n\nOutput (json):\n  {\"schema\": \"formats.v1\", \"count\": int,\n   \"items\": [{\"name\", \"description\", \"signature_spec\", \"mask_rules\": [str]}]}\nWith --sample FILE each item also has \"confidence\" (0..1) from sniffing the\nfirst 200 lines of FILE, and items are sorted by it.\n\nExit codes: 0 ok; 2 sample file not found.",
+   "output": "formats.v1",
+   "exit": [
+    0,
+    2
+   ],
+   "params": [
+    {
+     "name": "--sample",
+     "type": "path",
+     "help": "A log file to test every format against."
+    }
+   ]
+  },
+  "schema": {
+   "schema": "manifest-command.v1",
+   "command": "schema",
+   "version": "",
+   "usage": "NAME",
+   "description": "Print the JSON description of a stored table or the JSON Schema of a document.\n\n\"entries\", \"groups\" and \"merges\" are the Parquet tables (also the views\navailable to `query`); \"logset\" is manifest.json. A document name such\nas \"triage.v1\" prints the JSON Schema (draft 2020-12) of that document,\nas in docs/formats/<name>.schema.json; rows are described by the tables'\ncolumns, all optional. Without NAME the four tables are printed and\n\"documents\" lists the document names.\n\nOutput (json):\n  {\"schema\": \"schema.v1\", \"definitions\": {<name>: <schema description>, ...},\n   \"documents\": [str, ...]}\n\"documents\" only without NAME. In table mode the same document is\npretty-printed as JSON.\n\nExit codes: 0 ok; 1 unknown NAME.",
+   "output": "schema.v1",
+   "exit": [
+    0,
+    1
+   ],
+   "params": [
+    {
+     "name": "NAME",
+     "type": "str",
+     "help": "A table (entries, groups, merges, logset) or a document, e.g. triage.v1."
+    }
+   ]
+  },
+  "manifest": {
+   "schema": "manifest-command.v1",
+   "command": "manifest",
+   "version": "",
+   "usage": "COMMAND",
+   "description": "Print how an agent uses atlas-log: workflow, commands and documents (about 7 KB).\n\nThe workflow in order with a one-line purpose per step, when to use the\nother commands, every command (usage with types and defaults, output\ndocument, exit codes), one-line help per parameter, the documents\n(`atlas-log schema NAME`), the --brief presets, the environment variables\nand the global options. Bare `atlas-log` prints the same document when\nstdout is not a terminal; GET /api/manifest of the web app too.\n`manifest COMMAND` prints one command in full instead: its --help text and\nevery parameter with type, default and help (GET /api/manifest/COMMAND).\n\nOutput (json):\n  {\"schema\": \"manifest.v1\", \"tool\", \"version\", \"usage\", \"notes\",\n   \"workflow\": [{\"run\", \"purpose\"}], \"when\": [{\"run\", \"purpose\"}],\n   \"commands\": {<name>: {\"summary\", \"usage\", \"output\", \"exit\": [int]}},\n   \"help\": {<parameter>: str}, \"global_options\", \"exit_codes\",\n   \"documents\": {\"get\", \"names\"}, \"presets\", \"env\"}\n  {\"schema\": \"manifest-command.v1\", \"command\", \"version\", \"usage\",\n   \"description\", \"output\", \"exit\": [int],\n   \"params\": [{\"name\", \"type\", \"default\", \"help\"}]}\nIn table mode the same document is pretty-printed as JSON.\n\nExit codes: 0 ok; 2 unknown COMMAND.",
+   "output": "manifest.v1",
+   "exit": [
+    0,
+    2
+   ],
+   "params": [
+    {
+     "name": "COMMAND",
+     "type": "str",
+     "help": "One command to describe in full (default: the whole manifest)."
+    }
+   ]
+  },
+  "remove": {
+   "schema": "manifest-command.v1",
+   "command": "remove",
+   "version": "",
+   "usage": "LOGSET",
+   "description": "Delete a log set from the store (its directory and all files).\n\nOutput (json): {\"schema\": \"remove.v1\", \"removed\": id, \"name\": str | null}\n\nExit codes: 0 ok; 3 unknown set or store error.",
+   "output": "remove.v1",
+   "exit": [
+    0,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    }
+   ]
+  },
+  "serve": {
+   "schema": "manifest-command.v1",
+   "command": "serve",
+   "version": "",
+   "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--reload]",
+   "description": "Run the web app over the store: browse, compare and triage sets, upload new logs.\n\nPages: / (sets with triage verdicts and upload), /sets/SET (interactive\nreport, ?compare=auto|SET), /sets/SET/triage. JSON API under /api with\nthe same documents as this CLI (OpenAPI at /docs). Needs the `web` extra.\n\nOutput: server log on stderr until interrupted (Ctrl+C); nothing on stdout\n(\"schema\": none).\n\nExit codes: 0 stopped normally; 1 the `web` extra is not installed or bad\noption; 3 store error (including the default ./.atlas-log not existing inside\na git work tree: pass --store DIR or set ATLAS_LOG_STORE, and another server\nalready using the store: one server per store).",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "--host",
+     "type": "str",
+     "default": "127.0.0.1",
+     "help": "Interface to bind; use 0.0.0.0 to serve the network (set --token then)."
+    },
+    {
+     "name": "--port",
+     "type": "int",
+     "default": "8321",
+     "help": "TCP port."
+    },
+    {
+     "name": "--token",
+     "type": "str",
+     "help": "Require `Authorization: Bearer TOKEN` on /api (env ATLAS_LOG_TOKEN)."
+    },
+    {
+     "name": "--max-upload-mb",
+     "type": "int",
+     "help": "Largest accepted upload in MiB (env ATLAS_LOG_MAX_UPLOAD_MB; default 2048)."
+    },
+    {
+     "name": "--reload",
+     "type": "flag",
+     "help": "Restart on code changes (development); the settings above reach the reloading process through the ATLAS_LOG_* environment variables."
+    }
+   ]
+  },
+  "version": {
+   "schema": "manifest-command.v1",
+   "command": "version",
+   "version": "",
+   "usage": "",
+   "description": "Print tool, schema and signature versions.\n\nOutput (json):\n  {\"schema\": \"version.v1\", \"version\": str, \"schema_version\": str,\n   \"signature_version\": int, \"mask_rules_version\": int, \"python\": str}\n\nExit codes: 0 ok.",
+   "output": "version.v1",
+   "exit": [
+    0
+   ]
+  },
+  "batch": {
+   "schema": "manifest-command.v1",
+   "command": "batch",
+   "version": "",
+   "usage": "",
+   "description": "Run many commands in one process: argv arrays in, one JSON document per line out.\n\nReads JSON Lines from stdin, one command per line as a JSON array of its\narguments without \"atlas-log\" and without global options, e.g.\n  [\"groups\", \"prod\", \"--brief\", \"--limit\", \"5\"]\n  [\"show\", \"prod\", \"0a1b2c3d\"]\nEach runs in this process with the global --store (and the other global\noptions) and --output json, and writes exactly one JSON document per line\nto stdout, in input order: its usual document, or error.v1 when it fails\n(a line that is not a JSON array of strings, a global option, --help, or\nbatch/parse/serve, which do not write one document, are usage errors).\nBlank lines are skipped. A failed line never stops the batch.\nUse it to avoid the start-up cost of the CLI (about 0.45 s per call) when\nan agent runs several commands.\n\nOutput: one document per input line, each with its own \"schema\"\n(\"groups.v1\", \"entries.v1\", ..., \"error.v1\"); diagnostics on stderr.\n\nExit codes: 0 when the input was read, whatever each line returned; 1 the\ninput could not be read (not UTF-8, or a read error).",
+   "exit": [
+    0,
+    1
+   ]
+  }
+ }
+}

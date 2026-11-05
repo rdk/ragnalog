@@ -97,8 +97,10 @@ ubuntu-latest and windows-latest.
   `service/documents.py`: a new document or key gets its Struct field there
   (optional when only some commands or modes add it), then regenerate
   `docs/formats/`; a new `/api` route gets its document in `webapp/openapi.py`.
-  `atlas-log manifest` is generated from the commands; only its workflow/`when`
-  table in `cli/manifest.py` is written by hand, and it must stay under 8 KB. Exit codes: 0 ok,
+  `atlas-log manifest [COMMAND]` is generated from the commands into
+  `service/manifest.json` (regenerate with `docs/formats/generate.py` after changing
+  a command); only its workflow/`when` table in `cli/manifest.py` is written by
+  hand, and `manifest.v1` must stay under 8 KB. Exit codes: 0 ok,
   1 usage, 2 nothing found / parse failure, 3 store error. Results go to stdout,
   diagnostics to stderr. A command's docstring is its `--help`: keep the output
   shape and exit codes in it accurate, and update `docs/cli.md` with it.

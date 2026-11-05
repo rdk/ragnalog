@@ -58,3 +58,9 @@ def test_core_and_store_import_no_upper_layer(path: Path) -> None:
         if path.name == "views.py" and path.parent.name == "store":
             continue  # the re-export shim of service.views
         assert not module.startswith(upper), (path.name, module)
+
+
+@pytest.mark.parametrize("path", _files("webapp"), ids=lambda p: p.name)
+def test_webapp_imports_no_cli(path: Path) -> None:
+    for module, _ in _imports(path):
+        assert not module.startswith("atlas_log_analyzer.cli"), (path.name, module)

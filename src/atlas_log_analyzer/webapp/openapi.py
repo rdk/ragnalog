@@ -15,6 +15,7 @@ from typing import Any, Final
 
 from fastapi import APIRouter, FastAPI
 
+from atlas_log_analyzer.service import manifest as service_manifest
 from atlas_log_analyzer.service.documents import components
 from atlas_log_analyzer.webapp import api
 from atlas_log_analyzer.webapp.responses import JSON
@@ -25,6 +26,7 @@ API_DOCUMENTS: Final[dict[tuple[str, str], str]] = {
     ("get", "/api/health"): "health.v1",
     ("get", "/api/version"): "version.v1",
     ("get", "/api/manifest"): "manifest.v1",
+    ("get", "/api/manifest/{command}"): "manifest-command.v1",
     ("get", "/api/formats"): "formats.v1",
     ("get", "/api/sets"): "sets.v1",
     ("get", "/api/sets/{ref}"): "logset.v1",
@@ -56,10 +58,13 @@ router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=api.
 @router.get("/manifest")
 def manifest() -> dict[str, Any]:
     """How an agent uses atlas-log (``manifest.v1``), as ``atlas-log manifest``."""
-    # the manifest describes the CLI's commands: the one route that reads the cli package
-    from atlas_log_analyzer.cli.manifest import manifest_document
+    return service_manifest.manifest_document()
 
-    return manifest_document()
+
+@router.get("/manifest/{command}")
+def manifest_command(command: str) -> dict[str, Any]:
+    """One command in full (``manifest-command.v1``), as ``atlas-log manifest COMMAND``."""
+    return service_manifest.command_document(command)
 
 
 def _ref(name: str) -> dict[str, str]:

@@ -6,8 +6,8 @@ or build it yourself::
     from atlas_log_analyzer.webapp import Settings, create_app
     app = create_app(Settings(store=Path(".atlas-log")))
 
-Depends on ``core``, ``store``, ``report`` and ``service``; on ``cli`` only for
-``GET /api/manifest``, which describes the CLI's commands.
+Depends on ``core``, ``store``, ``report`` and ``service``, never on ``cli``
+(``GET /api/manifest`` serves the generated ``service/manifest.json``).
 """
 
 from atlas_log_analyzer.webapp.app import create_app

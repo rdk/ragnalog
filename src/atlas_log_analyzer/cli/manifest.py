@@ -6,18 +6,20 @@ help, the output document named in each docstring, exit codes), from
 :mod:`atlas_log_analyzer.service.views` (``--brief`` presets) and
 :data:`atlas_log_analyzer.config.ENV_VARS` (environment). Only :data:`WORKFLOW`,
 :data:`WHEN` and :data:`NOTES` are written here.
-``atlas-log manifest``, bare ``atlas-log`` on a pipe and ``GET /api/manifest``
-print it.
+This module generates them: :func:`package_data` is written to
+``service/manifest.json`` by ``docs/formats/generate.py``, and
+:mod:`atlas_log_analyzer.service.manifest` serves that file to ``atlas-log
+manifest [COMMAND]``, bare ``atlas-log`` on a pipe and ``GET /api/manifest[/COMMAND]``.
 """
 
 from __future__ import annotations
 
 import inspect
+import json
 import re
 import types
 import typing
 from collections import Counter
-from functools import cache
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
@@ -26,7 +28,9 @@ from atlas_log_analyzer.config import ENV_VARS
 from atlas_log_analyzer.service.documents import (
     Manifest,
     ManifestCommand,
+    ManifestCommandDetail,
     ManifestDocuments,
+    ManifestParam,
     ManifestStep,
     document_names,
 )
@@ -35,7 +39,16 @@ from atlas_log_analyzer.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BR
 if TYPE_CHECKING:
     from cyclopts import App
 
-__all__ = ["ENV", "NOTES", "WHEN", "WORKFLOW", "build_manifest", "manifest_document"]
+__all__ = [
+    "ENV",
+    "NOTES",
+    "WHEN",
+    "WORKFLOW",
+    "build_command",
+    "build_manifest",
+    "package_data",
+    "render_package_file",
+]
 
 WORKFLOW: tuple[tuple[str, str], ...] = (
     ("ingest PATH... --name N", "parse logs into a stored set"),
@@ -167,9 +180,7 @@ def _usage(params: list[tuple[str, str, str]]) -> str:
 def build_manifest(app: App | None = None) -> Manifest:
     """Build ``manifest.v1`` from ``app`` (default: the ``atlas-log`` app)."""
     if app is None:
-        from atlas_log_analyzer.cli.app import app as default
-
-        app = default
+        app = _default_app()
     names = [n for n in app if not n.startswith("-")]
     agent_path = {run.split()[0] for run, _ in (*WORKFLOW, *WHEN)}
     commands: dict[str, ManifestCommand] = {}
@@ -231,10 +242,56 @@ def build_manifest(app: App | None = None) -> Manifest:
     )
 
 
-@cache
-def manifest_document() -> dict[str, Any]:
-    """``manifest.v1`` of the ``atlas-log`` app as JSON-ready builtins (built once)."""
+def _default_app() -> App:
+    from atlas_log_analyzer.cli.app import app
+
+    return app
+
+
+_ARGS_SECTION = re.compile(r"\n\s*(?:Args|Parameters):\n", re.IGNORECASE)
+
+
+def build_command(app: App, name: str) -> ManifestCommandDetail:
+    """Build ``manifest-command.v1`` of the command ``name`` of ``app``."""
+    command = app[name]
+    doc = inspect.getdoc(command.default_command) or ""
+    params: list[ManifestParam] = []
+    for arg in command.assemble_argument_collection(parse_docstring=True):
+        if not arg.show:
+            continue
+        pname, spec = _spec(arg)
+        kind, _, default = spec.partition("=")
+        help_ = " ".join(str(arg.parameter.help or "").split())
+        params.append(ManifestParam(name=pname, type=kind, default=default or None, help=help_))
+    return ManifestCommandDetail(
+        command=name,
+        version=__version__,
+        usage=_usage(_params(command)),
+        description=_ARGS_SECTION.split(doc, maxsplit=1)[0].strip(),
+        output=m.group(1) if (m := _OUTPUT.search(doc)) else None,
+        exit=_exit_codes(doc),
+        params=params,
+    )
+
+
+def package_data(app: App | None = None) -> dict[str, Any]:
+    """``{"manifest": manifest.v1, "commands": {name: manifest-command.v1}}``, version empty.
+
+    The content of ``service/manifest.json``; ``app`` defaults to the ``atlas-log`` app.
+    """
     import msgspec
 
-    doc: dict[str, Any] = msgspec.to_builtins(build_manifest())
-    return doc
+    app = app or _default_app()
+    manifest: dict[str, Any] = msgspec.to_builtins(build_manifest(app))
+    manifest["version"] = ""
+    commands: dict[str, Any] = {}
+    for name in (n for n in app if not n.startswith("-")):
+        detail: dict[str, Any] = msgspec.to_builtins(build_command(app, name))
+        detail["version"] = ""
+        commands[name] = detail
+    return {"manifest": manifest, "commands": commands}
+
+
+def render_package_file(app: App | None = None) -> str:
+    """Text of ``service/manifest.json`` (:func:`package_data` as indented JSON)."""
+    return json.dumps(package_data(app), indent=1, ensure_ascii=False) + "\n"

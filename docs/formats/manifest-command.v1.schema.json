@@ -1,0 +1,103 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest-command.v1.schema.json",
+  "title": "manifest-command.v1",
+  "description": "One command in full: `manifest COMMAND`, `GET /api/manifest/{command}`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "manifest-command.v1"
+      ]
+    },
+    "command": {
+      "description": "Command name.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Tool version.",
+      "type": "string"
+    },
+    "usage": {
+      "description": "As in manifest.v1 commands.",
+      "type": "string"
+    },
+    "description": {
+      "description": "The command's --help text without the parameter list (output, exit codes).",
+      "type": "string"
+    },
+    "output": {
+      "description": "Document printed (atlas-log schema NAME).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "exit": {
+      "description": "Possible exit codes (see manifest.v1 exit_codes).",
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "default": []
+    },
+    "params": {
+      "description": "Arguments, then options, in --help order.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManifestParam"
+      },
+      "default": []
+    }
+  },
+  "required": [
+    "schema",
+    "command",
+    "version",
+    "usage",
+    "description"
+  ],
+  "$defs": {
+    "ManifestParam": {
+      "title": "ManifestParam",
+      "description": "One argument or option of a command.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "LOGSET (argument, ... = several) or --option.",
+          "type": "string"
+        },
+        "type": {
+          "description": "str, int, float, path, flag or choices a|b|c; * = repeatable.",
+          "type": "string"
+        },
+        "default": {
+          "description": "Default value, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "help": {
+          "description": "Its --help text.",
+          "type": "string",
+          "default": ""
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ]
+    }
+  }
+}

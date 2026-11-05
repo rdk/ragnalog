@@ -7,8 +7,8 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.cli.manifest import manifest_document
 from atlas_log_analyzer.service.documents import DOCUMENTS, ROW_COMPONENTS
+from atlas_log_analyzer.service.manifest import command_document, manifest_document
 from atlas_log_analyzer.webapp import Settings, create_app
 from atlas_log_analyzer.webapp.openapi import API_DOCUMENTS
 
@@ -75,6 +75,10 @@ def test_manifest_route_is_the_cli_manifest(empty_client: TestClient) -> None:
     assert response.status_code == 200
     assert response.json() == manifest_document()
     assert response.json()["schema"] == "manifest.v1"
+    one = empty_client.get("/api/manifest/frames")
+    assert one.status_code == 200 and one.json() == command_document("frames")
+    missing = empty_client.get("/api/manifest/nope")
+    assert missing.status_code == 404 and missing.json()["error"]["code"] == "not_found"
 
 
 def test_manifest_route_needs_the_token(tmp_path: Path) -> None:

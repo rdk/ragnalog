@@ -145,6 +145,7 @@ EXTRA: list[Extra] = [
     Extra("schema.v1", cli=["schema", "entries"]),
     Extra("schema.v1", cli=["schema", "triage.v1"]),
     Extra("manifest.v1", cli=["manifest"], api="/api/manifest"),
+    Extra("manifest-command.v1", cli=["manifest", "frames"], api="/api/manifest/frames"),
     Extra("health.v1", api="/api/health"),
     Extra("timeline.v1", api="/api/sets/edge/timeline"),
     Extra("report.v1", api="/api/sets/edge/report?compare=sample"),

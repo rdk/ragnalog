@@ -5,7 +5,9 @@ Writes, for every JSON document (``service.documents.DOCUMENTS``),
 (the stored tables ``entries``, ``groups``, ``merges``, ``logset`` keep their
 column docs and gain a JSON section; ``report.v1.md`` is hand-written), and the
 generated column blocks of ``docs/cli.md`` (between
-``<!-- generated:NAME ... -->`` and ``<!-- /generated -->``).
+``<!-- generated:NAME ... -->`` and ``<!-- /generated -->``), and the agent
+manifest ``src/atlas_log_analyzer/service/manifest.json`` (``manifest.v1`` and
+``manifest-command.v1`` of every command, from the cyclopts app).
 
 Run: ``uv run python docs/formats/generate.py``
 """
@@ -28,6 +30,7 @@ from atlas_log_analyzer.store.schema import SCHEMA_NAMES, schema_json
 
 HERE = Path(__file__).parent
 CLI_MD = HERE.parent / "cli.md"
+PACKAGE_MANIFEST = HERE.parents[1] / "src" / "atlas_log_analyzer" / "service" / "manifest.json"
 BLOCK_RE = re.compile(
     r"(?P<open><!-- generated:(?P<name>[\w-]+)[^>]*-->\n)"
     r"(?P<body>.*?)"
@@ -236,6 +239,9 @@ def outputs() -> dict[Path, str]:
         files[HERE / f"{name}.schema.json"] = render_schema(name)
         if name.removesuffix(".v1") not in SCHEMA_NAMES and name not in HAND_WRITTEN:
             files[HERE / f"{name}.md"] = render_document(name)
+    from atlas_log_analyzer.cli.manifest import render_package_file
+
+    files[PACKAGE_MANIFEST] = render_package_file()
     return files
 
 

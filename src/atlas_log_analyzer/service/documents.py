@@ -705,6 +705,31 @@ class Manifest(Struct, kw_only=True, tag_field="schema", tag="manifest.v1"):
     env: Annotated[dict[str, str], _d("Environment variables.")]
 
 
+class ManifestParam(Struct, kw_only=True, omit_defaults=True):
+    """One argument or option of a command."""
+
+    name: Annotated[str, _d("LOGSET (argument, ... = several) or --option.")]
+    type: Annotated[str, _d("str, int, float, path, flag or choices a|b|c; * = repeatable.")]
+    default: Annotated[str | None, _d("Default value, if any.")] = None
+    help: Annotated[str, _d("Its --help text.")] = ""
+
+
+class ManifestCommandDetail(
+    Struct, kw_only=True, omit_defaults=True, tag_field="schema", tag="manifest-command.v1"
+):
+    """One command in full: `manifest COMMAND`, `GET /api/manifest/{command}`."""
+
+    command: Annotated[str, _d("Command name.")]
+    version: Annotated[str, _d("Tool version.")]
+    usage: Annotated[str, _d("As in manifest.v1 commands.")]
+    description: Annotated[
+        str, _d("The command's --help text without the parameter list (output, exit codes).")
+    ]
+    output: Annotated[str | None, _d("Document printed (atlas-log schema NAME).")] = None
+    exit: Annotated[list[int], _d("Possible exit codes (see manifest.v1 exit_codes).")] = []
+    params: Annotated[list[ManifestParam], _d("Arguments, then options, in --help order.")] = []
+
+
 Document = (
     Sets
     | Logset
@@ -730,6 +755,7 @@ Document = (
     | ReportEntries
     | Report
     | Manifest
+    | ManifestCommandDetail
 )
 """Any document; `schema` selects the Struct."""
 

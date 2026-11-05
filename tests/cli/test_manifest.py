@@ -10,8 +10,13 @@ from pathlib import Path
 import msgspec
 
 from atlas_log_analyzer.cli.app import app
-from atlas_log_analyzer.cli.manifest import ENV, WORKFLOW, build_manifest
-from atlas_log_analyzer.service.documents import DOCUMENTS, Manifest, convert
+from atlas_log_analyzer.cli.manifest import ENV, WORKFLOW, build_command, build_manifest
+from atlas_log_analyzer.service.documents import (
+    DOCUMENTS,
+    Manifest,
+    ManifestCommandDetail,
+    convert,
+)
 from atlas_log_analyzer.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
 
 from .conftest import Invoke
@@ -120,3 +125,26 @@ def test_manifest_table_mode_is_indented_json(cli: Invoke) -> None:
     assert result.code == 0
     assert json.loads(result.stdout)["schema"] == "manifest.v1"
     assert result.stdout.startswith('{\n  "schema"')
+
+
+def test_manifest_command_describes_one_command_in_full(cli: Invoke) -> None:
+    for name in COMMANDS:
+        result = cli("--output", "json", "manifest", name)
+        assert result.code == 0, name
+        doc = result.json()
+        assert isinstance(convert(doc), ManifestCommandDetail), name
+        assert doc == msgspec.to_builtins(build_command(app, name)), name
+    frames = cli("--output", "json", "manifest", "frames").json()
+    assert frames["output"] == "frames.v1" and frames["usage"].startswith("LOGSET REF ")
+    assert "Output (json):" in frames["description"] and "Args:" not in frames["description"]
+    params = {p["name"]: p for p in frames["params"]}
+    assert params["--limit"]["type"] == "int" and params["--limit"]["default"] == "10"
+    assert params["--all"]["type"] == "flag" and "default" not in params["--all"]
+    assert params["LOGSET"]["help"]
+
+
+def test_manifest_unknown_command(cli: Invoke) -> None:
+    result = cli("--output", "json", "manifest", "nope")
+    assert result.code == 2
+    error = result.json()["error"]
+    assert error["code"] == "not_found" and "frames" in error["hint"]

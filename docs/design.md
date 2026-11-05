@@ -418,7 +418,9 @@ Generated from the Structs: the JSON Schemas and field tables in
 `docs/formats/` (`docs/formats/generate.py`, `atlas-log schema NAME.v1`), the
 OpenAPI components and response schemas of the web app (`webapp/openapi.py`)
 and the document list of the agent manifest (`manifest.v1`, `cli/manifest.py`,
-which takes everything else but its workflow table from the cyclopts app).
+which takes everything else but its workflow table from the cyclopts app and is
+generated into `service/manifest.json`, so the web app serves it without
+importing `cli`).
 `tests/contract/test_schemas.py` validates every parity-case document, from
 both front ends, against its Struct and its JSON Schema; a key missing from the
 Struct fails it.
