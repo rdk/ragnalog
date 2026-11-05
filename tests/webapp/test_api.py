@@ -48,7 +48,7 @@ def test_sets_list_with_summary(client: TestClient) -> None:
 
 
 def test_sets_brief_and_set_as_cli(client: TestClient, store_dir: Path) -> None:
-    from atlas_log_analyzer.store.views import SET_BRIEF
+    from atlas_log_analyzer.service.views import SET_BRIEF
 
     full = _json(client, "/api/sets")
     brief = _json(client, "/api/sets?brief=true")
@@ -412,7 +412,7 @@ def test_levels_as_cli(tmp_path: Path) -> None:
 
 
 def test_group_and_context_columns_and_brief(client: TestClient, store_dir: Path) -> None:
-    from atlas_log_analyzer.store.views import DETAIL_BRIEF, GROUP_BRIEF
+    from atlas_log_analyzer.service.views import DETAIL_BRIEF, GROUP_BRIEF
 
     sig = _first_signature(client)
     doc = _json(client, f"/api/sets/mini/groups/{sig}?brief=true")

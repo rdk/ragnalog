@@ -147,8 +147,8 @@ def error_from_exception(exc: BaseException) -> CliError | None:
     from cyclopts import CycloptsError
 
     from atlas_log_analyzer.core.formats.registry import UnknownFormatError
+    from atlas_log_analyzer.service.views import AmbiguousSignature
     from atlas_log_analyzer.store.store import StoreError
-    from atlas_log_analyzer.store.views import AmbiguousSignature
 
     if isinstance(exc, CliError):
         return exc

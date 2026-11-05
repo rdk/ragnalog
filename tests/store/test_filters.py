@@ -95,3 +95,11 @@ def test_filter_selects_expected_rows(built: Built) -> None:
     assert errors.height > 0 and set(errors["level"].to_list()) == {int(LogLevel.ERROR)}
     warn_up = ls.entries(where=EntryFilter(min_level=LogLevel.WARN), columns=["level"])
     assert set(warn_up["level"].to_list()) <= {40, 50, 60}
+
+
+def test_store_views_shim_reexports_service_views() -> None:
+    from atlas_log_analyzer.service import views
+    from atlas_log_analyzer.store import views as old
+
+    assert old.frames_view is views.frames_view and old.ENTRY_BRIEF is views.ENTRY_BRIEF
+    assert set(old.__all__) <= set(views.__all__)

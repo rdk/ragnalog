@@ -18,15 +18,7 @@ from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.report import example_entries
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
-from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
-from atlas_log_analyzer.store.query import diff as store_diff
-from atlas_log_analyzer.store.query import span_hours, with_rates
-from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
-from atlas_log_analyzer.store.triage import triage as store_triage
-from atlas_log_analyzer.store.views import (
+from atlas_log_analyzer.service.views import (
     DEFAULT_MAX_RAW,
     DETAIL_BRIEF,
     ENTRY_BRIEF,
@@ -40,6 +32,14 @@ from atlas_log_analyzer.store.views import (
     select_columns,
     set_item,
 )
+from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
+from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
+from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
+from atlas_log_analyzer.store.query import diff as store_diff
+from atlas_log_analyzer.store.query import span_hours, with_rates
+from atlas_log_analyzer.store.schema import SCHEMA_VERSION
+from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
+from atlas_log_analyzer.store.triage import triage as store_triage
 from atlas_log_analyzer.webapp.errors import ApiError
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.responses import JSON

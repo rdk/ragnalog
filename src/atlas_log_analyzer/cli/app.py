@@ -48,10 +48,7 @@ from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
-from atlas_log_analyzer.store.schema import MERGES_SCHEMA
-from atlas_log_analyzer.store.views import (
+from atlas_log_analyzer.service.views import (
     DEFAULT_MAX_RAW,
     DETAIL_BRIEF,
     ENTRY_BRIEF,
@@ -66,6 +63,9 @@ from atlas_log_analyzer.store.views import (
     set_item,
     set_summary,
 )
+from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
+from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
+from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 
 # Startup time: the log-set reader (polars), the ingest pipeline and Parquet writer,
 # DuckDB and rich are imported by the commands that need them, not here.

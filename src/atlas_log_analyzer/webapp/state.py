@@ -12,10 +12,10 @@ import msgspec
 from fastapi import Request
 
 from atlas_log_analyzer.report import build_payload
+from atlas_log_analyzer.service.views import set_summary
 from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 from atlas_log_analyzer.store.store import Store, StoreError
-from atlas_log_analyzer.store.views import set_summary
 from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
 from atlas_log_analyzer.webapp.settings import Settings
 
@@ -128,7 +128,7 @@ class AppState:
                 del self._summaries[key]
 
     def summary(self, ls: LogSet) -> dict[str, int]:
-        """:func:`~atlas_log_analyzer.store.views.set_summary`, cached per set version."""
+        """:func:`~atlas_log_analyzer.service.views.set_summary`, cached per set version."""
         key = (ls.manifest.id, str(ls.manifest.created_at))
         with self._cache_lock:
             hit = self._summaries.get(key)

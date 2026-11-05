@@ -8,8 +8,8 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import Response
 
+from atlas_log_analyzer.service.views import AmbiguousSignature
 from atlas_log_analyzer.store.store import AmbiguousLogSet, StoreError
-from atlas_log_analyzer.store.views import AmbiguousSignature
 from atlas_log_analyzer.webapp.responses import JSON
 
 __all__ = ["ApiError", "error_doc", "install_handlers"]

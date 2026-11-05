@@ -79,7 +79,7 @@ ubuntu-latest and windows-latest.
   1 usage, 2 nothing found / parse failure, 3 store error. Results go to stdout,
   diagnostics to stderr. A command's docstring is its `--help`: keep the output
   shape and exit codes in it accurate, and update `docs/cli.md` with it.
-- Startup time: `cli/`, `store/__init__.py` and `store/views.py` import polars,
+- Startup time: `cli/`, `store/__init__.py` and `service/` import polars,
   DuckDB, rich, the ingest pipeline and the Parquet writer inside the functions
   that use them (annotations via `TYPE_CHECKING`); `tests/cli/test_startup.py`
   checks it. Keep `_version.py` equal to `project.version`.
