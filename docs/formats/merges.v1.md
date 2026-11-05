@@ -1,6 +1,6 @@
 # merges.v1
 
-Schema version 1.0. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema merges`.
+Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema merges`.
 
 Optional file `merges.parquet`, written by the `mine` step: Drain3 proposals to treat
 several signatures as one. It never changes `groups.parquet`; apply it as a view.

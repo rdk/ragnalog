@@ -16,7 +16,10 @@ Typical flow:
    an entry) drill into one group.
 5. `diff A B --rate` compares two sets.
 
-`sets --brief` and `set SET` show what is in the store. Agents start with
+`sets --brief` and `set SET` show what is in the store. A Jira Data Center
+cluster export (one ZIP with `job.json` and `NODE_atlassian-jira.log*`) becomes
+one set per node; `captures` lists such sets collected together and `label`
+sets a node, cluster or capture by hand (`cluster.md`). Agents start with
 `atlas-log manifest` (bare `atlas-log` prints the same JSON when stdout is not a
 terminal): the workflow, every command with its usage, output document and exit
 codes, and where the document schemas are.
@@ -164,6 +167,8 @@ two report them under different codes (the codes predate it and stay as they are
 | `group_not_found` | `not_found` | `not_found` | No group (or no entries) with this signature. |
 | `entry_not_found` | `not_found` | `not_found` | No entry with this id. |
 | `ref_not_found` | `not_found` | `not_found` | `frames`: neither an entry id nor a group signature. |
+| `capture_not_found` | `not_found` | `not_found` | No capture matches this `capture:ID` prefix, `cluster:NAME` or `cluster:NAME@DAY`. |
+| `ambiguous_capture` | `ambiguous` | `ambiguous` | Several captures match this capture id prefix or cluster day. |
 
 When the reader of stdout goes away early (`| head`), the command stops
 quietly with exit code 1 and no message, on Windows as well as POSIX.
@@ -174,6 +179,14 @@ Diagnostics and progress always go to stderr.
 
 Wherever a command takes `SET`, it accepts the log-set id, its `--name`, or a
 unique id prefix (resolved in that order).
+
+A capture (the sets of several cluster nodes collected together, see
+`captures`) is referred to as `capture:ID` (its id or a unique prefix of it),
+`cluster:NAME` (the newest capture of the cluster) or `cluster:NAME@YYYY-MM-DD`
+(the cluster's capture whose last entry falls on that UTC day). No match is
+reason `capture_not_found` (`not_found`, exit 2), several are
+`ambiguous_capture` (`ambiguous`, exit 1). The commands that take a capture
+come with the cluster views (`cluster.md` §6).
 
 ### Signature prefixes
 
@@ -207,10 +220,10 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 
 ## Commands
 
-### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine] [--force]`
+### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine] [--force] [--node N] [--cluster C] [--capture ID] [--split auto|prefix|dir|none]`
 
-Parse files/directories (directories: non-recursive `*.log*`; rotated `x.log.N`
-read oldest first) into a log set. The id is derived from the file digests:
+Parse files/directories/ZIP files (directories: non-recursive `*.log*`; rotated
+`x.log.N` read oldest first) into a log set, or one set per cluster node. The id is derived from the file digests:
 re-ingesting the same files prints the existing manifest
 (`ingest.existing: true`) unless `--overwrite`. Format detection sniffs the
 first 200 lines of each file (named files first) until a format recognises
@@ -235,7 +248,8 @@ entries count in `ingest.parse_errors`.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@1|L+G+E+F0|sig1|mask1",
+ "recipe_key": "jira@1|L+G+E+F0|sig1|mask1", "node": "NODE1", "cluster": "jira-test",
+ "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
  "merges": [{"cluster_id", "signatures": [], "drain_template"}]}
@@ -255,9 +269,67 @@ re-ingesting existing files with another `--name` keeps the set's name and
 warns `--name tonight ignored: set exists as 'night'` (use `--overwrite` to
 rebuild it under the new name).
 
-`merges` only with `--mine`. Exit: 0; 1 unknown format / missing drain3; 2 no
-files, format not detected, a large named file not in the format
-(`not_in_format`), or zero entries (manifest still printed); 3.
+`merges` only with `--mine`. Exit: 0; 1 unknown format / missing drain3, a bad
+ZIP, a `--split` that does not fit, `--node` with a split; 2 no files, format
+not detected, a large named file not in the format (`not_in_format`), or zero
+entries (manifest still printed); 3.
+
+**ZIP files** are extracted into the store (`<store>/.spool/`) and removed
+afterwards, also after an error. Only `job.json` and `*.log*` members are
+extracted, directories inside the archive are kept, links and other special
+entries are skipped. A member with an absolute path, a drive or `..` makes the
+whole archive fail (`invalid_value`), as do encrypted members and more than
+32 GiB extracted by one ingest (`MAX_ZIP_BYTES`).
+
+**Cluster nodes.** `--split` decides whether the input is one set or one set
+per node:
+
+| `--split` | One set per node when |
+|---|---|
+| `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files (one node each). Otherwise: one set, as before. |
+| `prefix` | Files named `<NODE>_<log name>` (one node is enough). |
+| `dir` | Each directory given is a node, or the sub-directories of the one directory given. |
+| `none` | Never: one set (`job.json` is not read). |
+
+Files that belong to no node are left out with a warning; a node whose files are
+not in the format gets no set. Rotated files are ordered per node.
+
+- **Node id**: `--node` (only without a split; with one it is `invalid_value`),
+  else the node names of `job.json`, else the file prefix, else the directory
+  name.
+- **Cluster**: `--cluster`, else the cluster of the newest earlier set of the
+  same node (for a split: when the nodes' earlier sets agree), else none.
+- **Capture id**: `--capture`, else the export's `jobId`, else (a split) the
+  first 16 hex characters of xxh3-64 over the sorted member set ids. A single
+  set gets a capture only from `--capture`.
+- **Names** (split): `<prefix>_<node in lower case>`, prefix `--name`, else the
+  cluster, else the first 8 characters of the capture id. A name another set has
+  already gets `_2`, `_3`, … and a warning.
+- **Node hints**: the format reads the first 65,536 lines of each node's newest
+  file for lines in which a node names itself (Jira: `nodeId: X`, `on node X
+  because`). A set labelled with another node gets a warning; a single set
+  without a node only gets a warning that suggests `--node X` (labels stay
+  explicit).
+- **Again**: re-ingesting the same files reuses the sets (`ingest.existing`)
+  and gives them the node, cluster and capture they lack; a label they have
+  with another value is kept, with a warning (change it with `label`).
+  `--overwrite` keeps the labels it is not given.
+
+A split prints `ingest-capture.v1` instead of `logset.v1`
+([formats/ingest-capture.v1.md](formats/ingest-capture.v1.md)):
+
+```jsonc
+{"schema": "ingest-capture.v1",
+ "capture": {"capture": "2026-11-05_05-44-10-107_ABC", "cluster": "jira-test",
+             "first_ts", "last_ts", "entry_count",
+             "nodes": [{"node": "NODE1", "id", "name": "jira-test_node1",
+                        "first_ts", "last_ts", "entry_count"}]},   // all sets of the capture
+ "sets": [<logset.v1 with "ingest", as above>, ...],              // this ingest's sets, by node
+ "warnings": ["job.json: node NODE3 reported status FAILED: …", "NODE2: …"]}
+```
+
+`warnings` holds the split's notes, then each set's `ingest.warnings` prefixed
+with its node. Exit 2 when no set got an entry.
 
 ### `sets [--brief]`
 
@@ -274,10 +346,42 @@ group table as `GET /api/sets` does (`null` when a set cannot be read).
 version signs its format and spec with (a format, signature or masking-rule
 version changed since it was built): such a set is not comparable with new
 ones, triage skips it as a baseline, and `upgrade` rebuilds it.
+`node`, `cluster` and `capture` say which cluster node a set holds, the
+instance it belongs to and the capture it was collected in (`null` when
+unknown; manifests of schema 1.0 lack them and read as `null`).
 `--brief` keeps only `id, name, first_ts, last_ts, entry_count, group_count,
-summary, stale` per item (no `sources`, no versions). Listing reads only the
+summary, stale, node, capture` per item (no `sources`, no versions). Listing reads only the
 manifests and two columns of each group table, without polars. Exit: 0 (also
 empty); 3.
+
+### `captures [--brief]`
+
+The captures in the store: the sets that share a `capture` id (one cluster log
+export, one `ingest` that split its input, or `label --capture`), newest
+`last_ts` first. Reads the manifests only (no polars); the twin of
+`GET /api/captures`.
+
+```json
+{"schema": "captures.v1", "count": 1,
+ "items": [{"capture": "2026-11-05_05-44-10-107_ABC", "cluster": "jira-test",
+            "first_ts": "…", "last_ts": "…", "entry_count": 1362000,
+            "nodes": [{"node": "NODE1", "id": "…", "name": "jira-test_node1",
+                       "first_ts": "…", "last_ts": "…", "entry_count": 615000}]}]}
+```
+
+`nodes` are the member sets sorted by node (a member without a node shows its
+name); `cluster` is the members' (the most common one when they differ).
+`--brief` keeps only `node`, `id` and `name` per node. Exit: 0 (also empty); 3.
+
+### `label SET [--node N] [--cluster C] [--capture ID]`
+
+Sets the cluster node, cluster and capture of a stored set and prints its
+manifest (`logset.v1`); the twin of `POST /api/sets/{ref}/label`. Only
+`manifest.json` is rewritten (under the store's write lock): the id, the name
+and the data stay. An option that is not given keeps its value, an empty one
+(`--node ""`) clears it. Values are letters, digits, `_`, `.` and `-`, at most
+128. Exit: 0; 1 no option or a bad value (`usage`, `invalid_value`); 3 unknown
+set.
 
 ### `set SET`
 
@@ -680,8 +784,8 @@ name (`usage`).
 
 ### `manifest`
 
-`manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 7 KB
-of compact JSON (under 8 KB), for agents:
+`manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 8 KB
+of compact JSON (under 9 KB), for agents:
 
 ```json
 {"schema": "manifest.v1", "tool": "atlas-log", "version": "0.1.0", "usage": "...", "notes": [str],

@@ -16,6 +16,7 @@ from typing import Any, Literal
 
 from atlas_log_analyzer.service.errors import OpError, from_exception
 from atlas_log_analyzer.service.ingest import ingest_paths
+from atlas_log_analyzer.service.params import IngestTarget
 from atlas_log_analyzer.store.pipeline import IngestProgress
 from atlas_log_analyzer.store.store import Store, StoreError
 
@@ -60,6 +61,8 @@ class Job:
     current_file: str | None = None
     result: dict[str, Any] | None = None
     error: dict[str, Any] | None = None
+    capture: dict[str, Any] | None = None
+    """The ``ingest-capture.v1`` document of a split ingest."""
     cancel_requested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -68,7 +71,7 @@ class Job:
             fraction = round(min(1.0, self.bytes_read / self.bytes_total), 4)
         else:
             fraction = 1.0 if self.state == "succeeded" else 0.0
-        return {
+        doc: dict[str, Any] = {
             "schema": "job.v1",
             "id": self.id,
             "kind": "ingest",
@@ -89,6 +92,9 @@ class Job:
             "result": self.result,
             "error": self.error,
         }
+        if self.capture is not None:
+            doc["capture"] = self.capture
+        return doc
 
 
 class JobManager:
@@ -217,18 +223,31 @@ class JobManager:
             job.error = err.envelope()["error"]
             self._finish(job, "failed")
             return
-        job.result = doc
-        job.entries = int(doc["entry_count"])
+        if doc["schema"] == "ingest-capture.v1":  # a split: result is its first set
+            sets = doc["sets"]
+            job.result, job.capture = sets[0], doc
+        else:
+            sets = [doc]
+            job.result = doc
+        job.entries = sum(int(s["entry_count"]) for s in sets)
         job.bytes_read = job.bytes_total
         job.current_file = None
         if self._on_done is not None:
-            self._on_done(str(doc["id"]))
+            for item in sets:
+                self._on_done(str(item["id"]))
         self._finish(job, "succeeded")
 
     def _ingest(
         self, job: Job, paths: list[Path], progress: Callable[[IngestProgress], None]
     ) -> dict[str, Any]:
         opts = job.options
+        target = IngestTarget.parse(
+            node=opts.get("node"),
+            cluster=opts.get("cluster"),
+            capture=opts.get("capture"),
+            split=opts.get("split"),
+            front="api",
+        )
         return ingest_paths(
             self.store,
             paths,
@@ -238,6 +257,7 @@ class JobManager:
             overwrite=bool(opts.get("overwrite")),
             mine=bool(opts.get("mine")),
             force=bool(opts.get("force")),
+            target=target,
             progress=progress,
             progress_every=20_000,
             front="api",

@@ -10,6 +10,7 @@ from pathlib import Path
 import xxhash
 
 __all__ = [
+    "LOG_GLOB",
     "MAX_LINE_BYTES",
     "Line",
     "SourceFile",
@@ -21,6 +22,8 @@ __all__ = [
 ]
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
+LOG_GLOB = "*.log*"
+"""Names of the log files :func:`discover_sources` reads from a directory."""
 _CHUNK = 1 << 18
 MAX_LINE_BYTES = 1 << 20
 """Default cap of one line (1 MiB); :func:`iter_raw_lines` skips the rest of a longer line."""
@@ -68,7 +71,7 @@ def _rotation(path: Path) -> tuple[str, int]:
     return m.group("base"), int(m.group("n"))
 
 
-def discover_sources(paths: Iterable[Path | str], *, glob: str = "*.log*") -> list[SourceFile]:
+def discover_sources(paths: Iterable[Path | str], *, glob: str = LOG_GLOB) -> list[SourceFile]:
     """Expand files and directories into sources, ordered oldest-first.
 
     Directories are searched (non-recursively) with ``glob``. Rotated files

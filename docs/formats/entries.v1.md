@@ -1,6 +1,6 @@
 # entries.v1
 
-Schema version 1.0. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema entries`.
+Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema entries`.
 
 File `entries.parquet` in a log-set directory: one row per log entry, deduplicated
 on `id`. Parquet, zstd compression, row groups of about 64k rows, rows in ingest order

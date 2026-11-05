@@ -1,9 +1,11 @@
-"""Documents that write: ingest, regroup, upgrade, remove and the report file.
+"""Documents that write: ingest, label, regroup, upgrade, remove and the report file.
 
 The front ends call these instead of the store's writers. Ingest is
-:func:`ingest` (sources already selected, the CLI) or :func:`ingest_paths`
-(discovery included, the web app's jobs); both return the ``logset.v1`` manifest
-with ``ingest`` and, when mined, ``merges``.
+:func:`ingest_paths` (ZIP inputs, the split into one set per node and discovery
+included: the CLI and the web app's jobs) or :func:`ingest` (sources already
+selected, one set). One set gives the ``logset.v1`` manifest with ``ingest`` and,
+when mined, ``merges``; a split gives ``ingest-capture.v1`` with one such manifest
+per node (docs/cluster.md, §3).
 """
 
 from __future__ import annotations
@@ -11,22 +13,31 @@ from __future__ import annotations
 import dataclasses
 import re
 from collections.abc import Callable, Iterable, Sequence
+from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Protocol
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from atlas_log_analyzer.service.errors import Front, OpError, flag
-from atlas_log_analyzer.service.params import parse_level
-from atlas_log_analyzer.service.sets import Sets, open_set
+from atlas_log_analyzer.service.params import IngestTarget, check_label, parse_level
+from atlas_log_analyzer.service.sets import Sets, open_set, resolving
 
 if TYPE_CHECKING:
+    from atlas_log_analyzer.core.formats.base import LogFormat
+    from atlas_log_analyzer.core.reader import SourceFile
     from atlas_log_analyzer.store.logset import LogSet
+    from atlas_log_analyzer.store.manifest import LogSetManifest
     from atlas_log_analyzer.store.pipeline import IngestProgress, IngestResult, SourceSelection
-    from atlas_log_analyzer.store.store import Store
+    from atlas_log_analyzer.store.split import Split
+    from atlas_log_analyzer.store.store import Label, Store
 
 __all__ = [
+    "HINT_LINES",
+    "Labeller",
     "Removable",
     "ingest",
     "ingest_paths",
+    "label",
     "regroup",
     "remove",
     "report_file",
@@ -37,6 +48,11 @@ __all__ = [
 
 type Doc = dict[str, Any]
 type Progress = Callable[[IngestProgress], None]
+type Announce = Callable[[str], None]
+
+HINT_LINES: Final = 65_536
+"""Lines of a node's newest file read for :func:`~atlas_log_analyzer.core.formats.base.
+node_hints`."""
 
 
 def _manifest(ls: LogSet) -> Doc:
@@ -61,8 +77,8 @@ def select(
     return select_sources(paths, fmt, force=force)
 
 
-def _document(result: IngestResult) -> Doc:
-    doc = _manifest(result.logset)
+def _document(result: IngestResult, manifest: LogSetManifest | None = None) -> Doc:
+    doc = dict((manifest or result.logset.manifest).to_dict())
     doc["ingest"] = result.ingest_dict()
     if result.merges is not None:
         doc["merges"] = result.merges
@@ -120,6 +136,26 @@ def ingest(
     return _document(dataclasses.replace(result, skipped=skipped))
 
 
+@dataclass(frozen=True, slots=True)
+class _Options:
+    """What one :func:`ingest_paths` call applies to every set it writes."""
+
+    fmt: str | None
+    name: str | None
+    frames: int | None
+    overwrite: bool
+    mine: bool
+    force: bool
+    progress: Progress | None
+    progress_every: int
+    announce: Announce | None
+    front: Front
+
+    def say(self, text: str) -> None:
+        if self.announce is not None:
+            self.announce(text)
+
+
 def ingest_paths(
     store: Store,
     paths: Iterable[Path],
@@ -130,31 +166,370 @@ def ingest_paths(
     overwrite: bool = False,
     mine: bool = False,
     force: bool = False,
+    target: IngestTarget | None = None,
     progress: Progress | None = None,
     progress_every: int | None = None,
+    announce: Announce | None = None,
     front: Front,
 ) -> Doc:
-    """Discover, detect, parse and store ``paths`` in one call (the web app's ingest jobs)."""
-    from atlas_log_analyzer.store.pipeline import PROGRESS_EVERY
-    from atlas_log_analyzer.store.pipeline import ingest_paths as pipeline_ingest
+    """Extract, split, discover, parse and store ``paths`` (``ingest``, the web app's jobs).
 
+    ``.zip`` inputs are extracted into the store's spool (``job.json`` and log files
+    only) and removed afterwards. ``target.split`` decides whether the inputs are one
+    set or one set per node (:func:`~atlas_log_analyzer.store.split.plan_split`).
+
+    One set: ``logset.v1`` with ``ingest`` (and ``merges``), labelled with
+    ``target.node``, ``target.cluster`` (default: the cluster of the newest set of
+    that node) and ``target.capture``. A split: ``ingest-capture.v1``
+    ``{capture, sets, warnings}``, one set per node named ``<prefix>_<node>`` (prefix
+    ``name``, else the cluster, else the first 8 characters of the capture id) and
+    labelled with the node, the cluster and the capture id (``target.capture``, else
+    the export's ``jobId``, else a hash of the set ids). Existing sets are reused
+    (``ingest.existing``) and get the labels they lack. ``announce`` receives one-line
+    notes for people (the CLI prints them on stderr).
+
+    Raises:
+        OpError: ``usage`` without paths; ``invalid_value`` for a bad option, a bad ZIP
+            or a forced split that does not fit, or ``node`` with a split;
+            ``missing_dependency`` for ``mine`` without drain3; the pipeline's errors
+            are mapped by ``from_exception`` at the boundary.
+
+    """
+    from atlas_log_analyzer.store.pipeline import PROGRESS_EVERY
+    from atlas_log_analyzer.store.split import SPOOL_DIR, expand_archives, plan_split
+
+    path_list = list(paths)
+    if not path_list:
+        raise OpError("usage", "at least one PATH is required")
     _check_frames(frames, front)
+    target = (target or IngestTarget()).checked(front=front)
+    opts = _Options(
+        fmt=fmt,
+        name=name,
+        frames=frames,
+        overwrite=overwrite,
+        mine=mine,
+        force=force,
+        progress=progress,
+        progress_every=progress_every or PROGRESS_EVERY,
+        announce=announce,
+        front=front,
+    )
     try:
-        result = pipeline_ingest(
-            store,
-            paths,
-            fmt=fmt,
-            name=name,
-            frames=frames,
-            overwrite=overwrite,
-            mine=mine,
-            force=force,
-            progress=progress,
-            progress_every=progress_every or PROGRESS_EVERY,
-        )
+        with expand_archives(path_list, store.root / SPOOL_DIR) as inputs:
+            split = plan_split(inputs, target.split)
+            if split.kind is None:
+                return _single(store, split, target, opts)
+            if target.node is not None:
+                nodes = ", ".join(n.node for n in split.nodes)
+                raise OpError(
+                    "invalid_value",
+                    f"{flag('node', front)} labels one set, but the input splits into "
+                    f"nodes {nodes} ({split.kind}); pass {flag('split', front)} none to "
+                    "ingest it as one set",
+                )
+            return _split(store, split, target, opts)
     except ImportError as exc:
         raise _missing_mine(exc, front) from exc
-    return _document(result)
+
+
+def _select(split: Split, o: _Options) -> SourceSelection:
+    from atlas_log_analyzer.store.pipeline import select_sources
+
+    selection = select_sources(split.paths, o.fmt, force=o.force)
+    if selection.skipped:
+        names = ", ".join(src.path.name for src in selection.skipped[:5])
+        more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
+        o.say(
+            f"skipped {len(selection.skipped)} file(s) that are not {selection.fmt.name} "
+            f"logs: {names}{more}"
+        )
+    return selection
+
+
+def _size(sources: Sequence[SourceFile]) -> str:
+    return f"{len(sources)} file(s), {sum(s.size for s in sources) / 1e6:.1f} MB"
+
+
+def _single(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc:
+    from atlas_log_analyzer.store.pipeline import ingest_sources
+    from atlas_log_analyzer.store.store import logset_id
+
+    selection = _select(split, o)
+    o.say(f"ingesting {_size(selection.sources)}, format {selection.fmt.name}")
+    manifests = store.list()
+    old = _by_id(manifests, logset_id(s.xxh3 for s in selection.sources))
+    keep = old if o.overwrite else None  # a rebuild keeps the labels it is not given
+    node = target.node or (keep.node if keep else None)
+    cluster = target.cluster or (keep.cluster if keep else None) or _node_cluster(manifests, node)
+    capture = target.capture or (keep.capture if keep else None)
+    result = ingest_sources(
+        store,
+        selection.sources,
+        selection.fmt,
+        name=o.name,
+        frames=o.frames,
+        overwrite=o.overwrite,
+        mine=o.mine,
+        progress=o.progress,
+        progress_every=o.progress_every,
+        node=node,
+        cluster=cluster,
+        capture=capture,
+    )
+    m, warnings = _apply_identity(store, result.logset.manifest, node, cluster, capture, o.front)
+    warnings += _hint_warnings(selection.fmt, selection.sources, m, o.front, split=False)
+    result = dataclasses.replace(
+        result,
+        skipped=tuple(str(s.path) for s in selection.skipped),
+        warnings=(*result.warnings, *warnings),
+    )
+    return _document(result, m)
+
+
+def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc:
+    import msgspec
+
+    from atlas_log_analyzer.service.captures import capture_id, get_capture
+    from atlas_log_analyzer.store.pipeline import NoSourcesFound, ingest_sources
+    from atlas_log_analyzer.store.store import logset_id
+
+    selection = _select(split, o)
+    fmt = selection.fmt
+    node_of = split.node_of()
+    sources: dict[str, list[SourceFile]] = {n.node: [] for n in split.nodes}
+    skipped: dict[str, list[str]] = {n.node: [] for n in split.nodes}
+    for src in selection.sources:
+        if (node := node_of.get(src.path)) is not None:
+            sources[node].append(src)
+    for src in selection.skipped:
+        if (node := node_of.get(src.path)) is not None:
+            skipped[node].append(str(src.path))
+    warnings = list(split.warnings)
+    for node, found in sources.items():
+        if not found:
+            warnings.append(f"node {node} has no {fmt.name} log files: no set for it")
+    members = sorted((node, found) for node, found in sources.items() if found)
+    if not members:
+        raise NoSourcesFound(f"no {fmt.name} log files of any node in the input")
+    ids = {node: logset_id(s.xxh3 for s in found) for node, found in members}
+    job_id = split.job.id if split.job is not None else None
+    capture = target.capture or job_id or capture_id(ids.values())
+    manifests = store.list()
+    cluster = target.cluster or _capture_cluster([n for n, _ in members], manifests, warnings)
+    prefix = o.name or cluster or capture[:8]
+    o.say(
+        f"capture {capture}: {len(members)} node(s) ({split.kind} split), "
+        f"format {fmt.name}, cluster {cluster or '-'}"
+    )
+    total = sum(s.size for _, found in members for s in found)
+    done_bytes = done_entries = 0
+    docs: list[Doc] = []
+    for node, found in members:
+        old = _by_id(manifests, ids[node])
+        set_name = None
+        if old is None or o.overwrite:
+            set_name = _free_name(f"{prefix}_{node.lower()}", ids[node], manifests, warnings)
+        o.say(f"  {node}: {_size(found)}" + (f" -> {set_name}" if set_name else ""))
+        result = ingest_sources(
+            store,
+            found,
+            fmt,
+            name=set_name,
+            frames=o.frames,
+            overwrite=o.overwrite,
+            mine=o.mine,
+            progress=_offset(o.progress, done_bytes, done_entries, total),
+            progress_every=o.progress_every,
+            node=node,
+            cluster=cluster or (old.cluster if old is not None and o.overwrite else None),
+            capture=capture,
+        )
+        m, notes = _apply_identity(store, result.logset.manifest, node, cluster, capture, o.front)
+        notes += _hint_warnings(fmt, found, m, o.front, split=True)
+        result = dataclasses.replace(
+            result, skipped=tuple(skipped[node]), warnings=(*result.warnings, *notes)
+        )
+        warnings.extend(f"{node}: {w}" for w in result.warnings)
+        docs.append(_document(result, m))
+        done_bytes += sum(s.size for s in found)
+        done_entries += result.parsed_entries
+    info = get_capture(store, capture)
+    return {
+        "schema": "ingest-capture.v1",
+        "capture": msgspec.to_builtins(info),
+        "sets": docs,
+        "warnings": warnings,
+    }
+
+
+def _by_id(manifests: Sequence[LogSetManifest], set_id: str) -> LogSetManifest | None:
+    return next((m for m in manifests if m.id == set_id), None)
+
+
+def _node_cluster(manifests: Sequence[LogSetManifest], node: str | None) -> str | None:
+    """Cluster of the newest set (``manifests`` are newest first) of ``node`` that has one."""
+    if node is None:
+        return None
+    return next((m.cluster for m in manifests if m.node == node and m.cluster), None)
+
+
+def _capture_cluster(
+    nodes: Sequence[str], manifests: Sequence[LogSetManifest], warnings: list[str]
+) -> str | None:
+    """Return the one cluster of the earlier sets of these nodes (``None``: none or several)."""
+    known = {c for node in nodes if (c := _node_cluster(manifests, node)) is not None}
+    if len(known) > 1:
+        warnings.append(
+            f"earlier sets of these nodes belong to clusters {', '.join(sorted(known))}; "
+            "the capture gets no cluster (give one with cluster)"
+        )
+        return None
+    return next(iter(known), None)
+
+
+def _free_name(
+    base: str, set_id: str, manifests: Sequence[LogSetManifest], warnings: list[str]
+) -> str:
+    """Return ``base``, or ``base_2``, ``base_3``, … when another set has that name already."""
+    taken = {m.name for m in manifests if m.name is not None and m.id != set_id}
+    name, k = base, 2
+    while name in taken:
+        name, k = f"{base}_{k}", k + 1
+    if name != base:
+        warnings.append(f"name {base} is used by another set: this set is named {name}")
+    return name
+
+
+def _offset(progress: Progress | None, done_bytes: int, done: int, total: int) -> Progress | None:
+    """Report the progress of one node's ingest as part of the whole capture."""
+    if progress is None:
+        return None
+    from atlas_log_analyzer.store.pipeline import IngestProgress
+
+    def report(p: IngestProgress) -> None:
+        progress(
+            IngestProgress(
+                entries=done + p.entries,
+                bytes_read=done_bytes + p.bytes_read,
+                bytes_total=total,
+                current_file=p.current_file,
+            )
+        )
+
+    return report
+
+
+def _relabel_how(front: Front) -> str:
+    return "`atlas-log label`" if front == "cli" else "POST /api/sets/{ref}/label"
+
+
+def _apply_identity(
+    store: Store,
+    m: LogSetManifest,
+    node: str | None,
+    cluster: str | None,
+    capture: str | None,
+    front: Front,
+) -> tuple[LogSetManifest, list[str]]:
+    """Give an existing set the labels it lacks; warn about those it has otherwise."""
+    changes: dict[str, str] = {}
+    warnings: list[str] = []
+    for key, want in (("node", node), ("cluster", cluster), ("capture", capture)):
+        have = getattr(m, key)
+        if want is None or have == want:
+            continue
+        if have is None:
+            changes[key] = want
+        else:
+            warnings.append(
+                f"{flag(key, front)} {want} ignored: set {m.name or m.id} has {key} {have} "
+                f"(change it with {_relabel_how(front)})"
+            )
+    if changes:
+        m = store.label(m.id, **changes)
+    return m, warnings
+
+
+def _hint_lines(source: SourceFile) -> list[str]:
+    from atlas_log_analyzer.core.reader import iter_raw_lines
+
+    lines = iter_raw_lines(source.path)
+    try:
+        return [text for _, _, text in islice(lines, HINT_LINES)]
+    finally:
+        lines.close()
+
+
+def _hint_warnings(
+    fmt: LogFormat, sources: Sequence[SourceFile], m: LogSetManifest, front: Front, *, split: bool
+) -> list[str]:
+    """Compare the node a set is labelled with and the node its newest file names.
+
+    Without a node (one set, no ``node`` given or recorded) a unanimous hint is only
+    suggested: labels stay explicit.
+    """
+    from atlas_log_analyzer.core.formats.base import node_hints
+
+    if not sources or (m.node is None and split):
+        return []
+    hints = node_hints(fmt, _hint_lines(sources[-1]))
+    if not hints:
+        return []
+    top, count = max(hints.items(), key=lambda kv: (kv[1], kv[0]))
+    if m.node is not None:
+        if top == m.node:
+            return []
+        return [
+            f"the log names node {top} ({count} line(s) of {sources[-1].path.name}), "
+            f"but the set is labelled node {m.node}"
+        ]
+    if len(hints) > 1:
+        return []
+    how = (
+        f"pass --node {top} (or `atlas-log label {m.name or m.id} --node {top}`)"
+        if front == "cli"
+        else f"send node={top}"
+    )
+    return [f"the log names node {top} ({count} line(s)); {how} to label the set"]
+
+
+class Labeller(Sets, Protocol):
+    """Sets that can be labelled (``Store``; the web app's ``AppState`` drops its caches)."""
+
+    def label(
+        self, ref: str, *, node: Label = ..., cluster: Label = ..., capture: Label = ...
+    ) -> LogSetManifest:
+        """Set (text) or clear (``None``) the identity fields of the set ``ref``."""
+        ...
+
+
+def label(
+    sets: Labeller,
+    ref: str,
+    *,
+    node: str | None = None,
+    cluster: str | None = None,
+    capture: str | None = None,
+    front: Front,
+) -> Doc:
+    """``logset.v1`` of a set after setting its ``node``, ``cluster`` and ``capture``.
+
+    A value of ``None`` keeps the field, an empty one clears it. The set id, its name
+    and its data do not change.
+
+    Raises:
+        OpError: ``usage`` when no field is given; ``invalid_value`` for a bad value;
+            reasons ``set_not_found`` / ``ambiguous_ref``.
+
+    """
+    given = {k: v for k, v in (("node", node), ("cluster", cluster), ("capture", capture))}
+    values = {k: check_label(v, k, front=front) for k, v in given.items() if v is not None}
+    if not values:
+        names = ", ".join(flag(k, front) for k in given)
+        raise OpError("usage", f"give at least one of {names} (an empty value clears it)")
+    m = resolving(sets, ref, lambda r: sets.label(r, **values), front=front)
+    return dict(m.to_dict())
 
 
 def regroup(

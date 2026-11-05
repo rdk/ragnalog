@@ -275,6 +275,9 @@ def ingest_sources(
     mine: bool = False,
     progress: Callable[[IngestProgress], None] | None = None,
     progress_every: int = PROGRESS_EVERY,
+    node: str | None = None,
+    cluster: str | None = None,
+    capture: str | None = None,
 ) -> IngestResult:
     """Parse, sign and store already discovered ``sources`` with a known format.
 
@@ -290,6 +293,9 @@ def ingest_sources(
         mine: Propose Drain3 merges and write ``merges.parquet`` (needs the ``mine`` extra).
         progress: Called every ``progress_every`` parsed entries.
         progress_every: Entries between progress callbacks.
+        node: Node id recorded in the manifest of a new set.
+        cluster: Cluster name recorded in the manifest of a new set.
+        capture: Capture id recorded in the manifest of a new set.
 
     Raises:
         StoreError: See :meth:`Store.ingest`.
@@ -322,6 +328,9 @@ def ingest_sources(
         overwrite=overwrite,
         dedupe=False,
         recipe=recipe,
+        node=node,
+        cluster=cluster,
+        capture=capture,
     )
     elapsed = time.perf_counter() - started
     merges = _mine(logset) if mine else None
@@ -349,6 +358,9 @@ def ingest_paths(
     force: bool = False,
     progress: Callable[[IngestProgress], None] | None = None,
     progress_every: int = PROGRESS_EVERY,
+    node: str | None = None,
+    cluster: str | None = None,
+    capture: str | None = None,
 ) -> IngestResult:
     """Discover sources in ``paths``, detect the format when not given, and ingest them.
 
@@ -368,6 +380,9 @@ def ingest_paths(
         force: Read large named files that are not in the format (see :func:`select_sources`).
         progress: Progress callback (see :class:`IngestProgress`).
         progress_every: Entries between progress callbacks.
+        node: Node id of a new set (see :func:`ingest_sources`).
+        cluster: Cluster name of a new set.
+        capture: Capture id of a new set.
 
     Raises:
         NoSourcesFound: ``paths`` holds no log files.
@@ -390,5 +405,8 @@ def ingest_paths(
         mine=mine,
         progress=progress,
         progress_every=progress_every,
+        node=node,
+        cluster=cluster,
+        capture=capture,
     )
     return dataclasses.replace(result, skipped=tuple(str(s.path) for s in selection.skipped))

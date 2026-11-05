@@ -19,7 +19,7 @@
       "type": "integer"
     },
     "items": {
-      "description": "The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale.",
+      "description": "The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale, node, capture.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/SetItem"
@@ -136,6 +136,39 @@
         "stale": {
           "description": "recipe_key differs from the recipe this version signs the set's format and spec with: not comparable with new sets, no triage baseline; rebuild with upgrade. Missing only from older tool versions.",
           "type": "boolean"
+        },
+        "node": {
+          "description": "Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster": {
+          "description": "Name of the instance the node belongs to; null when unknown. Not with --brief.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture": {
+          "description": "Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         }
       },
       "required": [

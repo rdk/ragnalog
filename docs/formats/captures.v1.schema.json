@@ -1,0 +1,152 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "captures.v1.schema.json",
+  "title": "captures.v1",
+  "description": "The captures of the store, newest last_ts first: `captures`, `GET /api/captures`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "captures.v1"
+      ]
+    },
+    "count": {
+      "description": "Number of items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "The captures; with --brief only node, id, name per node.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CaptureItem"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "CaptureItem": {
+      "title": "CaptureItem",
+      "description": "A capture: the sets collected together (service.captures.CaptureInfo).",
+      "type": "object",
+      "properties": {
+        "capture": {
+          "description": "Capture id: an export's jobId or a hash of the set ids.",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "Cluster of the member sets.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "Earliest first entry of the members.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Latest last entry of the members.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Entries of all members.",
+          "type": "integer"
+        },
+        "nodes": {
+          "description": "Member sets, sorted by node.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaptureNode"
+          }
+        }
+      },
+      "required": [
+        "capture",
+        "cluster",
+        "first_ts",
+        "last_ts",
+        "entry_count",
+        "nodes"
+      ]
+    },
+    "CaptureNode": {
+      "title": "CaptureNode",
+      "description": "One member set of a capture (service.captures.CaptureNodeRef).",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id of the set (its name or id when it has none).",
+          "type": "string"
+        },
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "First entry, as in the manifest. Not with --brief.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Last entry, as in the manifest. Not with --brief.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Entries of the set. Not with --brief.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "id",
+        "name"
+      ]
+    }
+  }
+}

@@ -49,7 +49,7 @@
       }
     },
     "options": {
-      "description": "Ingest options (format, frames, mine, overwrite, force).",
+      "description": "Ingest options (format, frames, mine, overwrite, force, node, cluster, capture, split).",
       "type": "object"
     },
     "created_at": {
@@ -83,7 +83,7 @@
       "$ref": "#/$defs/JobProgress"
     },
     "result": {
-      "description": "The manifest once succeeded.",
+      "description": "The manifest once succeeded; of a split ingest, its first set's.",
       "anyOf": [
         {
           "$ref": "#/$defs/logset.v1"
@@ -103,6 +103,10 @@
           "type": "null"
         }
       ]
+    },
+    "capture": {
+      "description": "A split ingest once succeeded: the ingest-capture.v1 document.",
+      "$ref": "#/$defs/ingest-capture.v1"
     }
   },
   "required": [
@@ -121,6 +125,126 @@
     "error"
   ],
   "$defs": {
+    "CaptureItem": {
+      "title": "CaptureItem",
+      "description": "A capture: the sets collected together (service.captures.CaptureInfo).",
+      "type": "object",
+      "properties": {
+        "capture": {
+          "description": "Capture id: an export's jobId or a hash of the set ids.",
+          "type": "string"
+        },
+        "cluster": {
+          "description": "Cluster of the member sets.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "Earliest first entry of the members.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Latest last entry of the members.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Entries of all members.",
+          "type": "integer"
+        },
+        "nodes": {
+          "description": "Member sets, sorted by node.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CaptureNode"
+          }
+        }
+      },
+      "required": [
+        "capture",
+        "cluster",
+        "first_ts",
+        "last_ts",
+        "entry_count",
+        "nodes"
+      ]
+    },
+    "CaptureNode": {
+      "title": "CaptureNode",
+      "description": "One member set of a capture (service.captures.CaptureNodeRef).",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id of the set (its name or id when it has none).",
+          "type": "string"
+        },
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "First entry, as in the manifest. Not with --brief.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Last entry, as in the manifest. Not with --brief.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Entries of the set. Not with --brief.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "id",
+        "name"
+      ]
+    },
     "ErrorInfo": {
       "title": "ErrorInfo",
       "description": "The `error` object of `error.v1` (also `job.v1` `error`).",
@@ -358,6 +482,42 @@
         "entries"
       ]
     },
+    "ingest-capture.v1": {
+      "title": "ingest-capture.v1",
+      "description": "A split ingest, one set per node: `ingest` (export ZIP, --split), the job capture.",
+      "type": "object",
+      "properties": {
+        "schema": {
+          "enum": [
+            "ingest-capture.v1"
+          ]
+        },
+        "capture": {
+          "description": "The capture after the ingest (all its member sets).",
+          "$ref": "#/$defs/CaptureItem"
+        },
+        "sets": {
+          "description": "One logset.v1 with ingest per node of this ingest.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/logset.v1"
+          }
+        },
+        "warnings": {
+          "description": "job.json and split notes, then each set's ingest.warnings prefixed with its node.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "schema",
+        "capture",
+        "sets",
+        "warnings"
+      ]
+    },
     "logset.v1": {
       "title": "logset.v1",
       "description": "A log set's manifest: `ingest`, `set`, `regroup`, `GET /api/sets/{ref}`.",
@@ -451,6 +611,39 @@
         "recipe_key": {
           "description": "Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Missing only from older tool versions.",
           "type": "string"
+        },
+        "node": {
+          "description": "Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster": {
+          "description": "Name of the instance the node belongs to; null when unknown. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture": {
+          "description": "Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "ingest": {
           "description": "Only from ingest (CLI and job result).",

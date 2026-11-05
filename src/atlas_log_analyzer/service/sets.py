@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Protocol
 
 from atlas_log_analyzer.service.errors import Front, OpError, hint
@@ -9,7 +10,7 @@ from atlas_log_analyzer.service.errors import Front, OpError, hint
 if TYPE_CHECKING:
     from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 
-__all__ = ["Sets", "open_set"]
+__all__ = ["Sets", "open_set", "resolving"]
 
 
 class Sets(Protocol):
@@ -35,10 +36,15 @@ def open_set(sets: Sets, ref: str, *, front: Front) -> LogSet:
     whose message names only the reference; the CLI's hint lists the available sets.
     An ambiguous one is reason ``ambiguous_ref``.
     """
+    return resolving(sets, ref, sets.open, front=front)
+
+
+def resolving[T](sets: Sets, ref: str, action: Callable[[str], T], *, front: Front) -> T:
+    """Run ``action(ref)``, reporting an unknown or ambiguous set as :func:`open_set` does."""
     from atlas_log_analyzer.store.store import AmbiguousLogSet, LogSetNotFound
 
     try:
-        return sets.open(ref)
+        return action(ref)
     except LogSetNotFound as exc:
         found = hint("set_not_found", front)
         if front == "cli":

@@ -16,17 +16,20 @@ from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
     EntryQuery,
     GroupQuery,
+    IngestTarget,
     Page,
     TextCap,
     parse_level,
 )
 
-__all__ = ["ALL_ENTRIES", "ALL_GROUPS", "cap", "fill_doc", "level", "limit"]
+__all__ = ["ALL_ENTRIES", "ALL_GROUPS", "ANY_TARGET", "cap", "fill_doc", "level", "limit"]
 
 ALL_GROUPS = GroupQuery()
 """No group filters (default of the flattened ``groups`` options)."""
 ALL_ENTRIES = EntryQuery()
 """No entry filters (default of the flattened ``entries`` options)."""
+ANY_TARGET = IngestTarget()
+"""No node, cluster or capture given, ``--split auto`` (default of the ``ingest`` options)."""
 
 
 def cap(value: int | None, *, text: bool) -> TextCap:

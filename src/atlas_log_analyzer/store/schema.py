@@ -18,7 +18,8 @@ __all__ = [
     "schema_major",
 ]
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
+"""1.1: the manifest gains ``node``, ``cluster`` and ``capture`` (nullable; 1.0 sets lack them)."""
 
 SCHEMA_NAMES: tuple[str, ...] = ("entries", "groups", "merges", "logset")
 """Names accepted by :func:`schema_json`."""
@@ -208,6 +209,15 @@ LOGSET_FIELDS: tuple[tuple[str, str, bool, str], ...] = (
         "Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> "
         "and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are "
         "comparable when it is equal; derived from the fields above for older manifests.",
+    ),
+    ("node", "string", True, "Cluster node id the logs come from (NODE1); null when unknown."),
+    ("cluster", "string", True, "Name of the instance the node belongs to; null when unknown."),
+    (
+        "capture",
+        "string",
+        True,
+        "Id of the capture the set was collected in (an export job id or a hash of the "
+        "member set ids); sets with the same capture are viewed together.",
     ),
 )
 """logset.v1 manifest fields as ``(name, type, nullable, description)``."""

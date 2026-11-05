@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections import Counter
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Protocol, runtime_checkable
@@ -21,6 +22,7 @@ __all__ = [
     "WELL_KNOWN_CONTEXT_KEYS",
     "HeaderMatch",
     "LogFormat",
+    "node_hints",
 ]
 
 # Well-known ``LogEntry.context`` keys. Each of these gets its own column in the
@@ -67,6 +69,11 @@ class LogFormat(Protocol):
     rules or entries change signatures; it is part of the recipe key that decides
     which log sets are comparable (:class:`~atlas_log_analyzer.core.pipeline.Recipe`).
     It is not a protocol member, so formats without it still pass ``isinstance``.
+
+    Likewise optional: ``node_hints(lines) -> collections.Counter[str]``, the cluster
+    node ids that ``lines`` name as their own node (Jira: ``nodeId: NODE1``), with how
+    often; ingest compares them with the node a set is labelled with. Call it through
+    :func:`node_hints`, which gives an empty ``Counter`` for formats without it.
     """
 
     name: str
@@ -102,3 +109,12 @@ class LogFormat(Protocol):
     def sniff(self, lines: Sequence[str]) -> float:
         """Confidence in ``[0, 1]`` that ``lines`` (first lines of a file) are in this format."""
         ...
+
+
+def node_hints(fmt: LogFormat, lines: Iterable[str]) -> Counter[str]:
+    """Node ids that ``lines`` name as their own node, by count (``fmt.node_hints``, if any)."""
+    hook = getattr(fmt, "node_hints", None)
+    if hook is None:
+        return Counter()
+    found: Counter[str] = hook(lines)
+    return found

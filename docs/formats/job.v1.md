@@ -12,7 +12,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `state` | `"cancelled" \| "failed" \| "queued" \| "running" \| "succeeded"` | yes | queued, running, then succeeded, failed or cancelled. |
 | `name` | `string \| null` | yes | Set name requested. |
 | `files` | `list<string>` | yes | Uploaded file names. |
-| `options` | `object` | yes | Ingest options (format, frames, mine, overwrite, force). |
+| `options` | `object` | yes | Ingest options (format, frames, mine, overwrite, force, node, cluster, capture, split). |
 | `created_at` | `string` | yes | ISO 8601 UTC. |
 | `started_at` | `string \| null` | yes | ISO 8601 UTC. |
 | `finished_at` | `string \| null` | yes | ISO 8601 UTC. |
@@ -22,7 +22,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `progress.bytes_total` | `integer` | yes | Bytes uploaded. |
 | `progress.fraction` | `number` | yes | 0..1. |
 | `progress.current_file` | `string \| null` | yes | File being read. |
-| `result` | `logset.v1 \| null` | yes | The manifest once succeeded. |
+| `result` | `logset.v1 \| null` | yes | The manifest once succeeded; of a split ingest, its first set's. |
 | `error` | `ErrorInfo \| null` | yes | Set once failed. |
 | `error.code` | `string` | yes | Stable error code, e.g. usage, invalid_value, not_found. |
 | `error.message` | `string` | yes | What went wrong. |
@@ -30,6 +30,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `error.reason` | `string` | no | The same in the CLI and the API where their codes differ, e.g. set_not_found (CLI store_error, API not_found); see service/errors.py REASONS. |
 | `error.store` | `string` | no | The store searched (CLI, unknown set). |
 | `error.candidates` | `list<string>` | no | Matching signatures of an ambiguous prefix (up to 5). |
+| `capture` | `ingest-capture.v1` | no | A split ingest once succeeded: the ingest-capture.v1 document. |
 
 ### `MergeRow`
 

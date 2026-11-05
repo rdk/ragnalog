@@ -175,6 +175,39 @@
           "description": "Recipe key after the call.",
           "type": "string"
         },
+        "node": {
+          "description": "Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster": {
+          "description": "Name of the instance the node belongs to; null when unknown. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "capture": {
+          "description": "Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
         "status": {
           "description": "What happened to the set.",
           "enum": [

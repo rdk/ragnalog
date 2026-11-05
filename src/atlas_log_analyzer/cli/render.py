@@ -19,6 +19,8 @@ if TYPE_CHECKING:
 
 __all__ = [
     "ANCHOR_MARK",
+    "CAPTURE_COLUMNS",
+    "CAPTURE_SET_COLUMNS",
     "DIFF_COLUMNS",
     "ENTRY_COLUMNS",
     "GREW_COLUMNS",
@@ -28,6 +30,7 @@ __all__ = [
     "SPARK",
     "UPGRADE_COLUMNS",
     "VANISHED_COLUMNS",
+    "captures",
     "context",
     "diff",
     "frames",
@@ -83,6 +86,8 @@ NEW_COLUMNS = (
 )
 GREW_COLUMNS = ("signature", "level_name", "count_a", "count_b", "rate_ratio", "logger", "template")
 VANISHED_COLUMNS = ("signature", "level_name", "count_a", "logger", "exception_type", "template")
+CAPTURE_COLUMNS = ("capture", "cluster", "nodes", "entry_count", "first_ts", "last_ts")
+CAPTURE_SET_COLUMNS = ("node", "id", "name", "entry_count", "group_count", "first_ts", "last_ts")
 UPGRADE_COLUMNS = ("id", "name", "status", "reason", "recipe_key", "previous_recipe_key")
 ANCHOR_MARK = "▶"
 """Marks the anchor row of `context` in table mode."""
@@ -163,6 +168,12 @@ def hour_days(hours: Sequence[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for day, counts in sorted(by_day.items())
     ]
+
+
+def captures(console: Console, doc: Doc, *, color: bool) -> None:
+    """Print one row per capture with its node ids joined (``captures``)."""
+    rows = [{**item, "nodes": ", ".join(n["node"] for n in item["nodes"])} for item in doc["items"]]
+    console.print(rows_table(rows, CAPTURE_COLUMNS, title="captures", color=color))
 
 
 def stats(console: Console, doc: Doc) -> None:

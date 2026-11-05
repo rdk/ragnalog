@@ -348,3 +348,28 @@ def test_sniff_and_protocol(jira: JiraFormat) -> None:
     stack = [lines[0], "java.lang.IllegalStateException: boom", "	at org.acme.A.b(A.java:1)"]
     assert jira.sniff(stack) == 1
     assert jira.sniff([]) == 0
+
+
+def test_node_hints(jira: JiraFormat) -> None:
+    from collections import Counter
+
+    from atlas_log_analyzer.core.formats.base import node_hints
+
+    lines = [
+        "2026-11-05 10:00:02,000+0000 main INFO      [org.acme.Node] Node info, nodeId: NODE1",
+        "2026-11-05 10:00:03,000+0000 main INFO      [org.acme.Node] cluster nodeId: NODE1,",
+        "2026-11-05 10:20:00,000+0000 jobs ERROR      [org.acme.Jobs] Job did not run on node "
+        "NODE1 because it is busy",
+        "2026-11-05 10:21:00,000+0000 jobs INFO      [org.acme.Jobs] no node named here",
+        "\tat org.acme.Node.start(Node.java:1)",
+    ]
+    assert jira.node_hints(lines) == Counter({"NODE1": 3})
+    assert node_hints(jira, lines) == Counter({"NODE1": 3})
+    assert jira.node_hints(["nodeId: NODE1", "nodeId: NODE2", "nodeId: NODE2"]) == Counter(
+        {"NODE2": 2, "NODE1": 1}
+    )
+
+    class Plain:
+        name = "plain"
+
+    assert node_hints(Plain(), lines) == Counter()  # type: ignore[arg-type]

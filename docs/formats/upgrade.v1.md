@@ -31,6 +31,9 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items[].mask_rules_version` | `integer` | yes | Built-in masking rules version. |
 | `items[].signature_spec` | `string` | yes | SignatureSpec.key used for the primary signature. |
 | `items[].recipe_key` | `string` | yes | Recipe key after the call. |
+| `items[].node` | `string \| null` | no | Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions. |
+| `items[].cluster` | `string \| null` | no | Name of the instance the node belongs to; null when unknown. Missing only from older tool versions. |
+| `items[].capture` | `string \| null` | no | Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions. |
 | `items[].status` | `"skipped" \| "upgraded"` | yes | What happened to the set. |
 | `items[].reason` | `string \| null` | yes | null when upgraded; "current" or the unknown format/spec when skipped. |
 | `items[].previous_recipe_key` | `string` | yes | Recipe key before the call. |

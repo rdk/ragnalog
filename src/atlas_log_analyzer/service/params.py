@@ -21,7 +21,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 from atlas_log_analyzer.service.errors import Front, OpError, flag
 from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
@@ -32,12 +32,16 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_MAX_RAW",
+    "SPLIT_MODES",
     "EntryQuery",
     "GroupQuery",
+    "IngestTarget",
     "Page",
     "Select",
+    "SplitMode",
     "TextCap",
     "blank",
+    "check_label",
     "parse_columns",
     "parse_level",
     "parse_time",
@@ -47,6 +51,11 @@ DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
 
 _RELATIVE = re.compile(r"^(\d+)\s*([smhd])$")
+type SplitMode = Literal["auto", "prefix", "dir", "none"]
+"""``--split``: detect the nodes (``auto``), force a kind, or keep one set (``none``)."""
+SPLIT_MODES: tuple[SplitMode, ...] = ("auto", "prefix", "dir", "none")
+_LABEL = re.compile(r"^\w[\w.-]{0,127}$")
+"""A node id, cluster name or capture id: letters, digits, ``_``, ``.``, ``-`` (at most 128)."""
 _UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
 
 
@@ -375,3 +384,87 @@ class TextCap:
         from atlas_log_analyzer.service.views import cap_texts
 
         return cap_texts(items, self.limit, how=self.how)
+
+
+def check_label(value: str | None, name: str, *, front: Front) -> str | None:
+    """Validate a node id, cluster name or capture id; blank or missing gives ``None``.
+
+    Raises:
+        OpError: ``invalid_value`` for other characters or more than 128 of them.
+
+    """
+    text = blank(value)
+    if text is None:
+        return None
+    text = text.strip()
+    if _LABEL.match(text) is None:
+        raise OpError(
+            "invalid_value",
+            f"{flag(name, front)} must be letters, digits, '_', '.' or '-' (at most 128, "
+            f"starting with a letter or digit), not {text!r}",
+        )
+    return text
+
+
+@dataclass(frozen=True, kw_only=True)
+class IngestTarget:
+    """Which node, cluster and capture an ingest belongs to (``ingest``; ``POST /api/ingest``).
+
+    Attributes:
+        node: Node (the cluster node id of the set, e.g. NODE1; only when the input is
+            not split).
+        cluster: Cluster (the name of the Jira instance of the nodes, e.g. jira-test;
+            default: the cluster of the newest earlier set of the same node).
+        capture: Capture (its id; default: the export's jobId, else a hash of the set ids
+            when split, else none).
+        split: Split (one set per node; auto: an export ZIP or folder with job.json,
+            files named NODE_atlassian-jira.log* of two or more nodes, or one directory
+            of node sub-directories; prefix and dir force a kind; none: one set).
+
+    """
+
+    node: str | None = None
+    cluster: str | None = None
+    capture: str | None = None
+    split: SplitMode = "auto"
+
+    @classmethod
+    def parse(
+        cls,
+        *,
+        node: str | None = None,
+        cluster: str | None = None,
+        capture: str | None = None,
+        split: str | None = None,
+        front: Front,
+    ) -> IngestTarget:
+        """Build a checked target from raw values (blank ``split`` = ``auto``).
+
+        Raises:
+            OpError: ``invalid_value`` for a bad label or split mode.
+
+        """
+        mode = blank(split) or "auto"
+        for known in SPLIT_MODES:
+            if mode == known:
+                return cls(node=node, cluster=cluster, capture=capture, split=known).checked(
+                    front=front
+                )
+        raise OpError(
+            "invalid_value",
+            f"{flag('split', front)} must be one of {', '.join(SPLIT_MODES)}, not {mode!r}",
+        )
+
+    def checked(self, *, front: Front) -> IngestTarget:
+        """Return the target with blank values unset and the others validated.
+
+        Raises:
+            OpError: ``invalid_value`` for a bad label.
+
+        """
+        return IngestTarget(
+            node=check_label(self.node, "node", front=front),
+            cluster=check_label(self.cluster, "cluster", front=front),
+            capture=check_label(self.capture, "capture", front=front),
+            split=self.split,
+        )

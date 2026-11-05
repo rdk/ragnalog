@@ -50,6 +50,8 @@ uv run atlas-log --help
 export ATLAS_LOG_STORE=~/atlas-log-store                       # where log sets live
 atlas-log ingest /var/atlassian/jira/log/ --name prod-1030     # build a log set
 atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
+atlas-log ingest jira-logs_export.zip --cluster jira-prod      # cluster export: one set per node
+atlas-log captures                                             # sets of several nodes collected together
 atlas-log groups prod-1030 --min-level WARN --brief            # one row per signature
 atlas-log groups prod-1030 --with-exception --brief            # stack traces at any level
 atlas-log show prod-1030 83d1828c --brief                      # entries of a group (unique signature prefix)

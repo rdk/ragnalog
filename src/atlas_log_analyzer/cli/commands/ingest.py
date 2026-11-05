@@ -1,11 +1,13 @@
-"""Commands that read log files or rebuild sets: ingest, parse, regroup, upgrade."""
+"""Commands that read log files or change sets: ingest, label, parse, regroup, upgrade."""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Sequence
 from itertools import islice
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Annotated, Any
+
+from cyclopts import Parameter
 
 from atlas_log_analyzer.cli import context as ctx
 from atlas_log_analyzer.cli import params, render
@@ -16,12 +18,13 @@ from atlas_log_analyzer.cli.output import (
 )
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.service import ingest as service_ingest
+from atlas_log_analyzer.service.params import IngestTarget
 
 # polars, DuckDB, rich and the ingest pipeline are imported by the code that needs them
 if TYPE_CHECKING:
     from atlas_log_analyzer.store.pipeline import IngestProgress, SourceSelection
 
-__all__ = ["ingest", "parse", "regroup", "select_sources", "upgrade"]
+__all__ = ["ingest", "label", "parse", "regroup", "select_sources", "upgrade"]
 
 
 def ingest(
@@ -32,100 +35,185 @@ def ingest(
     overwrite: bool = False,
     mine: bool = False,
     force: bool = False,
+    target: Annotated[IngestTarget, Parameter(name="*")] = params.ANY_TARGET,
 ) -> int:
-    """Parse log files into a stored log set and print its manifest.
+    """Parse log files into a stored log set (one per cluster node) and print its manifest.
 
-    PATHs are files or directories (directories are scanned non-recursively for
-    *.log*; rotated files x.log.N are read oldest first). Files found in a
-    directory that the format does not recognise in their first 200 lines
-    (access, GC or JSON logs next to atlassian-jira.log) are skipped and
-    listed in "ingest.skipped"; files named explicitly are read, except one over
-    64 MiB that the format does not recognise at all (error "not_in_format";
-    --force reads it). Lines over 1 MiB are cut, and an entry keeps at most
-    4 Mi characters and 100,000 lines ("parse_error": "entry truncated: N
-    lines, M bytes"). The log-set id is derived from the file digests, so
-    ingesting the same files again is a no-op that prints the existing
-    manifest (use --overwrite to rebuild it). Progress goes to stderr.
+    PATHs are files, directories or ZIP files (directories are scanned
+    non-recursively for *.log*; rotated files x.log.N are read oldest first; a
+    ZIP is extracted into the store, job.json and *.log* files only, at most
+    32 GiB, and removed afterwards). Files found in a directory that the format
+    does not recognise in their first 200 lines (access, GC or JSON logs next
+    to atlassian-jira.log) are skipped and listed in "ingest.skipped"; files
+    named explicitly are read, except one over 64 MiB that the format does not
+    recognise at all (error "not_in_format"; --force reads it). Lines over 1 MiB
+    are cut, and an entry keeps at most 4 Mi characters and 100,000 lines
+    ("parse_error": "entry truncated: N lines, M bytes"). The log-set id is
+    derived from the file digests, so ingesting the same files again is a no-op
+    that prints the existing manifest (use --overwrite to rebuild it). Progress
+    goes to stderr.
 
-    Output (json): the manifest, schema "logset.v1":
+    Cluster logs become one set per node (--split auto): a cluster log export
+    (a ZIP or folder with job.json and NODE_atlassian-jira.log* files), files
+    named NODE_atlassian-jira.log* of two or more nodes, or one directory whose
+    sub-directories (two or more) hold one node's logs each. --split prefix|dir
+    forces a kind, --split none keeps one set. Each node's set is named
+    PREFIX_node (PREFIX: --name, else --cluster, else the first 8 characters of
+    the capture id) and labelled with its node, the cluster (--cluster, else
+    that of the node's newest earlier set) and the capture id (--capture, else
+    the export's jobId, else a hash of the set ids). A single set gets --node,
+    --cluster (default: the node's earlier cluster) and --capture; when its log
+    names its node, a warning suggests --node.
+
+    Output (json): one set: the manifest, schema "logset.v1":
       {"schema": "logset.v1", "id", "name", "format",
        "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
        "first_ts", "last_ts", "entry_count", "group_count", "created_at",
        "tool_version", "schema_version", "signature_version",
-       "mask_rules_version", "signature_spec",
+       "mask_rules_version", "signature_spec", "recipe_key",
+       "node", "cluster", "capture",
        "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing",
                   "skipped": [path, ...], "warnings": [str, ...]},
        "merges": [{"cluster_id", "signatures": [str], "drain_template"}]}
+    A split: {"schema": "ingest-capture.v1",
+      "capture": {"capture", "cluster", "first_ts", "last_ts", "entry_count",
+                  "nodes": [{"node", "id", "name", "first_ts", "last_ts",
+                             "entry_count"}]},
+      "sets": [<logset.v1 with "ingest" as above>, ...], "warnings": [str]}
     "merges" is present only with --mine; the proposals are also stored in
     merges.parquet (the "merges" view of `query`).
-    "ingest.existing" is true when the set already existed and was reused;
-    "ingest.warnings" then says when --name was ignored (also on stderr).
+    "ingest.existing" is true when the set already existed and was reused (it
+    gets the node, cluster and capture it lacks); "ingest.warnings" then says
+    when --name was ignored (also on stderr).
 
     Without --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git
     work tree it is not created (error "store_error": real logs could be
     committed), but an existing ./.atlas-log is used.
 
-    Exit codes: 0 ok; 1 unknown --format or bad option; 2 no files found, format
+    Exit codes: 0 ok; 1 unknown --format, bad option, bad ZIP, a --split that
+    does not fit the input, or --node with a split; 2 no files found, format
     not detected, a large named file not in the format, or no entries parsed
     (manifest still printed); 3 store error (including a refused default store
     inside a git work tree).
 
     Args:
-        paths: Log files and/or directories.
+        paths: Log files, directories or ZIPs.
         format: Format name (see `formats`); default: detected from the first 200 lines
             of the first file a format recognises (named files first).
-        name: Human-readable alias for the set, usable wherever SET is expected.
+        name: Human-readable alias for the set, usable wherever SET is expected; with a
+            split, the prefix of the sets' names.
         frames: Add the top N stack frames to signatures (finer groups); default 0.
         overwrite: Rebuild the set if one with the same id already exists.
         mine: Propose group merges with Drain3 (needs extra "mine": uv sync --extra mine).
         force: Read a named file over 64 MiB even if none of its first 200 lines is
             in the format.
+        target: Node, cluster, capture and split (the options --node to --split).
 
     """
     out = ctx.out()
-    selection = select_sources(paths, format, force=force)
+    if not paths:
+        raise OpError("usage", "at least one PATH is required")
     store = ctx.store(create=True)
-    total = sum(src.size for src in selection.sources)
-    out.info(
-        f"ingesting {len(selection.sources)} file(s), {total / 1e6:.1f} MB, "
-        f"format {selection.fmt.name}"
-    )
 
     def progress(p: IngestProgress) -> None:
         if p.entries % 100_000 == 0:
             out.info(f"  {p.entries:,} entries")
 
-    doc = service_ingest.ingest(
+    doc = service_ingest.ingest_paths(
         store,
-        selection,
+        paths,
+        fmt=format,
         name=name,
         frames=frames,
         overwrite=overwrite,
         mine=mine,
+        force=force,
+        target=target,
         progress=progress,
+        announce=out.info,
         front="cli",
     )
-    info, ref = doc["ingest"], doc["name"] or doc["id"]
-    if info["existing"]:
-        out.info(f"log set {doc['id']} already exists; use --overwrite to rebuild it")
-    else:
-        out.info(
-            f"ingested {info['parsed_entries']:,} entries into {doc['id']} "
-            f"({doc['group_count']:,} groups) in {info['elapsed_s']:.1f} s"
-        )
-    for warning in info["warnings"]:
-        out.warn(warning)
-    if info["parse_errors"]:
-        out.warn(f"{info['parse_errors']:,} entries could not be parsed (parse_error is set)")
-    if "merges" in doc:
-        out.info(f"{len(doc['merges'])} merge proposal(s) written to merges.parquet")
+    if doc["schema"] == "ingest-capture.v1":
+        return _capture_result(doc)
+    _set_result(doc)
     out.document(doc, items=None, title=f"log set {doc['id']}")
     if out.mode == "table" and doc["entry_count"]:
-        out.info(f"next: atlas-log triage {ref}")
+        out.info(f"next: atlas-log triage {doc['name'] or doc['id']}")
     if doc["entry_count"] == 0:
         out.warn("no entries were parsed")
         return int(ExitCode.NOT_FOUND)
     return 0
+
+
+def _set_result(doc: dict[str, Any], *, of_capture: bool = False) -> None:
+    """Report one set's ingest on stderr (a capture prints the warnings once, prefixed)."""
+    out, info = ctx.out(), doc["ingest"]
+    who = f"{doc['node']}: " if of_capture and doc.get("node") else ""
+    if info["existing"]:
+        out.info(f"{who}log set {doc['id']} already exists; use --overwrite to rebuild it")
+    else:
+        out.info(
+            f"{who}ingested {info['parsed_entries']:,} entries into {doc['id']} "
+            f"({doc['group_count']:,} groups) in {info['elapsed_s']:.1f} s"
+        )
+    if not of_capture:
+        for warning in info["warnings"]:
+            out.warn(warning)
+    if info["parse_errors"]:
+        out.warn(f"{who}{info['parse_errors']:,} entries could not be parsed (parse_error is set)")
+    if "merges" in doc:
+        out.info(f"{who}{len(doc['merges'])} merge proposal(s) written to merges.parquet")
+
+
+def _capture_result(doc: dict[str, Any]) -> int:
+    """Report a split ingest (``ingest-capture.v1``) and print it; return the exit code."""
+    out = ctx.out()
+    for item in doc["sets"]:
+        _set_result(item, of_capture=True)
+    for warning in doc["warnings"]:
+        out.warn(warning)
+    capture = doc["capture"]["capture"]
+    out.document(doc, items="sets", columns=render.CAPTURE_SET_COLUMNS, title=f"capture {capture}")
+    if out.mode == "table":
+        out.info("next: atlas-log triage SET for each node; atlas-log captures")
+    if all(item["entry_count"] == 0 for item in doc["sets"]):
+        out.warn("no entries were parsed")
+        return int(ExitCode.NOT_FOUND)
+    return 0
+
+
+def label(
+    logset: str,
+    /,
+    *,
+    node: str | None = None,
+    cluster: str | None = None,
+    capture: str | None = None,
+) -> None:
+    """Label a log set (its cluster node, cluster and capture).
+
+    Rewrites only the set's manifest: its id, name and data stay as they are.
+    An option that is not given keeps its value; an empty value (--node "")
+    clears it. Values are letters, digits, "_", "." and "-" (at most 128).
+    Sets that share a capture id are listed together by `captures`; triage
+    compares a set that has a node only with earlier sets of the same node.
+
+    Output (json): the manifest, {"schema": "logset.v1", ...} (see `ingest`).
+
+    Exit codes: 0 ok; 1 no option given or a bad value; 3 unknown set or store
+    error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+        node: Node (the cluster node id the logs come from, e.g. NODE1).
+        cluster: Cluster (the name of the Jira instance of the node, e.g. jira-test).
+        capture: Capture (its id: sets with the same capture are viewed together).
+
+    """
+    doc = service_ingest.label(
+        ctx.store(), logset, node=node, cluster=cluster, capture=capture, front="cli"
+    )
+    ctx.out().document(doc, items=None, title=f"log set {doc['id']}")
 
 
 def parse(*paths: Path, format: str | None = None, limit: int = 0, force: bool = False) -> int:

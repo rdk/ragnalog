@@ -23,7 +23,8 @@ from __future__ import annotations
 
 import contextlib
 import re
-from collections.abc import Iterator, Sequence
+from collections import Counter
+from collections.abc import Iterable, Iterator, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from types import MappingProxyType
@@ -156,6 +157,10 @@ _REQUEST_CTX_RE = re.compile(
 )
 _TS_PREFIX_RE = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}[+-]\d{4}")
 _SERVICE_SPLIT_RE = re.compile(r"\s{2,}")
+_NODE_HINT_RE = re.compile(r"nodeId: (\S+)|on node (\S+) because")
+"""Lines in which a Jira node names itself (cluster startup, scheduler and index messages)."""
+_HINT_TRIM = ",;.:)]}'\""
+
 
 _LEVELS = {name: LogLevel[name] for name in ("TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL")}
 _NO_USER = frozenset({"-", ""})
@@ -262,6 +267,18 @@ class JiraFormat:
         # (line, groups) of the last successful is_header call; one tuple so that
         # concurrent use of an instance can never pair a line with another match.
         self._last: tuple[str, HeaderGroups] | None = None
+
+    def node_hints(self, lines: Iterable[str]) -> Counter[str]:
+        """Node ids in ``nodeId: X`` and ``on node X because`` lines, by count."""
+        found: Counter[str] = Counter()
+        for line in lines:
+            if "node" not in line:
+                continue
+            for m in _NODE_HINT_RE.finditer(line):
+                node = (m.group(1) or m.group(2)).rstrip(_HINT_TRIM)
+                if node:
+                    found[node] += 1
+        return found
 
     def is_header(self, line: str) -> bool:
         """Full header match (with a cheap ``"20"`` pre-check)."""

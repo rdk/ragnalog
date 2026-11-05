@@ -151,6 +151,14 @@ REASONS: Final[Mapping[str, Reason]] = {
     "ref_not_found": Reason(
         "not_found", "not_found", "`frames`: neither an entry id nor a group signature."
     ),
+    "capture_not_found": Reason(
+        "not_found",
+        "not_found",
+        "No capture matches this `capture:ID` prefix, `cluster:NAME` or `cluster:NAME@DAY`.",
+    ),
+    "ambiguous_capture": Reason(
+        "ambiguous", "ambiguous", "Several captures match this capture id prefix or cluster day."
+    ),
 }
 """Values of the ``reason`` key and the code each front end reports them under."""
 
@@ -177,6 +185,14 @@ _HINTS: Final[Mapping[str, Mapping[Front, str]]] = {
     "incompatible_sets": {
         "cli": "pass --force to compare anyway",
         "api": "pass force=true to compare anyway",
+    },
+    "capture_not_found": {
+        "cli": "list the captures with `atlas-log captures`",
+        "api": "list the captures with GET /api/captures",
+    },
+    "ambiguous_capture": {
+        "cli": "pass more characters of the capture id (`atlas-log captures`)",
+        "api": "pass more characters of the capture id (GET /api/captures)",
     },
     "not_in_format": {
         "cli": "name the right file or --format, or pass --force to read it anyway",

@@ -22,7 +22,18 @@ from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 
 # polars, DuckDB, rich and the ingest pipeline are imported by the code that needs them.
 
-__all__ = ["context", "entries", "frames", "groups", "query", "set_", "sets", "show", "stats"]
+__all__ = [
+    "captures",
+    "context",
+    "entries",
+    "frames",
+    "groups",
+    "query",
+    "set_",
+    "sets",
+    "show",
+    "stats",
+]
 
 
 def sets(*, brief: bool = False) -> None:
@@ -33,19 +44,22 @@ def sets(*, brief: bool = False) -> None:
        "items": [<logset.v1 manifest without "schema"> + "summary" + "stale"]}
     Each item has id, name, format, sources, first_ts, last_ts, entry_count,
     group_count, created_at, tool_version, schema_version, signature_version,
-    mask_rules_version, signature_spec, recipe_key,
+    mask_rules_version, signature_spec, recipe_key, node, cluster, capture,
     "summary": {"errors", "warnings", "error_groups"} (entries at ERROR/FATAL,
     entries at WARN, groups at ERROR/FATAL; null when the set cannot be read)
     and "stale": true when recipe_key differs from the recipe this version
     signs the set's format and spec with (rebuild with `upgrade`; triage
-    does not use stale sets as baselines). --brief keeps only id, name,
-    first_ts, last_ts, entry_count, group_count, summary and stale. An empty
-    or missing store gives count 0.
+    does not use stale sets as baselines). node, cluster and capture say which
+    cluster node a set holds and which capture it belongs to (null when
+    unknown; see `label`, `captures`). --brief keeps only id, name, first_ts,
+    last_ts, entry_count, group_count, summary, stale, node and capture. An
+    empty or missing store gives count 0.
 
     Exit codes: 0 ok (also when empty); 3 store error.
 
     Args:
-        brief: Only id, name, first_ts, last_ts, entry_count, group_count, summary, stale.
+        brief: Only id, name, first_ts, last_ts, entry_count, group_count, summary, stale,
+            node, capture.
 
     """
     store = ctx.store()
@@ -56,6 +70,36 @@ def sets(*, brief: bool = False) -> None:
         summary=lambda m: set_summary(store.set_dir(m.id)),  # pyarrow only: no polars
     )
     ctx.out().document(doc, columns=render.SET_COLUMNS, title="log sets")
+
+
+def captures(*, brief: bool = False) -> None:
+    """List the captures (the sets of several nodes collected together).
+
+    A capture is the sets whose manifests share a "capture" id: one cluster log
+    export or one `ingest` that split its input into one set per node (also
+    `label --capture`). Newest last_ts first. Reads the manifests only.
+
+    Output (json):
+      {"schema": "captures.v1", "count": int,
+       "items": [{"capture", "cluster", "first_ts", "last_ts", "entry_count",
+                  "nodes": [{"node", "id", "name", "first_ts", "last_ts",
+                             "entry_count"}]}]}
+    "nodes" are the member sets sorted by node; "cluster" is the members'
+    cluster. --brief keeps only node, id and name per node. A capture is
+    referred to as capture:ID (a unique prefix of its id), cluster:NAME (the
+    newest capture of the cluster) or cluster:NAME@YYYY-MM-DD.
+
+    Exit codes: 0 ok (also when empty); 3 store error.
+
+    Args:
+        brief: Only node, id and name per node.
+
+    """
+    from atlas_log_analyzer.service.captures import captures_doc
+
+    doc = captures_doc(ctx.store(), brief=brief)
+    out = ctx.out()
+    out.document(doc, table=lambda console: render.captures(console, doc, color=out.color))
 
 
 def set_(logset: str, /) -> None:

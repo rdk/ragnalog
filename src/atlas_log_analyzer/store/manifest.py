@@ -7,6 +7,8 @@ Kept apart from :mod:`atlas_log_analyzer.store.logset` so that listing a store
 from __future__ import annotations
 
 import json
+import os
+import threading
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -44,6 +46,11 @@ def _parse_ts(text: str | None) -> datetime | None:
         return None
     ts = datetime.fromisoformat(text)
     return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
+
+
+def _opt_str(value: Any) -> str | None:
+    """Return an optional text field: ``None`` for a missing, null or empty value."""
+    return str(value) if value not in (None, "") else None
 
 
 def derived_recipe_key(
@@ -134,6 +141,12 @@ class LogSetManifest:
     """:attr:`~atlas_log_analyzer.core.pipeline.Recipe.key` the set was signed with; sets are
     comparable when it is equal. Derived from the version fields (format version 1) when
     empty, as for manifests written before it existed."""
+    node: str | None = None
+    """Cluster node id the logs come from; ``None`` when unknown (schema 1.0 sets)."""
+    cluster: str | None = None
+    """Name of the instance (cluster) the node belongs to."""
+    capture: str | None = None
+    """Id of the capture: the sets collected together (one export job, one split ingest)."""
 
     def __post_init__(self) -> None:
         if not self.recipe_key:
@@ -161,6 +174,9 @@ class LogSetManifest:
             "mask_rules_version": self.mask_rules_version,
             "signature_spec": self.signature_spec,
             "recipe_key": self.recipe_key,
+            "node": self.node,
+            "cluster": self.cluster,
+            "capture": self.capture,
         }
 
     @classmethod
@@ -199,6 +215,9 @@ class LogSetManifest:
                 mask_rules_version=int(data["mask_rules_version"]),
                 signature_spec=str(data["signature_spec"]),
                 recipe_key=str(data.get("recipe_key") or ""),
+                node=_opt_str(data.get("node")),
+                cluster=_opt_str(data.get("cluster")),
+                capture=_opt_str(data.get("capture")),
             )
         except (KeyError, TypeError, AssertionError) as exc:
             raise ValueError(f"invalid manifest: missing or bad field {exc}") from exc
@@ -207,6 +226,16 @@ class LogSetManifest:
         """Write ``manifest.json`` into ``directory``."""
         text = json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n"
         (directory / MANIFEST_FILE).write_text(text, encoding="utf-8", newline="\n")
+
+    def replace_in(self, directory: Path) -> None:
+        """Rewrite ``manifest.json`` of an installed set atomically (temp file, then rename)."""
+        tmp = directory / f".{MANIFEST_FILE}.{os.getpid()}.{threading.get_ident()}.tmp"
+        text = json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n"
+        try:
+            tmp.write_text(text, encoding="utf-8", newline="\n")
+            os.replace(tmp, directory / MANIFEST_FILE)
+        finally:
+            tmp.unlink(missing_ok=True)
 
     @classmethod
     def read(cls, directory: Path) -> LogSetManifest:

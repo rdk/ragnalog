@@ -1,6 +1,6 @@
 # groups.v1
 
-Schema version 1.0. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema groups`.
+Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema groups`.
 
 File `groups.parquet`: one row per primary signature, sorted by `count` descending.
 Computed at ingest (or by `regroup`) from the same entries as `entries.parquet`;

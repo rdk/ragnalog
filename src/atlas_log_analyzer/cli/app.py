@@ -68,6 +68,8 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ("ingest", "ingest:ingest"),
     ("sets", "browse:sets"),
     ("set", "browse:set_"),
+    ("captures", "browse:captures"),
+    ("label", "ingest:label"),
     ("groups", "browse:groups"),
     ("show", "browse:show"),
     ("entries", "browse:entries"),

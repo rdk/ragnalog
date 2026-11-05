@@ -31,6 +31,8 @@ API_DOCUMENTS: Final[dict[tuple[str, str], str]] = {
     ("get", "/api/sets"): "sets.v1",
     ("get", "/api/sets/{ref}"): "logset.v1",
     ("delete", "/api/sets/{ref}"): "remove.v1",
+    ("post", "/api/sets/{ref}/label"): "logset.v1",
+    ("get", "/api/captures"): "captures.v1",
     ("get", "/api/sets/{ref}/stats"): "stats.v1",
     ("get", "/api/sets/{ref}/groups"): "groups.v1",
     ("get", "/api/sets/{ref}/groups/{signature}"): "group.v1",

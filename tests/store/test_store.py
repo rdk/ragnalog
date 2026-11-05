@@ -22,7 +22,12 @@ from atlas_log_analyzer.store import (
     to_records,
 )
 from atlas_log_analyzer.store.logset import ENTRIES_FILE, MANIFEST_FILE
-from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, SCHEMA_NAMES
+from atlas_log_analyzer.store.schema import (
+    ENTRIES_SCHEMA,
+    GROUPS_SCHEMA,
+    SCHEMA_NAMES,
+    SCHEMA_VERSION,
+)
 from atlas_log_analyzer.store.store import WRITE_LOCK_FILE, logset_id
 from atlas_log_analyzer.store.writer import iter_entries, write_merges
 
@@ -571,7 +576,7 @@ def test_schema_json(name: str) -> None:
     doc = schema_json(name)
     json.dumps(doc)
     assert doc["schema"] == f"{name}.v1"
-    assert doc["version"] == "1.0"
+    assert doc["version"] == SCHEMA_VERSION
     fields = doc["fields"]
     assert isinstance(fields, list) and fields
     for f in fields:

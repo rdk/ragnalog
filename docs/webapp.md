@@ -89,6 +89,8 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `group_not_found` | `not_found` | `not_found` | No group (or no entries) with this signature. |
 | `entry_not_found` | `not_found` | `not_found` | No entry with this id. |
 | `ref_not_found` | `not_found` | `not_found` | `frames`: neither an entry id nor a group signature. |
+| `capture_not_found` | `not_found` | `not_found` | No capture matches this `capture:ID` prefix, `cluster:NAME` or `cluster:NAME@DAY`. |
+| `ambiguous_capture` | `ambiguous` | `ambiguous` | Several captures match this capture id prefix or cluster day. |
 
 | Method and path | Parameters | Document |
 |---|---|---|
@@ -97,9 +99,11 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `atlas-log manifest`) |
 | `GET /api/manifest/{command}` | | `manifest-command.v1`: one command in full (as `atlas-log manifest COMMAND`) |
 | `GET /api/formats` | | `formats.v1` (as `atlas-log formats`: `name`, `description`, `signature_spec`, `mask_rules`) |
-| `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
+| `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary, stale, node, capture`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
+| `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `atlas-log label`) | `logset.v1` |
+| `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
 | `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
@@ -111,7 +115,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto`, a set, or `none`/empty for no baseline), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
 | `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
-| `POST /api/ingest` | multipart `files` (repeat); `name`, `format`, `frames`, `mine`, `overwrite`, `force` as form fields or query (as the `ingest` options) | `job.v1`, status 202 and `Location` |
+| `POST /api/ingest` | multipart `files` (repeat; log files or ZIPs); `name`, `format`, `frames`, `mine`, `overwrite`, `force`, `node`, `cluster`, `capture`, `split` (`auto`, `prefix`, `dir`, `none`) as form fields or query (as the `ingest` options) | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
 | `POST /api/jobs/{id}/cancel` | | `job.v1` |
@@ -202,6 +206,12 @@ directories are removed when the job ends, when the server stops (jobs still
 queued are cancelled) and, for spools left by a crashed server, when the next
 server starts. Jobs live in memory, so a restart forgets them; the sets they
 created remain. Pages and `/api` keep answering while a job runs.
+
+A ZIP upload is extracted as by `atlas-log ingest` (only `job.json` and
+`*.log*`, safe paths, at most 32 GiB, removed afterwards). When the upload splits
+into one set per node (a cluster log export; `split` as in `ingest`), the job
+also carries `capture`, the `ingest-capture.v1` document, and `result` is its
+first set; `progress` counts all nodes.
 
 One server per store: the server holds an OS lock on `<store>/.server.lock`
 (released when the process ends, also after a crash), and a second

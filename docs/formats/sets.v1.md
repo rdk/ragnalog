@@ -9,7 +9,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `schema` | `"sets.v1"` | yes |  |
 | `store` | `string` | yes | CLI: the store path; API: the store directory's name. |
 | `count` | `integer` | yes | Number of items. |
-| `items` | `list<SetItem>` | yes | The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale. |
+| `items` | `list<SetItem>` | yes | The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale, node, capture. |
 | `items[].id` | `string` | yes | xxh3-64 hex of the LF-joined sorted source xxh3 digests. |
 | `items[].name` | `string \| null` | yes | Human alias given at ingest. |
 | `items[].first_ts` | `string \| null` | yes | ISO 8601 timestamp (UTC) of the earliest entry. |
@@ -36,3 +36,6 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items[].signature_spec` | `string` | no | Not with --brief. |
 | `items[].recipe_key` | `string` | no | Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Not with --brief. |
 | `items[].stale` | `boolean` | no | recipe_key differs from the recipe this version signs the set's format and spec with: not comparable with new sets, no triage baseline; rebuild with upgrade. Missing only from older tool versions. |
+| `items[].node` | `string \| null` | no | Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions. |
+| `items[].cluster` | `string \| null` | no | Name of the instance the node belongs to; null when unknown. Not with --brief. |
+| `items[].capture` | `string \| null` | no | Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions. |

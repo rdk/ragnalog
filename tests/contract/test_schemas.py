@@ -208,6 +208,29 @@ def test_ingest_document(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
     assert check(removed) == "remove.v1"
 
 
+def test_split_ingest_documents(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str], upload_client: TestClient
+) -> None:
+    from tests.cluster import export_zip
+
+    archive = export_zip(tmp_path / "export.zip")
+    _, doc = parity._cli(tmp_path / "store", ["ingest", str(archive), "--cluster", "acme"], capsys)
+    assert check(doc) == "ingest-capture.v1"
+    assert all(check(item) == "logset.v1" for item in doc["sets"])
+    _, label = parity._cli(tmp_path / "store", ["label", "acme_node1", "--node", "NODE1"], capsys)
+    assert check(label) == "logset.v1"
+    posted = upload_client.post(
+        "/api/ingest", files=[("files", ("export.zip", archive.read_bytes(), "application/zip"))]
+    )
+    job = upload_client.get(f"/api/jobs/{posted.json()['id']}").json()
+    assert check(job) == "job.v1" and job["state"] == "succeeded", job
+    assert job["capture"]["schema"] == "ingest-capture.v1"
+    assert job["result"]["id"] == job["capture"]["sets"][0]["id"]
+    assert check(upload_client.get("/api/captures").json()) == "captures.v1"
+    labelled = upload_client.post(f"/api/sets/{job['result']['id']}/label", data={"cluster": "x"})
+    assert check(labelled.json()) == "logset.v1"
+
+
 def test_job_documents(upload_client: TestClient) -> None:
     data = (parity.FIXTURES / "edge_cases.log").read_bytes()
     posted = upload_client.post(
@@ -230,6 +253,7 @@ def test_job_documents(upload_client: TestClient) -> None:
 
 PARITY_DOCUMENTS = {
     "sets.v1",
+    "captures.v1",
     "logset.v1",
     "version.v1",
     "formats.v1",
@@ -248,4 +272,5 @@ PARITY_DOCUMENTS = {
 def test_every_document_has_a_case() -> None:
     others = {e.schema for e in EXTRA} | {"report-file.v1", "job.v1", "jobs.v1", "remove.v1"}
     others.add("upgrade.v1")  # test_ingest_document
+    others.add("ingest-capture.v1")  # test_split_ingest_documents
     assert PARITY_DOCUMENTS | others == set(DOCUMENTS)

@@ -84,6 +84,8 @@ SET_BRIEF: tuple[str, ...] = (
     "group_count",
     "summary",
     "stale",
+    "node",
+    "capture",
 )
 """Keys of a ``sets --brief`` / ``brief=true`` item (no ``sources``, no versions)."""
 

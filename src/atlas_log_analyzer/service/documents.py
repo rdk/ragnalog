@@ -48,6 +48,7 @@ def _d(text: str) -> Meta:
 
 
 _LOGSET: Final = {name: text for name, _, _, text in LOGSET_FIELDS}
+_OLDER: Final = " Missing only from older tool versions."
 
 
 # --- rows: plain dicts, schema from store/schema.py (the "x-rows" marker is replaced)
@@ -175,6 +176,9 @@ class Logset(Struct, kw_only=True, tag_field="schema", tag="logset.v1"):
         Annotated[str, _d(_LOGSET["recipe_key"] + " Missing only from older tool versions.")]
         | UnsetType
     ) = UNSET
+    node: Annotated[str | None, _d(_LOGSET["node"] + _OLDER)] | UnsetType = UNSET
+    cluster: Annotated[str | None, _d(_LOGSET["cluster"] + _OLDER)] | UnsetType = UNSET
+    capture: Annotated[str | None, _d(_LOGSET["capture"] + _OLDER)] | UnsetType = UNSET
     ingest: Annotated[IngestInfo, _d("Only from ingest (CLI and job result).")] | UnsetType = UNSET
     merges: Annotated[list[MergeRow], _d("Drain3 merge proposals (ingest --mine).")] | (
         UnsetType
@@ -214,6 +218,11 @@ class SetItem(Struct, kw_only=True):
         ]
         | UnsetType
     ) = UNSET
+    node: Annotated[str | None, _d(_LOGSET["node"] + _OLDER)] | UnsetType = UNSET
+    cluster: Annotated[str | None, _d(_LOGSET["cluster"] + " Not with --brief.")] | (
+        UnsetType
+    ) = UNSET
+    capture: Annotated[str | None, _d(_LOGSET["capture"] + _OLDER)] | UnsetType = UNSET
 
 
 class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
@@ -223,7 +232,10 @@ class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
     count: Annotated[int, _d("Number of items.")]
     items: Annotated[
         list[SetItem],
-        _d("The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale."),
+        _d(
+            "The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale, "
+            "node, capture."
+        ),
     ]
 
 
@@ -252,6 +264,9 @@ class UpgradeItem(Struct, kw_only=True):
     mask_rules_version: Annotated[int, _d(_LOGSET["mask_rules_version"])]
     signature_spec: Annotated[str, _d(_LOGSET["signature_spec"])]
     recipe_key: Annotated[str, _d("Recipe key after the call.")]
+    node: Annotated[str | None, _d(_LOGSET["node"] + _OLDER)] | UnsetType = UNSET
+    cluster: Annotated[str | None, _d(_LOGSET["cluster"] + _OLDER)] | UnsetType = UNSET
+    capture: Annotated[str | None, _d(_LOGSET["capture"] + _OLDER)] | UnsetType = UNSET
     status: Annotated[Literal["upgraded", "skipped"], _d("What happened to the set.")]
     reason: Annotated[
         str | None,
@@ -266,6 +281,55 @@ class Upgrade(Struct, kw_only=True, tag_field="schema", tag="upgrade.v1"):
     count: Annotated[int, _d("Number of items.")]
     upgraded: Annotated[int, _d("Items with status upgraded.")]
     items: Annotated[list[UpgradeItem], _d("One per set, in the order of the SET arguments.")]
+
+
+# --- captures
+
+
+class CaptureNode(Struct, kw_only=True):
+    """One member set of a capture (service.captures.CaptureNodeRef)."""
+
+    node: Annotated[str, _d("Node id of the set (its name or id when it has none).")]
+    id: Annotated[str, _d("Set id.")]
+    name: Annotated[str | None, _d("Set name.")]
+    first_ts: Annotated[str | None, _d("First entry, as in the manifest. Not with --brief.")] | (
+        UnsetType
+    ) = UNSET
+    last_ts: Annotated[str | None, _d("Last entry, as in the manifest. Not with --brief.")] | (
+        UnsetType
+    ) = UNSET
+    entry_count: Annotated[int, _d("Entries of the set. Not with --brief.")] | UnsetType = UNSET
+
+
+class CaptureItem(Struct, kw_only=True):
+    """A capture: the sets collected together (service.captures.CaptureInfo)."""
+
+    capture: Annotated[str, _d("Capture id: an export's jobId or a hash of the set ids.")]
+    cluster: Annotated[str | None, _d("Cluster of the member sets.")]
+    first_ts: Annotated[str | None, _d("Earliest first entry of the members.")]
+    last_ts: Annotated[str | None, _d("Latest last entry of the members.")]
+    entry_count: Annotated[int, _d("Entries of all members.")]
+    nodes: Annotated[list[CaptureNode], _d("Member sets, sorted by node.")]
+
+
+class Captures(Struct, kw_only=True, tag_field="schema", tag="captures.v1"):
+    """The captures of the store, newest last_ts first: `captures`, `GET /api/captures`."""
+
+    count: Annotated[int, _d("Number of items.")]
+    items: Annotated[
+        list[CaptureItem], _d("The captures; with --brief only node, id, name per node.")
+    ]
+
+
+class IngestCapture(Struct, kw_only=True, tag_field="schema", tag="ingest-capture.v1"):
+    """A split ingest, one set per node: `ingest` (export ZIP, --split), the job capture."""
+
+    capture: Annotated[CaptureItem, _d("The capture after the ingest (all its member sets).")]
+    sets: Annotated[list[Logset], _d("One logset.v1 with ingest per node of this ingest.")]
+    warnings: Annotated[
+        list[str],
+        _d("job.json and split notes, then each set's ingest.warnings prefixed with its node."),
+    ]
 
 
 class LoggerCount(Struct, kw_only=True):
@@ -584,14 +648,26 @@ class Job(Struct, kw_only=True, tag_field="schema", tag="job.v1"):
     name: Annotated[str | None, _d("Set name requested.")]
     files: Annotated[list[str], _d("Uploaded file names.")]
     options: Annotated[
-        dict[str, Any], _d("Ingest options (format, frames, mine, overwrite, force).")
+        dict[str, Any],
+        _d(
+            "Ingest options (format, frames, mine, overwrite, force, node, cluster, capture, "
+            "split)."
+        ),
     ]
     created_at: Annotated[str, _d("ISO 8601 UTC.")]
     started_at: Annotated[str | None, _d("ISO 8601 UTC.")]
     finished_at: Annotated[str | None, _d("ISO 8601 UTC.")]
     progress: Annotated[JobProgress, _d("Progress so far.")]
-    result: Annotated[Logset | None, _d("The manifest once succeeded.")]
+    result: Annotated[
+        Logset | None, _d("The manifest once succeeded; of a split ingest, its first set's.")
+    ]
     error: Annotated[ErrorInfo | None, _d("Set once failed.")]
+    capture: (
+        Annotated[
+            IngestCapture, _d("A split ingest once succeeded: the ingest-capture.v1 document.")
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class Jobs(Struct, kw_only=True, tag_field="schema", tag="jobs.v1"):
@@ -733,6 +809,8 @@ class ManifestCommandDetail(
 Document = (
     Sets
     | Logset
+    | Captures
+    | IngestCapture
     | Remove
     | Upgrade
     | Stats

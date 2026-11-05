@@ -242,7 +242,7 @@ A *log set* is a directory:
 <store>/<logset-id>/
 ├── manifest.json        logset.v1: id, name, format, sources[{path,size,xxh3,first_ts,last_ts}],
 │                        time_range, entry_count, tool_version, schema_version, signature_version,
-│                        recipe_key, created_at
+│                        recipe_key, created_at, node, cluster, capture (schema 1.1)
 ├── entries.parquet      entries.v1 (one row per entry, zstd, row groups ~64k)
 ├── groups.parquet       groups.v1 (one row per signature)
 └── merges.parquet       merges.v1 (optional, from `mine`)
@@ -250,6 +250,9 @@ A *log set* is a directory:
 
 `logset-id` defaults to xxh3 of the sorted source hashes, so re-ingesting the
 same files is idempotent; `--name` gives a human alias stored in the manifest.
+`node`, `cluster` and `capture` (null when unknown) say which cluster node a set
+holds and which sets were collected together; `Store.label` rewrites only them
+(`cluster.md`).
 
 `entries.v1` columns: `id, ts (timestamp[ms, UTC]), tz_offset (i16 minutes),
 level (u8 + dictionary), thread, logger, message, body, user, request_id,
@@ -291,8 +294,9 @@ otherwise), `--quiet`, `--store DIR` (env `ATLAS_LOG_STORE`, default
 
 | Command | Purpose |
 |---|---|
-| `ingest PATH... [--format jira] [--name N] [--mine]` | Build or update a log set; prints manifest. |
+| `ingest PATH... [--format jira] [--name N] [--mine] [--split auto] [--cluster C]` | Build or update a log set (one per node for cluster logs); prints manifest(s). |
 | `sets` | List log sets in the store. |
+| `captures`, `label SET [--node N]` | Sets of several nodes collected together; set a set's node, cluster, capture. |
 | `groups SET [--level ERROR] [--logger X] [--since/--until] [--sort count/last_seen] [--limit N] [--coarse]` | Group table. |
 | `show SET SIGNATURE [--limit N] [--raw]` | Entries of one group, with variables. |
 | `entries SET [filters…] [--limit N]` | Entry listing with the same filters. |

@@ -70,3 +70,10 @@ def test_sets_reads_manifests_without_polars(mini_store: Path) -> None:
     assert _loaded_after(argv, ("polars", *HEAVY_FOR_READS)) == (0, [])
     brief = [*argv, "--brief"]
     assert _loaded_after(brief, ("polars", *HEAVY_FOR_READS)) == (0, [])
+
+
+def test_captures_and_label_read_manifests_without_polars(mini_store: Path) -> None:
+    base = ["--output", "json", "--store", str(mini_store)]
+    assert _loaded_after([*base, "captures"], ("polars", *HEAVY_FOR_READS)) == (0, [])
+    label = [*base, "label", "mini", "--node", "NODE1"]
+    assert _loaded_after(label, ("polars", *HEAVY_FOR_READS)) == (0, [])

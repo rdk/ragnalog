@@ -15,7 +15,7 @@ from atlas_log_analyzer.report import build_payload
 from atlas_log_analyzer.service.views import set_summary
 from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
-from atlas_log_analyzer.store.store import Store, StoreError
+from atlas_log_analyzer.store.store import UNSET, Label, Store, StoreError
 from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
 from atlas_log_analyzer.webapp.settings import Settings
 
@@ -118,6 +118,17 @@ class AppState:
         self.store.remove(ls.manifest.id)
         self.invalidate(ls.manifest.id)
         return ls
+
+    def label(
+        self, ref: str, *, node: Label = UNSET, cluster: Label = UNSET, capture: Label = UNSET
+    ) -> LogSetManifest:
+        """Label a set (:meth:`Store.label`) and drop its cached data.
+
+        The cached payloads hold the manifest, and labelling keeps ``created_at``.
+        """
+        m = self.store.label(ref, node=node, cluster=cluster, capture=capture)
+        self.invalidate(m.id)
+        return m
 
     def invalidate(self, set_id: str) -> None:
         """Drop cached payloads and summaries that involve ``set_id``."""

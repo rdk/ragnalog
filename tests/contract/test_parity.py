@@ -84,6 +84,9 @@ CASES: list[Case] = [
         "/api/sets/edge",
         frozenset({"summary"}),  # as in "sets"
     ),
+    Case("captures", ["captures"], "/api/captures"),
+    Case("captures-brief", ["captures", "--brief"], "/api/captures?brief=true"),
+    Case("sets-brief", ["sets", "--brief"], "/api/sets?brief=true", frozenset({"store"})),
     Case("version", ["version"], "/api/version"),
     Case("formats", ["formats"], "/api/formats"),
     Case("stats", ["stats", "{edge}"], "/api/sets/{edge}/stats"),  # by id
@@ -334,7 +337,8 @@ def store_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     """``sample`` and ``edge`` from the fixtures, plus copies for the error cases.
 
     ``twin`` (two sets, one name, ids with a common prefix) and ``edge-f1`` (another
-    signature spec) lie a year later, so neither is an automatic triage baseline.
+    signature spec) lie a year later, so neither is an automatic triage baseline. The
+    twins are nodes ``NODE1`` and ``NODE2`` of capture ``cap-twin`` of cluster ``acme``.
     """
     root = tmp_path_factory.mktemp("parity") / "store"
     store = Store(root)
@@ -342,9 +346,10 @@ def store_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     edge = ingest_paths(store, [FIXTURES / "edge_cases.log"], name="edge").logset.manifest
     assert edge.first_ts is not None and edge.last_ts is not None
     year = timedelta(days=365)
+    twin = {"cluster": "acme", "capture": "cap-twin"}
     copies = {
-        "aaaa000000000001": {"name": "twin"},
-        "aaaa000000000002": {"name": "twin"},
+        "aaaa000000000001": {"name": "twin", "node": "NODE1", **twin},
+        "aaaa000000000002": {"name": "twin", "node": "NODE2", **twin},
         "bbbb000000000001": {
             "name": "edge-f1",
             "signature_spec": "L+G+E+F1",
@@ -511,3 +516,54 @@ def test_http_page_caps(
     code, _ = _cli(store_dir, [a.format(**refs) for a in case.cli], capsys)
     status, api_doc = _api(client, case.api.format(**refs))
     assert (code, status, api_doc["error"]["code"]) == (0, 400, "usage")
+
+
+# --- label: a POST, compared on a store of its own
+
+
+@pytest.fixture
+def label_store(tmp_path: Path) -> Path:
+    root = tmp_path / "store"
+    ingest_paths(Store(root), [FIXTURES / "sample.log"], name="sample")
+    return root
+
+
+LABEL_CASES = [
+    # (id, CLI options, API query, expected exit, status, reason)
+    ("label", ["--node", "NODE1", "--cluster", "acme"], "node=NODE1&cluster=acme", 0, 200, None),
+    ("label-clear", ["--node", ""], "node=", 0, 200, None),
+    ("label-capture", ["--capture", "cap-1"], "capture=cap-1", 0, 200, None),
+    ("label-nothing", [], "", 1, 400, None),
+    ("label-bad-value", ["--node", "NODE 1"], "node=NODE%201", 1, 400, None),
+]
+
+
+@pytest.mark.parametrize(
+    ("argv", "query", "exit", "status", "reason"),
+    [pytest.param(*case[1:], id=case[0]) for case in LABEL_CASES],
+)
+def test_label_cli_and_api_agree(
+    label_store: Path,
+    capsys: pytest.CaptureFixture[str],
+    argv: list[str],
+    query: str,
+    exit: int,
+    status: int,
+    reason: str | None,
+) -> None:
+    code, cli_doc = _cli(label_store, ["label", "sample", *argv], capsys)
+    with TestClient(create_app(Settings(store=label_store, sync_jobs=True))) as client:
+        response = client.post(f"/api/sets/sample/label?{query}")
+    assert (code, response.status_code) == (exit, status), (cli_doc, response.json())
+    if exit:
+        assert _identity(cli_doc) == _identity(response.json())
+        return
+    assert _normalise(cli_doc, frozenset()) == _normalise(response.json(), frozenset())
+
+
+def test_label_unknown_set_agrees(label_store: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    code, cli_doc = _cli(label_store, ["label", "nope", "--node", "NODE1"], capsys)
+    with TestClient(create_app(Settings(store=label_store, sync_jobs=True))) as client:
+        response = client.post("/api/sets/nope/label", data={"node": "NODE1"})
+    assert (code, response.status_code) == (3, 404)
+    assert cli_doc["error"]["reason"] == response.json()["error"]["reason"] == "set_not_found"

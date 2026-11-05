@@ -1,6 +1,6 @@
 # logset.v1
 
-Schema version 1.0. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema logset`.
+Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema logset`.
 
 File `manifest.json` in `<store>/<id>/`, UTF-8 JSON. Timestamps are ISO 8601 with offset.
 The id is `xxh3_64` (hex) of the source files' xxh3 digests, sorted and joined with
@@ -28,6 +28,9 @@ in-progress writes and are ignored.
 | `mask_rules_version` | `int64` | no | Built-in masking rules version. |
 | `signature_spec` | `string` | no | SignatureSpec.key used for the primary signature. |
 | `recipe_key` | `string` | no | Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. |
+| `node` | `string` | yes | Cluster node id the logs come from (NODE1); null when unknown. |
+| `cluster` | `string` | yes | Name of the instance the node belongs to; null when unknown. |
+| `capture` | `string` | yes | Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. |
 
 ## JSON document `logset.v1`
 
@@ -59,6 +62,9 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `mask_rules_version` | `integer` | yes | Built-in masking rules version. |
 | `signature_spec` | `string` | yes | SignatureSpec.key used for the primary signature. |
 | `recipe_key` | `string` | no | Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Missing only from older tool versions. |
+| `node` | `string \| null` | no | Cluster node id the logs come from (NODE1); null when unknown. Missing only from older tool versions. |
+| `cluster` | `string \| null` | no | Name of the instance the node belongs to; null when unknown. Missing only from older tool versions. |
+| `capture` | `string \| null` | no | Id of the capture the set was collected in (an export job id or a hash of the member set ids); sets with the same capture are viewed together. Missing only from older tool versions. |
 | `ingest` | `IngestInfo` | no | Only from ingest (CLI and job result). |
 | `ingest.parsed_entries` | `integer` | yes | Entries parsed from the files. |
 | `ingest.parse_errors` | `integer` | yes | Entries whose header was not recognised. |

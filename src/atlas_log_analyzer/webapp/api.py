@@ -9,13 +9,14 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import Response
 
-from atlas_log_analyzer.service import compare, meta, queries
+from atlas_log_analyzer.service import captures, compare, meta, queries
 from atlas_log_analyzer.service import ingest as service_ingest
 from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
     EntryQuery,
     GroupQuery,
+    IngestTarget,
     Page,
     Select,
     TextCap,
@@ -87,8 +88,8 @@ def list_sets(state: StateDep, brief: bool = False) -> dict[str, Any]:
 
     ``stale`` is true when the set's ``recipe_key`` is older than the recipe for its
     format and spec (rebuild with ``atlas-log upgrade``). ``brief`` keeps only ``id``,
-    ``name``, ``first_ts``, ``last_ts``, ``entry_count``, ``group_count``, ``summary``
-    and ``stale`` per item, as ``atlas-log sets --brief``.
+    ``name``, ``first_ts``, ``last_ts``, ``entry_count``, ``group_count``, ``summary``,
+    ``stale``, ``node`` and ``capture`` per item, as ``atlas-log sets --brief``.
     """
     return queries.sets_doc(
         state,
@@ -108,6 +109,39 @@ def get_set(ref: str, state: StateDep) -> dict[str, Any]:
 def delete_set(ref: str, state: StateDep) -> dict[str, Any]:
     """Remove a set (``remove.v1``)."""
     return service_ingest.remove(state, ref, front="api")
+
+
+@router.post("/sets/{ref}/label")
+async def label_set(
+    ref: str,
+    request: Request,
+    state: StateDep,
+    node: Annotated[str | None, Query(max_length=128)] = None,
+    cluster: Annotated[str | None, Query(max_length=128)] = None,
+    capture: Annotated[str | None, Query(max_length=128)] = None,
+) -> dict[str, Any]:
+    """Set a set's ``node``, ``cluster`` and ``capture`` (``logset.v1``), as ``atlas-log label``.
+
+    The fields come from the query or the form. One that is not sent keeps its value,
+    an empty one (``node=``) clears it. Only the manifest changes; the id, the name
+    and the data stay. Values are letters, digits, ``_``, ``.`` and ``-``.
+    """
+    form = await request.form()
+    values = {
+        key: given if given is not None else _form_raw(form.get(key))
+        for key, given in (("node", node), ("cluster", cluster), ("capture", capture))
+    }
+    return await run_in_threadpool(lambda: service_ingest.label(state, ref, **values, front="api"))
+
+
+@router.get("/captures")
+def list_captures(state: StateDep, brief: bool = False) -> dict[str, Any]:
+    """List the captures of the store, newest first (``captures.v1``), as ``atlas-log captures``.
+
+    A capture is the sets that share a ``capture`` id (one cluster log export, one split
+    ingest). ``brief`` keeps only ``node``, ``id`` and ``name`` per node.
+    """
+    return captures.captures_doc(state, brief=brief)
 
 
 @router.get("/sets/{ref}/stats")
@@ -392,6 +426,10 @@ async def ingest(
     mine: bool = False,
     overwrite: bool = False,
     force: bool = False,
+    node: Annotated[str | None, Query(max_length=128)] = None,
+    cluster: Annotated[str | None, Query(max_length=128)] = None,
+    capture: Annotated[str | None, Query(max_length=128)] = None,
+    split: Literal["auto", "prefix", "dir", "none"] | None = None,
 ) -> Response:
     """Upload log files and ingest them in the background; returns ``job.v1`` (202).
 
@@ -400,11 +438,24 @@ async def ingest(
     form fields ``name``, ``format``, ``frames`` (top stack frames in signatures, as
     ``atlas-log ingest --frames``), ``mine``, ``overwrite``, ``force`` (ingest a file
     over 64 MiB that is not in the format; otherwise the job fails with
-    ``not_in_format``).
+    ``not_in_format``), ``node``, ``cluster``, ``capture`` and ``split`` (as the
+    ``ingest`` options). A ZIP upload is extracted; a cluster log export (``job.json``
+    and ``NODE_atlassian-jira.log*``) becomes one set per node, and the job then also
+    carries ``capture`` (``ingest-capture.v1``) with ``result`` its first set.
     """
     form = await request.form()
     name = name or _form_str(form.get("name"))
     format = format or _form_str(form.get("format"))
+    node = node or _form_str(form.get("node"))
+    cluster = cluster or _form_str(form.get("cluster"))
+    capture = capture or _form_str(form.get("capture"))
+    ident = IngestTarget.parse(
+        node=node,
+        cluster=cluster,
+        capture=capture,
+        split=split or _form_str(form.get("split")),
+        front="api",
+    )
     if frames is None and (text := _form_str(form.get("frames"))) is not None:
         if not (text.isascii() and text.isdigit()):
             raise OpError("invalid_value", f"frames must be an integer >= 0, not {text!r}")
@@ -446,12 +497,21 @@ async def ingest(
         mine=mine,
         overwrite=overwrite,
         force=force,
+        node=ident.node,
+        cluster=ident.cluster,
+        capture=ident.capture,
+        split=ident.split,
     )
     return JSON(job.to_dict(), status_code=202, headers={"Location": f"/api/jobs/{job.id}"})
 
 
 def _form_str(value: Any) -> str | None:
     return value.strip() or None if isinstance(value, str) else None
+
+
+def _form_raw(value: Any) -> str | None:
+    """Return a form field as sent (``""`` stays: it clears a label); ``None`` when missing."""
+    return value.strip() if isinstance(value, str) else None
 
 
 @router.get("/jobs")

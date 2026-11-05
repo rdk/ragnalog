@@ -125,7 +125,18 @@ def test_sets(jcli: Invoke, store_dir: Path) -> None:
     assert Path(doc["store"]) == store_dir
 
 
-SET_BRIEF = ["id", "name", "first_ts", "last_ts", "entry_count", "group_count", "summary", "stale"]
+SET_BRIEF = [
+    "id",
+    "name",
+    "first_ts",
+    "last_ts",
+    "entry_count",
+    "group_count",
+    "summary",
+    "stale",
+    "node",
+    "capture",
+]
 
 
 def test_sets_summary_and_brief(jcli: Invoke) -> None:

@@ -12,8 +12,9 @@ from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
+from enum import Enum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Final, Literal
 
 import xxhash
 
@@ -42,10 +43,13 @@ if TYPE_CHECKING:
 
 __all__ = [
     "MIN_PREFIX",
+    "UNSET",
     "AmbiguousLogSet",
+    "Label",
     "LogSetNotFound",
     "Store",
     "StoreError",
+    "Unset",
     "UpgradeResult",
     "logset_id",
 ]
@@ -62,6 +66,19 @@ RETRY_DELAYS_S = (0.05, 0.1, 0.2, 0.4, 0.8)
 On Windows a directory cannot be renamed or deleted while a reader has one of its
 files open; such readers are short-lived (one query), so a few retries suffice.
 """
+
+
+class Unset(Enum):
+    """Type of :data:`UNSET`: a keyword of :meth:`Store.label` that was not given."""
+
+    UNSET = "UNSET"
+
+
+UNSET: Final = Unset.UNSET
+"""Leave a field of :meth:`Store.label` as it is (``None`` clears it)."""
+
+type Label = str | Literal[Unset.UNSET] | None
+"""A value of :meth:`Store.label`: the new text, ``None`` (clear) or :data:`UNSET` (keep)."""
 
 
 class StoreError(Exception):
@@ -241,33 +258,89 @@ class Store:
             StoreError: The set with id ``ref`` exists but cannot be opened.
 
         """
+        return _logset(*self._resolve(ref))
+
+    def _resolve(self, ref: str) -> tuple[Path, LogSetManifest]:
+        """Directory and manifest of the set ``ref`` (see :meth:`open`), without polars."""
         exact = self.root / ref
         plain = ref and not ref.startswith(".") and "/" not in ref and "\\" not in ref
         if plain and (exact / MANIFEST_FILE).is_file():
             m = self._cached(exact)
-            return _logset(exact, m) if m is not None else self._load(exact)
+            return exact, (m if m is not None else self._read(exact))
         sets = self._load_all()
         by_name = [(d, m) for d, m in sets if m.name == ref]
         if len(by_name) == 1:
-            return _logset(*by_name[0])
+            return by_name[0]
         if len(by_name) > 1:
             ids = ", ".join(m.id for _, m in by_name)
             raise AmbiguousLogSet(f"name {ref!r} is ambiguous: {ids}")
         if len(ref) >= MIN_PREFIX:
             by_prefix = [(d, m) for d, m in sets if m.id.startswith(ref.lower())]
             if len(by_prefix) == 1:
-                return _logset(*by_prefix[0])
+                return by_prefix[0]
             if len(by_prefix) > 1:
                 ids = ", ".join(m.id for _, m in by_prefix)
                 raise AmbiguousLogSet(f"id prefix {ref!r} is ambiguous: {ids}")
         raise LogSetNotFound(f"no log set {ref!r} in {self.root}")
 
+    def manifest(self, ref: str) -> LogSetManifest:
+        """Manifest of the set ``ref`` (resolved as by :meth:`open`), without loading polars.
+
+        Raises:
+            LogSetNotFound: Nothing matches ``ref``.
+            AmbiguousLogSet: Several sets share the name or id prefix.
+            StoreError: The set with id ``ref`` exists but cannot be read.
+
+        """
+        return self._resolve(ref)[1]
+
+    def label(
+        self,
+        ref: str,
+        *,
+        node: Label = UNSET,
+        cluster: Label = UNSET,
+        capture: Label = UNSET,
+    ) -> LogSetManifest:
+        """Set or clear the identity fields of a set; its id, name and data stay as they are.
+
+        A field left at :data:`UNSET` keeps its value, ``None`` clears it. The manifest
+        is rewritten in place (temporary file, then rename) under the store's write lock.
+
+        Raises:
+            LogSetNotFound: Nothing matches ``ref``.
+            AmbiguousLogSet: Several sets share the name or id prefix.
+            StoreError: The manifest cannot be read or rewritten.
+
+        """
+        path, _ = self._resolve(ref)
+        with self._writing():
+            m = self._read(path)  # not the cache: another process may have labelled it
+            updated = replace(
+                m,
+                node=m.node if node is UNSET else node,
+                cluster=m.cluster if cluster is UNSET else cluster,
+                capture=m.capture if capture is UNSET else capture,
+            )
+            if updated != m:
+                try:
+                    _retry(lambda: updated.replace_in(path))
+                except OSError as exc:
+                    raise StoreError(f"cannot label log set {m.id}: {exc}") from exc
+        with self._index_lock:
+            self._index.pop(path, None)
+        return updated
+
     @staticmethod
-    def _load(path: Path) -> LogSet:
+    def _read(path: Path) -> LogSetManifest:
         try:
-            return _logset(path, LogSetManifest.read(path))
+            return LogSetManifest.read(path)
         except (OSError, ValueError) as exc:
             raise StoreError(f"cannot open log set {path.name}: {exc}") from exc
+
+    @staticmethod
+    def _load(path: Path) -> LogSet:
+        return _logset(path, Store._read(path))
 
     def _tmp_dir(self, set_id: str) -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
@@ -339,6 +412,9 @@ class Store:
         overwrite: bool = False,
         dedupe: bool = True,
         recipe: Recipe | None = None,
+        node: str | None = None,
+        cluster: str | None = None,
+        capture: str | None = None,
     ) -> LogSet:
         """Write a new log set.
 
@@ -361,7 +437,8 @@ class Store:
         Everything is written to a temporary directory inside the store and
         renamed into place at the end, so a failed ingest leaves no partial set.
         The manifest records ``recipe.key`` (default ``Recipe(fmt, spec)``): the
-        recipe the caller signed ``signed`` with.
+        recipe the caller signed ``signed`` with, and the identity ``node``, ``cluster``
+        and ``capture`` (ignored, like ``name``, when the set exists; see :meth:`label`).
 
         Raises:
             StoreError: No sources were given, or ``name`` is already used by
@@ -407,6 +484,9 @@ class Store:
                 mask_rules_version=MASK_RULES_VERSION,
                 signature_spec=spec.key,
                 recipe_key=(recipe or Recipe(fmt, spec)).key,
+                node=node,
+                cluster=cluster,
+                capture=capture,
             )
             manifest.write(tmp)
             with self._writing():

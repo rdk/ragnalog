@@ -1,0 +1,167 @@
+"""Cluster logs end to end: split ingest, labels, captures and per-node triage (CLI)."""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+import pytest
+
+from tests.cluster import JOB_ID, export_zip, write_export, write_node_files
+
+from .conftest import Invoke
+
+
+@pytest.fixture
+def archive(tmp_path: Path) -> Path:
+    return export_zip(tmp_path / "export.zip")
+
+
+def test_export_zip_becomes_one_set_per_node(jcli: Invoke, archive: Path, store_dir: Path) -> None:
+    result = jcli("ingest", archive, "--cluster", "jira-test")
+    assert result.code == 0, result.stderr
+    doc = result.json()
+    assert doc["schema"] == "ingest-capture.v1" and doc["warnings"] == []
+    capture = doc["capture"]
+    assert capture["capture"] == JOB_ID and capture["cluster"] == "jira-test"
+    assert [n["node"] for n in capture["nodes"]] == ["NODE1", "NODE2"]
+    assert capture["entry_count"] == sum(s["entry_count"] for s in doc["sets"])
+    node1, node2 = doc["sets"]
+    assert (node1["name"], node1["node"], node1["cluster"], node1["capture"]) == (
+        "jira-test_node1",
+        "NODE1",
+        "jira-test",
+        JOB_ID,
+    )
+    assert node2["name"] == "jira-test_node2" and node1["ingest"]["existing"] is False
+    # rotated files are read oldest first within each node
+    assert [Path(s["path"]).name for s in node1["sources"]] == [
+        "NODE1_atlassian-jira.log.2",
+        "NODE1_atlassian-jira.log.1",
+        "NODE1_atlassian-jira.log",
+    ]
+    assert "NODE1: ingested" in result.stderr
+    assert not (store_dir / ".spool").exists()  # the extracted files are gone
+
+
+def test_reingest_is_idempotent_and_labels_what_is_missing(jcli: Invoke, archive: Path) -> None:
+    first = jcli("ingest", archive).json()
+    assert first["capture"]["cluster"] is None
+    assert [s["name"] for s in first["sets"]] == [
+        f"{JOB_ID[:8]}_node1",
+        f"{JOB_ID[:8]}_node2",
+    ]
+    again = jcli("ingest", archive, "--cluster", "jira-test").json()
+    assert [s["ingest"]["existing"] for s in again["sets"]] == [True, True]
+    assert [s["id"] for s in again["sets"]] == [s["id"] for s in first["sets"]]
+    assert [s["cluster"] for s in again["sets"]] == ["jira-test", "jira-test"]  # labelled
+    assert again["capture"]["cluster"] == "jira-test"
+    third = jcli("ingest", archive, "--cluster", "other").json()
+    assert third["sets"][0]["cluster"] == "jira-test"
+    assert any("--cluster other ignored" in w for w in third["warnings"])
+
+
+NEXT_JOB = "2026-11-06_06-00-00-000_TST"
+
+
+def next_day_export(directory: Path) -> Path:
+    """The export of the following day: other files, so other sets."""
+    write_export(directory, job_id=NEXT_JOB)
+    for f in directory.glob("*.log*"):
+        f.write_text(f.read_text(encoding="utf-8").replace("2026-11-05", "2026-11-06"), "utf-8")
+    return directory
+
+
+def test_cluster_is_remembered_per_node(jcli: Invoke, tmp_path: Path) -> None:
+    jcli("ingest", export_zip(tmp_path / "a.zip"), "--cluster", "jira-test")
+    doc = jcli("ingest", next_day_export(tmp_path / "b")).json()
+    assert doc["capture"]["capture"] == NEXT_JOB and doc["capture"]["cluster"] == "jira-test"
+    # the first capture took the names: the second gets numbered ones and says so
+    assert [s["name"] for s in doc["sets"]] == ["jira-test_node1_2", "jira-test_node2_2"]
+    assert any("name jira-test_node1 is used by another set" in w for w in doc["warnings"])
+    listed = jcli("captures").json()
+    assert [c["capture"] for c in listed["items"]] == [NEXT_JOB, JOB_ID]
+
+
+def test_prefix_and_dir_splits(jcli: Invoke, tmp_path: Path) -> None:
+    for node in ("NODE1", "NODE2"):
+        write_node_files(tmp_path / "flat", node)
+        for f in write_node_files(tmp_path / "dirs" / node.lower(), node, prefix=False):
+            f.write_text(f.read_text("utf-8").replace("part", "piece"), "utf-8")  # other sets
+    flat = jcli("ingest", tmp_path / "flat").json()
+    assert flat["schema"] == "ingest-capture.v1"
+    assert [s["node"] for s in flat["sets"]] == ["NODE1", "NODE2"]
+    assert len(flat["capture"]["capture"]) == 16  # a hash of the set ids
+    dirs = jcli("ingest", tmp_path / "dirs", "--name", "byDir").json()
+    assert [s["node"] for s in dirs["sets"]] == ["node1", "node2"]
+    assert [s["name"] for s in dirs["sets"]] == ["byDir_node1", "byDir_node2"]
+    forced = jcli(
+        "ingest", tmp_path / "dirs" / "node1", tmp_path / "dirs" / "node2", "--split", "dir"
+    ).json()
+    assert forced["capture"]["capture"] == dirs["capture"]["capture"]  # the same two sets
+
+
+def test_split_none_and_node_option(jcli: Invoke, archive: Path) -> None:
+    refused = jcli("ingest", archive, "--node", "NODE1")
+    assert refused.code == 1 and refused.json()["error"]["code"] == "invalid_value"
+    assert "--split none" in refused.json()["error"]["message"]
+    one = jcli("ingest", archive, "--split", "none", "--node", "MIXED", "--capture", "cap-1")
+    doc = one.json()
+    assert one.code == 0 and doc["schema"] == "logset.v1"
+    assert (doc["node"], doc["cluster"], doc["capture"]) == ("MIXED", None, "cap-1")
+    assert len(doc["sources"]) == 6
+    assert any("names node NODE" in w for w in doc["ingest"]["warnings"])
+
+
+def test_single_set_hints_suggest_a_node(jcli: Invoke, tmp_path: Path) -> None:
+    files = write_node_files(tmp_path / "n1", "NODE1", prefix=False)
+    plain = jcli("ingest", tmp_path / "n1")
+    doc = plain.json()
+    assert doc["node"] is None and doc["capture"] is None  # labels stay explicit
+    assert doc["ingest"]["warnings"] == [
+        "the log names node NODE1 (1 line(s)); pass --node NODE1 (or "
+        f"`atlas-log label {doc['id']} --node NODE1`) to label the set"
+    ]
+    assert "pass --node NODE1" in plain.stderr
+    labelled = jcli("ingest", tmp_path / "n1", "--node", "NODE1", "--cluster", "acme").json()
+    assert labelled["ingest"]["existing"] is True and labelled["ingest"]["warnings"] == []
+    assert (labelled["node"], labelled["cluster"]) == ("NODE1", "acme")
+    other = write_node_files(tmp_path / "n1b", "NODE1", parts=1, prefix=False)
+    other[0].write_text(files[0].read_text("utf-8").replace("10:", "11:"), "utf-8")
+    remembered = jcli("ingest", other[0], "--node", "NODE1").json()
+    assert remembered["cluster"] == "acme"  # from the newest earlier set of NODE1
+    wrong = write_node_files(tmp_path / "n2", "NODE2", parts=1, prefix=False)
+    mislabelled = jcli("ingest", wrong[0], "--node", "NODE1").json()
+    assert mislabelled["ingest"]["warnings"] == [
+        "the log names node NODE2 (2 line(s) of atlassian-jira.log), but the set is "
+        "labelled node NODE1"
+    ]
+
+
+def test_label_command(jcli: Invoke, tmp_path: Path) -> None:
+    write_node_files(tmp_path / "n1", "NODE1", prefix=False)
+    created = jcli("ingest", tmp_path / "n1", "--name", "n1").json()
+    doc = jcli("label", "n1", "--node", "NODE1", "--cluster", "acme").json()
+    assert doc["schema"] == "logset.v1" and doc["id"] == created["id"]
+    assert (doc["node"], doc["cluster"], doc["capture"]) == ("NODE1", "acme", None)
+    cleared = jcli("label", "n1", "--cluster", "", "--capture", "c-1").json()
+    assert (cleared["node"], cleared["cluster"], cleared["capture"]) == ("NODE1", None, "c-1")
+    assert jcli("captures").json()["items"][0]["capture"] == "c-1"
+    bad = jcli("label", "n1", "--node", "two words")
+    assert bad.code == 1 and bad.json()["error"]["code"] == "invalid_value"
+    assert jcli("label", "n1").code == 1
+    missing = jcli("label", "nope", "--node", "NODE1")
+    assert missing.code == 3 and missing.json()["error"]["reason"] == "set_not_found"
+
+
+def test_bad_zip_is_invalid_value(jcli: Invoke, tmp_path: Path) -> None:
+    bad = tmp_path / "bad.zip"
+    bad.write_bytes(b"not a zip at all")
+    result = jcli("ingest", bad)
+    assert result.code == 1 and result.json()["error"]["code"] == "invalid_value"
+
+
+def test_table_output(cli: Invoke, archive: Path, store_dir: Path) -> None:
+    base = ("--output", "table", "--width", "200", "--store", store_dir)
+    assert cli(*base, "ingest", archive).code == 0
+    shown = cli(*base, "captures")
+    assert shown.code == 0 and "NODE1, NODE2" in shown.stdout and JOB_ID in shown.stdout

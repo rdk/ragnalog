@@ -1,7 +1,9 @@
 # Clusters: logs of several nodes
 
-Status: design 2026-11-05, not implemented. Builds on `design.md` (store,
-service layer), `report.md` (the page and its payload) and `webapp.md`.
+Status: design 2026-11-05. Phase A (identity: §2, §3, §5 baseline rule, the
+home page rows, §11.1) is implemented; B to D are not. Builds on `design.md`
+(store, service layer), `report.md` (the page and its payload) and `webapp.md`;
+the commands are in `cli.md` (`ingest`, `label`, `captures`).
 
 A Jira Data Center cluster writes one `atlassian-jira.log*` family per node. A
 cluster log export (one ZIP with `job.json` and `<NODE>_atlassian-jira.log*`
@@ -81,11 +83,13 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   gave a node, the hints suggest one.
 - **Cluster.** `--cluster`, else the cluster of an earlier set of the same
   node (node ids are remembered), else none.
-- **Capture id.** `job.json`'s `jobId`, else a hash of the member set ids. Each
-  member set is named `<cluster or node>_<node>_<first day>`, unless `--name`
-  gives a prefix.
-- **Output.** `capture.v1` (§6) lists the member sets. The web upload accepts
-  the same ZIP and creates the same capture.
+- **Capture id.** `--capture`, else `job.json`'s `jobId`, else a hash of the
+  member set ids. Each member set is named `<prefix>_<node>` (§11.1: prefix
+  `--name`, else the cluster, else the start of the capture id); a name another
+  set has already gets `_2`, `_3`, ….
+- **Output.** `ingest-capture.v1`: the capture (`captures.v1` item) and the
+  member sets' `logset.v1` with `ingest`, plus warnings. The web upload accepts
+  the same ZIP and creates the same capture (`job.v1` gains `capture`).
 
 ## 4. Time
 
@@ -139,7 +143,8 @@ The CLI and the API accept a capture reference wherever this section says
 
 | Document | CLI | API | Content |
 |---|---|---|---|
-| `capture.v1` | `capture CAPTURE`, `captures` | `GET /api/captures[/{ref}]` | cluster, capture, window, and per node: set, coverage, gaps ≥ 15 min, entries, errors and warnings per hour, top error group, triage verdict against its own baseline, event counts, clock skew estimate |
+| `captures.v1` | `captures` | `GET /api/captures` | `CaptureInfo` items (§11.1), newest first; built (phase A) from the manifests alone |
+| `capture.v1` | `capture CAPTURE` | `GET /api/captures/{ref}` | cluster, capture, window, and per node: set, coverage, gaps ≥ 15 min, entries, errors and warnings per hour, top error group, triage verdict against its own baseline, event counts, clock skew estimate |
 | `cluster-timeline.v1` | `timeline CAPTURE --by-node` | `GET /api/captures/{ref}/timeline` | buckets, and per node counts by level; with `signature`, that group per node; coverage per node |
 | `matrix.v1` | `matrix CAPTURE` | `GET /api/captures/{ref}/matrix` | one row per signature: group fields, and per node `count, rate_per_hour, first_seen, last_seen`; `spread` (`all`, `only`, `skewed`), `skew`, `first_node`, `lead_ms`. Filters as `groups`, plus `node`, `spread`, `sort=count\|skew\|lead` |
 | `events.v1` | `events CAPTURE\|SET` | `GET /api/captures/{ref}/events` | `items` `{node, ts, kind, subject_node?, signature, entry_id, text}`; `pairs` of events on different nodes that follow each other (§7) |
@@ -329,6 +334,15 @@ Fixed before implementation so that identity (A), analytics (S) and the page
     `ambiguous_capture` (409, CLI exit 1).
   - `is_capture_ref(text) -> bool`: the text starts with `capture:` or
     `cluster:`.
+
+  As built: `first_ts`/`last_ts` are ISO 8601 strings as in the manifests;
+  `resolve_capture` takes an optional keyword `front` (the hint of an error),
+  answers `invalid_value` for text that is no capture reference, and
+  `capture:PREFIX` prefers an exact id. Also there: `get_capture(store, id)`
+  (exact id or `None`), `capture_id(set_ids)`, `captures_doc(store, brief=)`.
+  A member without a node is listed under its name. `captures --brief` keeps
+  only `node`, `id`, `name` per node. Split ingest prints `ingest-capture.v1`
+  `{capture, sets, warnings}` (not `capture.v1`, which phase B builds).
 
 ### 11.2 Analytics (S): `service/cluster.py`
 
