@@ -199,6 +199,10 @@ def test_ingest_document(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> 
     assert check(again) == "logset.v1" and again["ingest"]["existing"] is True
     _, regrouped = parity._cli(store, ["regroup", "s", "--frames", "1"], capsys)
     assert check(regrouped) == "logset.v1"
+    _, upgraded = parity._cli(store, ["upgrade", "--all"], capsys)
+    assert check(upgraded) == "upgrade.v1" and upgraded["items"][0]["reason"] == "current"
+    _, listed = parity._cli(store, ["sets"], capsys)
+    assert check(listed) == "sets.v1" and listed["items"][0]["stale"] is False
     _, removed = parity._cli(store, ["remove", "s"], capsys)
     assert check(removed) == "remove.v1"
 
@@ -242,4 +246,5 @@ PARITY_DOCUMENTS = {
 
 def test_every_document_has_a_case() -> None:
     others = {e.schema for e in EXTRA} | {"report-file.v1", "job.v1", "jobs.v1", "remove.v1"}
+    others.add("upgrade.v1")  # test_ingest_document
     assert PARITY_DOCUMENTS | others == set(DOCUMENTS)

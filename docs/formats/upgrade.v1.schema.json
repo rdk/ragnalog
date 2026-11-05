@@ -1,0 +1,223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "upgrade.v1.schema.json",
+  "title": "upgrade.v1",
+  "description": "Stale sets rebuilt at the current recipe: `upgrade [SET...] [--all]`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "upgrade.v1"
+      ]
+    },
+    "count": {
+      "description": "Number of items.",
+      "type": "integer"
+    },
+    "upgraded": {
+      "description": "Items with status upgraded.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "One per set, in the order of the SET arguments.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UpgradeItem"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "count",
+    "upgraded",
+    "items"
+  ],
+  "$defs": {
+    "Source": {
+      "title": "Source",
+      "description": "One ingested file of a log set.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path of the file as given at ingest.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer"
+        },
+        "xxh3": {
+          "description": "xxh3-64 hex digest of the content.",
+          "type": "string"
+        },
+        "first_ts": {
+          "description": "ISO 8601 time of the file's earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 time of the file's latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "description": "Entries of the file kept after deduplication.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "xxh3",
+        "first_ts",
+        "last_ts",
+        "entries"
+      ]
+    },
+    "UpgradeItem": {
+      "title": "UpgradeItem",
+      "description": "One set of `upgrade.v1`: its manifest (after the call) plus the outcome.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "xxh3-64 hex of the LF-joined sorted source xxh3 digests.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human alias given at ingest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "description": "Format registry key, e.g. jira.",
+          "type": "string"
+        },
+        "sources": {
+          "description": "Ingested files in ingest order; timestamps ISO 8601 or null; entries = rows kept after deduplication.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Source"
+          }
+        },
+        "first_ts": {
+          "description": "ISO 8601 timestamp (UTC) of the earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 timestamp (UTC) of the latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Rows in entries.parquet.",
+          "type": "integer"
+        },
+        "group_count": {
+          "description": "Rows in groups.parquet.",
+          "type": "integer"
+        },
+        "created_at": {
+          "description": "ISO 8601 time (UTC) the set was written.",
+          "type": "string"
+        },
+        "tool_version": {
+          "description": "atlas-log-analyzer version that wrote the set.",
+          "type": "string"
+        },
+        "schema_version": {
+          "description": "Store schema version <major>.<minor>.",
+          "type": "string"
+        },
+        "signature_version": {
+          "description": "Signature algorithm version.",
+          "type": "integer"
+        },
+        "mask_rules_version": {
+          "description": "Built-in masking rules version.",
+          "type": "integer"
+        },
+        "signature_spec": {
+          "description": "SignatureSpec.key used for the primary signature.",
+          "type": "string"
+        },
+        "recipe_key": {
+          "description": "Recipe key after the call.",
+          "type": "string"
+        },
+        "status": {
+          "description": "What happened to the set.",
+          "enum": [
+            "skipped",
+            "upgraded"
+          ]
+        },
+        "reason": {
+          "description": "null when upgraded; \"current\" or the unknown format/spec when skipped.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "previous_recipe_key": {
+          "description": "Recipe key before the call.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "format",
+        "sources",
+        "first_ts",
+        "last_ts",
+        "entry_count",
+        "group_count",
+        "created_at",
+        "tool_version",
+        "schema_version",
+        "signature_version",
+        "mask_rules_version",
+        "signature_spec",
+        "recipe_key",
+        "status",
+        "reason",
+        "previous_recipe_key"
+      ]
+    }
+  }
+}

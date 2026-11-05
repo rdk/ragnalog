@@ -62,7 +62,7 @@
       "$ref": "#/$defs/Coverage"
     },
     "warnings": {
-      "description": "Spans differ by more than 4x.",
+      "description": "Rejected baselines when there is none; a stale, contained or tiny given baseline; spans that differ by more than 4x.",
       "type": "array",
       "items": {
         "type": "string"
@@ -116,6 +116,54 @@
     "vanished"
   ],
   "$defs": {
+    "BaselineCandidate": {
+      "title": "BaselineCandidate",
+      "description": "A set rejected as the automatic baseline.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "description": "stale/recipe: another recipe_key; superset/subset: its sources contain or are part of the set's; later: ends after the set; tiny: under 1% of the entries; span: span more than 16x off.",
+          "enum": [
+            "later",
+            "recipe",
+            "span",
+            "stale",
+            "subset",
+            "superset",
+            "tiny"
+          ]
+        },
+        "detail": {
+          "description": "The reason in one sentence.",
+          "type": "string"
+        },
+        "hint": {
+          "description": "A command that would make it usable.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "reason",
+        "detail"
+      ]
+    },
     "Coverage": {
       "title": "Coverage",
       "description": "Spans of both sets in hours.",
@@ -364,7 +412,7 @@
           ]
         },
         "reason": {
-          "description": "Why this baseline was picked.",
+          "description": "Why this baseline was picked, in one line.",
           "type": "string"
         },
         "entries": {
@@ -372,14 +420,14 @@
           "type": "integer"
         },
         "shared_sources": {
-          "description": "Source files shared with the set.",
+          "description": "Number of source files (by digest) shared with the set.",
           "type": "integer"
         },
         "candidates": {
-          "description": "Other sets considered, with reasons.",
+          "description": "Up to 5 sets rejected as the automatic baseline, newest first; [] when given.",
           "type": "array",
           "items": {
-            "type": "object"
+            "$ref": "#/$defs/BaselineCandidate"
           }
         }
       },

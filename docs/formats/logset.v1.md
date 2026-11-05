@@ -58,7 +58,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `signature_version` | `integer` | yes | Signature algorithm version. |
 | `mask_rules_version` | `integer` | yes | Built-in masking rules version. |
 | `signature_spec` | `string` | yes | SignatureSpec.key used for the primary signature. |
-| `recipe_key` | `string \| null` | no | Key of the parse recipe. |
+| `recipe_key` | `string` | no | Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Missing only from older tool versions. |
 | `ingest` | `IngestInfo` | no | Only from ingest (CLI and job result). |
 | `ingest.parsed_entries` | `integer` | yes | Entries parsed from the files. |
 | `ingest.parse_errors` | `integer` | yes | Entries whose header was not recognised. |

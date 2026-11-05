@@ -162,7 +162,10 @@ class Logset(Struct, kw_only=True, tag_field="schema", tag="logset.v1"):
     signature_version: Annotated[int, _d(_LOGSET["signature_version"])]
     mask_rules_version: Annotated[int, _d(_LOGSET["mask_rules_version"])]
     signature_spec: Annotated[str, _d(_LOGSET["signature_spec"])]
-    recipe_key: Annotated[str | None, _d("Key of the parse recipe.")] | UnsetType = UNSET
+    recipe_key: (
+        Annotated[str, _d(_LOGSET["recipe_key"] + " Missing only from older tool versions.")]
+        | UnsetType
+    ) = UNSET
     ingest: Annotated[IngestInfo, _d("Only from ingest (CLI and job result).")] | UnsetType = UNSET
     merges: Annotated[list[MergeRow], _d("Drain3 merge proposals (ingest --mine).")] | (
         UnsetType
@@ -171,7 +174,7 @@ class Logset(Struct, kw_only=True, tag_field="schema", tag="logset.v1"):
 
 
 class SetItem(Struct, kw_only=True):
-    """One set of `sets.v1`: its manifest without `schema` plus `summary`."""
+    """One set of `sets.v1`: its manifest without `schema` plus `summary` and `stale`."""
 
     id: Annotated[str, _d(_LOGSET["id"])]
     name: Annotated[str | None, _d(_LOGSET["name"])]
@@ -188,8 +191,20 @@ class SetItem(Struct, kw_only=True):
     signature_version: Annotated[int, _d("Not with --brief.")] | UnsetType = UNSET
     mask_rules_version: Annotated[int, _d("Not with --brief.")] | UnsetType = UNSET
     signature_spec: Annotated[str, _d("Not with --brief.")] | UnsetType = UNSET
-    recipe_key: Annotated[str | None, _d("Key of the parse recipe.")] | UnsetType = UNSET
-    stale: Annotated[bool, _d("Built by an older version; see upgrade.")] | UnsetType = UNSET
+    recipe_key: Annotated[str, _d(_LOGSET["recipe_key"] + " Not with --brief.")] | (
+        UnsetType
+    ) = UNSET
+    stale: (
+        Annotated[
+            bool,
+            _d(
+                "recipe_key differs from the recipe this version signs the set's format and "
+                "spec with: not comparable with new sets, no triage baseline; rebuild with "
+                "upgrade. Missing only from older tool versions."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
@@ -199,7 +214,7 @@ class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
     count: Annotated[int, _d("Number of items.")]
     items: Annotated[
         list[SetItem],
-        _d("The sets; with --brief only id, name, first_ts, last_ts, counts, summary."),
+        _d("The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale."),
     ]
 
 
@@ -208,6 +223,40 @@ class Remove(Struct, kw_only=True, tag_field="schema", tag="remove.v1"):
 
     removed: Annotated[str, _d("Id of the removed set.")]
     name: Annotated[str | None, _d("Its name.")]
+
+
+class UpgradeItem(Struct, kw_only=True):
+    """One set of `upgrade.v1`: its manifest (after the call) plus the outcome."""
+
+    id: Annotated[str, _d(_LOGSET["id"])]
+    name: Annotated[str | None, _d(_LOGSET["name"])]
+    format: Annotated[str, _d(_LOGSET["format"])]
+    sources: Annotated[list[Source], _d(_LOGSET["sources"])]
+    first_ts: Annotated[str | None, _d(_LOGSET["first_ts"])]
+    last_ts: Annotated[str | None, _d(_LOGSET["last_ts"])]
+    entry_count: Annotated[int, _d(_LOGSET["entry_count"])]
+    group_count: Annotated[int, _d(_LOGSET["group_count"])]
+    created_at: Annotated[str, _d(_LOGSET["created_at"])]
+    tool_version: Annotated[str, _d(_LOGSET["tool_version"])]
+    schema_version: Annotated[str, _d(_LOGSET["schema_version"])]
+    signature_version: Annotated[int, _d(_LOGSET["signature_version"])]
+    mask_rules_version: Annotated[int, _d(_LOGSET["mask_rules_version"])]
+    signature_spec: Annotated[str, _d(_LOGSET["signature_spec"])]
+    recipe_key: Annotated[str, _d("Recipe key after the call.")]
+    status: Annotated[Literal["upgraded", "skipped"], _d("What happened to the set.")]
+    reason: Annotated[
+        str | None,
+        _d('null when upgraded; "current" or the unknown format/spec when skipped.'),
+    ]
+    previous_recipe_key: Annotated[str, _d("Recipe key before the call.")]
+
+
+class Upgrade(Struct, kw_only=True, tag_field="schema", tag="upgrade.v1"):
+    """Stale sets rebuilt at the current recipe: `upgrade [SET...] [--all]`."""
+
+    count: Annotated[int, _d("Number of items.")]
+    upgraded: Annotated[int, _d("Items with status upgraded.")]
+    items: Annotated[list[UpgradeItem], _d("One per set, in the order of the SET arguments.")]
 
 
 class LoggerCount(Struct, kw_only=True):
@@ -359,6 +408,23 @@ class TriageSet(Struct, kw_only=True):
     entries: Annotated[int, _d("Entries of the set.")]
 
 
+class BaselineCandidate(Struct, kw_only=True):
+    """A set rejected as the automatic baseline."""
+
+    id: Annotated[str, _d("Set id.")]
+    name: Annotated[str | None, _d("Set name.")]
+    reason: Annotated[
+        Literal["stale", "recipe", "superset", "subset", "later", "tiny", "span"],
+        _d(
+            "stale/recipe: another recipe_key; superset/subset: its sources contain or are "
+            "part of the set's; later: ends after the set; tiny: under 1% of the entries; "
+            "span: span more than 16x off."
+        ),
+    ]
+    detail: Annotated[str, _d("The reason in one sentence.")]
+    hint: Annotated[str, _d("A command that would make it usable.")] | UnsetType = UNSET
+
+
 class TriageBaseline(Struct, kw_only=True):
     """The baseline set and how it was chosen."""
 
@@ -367,11 +433,17 @@ class TriageBaseline(Struct, kw_only=True):
     first_ts: Annotated[str | None, _d("First entry, as in the manifest.")]
     last_ts: Annotated[str | None, _d("Last entry, as in the manifest.")]
     resolved_by: Annotated[Literal["auto", "param"], _d("auto = picked, param = given.")]
-    reason: Annotated[str, _d("Why this baseline was picked.")] | UnsetType = UNSET
+    reason: Annotated[str, _d("Why this baseline was picked, in one line.")] | UnsetType = UNSET
     entries: Annotated[int, _d("Entries of the baseline.")] | UnsetType = UNSET
-    shared_sources: Annotated[int, _d("Source files shared with the set.")] | UnsetType = UNSET
+    shared_sources: (
+        Annotated[int, _d("Number of source files (by digest) shared with the set.")] | UnsetType
+    ) = UNSET
     candidates: (
-        Annotated[list[dict[str, Any]], _d("Other sets considered, with reasons.")] | UnsetType
+        Annotated[
+            list[BaselineCandidate],
+            _d("Up to 5 sets rejected as the automatic baseline, newest first; [] when given."),
+        ]
+        | UnsetType
     ) = UNSET
 
 
@@ -409,7 +481,13 @@ class Triage(Struct, kw_only=True, tag_field="schema", tag="triage.v1"):
     ]
     summary: Annotated[TriageSummary | None, _d("null without a baseline.")]
     coverage: Annotated[Coverage, _d("Spans of both sets in hours.")]
-    warnings: Annotated[list[str], _d("Spans differ by more than 4x.")]
+    warnings: Annotated[
+        list[str],
+        _d(
+            "Rejected baselines when there is none; a stale, contained or tiny given "
+            "baseline; spans that differ by more than 4x."
+        ),
+    ]
     new: Annotated[list[DiffRow], _d("New groups at/above min_level, most severe first.")]
     new_exceptions: Annotated[list[DiffRow], _d("New lower-level groups with an exception.")]
     grew: Annotated[list[DiffRow], _d("Hourly rate rose at least --grow times.")]
@@ -619,6 +697,7 @@ Document = (
     Sets
     | Logset
     | Remove
+    | Upgrade
     | Stats
     | Groups
     | Group

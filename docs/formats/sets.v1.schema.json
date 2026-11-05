@@ -19,7 +19,7 @@
       "type": "integer"
     },
     "items": {
-      "description": "The sets; with --brief only id, name, first_ts, last_ts, counts, summary.",
+      "description": "The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/SetItem"
@@ -35,7 +35,7 @@
   "$defs": {
     "SetItem": {
       "title": "SetItem",
-      "description": "One set of `sets.v1`: its manifest without `schema` plus `summary`.",
+      "description": "One set of `sets.v1`: its manifest without `schema` plus `summary` and `stale`.",
       "type": "object",
       "properties": {
         "id": {
@@ -130,18 +130,11 @@
           "type": "string"
         },
         "recipe_key": {
-          "description": "Key of the parse recipe.",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Not with --brief.",
+          "type": "string"
         },
         "stale": {
-          "description": "Built by an older version; see upgrade.",
+          "description": "recipe_key differs from the recipe this version signs the set's format and spec with: not comparable with new sets, no triage baseline; rebuild with upgrade. Missing only from older tool versions.",
           "type": "boolean"
         }
       },

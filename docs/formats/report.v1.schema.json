@@ -382,15 +382,8 @@
           "type": "string"
         },
         "recipe_key": {
-          "description": "Key of the parse recipe.",
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ]
+          "description": "Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. Missing only from older tool versions.",
+          "type": "string"
         },
         "ingest": {
           "description": "Only from ingest (CLI and job result).",
