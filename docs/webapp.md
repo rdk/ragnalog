@@ -32,7 +32,7 @@ process that sees only the environment, so `serve` exports every setting
 
 | Path | Page |
 |---|---|
-| `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. |
+| `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The sets of one capture (`captures`) are listed under one capture row: cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
 | `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. |
 | `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
 | `/docs` | OpenAPI (Swagger UI) for the JSON API; `/openapi.json` is the schema, with every response document as a component. |
@@ -211,7 +211,8 @@ A ZIP upload is extracted as by `atlas-log ingest` (only `job.json` and
 `*.log*`, safe paths, at most 32 GiB, removed afterwards). When the upload splits
 into one set per node (a cluster log export; `split` as in `ingest`), the job
 also carries `capture`, the `ingest-capture.v1` document, and `result` is its
-first set; `progress` counts all nodes.
+first set; `progress` counts all nodes. The upload form then returns to the sets
+page, which shows the new capture row.
 
 One server per store: the server holds an OS lock on `<store>/.server.lock`
 (released when the process ends, also after a crash), and a second

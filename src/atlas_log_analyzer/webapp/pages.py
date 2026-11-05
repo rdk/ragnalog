@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import html
+from datetime import datetime
 from importlib import resources
 from typing import Annotated, Any
 from urllib.parse import urlencode
@@ -18,7 +19,7 @@ from atlas_log_analyzer.service import queries
 from atlas_log_analyzer.webapp import api
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
-__all__ = ["not_found_page", "router", "templates"]
+__all__ = ["index_rows", "not_found_page", "router", "templates"]
 
 router = APIRouter(default_response_class=HTMLResponse)
 StateDep = Annotated[AppState, Depends(get_state)]
@@ -51,9 +52,60 @@ def _fmt_bytes(value: Any) -> str:
 templates.env.filters.update(num=_fmt_int, ts=_fmt_ts, size=_fmt_bytes)
 
 
+def index_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Rows of the sets index: a set, or a capture with its member sets under it.
+
+    A capture row takes the place of its newest member (``items`` are newest first)
+    and sums its members' counts; members are ordered by node.
+    """
+    members: dict[str, list[dict[str, Any]]] = {}
+    for item in items:
+        if item.get("capture"):
+            members.setdefault(item["capture"], []).append(item)
+    rows: list[dict[str, Any]] = []
+    for item in items:
+        capture = item.get("capture")
+        if not capture:
+            rows.append({"set": item})
+            continue
+        sets = members.pop(capture, None)
+        if sets is None:
+            continue  # its capture row is placed already
+        sets.sort(key=lambda s: (s.get("node") or s.get("name") or s["id"], s["id"]))
+        firsts = [s["first_ts"] for s in sets if s.get("first_ts")]
+        lasts = [s["last_ts"] for s in sets if s.get("last_ts")]
+        summaries = [s["summary"] for s in sets if s.get("summary")]
+        clusters = sorted({s["cluster"] for s in sets if s.get("cluster")})
+        rows.append(
+            {
+                "capture": {
+                    "id": capture,
+                    "cluster": ", ".join(clusters) or None,
+                    "nodes": len(sets),
+                    "first_ts": min(firsts, key=_instant) if firsts else None,
+                    "last_ts": max(lasts, key=_instant) if lasts else None,
+                    "entry_count": sum(int(s["entry_count"]) for s in sets),
+                    "errors": sum(x["errors"] for x in summaries) if summaries else None,
+                    "warnings": sum(x["warnings"] for x in summaries) if summaries else None,
+                    "bytes": sum(s["bytes"] for s in sets),
+                },
+                "members": sets,
+            }
+        )
+    return rows
+
+
+def _instant(text: str) -> datetime:
+    return datetime.fromisoformat(text)
+
+
 @router.get("/")
 def index(request: Request, state: StateDep) -> Response:
-    """Render the sets index with upload form and per-set triage verdicts (loaded by the page)."""
+    """Render the sets index with upload form and per-set triage verdicts (loaded by the page).
+
+    Sets of one capture are listed under a capture row (cluster, capture id, nodes, time
+    range, the worst verdict of its members) that links to the capture page.
+    """
     doc = queries.sets_doc(
         state,
         brief=False,
@@ -63,7 +115,9 @@ def index(request: Request, state: StateDep) -> Response:
     for item in doc["items"]:
         item["bytes"] = sum(int(s.get("size") or 0) for s in item.get("sources") or [])
     return templates.TemplateResponse(
-        request, "index.html", {"sets": doc["items"], "store": doc["store"]}
+        request,
+        "index.html",
+        {"sets": doc["items"], "rows": index_rows(doc["items"]), "store": doc["store"]},
     )
 
 

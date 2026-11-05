@@ -1,5 +1,25 @@
 {% extends "base.html" %}
 {% block title %}Log sets · atlas-log{% endblock %}
+{% macro set_row(s, capture=None) %}
+    <tr data-set="{{ s.id }}"{% if capture %} class="capture-member" data-member-of="{{ capture }}"{% endif %}>
+      <td>
+        {% if capture %}<span class="node-chip" title="Cluster node">{{ s.node or "?" }}</span>{% endif %}
+        <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
+        <div class="muted mono small">{{ s.id }} · {{ s.format }} · {{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }} · {{ s.bytes|size }}{% if s.node and not capture %} · node {{ s.node }}{% endif %}</div>
+      </td>
+      <td class="nowrap">{{ s.first_ts|ts }} <span class="muted">→</span> {{ s.last_ts|ts }}</td>
+      <td class="num">{{ s.entry_count|num }}</td>
+      <td class="num">{{ s.group_count|num }}</td>
+      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
+      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-WARN"></span>{{ s.summary.warnings|num }}{% else %}–{% endif %}</td>
+      <td class="triage" data-triage="{{ s.id }}"{% if capture %} data-node="{{ s.node or s.name or s.id }}"{% endif %}><span class="muted">checking…</span></td>
+      <td class="actions">
+        <a class="btn small" href="/sets/{{ s.id }}">Report</a>
+        <a class="btn small" href="/sets/{{ s.id }}/triage">Triage</a>
+        <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the store">Delete</button>
+      </td>
+    </tr>
+{% endmacro %}
 {% block main %}
 <header class="page-head">
   <div>
@@ -24,24 +44,26 @@
     </tr>
   </thead>
   <tbody>
-  {% for s in sets %}
-    <tr data-set="{{ s.id }}">
+  {% for row in rows %}
+  {% if row.capture %}{% set c = row.capture %}
+    <tr class="capture-row" data-capture="{{ c.id }}">
       <td>
-        <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
-        <div class="muted mono small">{{ s.id }} · {{ s.format }} · {{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }} · {{ s.bytes|size }}</div>
+        <a class="set-name" href="/captures/capture:{{ c.id|urlencode }}">{{ c.cluster or "Capture" }}</a>
+        <span class="muted small">{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span>
+        <div class="muted mono small">capture {{ c.id }} · {{ c.bytes|size }}</div>
       </td>
-      <td class="nowrap">{{ s.first_ts|ts }} <span class="muted">→</span> {{ s.last_ts|ts }}</td>
-      <td class="num">{{ s.entry_count|num }}</td>
-      <td class="num">{{ s.group_count|num }}</td>
-      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
-      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-WARN"></span>{{ s.summary.warnings|num }}{% else %}–{% endif %}</td>
-      <td class="triage" data-triage="{{ s.id }}"><span class="muted">checking…</span></td>
+      <td class="nowrap">{{ c.first_ts|ts }} <span class="muted">→</span> {{ c.last_ts|ts }}</td>
+      <td class="num">{{ c.entry_count|num }}</td>
+      <td class="num"><span class="muted">–</span></td>
+      <td class="num">{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}–{% endif %}</td>
+      <td class="num">{% if c.warnings is not none %}<span class="lv-dot lv-dot-WARN"></span>{{ c.warnings|num }}{% else %}–{% endif %}</td>
+      <td class="triage" data-capture-verdict="{{ c.id }}"><span class="muted">checking…</span></td>
       <td class="actions">
-        <a class="btn small" href="/sets/{{ s.id }}">Report</a>
-        <a class="btn small" href="/sets/{{ s.id }}/triage">Triage</a>
-        <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the store">Delete</button>
+        <a class="btn small" href="/captures/capture:{{ c.id|urlencode }}">Cluster view</a>
       </td>
     </tr>
+    {% for s in row.members %}{{ set_row(s, c.id) }}{% endfor %}
+  {% else %}{{ set_row(row.set) }}{% endif %}
   {% endfor %}
   </tbody>
 </table>
@@ -59,11 +81,12 @@
   <form id="upload-form" enctype="multipart/form-data">
     <label class="drop" id="drop">
       <input type="file" name="files" id="files" multiple required>
-      <span class="drop-text"><strong>Choose files</strong> or drop them here. Rotated files (<span class="mono">.log.1</span>, <span class="mono">.gz</span>) are fine.</span>
+      <span class="drop-text"><strong>Choose files</strong> or drop them here. Rotated files (<span class="mono">.log.1</span>, <span class="mono">.gz</span>) are fine; a cluster log export <span class="mono">.zip</span> becomes one set per node.</span>
       <span class="drop-list muted" id="drop-list"></span>
     </label>
     <div class="upload-row">
       <label class="sel">Name <input type="text" name="name" placeholder="e.g. prod-2026-10-29" maxlength="128"></label>
+      <label class="sel">Cluster <input type="text" name="cluster" placeholder="e.g. jira-prod" maxlength="128"></label>
       <label class="sel"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
       <label class="sel"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
       <span class="grow"></span>

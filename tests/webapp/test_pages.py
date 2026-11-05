@@ -4,10 +4,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
 from atlas_log_analyzer.report import asset_text
+from tests.cluster import JOB_ID, export_zip
+
+from .test_cluster import _upload
 
 
 def test_index_lists_sets(client: TestClient) -> None:
@@ -76,3 +80,52 @@ def test_openapi_lists_routes(client: TestClient) -> None:
 def test_cli_does_not_import_fastapi() -> None:
     code = "import sys, atlas_log_analyzer.cli.app; assert 'fastapi' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_sets_page_groups_a_capture(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    page = client.get("/").text
+    assert f'<tr class="capture-row" data-capture="{JOB_ID}">' in page
+    assert f'href="/captures/capture:{JOB_ID}"' in page
+    assert "2 nodes" in page and ">jira-test</a>" in page
+    assert page.count(f'data-member-of="{JOB_ID}"') == 2
+    assert '<span class="node-chip" title="Cluster node">NODE1</span>' in page
+    assert page.index("capture-row") < page.index("jira-test_node1") < page.index("jira-test_node2")
+    # sets without a capture are listed as before
+    assert 'class="set-name" href="/sets/' in page and ">mini</a>" in page
+    assert page.count("data-triage=") == 4 and f'data-capture-verdict="{JOB_ID}"' in page
+
+
+def test_index_rows() -> None:
+    from atlas_log_analyzer.webapp.pages import index_rows
+
+    def item(i: str, capture: str | None, node: str | None, last: str) -> dict:  # type: ignore[type-arg]
+        return {
+            "id": i,
+            "name": i,
+            "node": node,
+            "cluster": "c" if capture else None,
+            "capture": capture,
+            "first_ts": "2026-11-05T06:00:00+00:00",
+            "last_ts": last,
+            "entry_count": 5,
+            "summary": {"errors": 1, "warnings": 2, "error_groups": 1},
+            "bytes": 10,
+        }
+
+    items = [
+        item("s3", None, None, "2026-11-07T00:00:00+00:00"),
+        item("b", "cap", "NODE2", "2026-11-06T12:00:00+01:00"),
+        item("plain", None, None, "2026-11-06T00:00:00+00:00"),
+        item("a", "cap", "NODE1", "2026-11-06T10:00:00+00:00"),
+    ]
+    rows = index_rows(items)
+    assert [r.get("set", {}).get("id") or r["capture"]["id"] for r in rows] == [
+        "s3",
+        "cap",
+        "plain",
+    ]
+    capture = rows[1]["capture"]
+    assert [m["id"] for m in rows[1]["members"]] == ["a", "b"]
+    assert capture["last_ts"] == "2026-11-06T12:00:00+01:00"  # by instant, not by text
+    assert (capture["nodes"], capture["entry_count"], capture["errors"]) == (2, 10, 2)

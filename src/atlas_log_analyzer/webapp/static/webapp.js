@@ -35,12 +35,22 @@
     });
 
     // triage verdict per set (one request each; the server caches nothing here, diffs are fast)
+    const byCapture = {};
     document.querySelectorAll("[data-triage]").forEach((cell) => {
       const id = cell.getAttribute("data-triage");
-      fetch("/api/sets/" + encodeURIComponent(id) + "/triage?min_level=WARN&limit=1")
+      const verdict = fetch("/api/sets/" + encodeURIComponent(id) + "/triage?min_level=WARN&limit=1")
         .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
-        .then((t) => { cell.innerHTML = verdictHtml(t, id); })
-        .catch(() => { cell.innerHTML = '<span class="muted">–</span>'; });
+        .then((t) => { cell.innerHTML = verdictHtml(t, id); return t.verdict; })
+        .catch(() => { cell.innerHTML = '<span class="muted">–</span>'; return null; });
+      const row = cell.closest("tr");
+      const capture = row && row.getAttribute("data-member-of");
+      if (capture) (byCapture[capture] = byCapture[capture] || []).push(
+        verdict.then((v) => ({ node: cell.getAttribute("data-node"), verdict: v })));
+    });
+    // a capture's verdict is the worst of its nodes'
+    document.querySelectorAll("[data-capture-verdict]").forEach((cell) => {
+      Promise.all(byCapture[cell.getAttribute("data-capture-verdict")] || [])
+        .then((nodes) => { cell.innerHTML = captureVerdictHtml(nodes); });
     });
 
     document.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", () => {
@@ -70,6 +80,22 @@
           : '<span class="verdict-badge ok">no new types</span>';
     const why = t.baseline && t.baseline.reason ? esc(": " + t.baseline.reason) : "";
     return `<a href="${href}" title="Compared with ${base}${why}">${badge}</a><span class="counts">vs ${base}</span>`;
+  }
+
+  const RANK = { new_errors: 4, new_warnings: 3, new_exceptions: 2, clean: 1, no_baseline: 0 };
+  const LABEL = {
+    new_errors: ["bad", "new error types"], new_warnings: ["warn", "new warning types"],
+    new_exceptions: ["warn", "new exception types"], clean: ["ok", "no new types"],
+    no_baseline: ["none", "no baseline"],
+  };
+  function captureVerdictHtml(nodes) {
+    const known = nodes.filter((n) => n.verdict in RANK);
+    if (!known.length) return '<span class="muted">–</span>';
+    const worst = known.reduce((a, b) => (RANK[b.verdict] > RANK[a.verdict] ? b : a)).verdict;
+    const on = known.filter((n) => n.verdict === worst).map((n) => esc(n.node));
+    const [cls, text] = LABEL[worst];
+    return `<span class="verdict-badge ${cls}" title="Worst verdict of the nodes, each against its own previous set">${text}</span>` +
+      `<span class="counts">on ${on.join(", ")} (${on.length} of ${nodes.length})</span>`;
   }
 
   function setupUpload() {
@@ -128,7 +154,8 @@
       bar(0.3 + 0.7 * (p.fraction || 0));
       if (j.state === "succeeded") {
         bar(1);
-        location.href = "/sets/" + encodeURIComponent(j.result.id) + "?compare=auto";
+        // a split upload (one set per node) shows its capture on the sets page
+        location.href = j.capture ? "/" : "/sets/" + encodeURIComponent(j.result.id) + "?compare=auto";
       } else if (j.state === "failed" || j.state === "cancelled") {
         fail(j.error ? j : { error: { message: j.state } });
         submit.disabled = false; cancel.hidden = true;
