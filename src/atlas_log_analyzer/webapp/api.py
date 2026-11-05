@@ -23,7 +23,7 @@ from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
 from atlas_log_analyzer.store.query import span_hours, with_rates
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-from atlas_log_analyzer.store.triage import auto_baseline as pick_baseline
+from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
 from atlas_log_analyzer.store.triage import triage as store_triage
 from atlas_log_analyzer.store.views import (
     DEFAULT_MAX_RAW,
@@ -105,22 +105,29 @@ def manifest_item(m: LogSetManifest) -> dict[str, Any]:
 
 
 def auto_baseline(state: AppState, ls: LogSet) -> LogSet | None:
-    """Pick the default baseline of ``ls`` (``store.triage.auto_baseline``).
+    """Pick the default baseline of ``ls`` (``store.triage.rank_baselines``).
 
-    That is the newest other set that ends before ``ls`` starts (an earlier snapshot),
-    else the newest other set that ends no later than ``ls`` (an overlapping snapshot);
-    ``None`` when there is none.
+    The rule of ``atlas-log triage --baseline auto``; ``None`` when no set qualifies.
     """
-    best = pick_baseline(state.manifests(), ls.manifest)
-    return state.open(best.id) if best is not None else None
+    return _choose(state, ls, "auto")[0]
+
+
+def _choose(
+    state: AppState, ls: LogSet, ref: str | None
+) -> tuple[LogSet | None, BaselineChoice | None]:
+    """Resolve a ``baseline``/``compare`` parameter: ``auto``, ``none``/empty, or a set."""
+    if ref is None or ref in ("", "none"):
+        return None, None
+    if ref == "auto":
+        choice = rank_baselines(state.manifests(), ls.manifest)
+        base = state.open(choice.manifest.id) if choice.manifest is not None else None
+        return base, choice
+    base = state.open(ref)
+    return base, explicit_baseline(ls.manifest, base.manifest)
 
 
 def _baseline(state: AppState, ls: LogSet, ref: str | None) -> LogSet | None:
-    if ref is None or ref in ("", "none"):
-        return None
-    if ref == "auto":
-        return auto_baseline(state, ls)
-    return state.open(ref)
+    return _choose(state, ls, ref)[0]
 
 
 @router.get("/health")
@@ -636,7 +643,7 @@ def triage(
     """
     ls = state.open(ref)
     lvl = _levels(min_level, "min_level")
-    base = _baseline(state, ls, baseline)
+    base, choice = _choose(state, ls, baseline)
     try:
         doc = store_triage(
             ls,
@@ -645,6 +652,7 @@ def triage(
             grow=grow,
             limit=limit,
             resolved_by="auto" if baseline == "auto" else "param",
+            choice=choice,
         )
     except ValueError as exc:
         raise ApiError("incompatible_sets", str(exc), 409) from exc

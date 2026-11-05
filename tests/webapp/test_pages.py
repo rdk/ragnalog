@@ -45,6 +45,14 @@ def test_triage_page(client: TestClient) -> None:
     assert res.status_code == 200
     assert "Triage" in res.text and "sample" in res.text
     assert "New types" in res.text and "New exceptions" in res.text
+    assert "Baseline: given by the caller" in res.text
+
+
+def test_triage_page_explains_no_baseline(client: TestClient) -> None:
+    """The auto rule (store.triage.rank_baselines) rejects sample: 4.8 days vs 6.9 h."""
+    res = client.get("/sets/mini/triage")
+    assert res.status_code == 200 and "No baseline" in res.text
+    assert "sample (span: covers 4.8 days" in res.text
 
 
 def test_html_404(client: TestClient) -> None:

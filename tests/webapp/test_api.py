@@ -254,14 +254,20 @@ def test_token_required(store_dir: Path) -> None:
         assert c.get("/api/sets", headers={"X-Atlas-Token": "s3cret"}).status_code == 200
 
 
-def test_triage_auto_baseline_is_an_earlier_or_overlapping_set(client: TestClient) -> None:
-    sets = {s["name"]: s for s in _json(client, "/api/sets")["items"]}
-    for name, other in (("mini", "sample"), ("sample", "mini")):
-        doc = _json(client, f"/api/sets/{name}/triage")
-        if sets[other]["last_ts"] <= sets[name]["last_ts"]:
-            assert doc["baseline"]["name"] == other and doc["baseline"]["resolved_by"] == "auto"
-        else:
-            assert doc["verdict"] == "no_baseline"
+def test_triage_auto_baseline_ranks_like_the_cli(client: TestClient, store_dir: Path) -> None:
+    """sample (47 entries over 4.8 days) spans 17x mini's 6.9 h; mini ends after sample."""
+    mini = _json(client, "/api/sets/mini/triage")
+    assert (
+        mini["verdict"] == "no_baseline" and "sample (span: covers 4.8 days" in mini["warnings"][0]
+    )
+    sample = _json(client, "/api/sets/sample/triage")
+    assert sample["verdict"] == "no_baseline" and "mini (later" in sample["warnings"][0]
+    for name in ("mini", "sample"):
+        cli = _cli_json(store_dir, "triage", name)
+        assert cli["warnings"] == _json(client, f"/api/sets/{name}/triage")["warnings"]
+    given = _json(client, "/api/sets/mini/triage?baseline=sample")
+    assert given["baseline"]["resolved_by"] == "param" and given["baseline"]["entries"] == 47
+    assert given["baseline"]["candidates"] == [] and given["baseline"]["reason"]
 
 
 def _cli_json(store_dir: Path, *args: str) -> dict[str, Any]:

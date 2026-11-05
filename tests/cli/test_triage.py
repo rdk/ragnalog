@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -119,7 +120,12 @@ def test_triage_grew_uses_diff_rates(jcli: Invoke, sets: dict[str, str], tmp_pat
 
 def test_triage_auto_baseline(jcli: Invoke, sets: dict[str, str]) -> None:
     doc = jcli("triage", "short").json()
-    assert doc["baseline"]["id"] == sets["base"] and doc["baseline"]["resolved_by"] == "auto"
+    b = doc["baseline"]
+    assert b["id"] == sets["base"] and b["resolved_by"] == "auto"
+    assert b["entries"] == 10 and b["shared_sources"] == 0
+    assert b["reason"].startswith("same recipe; ends before this set starts")
+    # quiet is later than short, so it is listed as rejected
+    assert [(c["name"], c["reason"]) for c in b["candidates"]] == [("quiet", "later")]
 
 
 def test_triage_new_exceptions_verdict(jcli: Invoke, sets: dict[str, str]) -> None:
@@ -140,14 +146,24 @@ def test_triage_no_baseline(jcli: Invoke, sets: dict[str, str]) -> None:
     assert res.code == 0
     doc = res.json()
     assert doc["verdict"] == "no_baseline" and doc["baseline"] is None
-    assert doc["new"] == doc["new_exceptions"] == [] and doc["warnings"] == []
+    assert doc["new"] == doc["new_exceptions"] == []
+    [warning] = doc["warnings"]  # both other sets end later
+    assert warning.startswith("No baseline") and "short (later" in warning
+    assert "quiet (later" in warning
     assert doc["coverage"]["hours_baseline"] is None and doc["coverage"]["hours_set"] > 6
+
+
+def test_triage_only_set_has_no_warning(jcli: Invoke) -> None:
+    assert jcli("ingest", MINI_LOG, "--name", "alone").code == 0
+    doc = jcli("triage", "alone").json()
+    assert doc["verdict"] == "no_baseline" and doc["warnings"] == []
 
 
 def test_triage_against_itself_is_clean(jcli: Invoke, sets: dict[str, str]) -> None:
     doc = jcli("triage", "base", "--baseline", "base").json()
     assert doc["verdict"] == "clean" and doc["warnings"] == []
     assert doc["coverage"]["ratio"] == 1.0
+    assert doc["baseline"]["resolved_by"] == "param" and doc["baseline"]["candidates"] == []
 
 
 def test_triage_limit_and_options(jcli: Invoke, sets: dict[str, str]) -> None:
@@ -170,13 +186,90 @@ def test_triage_table_and_jsonl(cli: Invoke, sets: dict[str, str], store_dir: Pa
     assert len(lines) == 1 and lines[0]["verdict"] == "new_errors"
 
 
-def test_store_auto_baseline_rule(jcli: Invoke, sets: dict[str, str], store_dir: Path) -> None:
+def test_store_rank_baselines(jcli: Invoke, sets: dict[str, str], store_dir: Path) -> None:
     from atlas_log_analyzer.store import Store
-    from atlas_log_analyzer.store.triage import auto_baseline
+    from atlas_log_analyzer.store.triage import rank_baselines
 
     store = Store(store_dir)
     manifests = store.list()
     by_name = {m.name: m for m in manifests}
-    assert auto_baseline(manifests, by_name["base"]) is None
-    picked = auto_baseline(manifests, by_name["short"])
+    assert rank_baselines(manifests, by_name["base"]).manifest is None
+    picked = rank_baselines(manifests, by_name["short"]).manifest
     assert picked is not None and picked.name == "base"
+
+
+# --- field note: a superset snapshot and a tiny fixture set are no baselines --------------
+
+ERRORS = [f"Export of report {chr(ord('A') + i)} failed" for i in range(18)]
+
+
+def night_log(path: Path, day: str, entries: int = 5000) -> Path:
+    """An 8-hour night of invented Jira entries with the 18 ERROR types of ERRORS."""
+    start = datetime.fromisoformat(f"{day}T22:00:00")
+    lines = []
+    for i in range(entries):
+        at = start + timedelta(seconds=i * 8 * 3600 // entries)
+        stamp = at.strftime("%Y-%m-%d %H:%M:%S")
+        if i % 250 == 0:
+            text = f"ERROR      [org.acme.export.Exporter] {ERRORS[i // 250 % 18]}"
+        else:
+            text = f"INFO      [org.acme.jobs.Runner] Job batch-{i} finished in {i % 97} ms"
+        lines.append(f"{stamp},{i % 1000:03d}+0100 Caesium-1-{i % 4} {text}")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+@pytest.fixture
+def snapshots(jcli: Invoke, tmp_path: Path) -> dict[str, str]:
+    """``night`` (one file), ``week`` (that file and two older ones) and the 47-entry
+    ``fixture`` (sample.log, 2026-10-24..29), all ingested."""
+    from .conftest import SAMPLE_LOG
+
+    night = night_log(tmp_path / "night" / "atlassian-jira.log", "2026-11-02")
+    week = tmp_path / "week"
+    week.mkdir()
+    (week / "atlassian-jira.log").write_bytes(night.read_bytes())
+    night_log(week / "atlassian-jira.log.1", "2026-11-01")
+    night_log(week / "atlassian-jira.log.2", "2026-10-31")
+    ids = {}
+    for name, path in (("fixture", SAMPLE_LOG), ("week", week), ("night", night)):
+        res = jcli("ingest", path, "--name", name)
+        assert res.code == 0, res.stdout
+        ids[name] = res.json()["id"]
+    return ids
+
+
+def test_field_note_superset_and_tiny_sets_are_rejected(
+    jcli: Invoke, snapshots: dict[str, str]
+) -> None:
+    doc = jcli("triage", "night").json()
+    assert doc["verdict"] == "no_baseline" and doc["baseline"] is None
+    [warning] = doc["warnings"]
+    assert "week (superset: its sources include all 1 source file(s)" in warning
+    assert "fixture (tiny: 47 entries, under 1% of this set's 5,000)" in warning
+    # the old rule picked the fixture (it ends before night starts): 18 false new errors
+    old = jcli("triage", "night", "--baseline", "fixture").json()
+    assert old["verdict"] == "new_errors" and old["summary"]["new_by_level"]["ERROR"] == 18
+    assert any("is tiny" in w for w in old["warnings"])
+    # against week everything is known, but week contains night
+    full = jcli("triage", "night", "--baseline", "week").json()
+    assert full["verdict"] == "clean" and full["summary"]["new"] == 0
+    assert full["baseline"]["shared_sources"] == 1
+    assert any("is a superset of this set's sources" in w for w in full["warnings"])
+
+
+def test_field_note_earlier_night_is_chosen(
+    jcli: Invoke, snapshots: dict[str, str], tmp_path: Path
+) -> None:
+    prev = night_log(tmp_path / "prev" / "atlassian-jira.log", "2026-10-30")
+    assert jcli("ingest", prev, "--name", "prev").code == 0
+    doc = jcli("triage", "night").json()
+    b = doc["baseline"]
+    assert b["name"] == "prev" and b["entries"] == 5000 and b["shared_sources"] == 0
+    assert doc["verdict"] == "clean" and doc["warnings"] == []
+    assert "ends before this set starts" in b["reason"] and "span 8.0 h vs 8.0 h" in b["reason"]
+    assert {(c["name"], c["reason"]) for c in b["candidates"]} == {
+        ("week", "superset"),
+        ("fixture", "tiny"),
+    }

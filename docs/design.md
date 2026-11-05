@@ -38,7 +38,7 @@ atlas-log-analyzer/
 │   │   ├── pipeline.py            ingest_paths/ingest_sources: discover → parse → sign → store
 │   │   ├── writer.py              batches of entries/groups/merges → Parquet; Parquet → entries
 │   │   ├── query.py               diff() of two log sets, span/coverage helpers
-│   │   └── triage.py              triage.v1 (verdict, new/grew/vanished) and the auto baseline
+│   │   └── triage.py              triage.v1 (verdict, new/grew/vanished), rank_baselines
 │   ├── report/                    self-contained HTML report (payload.py, render.py, assets/)
 │   ├── cli/
 │   │   ├── app.py                 cyclopts app, one function per command

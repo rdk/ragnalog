@@ -109,7 +109,9 @@ is built by `store/triage.py` and is the same as `atlas-log triage` prints
 ```jsonc
 {"schema": "triage.v1",
  "set": {"id", "name", "first_ts", "last_ts", "entries"},
- "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param"} | null,
+ "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param",
+              "reason", "entries", "shared_sources",
+              "candidates": [{"id", "name", "reason", "detail", "hint"?}]} | null,
  "min_level": "WARN",
  "verdict": "new_errors | new_warnings | new_exceptions | clean | no_baseline",
  "summary": {"new", "new_by_level": {"ERROR": n, ...}, "new_exceptions", "grew", "vanished",
@@ -123,9 +125,15 @@ is built by `store/triage.py` and is the same as `atlas-log triage` prints
  "report_url": "/sets/{id}"}
 ```
 
-The automatic baseline is the newest other set that ends before this one starts
-(an earlier snapshot). Failing that, it is the newest other set that ends no later
-than this one (an overlapping snapshot). Growth compares hourly rates, so sets of
+The automatic baseline (`baseline=auto`, also `compare=auto` of the report and
+the verdicts of the index page) comes from `store.triage.rank_baselines`, the
+rule of `atlas-log triage` (`docs/cli.md`): other sets of the same format,
+without those signed with another recipe (`stale`, `recipe`), whose sources are
+a superset or subset of this set's, that end later, that are tiny (under 1% of
+the entries) or whose span differs more than 16x; then a set that ends before
+this one starts, the closest span, the newest. With none left the verdict is
+`no_baseline` and `warnings` lists the rejected sets; the triage page shows
+them, and the chosen baseline's `reason`. Growth compares hourly rates, so sets of
 different lengths compare fairly. `new_exceptions` lists new groups of any level
 that carry an exception and are not in `new` (a DEBUG stack trace below
 `min_level`); when `new` is empty but `new_exceptions` is not, the verdict is

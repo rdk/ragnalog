@@ -180,6 +180,13 @@ atlas-log triage after --baseline before            # verdict, new types, new ex
 atlas-log diff before after --min-level WARN --rate --limit 20   # top 20 per section, changed by hourly rate
 ```
 
+Without `--baseline`, triage picks one itself: another set of the same format
+and recipe that is not a superset or subset of this one's files, not later,
+not tiny and of comparable span (`baseline.reason` says why it was chosen,
+`baseline.candidates` which sets were not and why). After a tool update that
+changes signatures, `atlas-log sets` marks older sets `"stale": true`;
+`atlas-log upgrade --all` rebuilds them (about 5 s per 700k entries).
+
 Read `verdict`, then `new` and `new_exceptions` (stack traces below the level
 filter). If `warnings` is not empty the two sets cover very different spans
 and `new`/`vanished` are unreliable: compare sets of similar length.

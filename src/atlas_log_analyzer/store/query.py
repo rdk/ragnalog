@@ -7,12 +7,14 @@ from dataclasses import dataclass
 import polars as pl
 
 from atlas_log_analyzer.store.logset import LogSet
+from atlas_log_analyzer.store.manifest import LogSetManifest
 
 __all__ = [
     "COVERAGE_FACTOR",
     "DiffResult",
     "coverage_warning",
     "diff",
+    "manifest_span_hours",
     "span_hours",
     "with_rates",
 ]
@@ -23,12 +25,16 @@ COVERAGE_FACTOR = 4.0
 """Spans of two compared sets that differ by more than this factor get a coverage warning."""
 
 
-def span_hours(ls: LogSet) -> float:
+def manifest_span_hours(m: LogSetManifest) -> float:
     """Hours between the first and the last entry of a set (at least one minute; 0 if empty)."""
-    m = ls.manifest
     if m.first_ts is None or m.last_ts is None:
         return 0.0
     return max((m.last_ts - m.first_ts).total_seconds() / 3600, 1 / 60)
+
+
+def span_hours(ls: LogSet) -> float:
+    """Hours between the first and the last entry of a set (at least one minute; 0 if empty)."""
+    return manifest_span_hours(ls.manifest)
 
 
 def _span_text(hours: float) -> str:

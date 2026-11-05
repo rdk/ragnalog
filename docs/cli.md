@@ -451,14 +451,37 @@ suggests `upgrade` or `regroup`) without `--force`; 3.
 `triage.v1` as `GET /api/sets/SET/triage` of the web app, without its
 `report_url` links. It compares the baseline with SET like
 `diff BASELINE SET --min-level L` and sorts the result for a decision.
-`--baseline auto` (default) picks the newest other set that ends before SET
-starts, else the newest other set that ends no later than SET; without one the
-verdict is `no_baseline`.
+
+`--baseline auto` (default) ranks the other sets of the same format with
+`store.triage.rank_baselines`, the rule the web app uses too. A candidate is
+rejected, with `reason`:
+
+1. `stale` / `recipe`: its `recipe_key` differs from SET's. `stale` when one
+   of the two was built with an older recipe (the `hint` names
+   `atlas-log upgrade SET`), `recipe` for another signature spec or extra rules.
+2. `superset` / `subset`: its source digests (`sources[].xxh3`) contain all of
+   SET's, or all of its files are part of SET. An overlapping snapshot of the
+   same files is no baseline; partial overlap (rolling snapshots share most
+   rotated files) is allowed and counted in `shared_sources`.
+3. `later`: it ends after SET ends.
+4. `tiny`: fewer than 1% of SET's entries; `span`: its span is more than 16x
+   longer or shorter than SET's.
+
+Of the rest it prefers a set that ends before SET starts, then the span closest
+to SET's (`|log(h_a/h_b)|`, rounded to 0.1 so spans within about 10% count as
+equal), then the newest. When nothing is left the verdict is `no_baseline` and
+`warnings` names every rejected set with its reason. An explicit `--baseline
+SET` is used as given, with a warning when it is stale, a superset/subset of
+SET's sources, or tiny (a set signed with another recipe still fails as in
+`diff`).
 
 ```jsonc
 {"schema": "triage.v1",
  "set": {"id", "name", "first_ts", "last_ts", "entries"},
- "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param"} | null,
+ "baseline": {"id", "name", "first_ts", "last_ts", "resolved_by": "auto|param",
+              "reason": "same recipe; ends before this set starts; span 8.0 h vs 7.9 h",
+              "entries": 312000, "shared_sources": 0,
+              "candidates": [{"id", "name", "reason": "superset", "detail", "hint"?}]} | null,
  "min_level": "WARN",
  "verdict": "new_errors | new_warnings | new_exceptions | clean | no_baseline",
  "summary": {"new", "new_by_level": {"ERROR": n}, "new_exceptions", "grew", "vanished",
@@ -480,6 +503,10 @@ verdict is `no_baseline`.
 - `grew`: groups in both sets whose hourly rate rose at least `--grow` times
   (`rate_a`, `rate_b` and `rate_ratio` as in `diff --rate`; rates normalise
   sets of different length), sorted by `rate_ratio` descending.
+- `baseline.reason`: why the baseline was chosen, in one line;
+  `baseline.entries` its entry count; `baseline.shared_sources` the source
+  files it shares with SET; `baseline.candidates` up to 5 rejected sets
+  (`--baseline auto` only), newest first.
 - `set`/`baseline` timestamps are written as in the sets' manifests
   (`logset.v1`), row timestamps as in `diff`.
 - `verdict`: `new_errors` (a new ERROR/FATAL group), `new_warnings` (other new
@@ -488,7 +515,9 @@ verdict is `no_baseline`.
 - `coverage`: span of each set in hours and `ratio = hours_set /
   hours_baseline`. When the spans differ by more than 4x either way,
   `warnings` holds a sentence saying that `new`/`vanished` are unreliable (a
-  nightly set lacks daytime groups); otherwise `warnings` is `[]`.
+  nightly set lacks daytime groups). `warnings` also says which sets were
+  rejected when there is no baseline, and why an explicit baseline is
+  doubtful; otherwise it is `[]`.
 - Lists hold at most `--limit` rows (`0` = all); `summary` counts all.
 - `jsonl` prints the document on one line; the table prints the verdict, the
   summary and one table per list, with the warnings on stderr.

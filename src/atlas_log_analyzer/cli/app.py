@@ -1504,16 +1504,26 @@ def triage(
     Compares SET with a baseline (as `diff BASELINE SET --min-level L`) and
     sorts the result for a decision: new groups (most severe first), new
     groups of a lower level that carry an exception, groups whose hourly rate
-    grew, vanished groups. --baseline auto (default) picks the newest other
-    set that ends before SET starts, else the newest other set that ends no
-    later than SET (the web app's rule); with no such set the verdict is
-    no_baseline.
+    grew, vanished groups. --baseline auto (default) ranks the other sets of
+    the same format (the web app's rule): it rejects a set signed with
+    another recipe_key (reason "stale", hint `upgrade`; or "recipe"), whose
+    sources are a superset or subset of SET's ("superset"/"subset"; partial
+    overlap is fine), that ends after SET ("later"), that has under 1% of
+    SET's entries ("tiny") or a span more than 16x longer or shorter
+    ("span"); of the rest it prefers a set that ends before SET starts, then
+    the span closest to SET's, then the newest. With none left the verdict
+    is no_baseline and "warnings" lists the rejected sets. An explicit
+    --baseline is used as given, with a warning when it is stale, contained
+    or tiny.
 
     Output (json):
       {"schema": "triage.v1",
        "set": {"id", "name", "first_ts", "last_ts", "entries"},
        "baseline": {"id", "name", "first_ts", "last_ts",
-                    "resolved_by": "auto" | "param"} | null,
+                    "resolved_by": "auto" | "param", "reason": str,
+                    "entries": int, "shared_sources": int,
+                    "candidates": [{"id", "name", "reason", "detail",
+                                    "hint"?}, ...]} | null,
        "min_level": "WARN",
        "verdict": "new_errors" | "new_warnings" | "new_exceptions" | "clean"
                   | "no_baseline",
@@ -1539,7 +1549,10 @@ def triage(
     "coverage" gives both spans in hours and ratio = hours_set /
     hours_baseline; when they differ by more than 4x either way "warnings"
     says that "new"/"vanished" are unreliable (a nightly set lacks daytime
-    groups). Lists hold at most --limit rows; "summary" counts all.
+    groups). "baseline.reason" says why the baseline was chosen,
+    "shared_sources" counts the source files both sets share and
+    "candidates" lists up to 5 rejected sets (auto only). Lists hold at most
+    --limit rows; "summary" counts all.
     jsonl mode prints the document on one line. Table mode prints the
     verdict, the summary and one table per list; the warnings go to stderr.
 
@@ -1555,7 +1568,7 @@ def triage(
         limit: Maximum rows per list; 0 = all.
 
     """
-    from atlas_log_analyzer.store.triage import auto_baseline
+    from atlas_log_analyzer.store.triage import explicit_baseline, rank_baselines
     from atlas_log_analyzer.store.triage import triage as store_triage
 
     lvl, lim = _level(min_level), _limit(limit)
@@ -1563,18 +1576,12 @@ def triage(
         raise CliError("invalid_value", "--grow must be > 1")
     ls = _open(logset)
     if baseline == "auto":
-        best = auto_baseline(_store().list(), ls.manifest)
-        base = _open(best.id) if best is not None else None
+        choice = rank_baselines(_store().list(), ls.manifest)
+        base = _open(choice.manifest.id) if choice.manifest is not None else None
     else:
         base = _open(baseline)
-    doc = store_triage(
-        ls,
-        base,
-        min_level=lvl,
-        grow=grow,
-        limit=lim,
-        resolved_by="auto" if baseline == "auto" else "param",
-    )
+        choice = explicit_baseline(ls.manifest, base.manifest)
+    doc = store_triage(ls, base, min_level=lvl, grow=grow, limit=lim, choice=choice)
     out = _out()
     if out.mode == "table":
         for warning in doc["warnings"]:
@@ -1585,13 +1592,14 @@ def triage(
 
         me = doc["set"]
         if doc["baseline"] is None:
-            console.print(f"verdict: no_baseline ({me['name'] or me['id']} has no earlier set)")
+            console.print(f"verdict: no_baseline ({me['name'] or me['id']} has no baseline)")
             return
         b, s, cov = doc["baseline"], doc["summary"], doc["coverage"]
         console.print(
             Text(f"verdict: {doc['verdict']}", style="bold")
             + f"  {me['name'] or me['id']} vs {b['name'] or b['id']} ({b['resolved_by']})"
         )
+        console.print(f"baseline: {b['reason']}")
         levels = ", ".join(f"{k} {v}" for k, v in s["new_by_level"].items())
         console.print(
             f"new {s['new']}"

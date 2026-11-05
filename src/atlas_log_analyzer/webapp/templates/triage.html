@@ -45,8 +45,13 @@
 
 {% if t.verdict == 'no_baseline' %}
 <section class="card verdict v-none">
-  <h2>No baseline yet</h2>
-  <p class="muted">This is the only set that could serve as its own baseline. Ingest an earlier snapshot to see what changed, or open the <a href="/sets/{{ me.id }}">report</a> to browse its groups.</p>
+  <h2>No baseline</h2>
+  {% if t.warnings %}
+  {% for w in t.warnings %}<p class="muted small">⚠ {{ w }}</p>{% endfor %}
+  <p class="muted">Pick a baseline above, ingest an earlier snapshot of comparable length, or open the <a href="/sets/{{ me.id }}">report</a> to browse its groups.</p>
+  {% else %}
+  <p class="muted">No other set of this format could serve as a baseline. Ingest an earlier snapshot to see what changed, or open the <a href="/sets/{{ me.id }}">report</a> to browse its groups.</p>
+  {% endif %}
 </section>
 {% else %}
 {% set s = t.summary %}
@@ -61,6 +66,7 @@
     <span class="grow"></span>
     <a class="btn small" href="/sets/{{ me.id }}?compare={{ t.baseline.id }}">Open comparison report</a>
   </div>
+  {% if t.baseline.reason %}<p class="muted small">Baseline: {{ t.baseline.reason }}{% if t.baseline.candidates %} · not used: {% for c in t.baseline.candidates %}{{ c.name or c.id }} ({{ c.reason }}){% if not loop.last %}, {% endif %}{% endfor %}{% endif %}</p>{% endif %}
   {% for w in t.warnings %}<p class="muted small">⚠ {{ w }}</p>{% endfor %}
   <div class="tiles mini">
     <div class="tile"><div class="label">New types</div><div class="value">{{ s.new|num }}</div>

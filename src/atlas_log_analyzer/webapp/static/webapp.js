@@ -54,7 +54,10 @@
   });
 
   function verdictHtml(t, id) {
-    if (t.verdict === "no_baseline") return '<span class="verdict-badge none">no baseline</span>';
+    if (t.verdict === "no_baseline") {
+      const why = esc((t.warnings || [])[0] || "no other set of this format");
+      return `<span class="verdict-badge none" title="${why}">no baseline</span>`;
+    }
     const s = t.summary || {};
     const base = t.baseline ? esc(t.baseline.name || t.baseline.id) : "";
     const href = "/sets/" + encodeURIComponent(id) + "/triage";
@@ -65,7 +68,8 @@
         : t.verdict === "new_exceptions"
           ? `<span class="verdict-badge warn">${fmt(s.new_exceptions)} new exception types</span>`
           : '<span class="verdict-badge ok">no new types</span>';
-    return `<a href="${href}" title="Compared with ${base}">${badge}</a><span class="counts">vs ${base}</span>`;
+    const why = t.baseline && t.baseline.reason ? esc(": " + t.baseline.reason) : "";
+    return `<a href="${href}" title="Compared with ${base}${why}">${badge}</a><span class="counts">vs ${base}</span>`;
   }
 
   function setupUpload() {
