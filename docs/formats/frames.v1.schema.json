@@ -1,0 +1,201 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "frames.v1.schema.json",
+  "title": "frames.v1",
+  "description": "An entry's exception chain, application frames first: `frames`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "frames.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "entry": {
+      "description": "Entry id.",
+      "type": "string"
+    },
+    "signature": {
+      "description": "The entry's group.",
+      "type": "string"
+    },
+    "ts": {
+      "description": "Entry time, UTC.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "level_name": {
+      "description": "Entry level.",
+      "type": "string"
+    },
+    "logger": {
+      "description": "Entry logger.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "message": {
+      "description": "First message line.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "app_packages": {
+      "description": "Echo of ATLAS_LOG_APP_PACKAGES.",
+      "anyOf": [
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "count": {
+      "description": "Exceptions in the chain.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "The chain, outermost first.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ChainException"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "entry",
+    "signature",
+    "ts",
+    "level_name",
+    "logger",
+    "message",
+    "app_packages",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "ChainException": {
+      "title": "ChainException",
+      "description": "One exception of a chain, outermost first.",
+      "type": "object",
+      "properties": {
+        "type": {
+          "description": "Exception class.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Exception message.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "app_frames": {
+          "description": "Application frames, at most --limit.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Frame"
+          }
+        },
+        "app_frames_total": {
+          "description": "All application frames.",
+          "type": "integer"
+        },
+        "frames_total": {
+          "description": "Frames printed in the log.",
+          "type": "integer"
+        },
+        "omitted_frames": {
+          "description": "The \"... N more\" count.",
+          "type": "integer"
+        },
+        "frames": {
+          "description": "Every frame with its app flag (--all).",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Frame"
+          }
+        }
+      },
+      "required": [
+        "type",
+        "message",
+        "app_frames",
+        "app_frames_total",
+        "frames_total",
+        "omitted_frames"
+      ]
+    },
+    "Frame": {
+      "title": "Frame",
+      "description": "One stack frame.",
+      "type": "object",
+      "properties": {
+        "location": {
+          "description": "Class and method, e.g. com.acme.Foo.bar.",
+          "type": "string"
+        },
+        "file": {
+          "description": "Source file, or Native Method / Unknown Source.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "line": {
+          "description": "Line number.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "app": {
+          "description": "Application frame (only with --all).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "location",
+        "file",
+        "line"
+      ]
+    }
+  }
+}

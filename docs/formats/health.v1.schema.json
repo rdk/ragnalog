@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "health.v1.schema.json",
+  "title": "health.v1",
+  "description": "Liveness of the web app: `GET /api/health`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "health.v1"
+      ]
+    },
+    "status": {
+      "description": "Always ok.",
+      "enum": [
+        "ok"
+      ]
+    },
+    "sets": {
+      "description": "Sets in the store.",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema",
+    "status",
+    "sets"
+  ]
+}

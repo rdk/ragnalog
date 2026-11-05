@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "timeline.v1.schema.json",
+  "title": "timeline.v1",
+  "description": "Entry counts per time bucket: `GET /api/sets/{ref}/timeline`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "timeline.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "bucket": {
+      "description": "Bucket size, e.g. 1h.",
+      "type": "string"
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "Contiguous buckets.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/BucketCount"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "bucket",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "BucketCount": {
+      "title": "BucketCount",
+      "description": "Entries in one time bucket.",
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "description": "Bucket start, ISO 8601 UTC.",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries in the bucket.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bucket",
+        "count"
+      ]
+    }
+  }
+}

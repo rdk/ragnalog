@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "query.v1.schema.json",
+  "title": "query.v1",
+  "description": "Rows of a DuckDB query: `query`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "query.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "columns": {
+      "description": "Result columns, in order.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "total": {
+      "description": "Equals count (never truncated).",
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "Always false.",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "One object per result row.",
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "columns",
+    "count",
+    "total",
+    "truncated",
+    "items"
+  ]
+}

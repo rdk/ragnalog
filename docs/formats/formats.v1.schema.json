@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "formats.v1.schema.json",
+  "title": "formats.v1",
+  "description": "The supported log formats: `formats`, `GET /api/formats`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "formats.v1"
+      ]
+    },
+    "count": {
+      "description": "Number of items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "The formats (sorted by confidence with --sample).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/FormatInfo"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "FormatInfo": {
+      "title": "FormatInfo",
+      "description": "One registered log format.",
+      "type": "object",
+      "properties": {
+        "name": {
+          "description": "Format name (--format).",
+          "type": "string"
+        },
+        "description": {
+          "description": "What the format reads.",
+          "type": "string"
+        },
+        "signature_spec": {
+          "description": "CLI: default signature spec.",
+          "type": "string"
+        },
+        "mask_rules": {
+          "description": "CLI: masking rule names.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "confidence": {
+          "description": "With --sample: 0..1.",
+          "type": "number"
+        }
+      },
+      "required": [
+        "name",
+        "description"
+      ]
+    }
+  }
+}

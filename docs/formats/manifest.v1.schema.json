@@ -1,0 +1,239 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manifest.v1.schema.json",
+  "title": "manifest.v1",
+  "description": "How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `/api/manifest`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "manifest.v1"
+      ]
+    },
+    "tool": {
+      "description": "Command name.",
+      "type": "string"
+    },
+    "version": {
+      "description": "Tool version.",
+      "type": "string"
+    },
+    "usage": {
+      "description": "Command line shape.",
+      "type": "string"
+    },
+    "notes": {
+      "description": "Conventions every command follows.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "workflow": {
+      "description": "The usual order of commands.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManifestStep"
+      }
+    },
+    "when": {
+      "description": "Commands for other situations.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManifestStep"
+      }
+    },
+    "commands": {
+      "description": "Every command by name.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ManifestCommand"
+      }
+    },
+    "common": {
+      "description": "Help of arguments and options shared by commands.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "global_options": {
+      "description": "Options of every command.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ManifestParam"
+      }
+    },
+    "exit_codes": {
+      "description": "Meaning of each exit code.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "documents": {
+      "description": "The output documents and their schemas.",
+      "$ref": "#/$defs/ManifestDocuments"
+    },
+    "presets": {
+      "description": "Columns of the --brief presets.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "string"
+        }
+      }
+    },
+    "env": {
+      "description": "Environment variables.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "tool",
+    "version",
+    "usage",
+    "notes",
+    "workflow",
+    "when",
+    "commands",
+    "common",
+    "global_options",
+    "exit_codes",
+    "documents",
+    "presets",
+    "env"
+  ],
+  "$defs": {
+    "ManifestCommand": {
+      "title": "ManifestCommand",
+      "description": "One command.",
+      "type": "object",
+      "properties": {
+        "summary": {
+          "description": "First line of --help.",
+          "type": "string"
+        },
+        "args": {
+          "description": "Positional arguments; help in common.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": []
+        },
+        "params": {
+          "description": "Options.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ManifestParam"
+          },
+          "default": []
+        },
+        "output": {
+          "description": "Document printed.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "exit": {
+          "description": "Possible exit codes.",
+          "type": "array",
+          "items": {
+            "type": "integer"
+          },
+          "default": []
+        }
+      },
+      "required": [
+        "summary"
+      ]
+    },
+    "ManifestDocuments": {
+      "title": "ManifestDocuments",
+      "description": "Where the document schemas are.",
+      "type": "object",
+      "properties": {
+        "get": {
+          "description": "How to get a schema.",
+          "type": "string"
+        },
+        "names": {
+          "description": "Document names.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "get",
+        "names"
+      ]
+    },
+    "ManifestParam": {
+      "title": "ManifestParam",
+      "description": "`[name, type, default, help]`; help omitted when it is in `common`.",
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "description": "str, int, float, path, flag, a|b|c choices; * = repeatable.",
+          "type": "string"
+        },
+        {
+          "default": null
+        },
+        {
+          "type": "string",
+          "default": ""
+        }
+      ],
+      "minItems": 2
+    },
+    "ManifestStep": {
+      "title": "ManifestStep",
+      "description": "One step of the workflow, or one situation of `when`.",
+      "type": "object",
+      "properties": {
+        "run": {
+          "description": "Command line, e.g. triage SET.",
+          "type": "string"
+        },
+        "purpose": {
+          "description": "What it answers.",
+          "type": "string"
+        },
+        "output": {
+          "description": "Document printed.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "required": [
+        "run",
+        "purpose"
+      ]
+    }
+  }
+}

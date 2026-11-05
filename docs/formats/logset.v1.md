@@ -27,3 +27,56 @@ in-progress writes and are ignored.
 | `signature_version` | `int64` | no | Signature algorithm version. |
 | `mask_rules_version` | `int64` | no | Built-in masking rules version. |
 | `signature_spec` | `string` | no | SignatureSpec.key used for the primary signature. |
+
+## JSON document `logset.v1`
+
+A log set's manifest: `ingest`, `set`, `regroup`, `GET /api/sets/{ref}`.
+
+Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`logset.v1.schema.json`](logset.v1.schema.json), also `atlas-log schema logset.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `schema` | `"logset.v1"` | yes |  |
+| `id` | `string` | yes | xxh3-64 hex of the LF-joined sorted source xxh3 digests. |
+| `name` | `string \| null` | yes | Human alias given at ingest. |
+| `format` | `string` | yes | Format registry key, e.g. jira. |
+| `sources` | `list<Source>` | yes | Ingested files in ingest order; timestamps ISO 8601 or null; entries = rows kept after deduplication. |
+| `sources[].path` | `string` | yes | Path of the file as given at ingest. |
+| `sources[].size` | `integer` | yes | Size in bytes. |
+| `sources[].xxh3` | `string` | yes | xxh3-64 hex digest of the content. |
+| `sources[].first_ts` | `string \| null` | yes | ISO 8601 time of the file's earliest entry. |
+| `sources[].last_ts` | `string \| null` | yes | ISO 8601 time of the file's latest entry. |
+| `sources[].entries` | `integer` | yes | Entries of the file kept after deduplication. |
+| `first_ts` | `string \| null` | yes | ISO 8601 timestamp (UTC) of the earliest entry. |
+| `last_ts` | `string \| null` | yes | ISO 8601 timestamp (UTC) of the latest entry. |
+| `entry_count` | `integer` | yes | Rows in entries.parquet. |
+| `group_count` | `integer` | yes | Rows in groups.parquet. |
+| `created_at` | `string` | yes | ISO 8601 time (UTC) the set was written. |
+| `tool_version` | `string` | yes | atlas-log-analyzer version that wrote the set. |
+| `schema_version` | `string` | yes | Store schema version <major>.<minor>. |
+| `signature_version` | `integer` | yes | Signature algorithm version. |
+| `mask_rules_version` | `integer` | yes | Built-in masking rules version. |
+| `signature_spec` | `string` | yes | SignatureSpec.key used for the primary signature. |
+| `recipe_key` | `string \| null` | no | Key of the parse recipe. |
+| `ingest` | `IngestInfo` | no | Only from ingest (CLI and job result). |
+| `ingest.parsed_entries` | `integer` | yes | Entries parsed from the files. |
+| `ingest.parse_errors` | `integer` | yes | Entries whose header was not recognised. |
+| `ingest.elapsed_s` | `number` | yes | Seconds the ingest took. |
+| `ingest.existing` | `boolean` | yes | The set existed already and was reused. |
+| `ingest.skipped` | `list<string>` | yes | Files found in a directory that are not in the format. |
+| `ingest.warnings` | `list<string>` | yes | E.g. that --name was ignored for an existing set. |
+| `merges` | `list<MergeRow>` | no | Drain3 merge proposals (ingest --mine). |
+| `summary` | `SetSummary` | no | Only from set and GET /api/sets/{ref}. |
+| `summary.errors` | `integer` | yes | Entries at ERROR or FATAL. |
+| `summary.warnings` | `integer` | yes | Entries at WARN. |
+| `summary.error_groups` | `integer` | yes | Groups at ERROR or FATAL. |
+
+### `MergeRow`
+
+One Drain3 merge proposal (atlas-log schema merges). Every column is optional.
+
+| Column | Type | Description |
+|---|---|---|
+| `cluster_id` | `integer` | Drain3 cluster id. |
+| `drain_template` | `string \| null` | Template proposed by Drain3 (<*> wildcards). |
+| `signatures` | `list<string> \| null` | Signatures proposed to be merged. |

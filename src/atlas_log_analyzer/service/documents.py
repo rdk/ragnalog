@@ -197,7 +197,10 @@ class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
 
     store: Annotated[str, _d("CLI: the store path; API: the store directory's name.")]
     count: Annotated[int, _d("Number of items.")]
-    items: list[SetItem]
+    items: Annotated[
+        list[SetItem],
+        _d("The sets; with --brief only id, name, first_ts, last_ts, counts, summary."),
+    ]
 
 
 class Remove(Struct, kw_only=True, tag_field="schema", tag="remove.v1"):
@@ -210,22 +213,22 @@ class Remove(Struct, kw_only=True, tag_field="schema", tag="remove.v1"):
 class LoggerCount(Struct, kw_only=True):
     """Entries of one logger."""
 
-    logger: str | None
-    count: int
+    logger: Annotated[str | None, _d("Logger name.")]
+    count: Annotated[int, _d("Entries.")]
 
 
 class HourCount(Struct, kw_only=True):
     """Entries in one hour."""
 
     hour: Annotated[str, _d("Hour start, ISO 8601 UTC.")]
-    count: int
+    count: Annotated[int, _d("Entries.")]
 
 
 class TimeRange(Struct, kw_only=True):
     """Time of the first and the last entry."""
 
-    first: str | None
-    last: str | None
+    first: Annotated[str | None, _d("First entry, ISO 8601 UTC.")]
+    last: Annotated[str | None, _d("Last entry, ISO 8601 UTC.")]
 
 
 class Stats(Struct, kw_only=True, tag_field="schema", tag="stats.v1"):
@@ -241,8 +244,8 @@ class Stats(Struct, kw_only=True, tag_field="schema", tag="stats.v1"):
     levels: Annotated[dict[str, int], _d("Entries per level name.")]
     loggers: Annotated[list[LoggerCount], _d("Top 20 loggers.")]
     hours: Annotated[list[HourCount], _d("Entries per hour (UTC).")]
-    time_range: TimeRange
-    sources: list[Source]
+    time_range: Annotated[TimeRange, _d("Time of the first and the last entry.")]
+    sources: Annotated[list[Source], _d("The ingested files.")]
 
 
 # --- groups and entries
@@ -327,9 +330,9 @@ class Query(Struct, kw_only=True, tag_field="schema", tag="query.v1"):
 class DiffTotals(Struct, kw_only=True):
     """Section sizes before --limit."""
 
-    new: int
-    vanished: int
-    changed: int
+    new: Annotated[int, _d("Groups only in B.")]
+    vanished: Annotated[int, _d("Groups only in A.")]
+    changed: Annotated[int, _d("Groups in both with another count.")]
 
 
 class Diff(Struct, kw_only=True, tag_field="schema", tag="diff.v1"):
@@ -341,7 +344,7 @@ class Diff(Struct, kw_only=True, tag_field="schema", tag="diff.v1"):
     vanished: Annotated[list[DiffRow], _d("Only in A, by count_a.")]
     changed: Annotated[list[DiffRow], _d("In both with another count.")]
     unchanged_count: Annotated[int, _d("Groups in both with the same count.")]
-    totals: DiffTotals
+    totals: Annotated[DiffTotals, _d("Section sizes before --limit.")]
     truncated: Annotated[bool, _d("A section was cut by --limit.")]
     warnings: Annotated[list[str], _d("Spans differ by more than 4x.")] | UnsetType = UNSET
 
@@ -349,20 +352,20 @@ class Diff(Struct, kw_only=True, tag_field="schema", tag="diff.v1"):
 class TriageSet(Struct, kw_only=True):
     """The judged set."""
 
-    id: str
-    name: str | None
-    first_ts: str | None
-    last_ts: str | None
+    id: Annotated[str, _d("Set id.")]
+    name: Annotated[str | None, _d("Set name.")]
+    first_ts: Annotated[str | None, _d("First entry, as in the manifest.")]
+    last_ts: Annotated[str | None, _d("Last entry, as in the manifest.")]
     entries: Annotated[int, _d("Entries of the set.")]
 
 
 class TriageBaseline(Struct, kw_only=True):
     """The baseline set and how it was chosen."""
 
-    id: str
-    name: str | None
-    first_ts: str | None
-    last_ts: str | None
+    id: Annotated[str, _d("Baseline id.")]
+    name: Annotated[str | None, _d("Baseline name.")]
+    first_ts: Annotated[str | None, _d("First entry, as in the manifest.")]
+    last_ts: Annotated[str | None, _d("Last entry, as in the manifest.")]
     resolved_by: Annotated[Literal["auto", "param"], _d("auto = picked, param = given.")]
     reason: Annotated[str, _d("Why this baseline was picked.")] | UnsetType = UNSET
     entries: Annotated[int, _d("Entries of the baseline.")] | UnsetType = UNSET
@@ -377,20 +380,20 @@ class TriageBaseline(Struct, kw_only=True):
 class TriageSummary(Struct, kw_only=True):
     """Counts of all rows (the lists are cut to --limit)."""
 
-    new: int
-    new_by_level: dict[str, int]
-    new_exceptions: int
-    grew: int
-    vanished: int
-    changed: int
-    unchanged: int
+    new: Annotated[int, _d("Rows of new.")]
+    new_by_level: Annotated[dict[str, int], _d("New groups per level name.")]
+    new_exceptions: Annotated[int, _d("Rows of new_exceptions.")]
+    grew: Annotated[int, _d("Rows of grew.")]
+    vanished: Annotated[int, _d("Rows of vanished.")]
+    changed: Annotated[int, _d("Groups in both sets with another count.")]
+    unchanged: Annotated[int, _d("Groups in both sets with the same count.")]
 
 
 class Coverage(Struct, kw_only=True):
     """Spans of both sets in hours."""
 
-    hours_baseline: float | None
-    hours_set: float
+    hours_baseline: Annotated[float | None, _d("Baseline span; null without a baseline.")]
+    hours_set: Annotated[float, _d("Set span.")]
     ratio: Annotated[float | None, _d("hours_set / hours_baseline.")]
 
 
@@ -400,12 +403,14 @@ Verdict = Literal["new_errors", "new_warnings", "new_exceptions", "clean", "no_b
 class Triage(Struct, kw_only=True, tag_field="schema", tag="triage.v1"):
     """New kinds of errors since the baseline? `triage`, `GET /api/sets/{ref}/triage`."""
 
-    set: TriageSet
-    baseline: TriageBaseline | None
+    set: Annotated[TriageSet, _d("The judged set.")]
+    baseline: Annotated[TriageBaseline | None, _d("null: no baseline found (verdict no_baseline).")]
     min_level: Annotated[str | None, _d("Echo of --min-level.")]
-    verdict: Verdict
+    verdict: Annotated[
+        Verdict, _d("new_errors > new_warnings > new_exceptions > clean; no_baseline.")
+    ]
     summary: Annotated[TriageSummary | None, _d("null without a baseline.")]
-    coverage: Coverage
+    coverage: Annotated[Coverage, _d("Spans of both sets in hours.")]
     warnings: Annotated[list[str], _d("Spans differ by more than 4x.")]
     new: Annotated[list[DiffRow], _d("New groups at/above min_level, most severe first.")]
     new_exceptions: Annotated[list[DiffRow], _d("New lower-level groups with an exception.")]
@@ -420,8 +425,8 @@ class Triage(Struct, kw_only=True, tag_field="schema", tag="triage.v1"):
 class FormatInfo(Struct, kw_only=True):
     """One registered log format."""
 
-    name: str
-    description: str
+    name: Annotated[str, _d("Format name (--format).")]
+    description: Annotated[str, _d("What the format reads.")]
     signature_spec: Annotated[str, _d("CLI: default signature spec.")] | UnsetType = UNSET
     mask_rules: Annotated[list[str], _d("CLI: masking rule names.")] | UnsetType = UNSET
     confidence: Annotated[float, _d("With --sample: 0..1.")] | UnsetType = UNSET
@@ -430,24 +435,24 @@ class FormatInfo(Struct, kw_only=True):
 class Formats(Struct, kw_only=True, tag_field="schema", tag="formats.v1"):
     """The supported log formats: `formats`, `GET /api/formats`."""
 
-    count: int
-    items: list[FormatInfo]
+    count: Annotated[int, _d("Number of items.")]
+    items: Annotated[list[FormatInfo], _d("The formats (sorted by confidence with --sample).")]
 
 
 class Version(Struct, kw_only=True, tag_field="schema", tag="version.v1"):
     """Tool, schema and signature versions: `version`, `GET /api/version`."""
 
-    version: str
-    schema_version: str
-    signature_version: int
-    mask_rules_version: int
-    python: str
+    version: Annotated[str, _d("atlas-log-analyzer version.")]
+    schema_version: Annotated[str, _d("Store schema version <major>.<minor>.")]
+    signature_version: Annotated[int, _d("Signature algorithm version.")]
+    mask_rules_version: Annotated[int, _d("Built-in masking rules version.")]
+    python: Annotated[str, _d("Python version.")]
 
 
 class Health(Struct, kw_only=True, tag_field="schema", tag="health.v1"):
     """Liveness of the web app: `GET /api/health`."""
 
-    status: Literal["ok"]
+    status: Annotated[Literal["ok"], _d("Always ok.")]
     sets: Annotated[int, _d("Sets in the store.")]
 
 
@@ -464,7 +469,7 @@ class Schema(Struct, kw_only=True, tag_field="schema", tag="schema.v1"):
 class Error(Struct, kw_only=True, tag_field="schema", tag="error.v1"):
     """A failure (CLI: on stdout in json/jsonl mode, with exit code 1-3; API: 4xx/5xx)."""
 
-    error: ErrorInfo
+    error: Annotated[ErrorInfo, _d("The error.")]
 
 
 # --- web app jobs
@@ -475,26 +480,28 @@ JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 class JobProgress(Struct, kw_only=True):
     """Progress of a job."""
 
-    entries: int
-    bytes_read: int
-    bytes_total: int
+    entries: Annotated[int, _d("Entries parsed.")]
+    bytes_read: Annotated[int, _d("Bytes read.")]
+    bytes_total: Annotated[int, _d("Bytes uploaded.")]
     fraction: Annotated[float, _d("0..1.")]
-    current_file: str | None
+    current_file: Annotated[str | None, _d("File being read.")]
 
 
 class Job(Struct, kw_only=True, tag_field="schema", tag="job.v1"):
     """A background ingest: `POST /api/ingest`, `GET /api/jobs/{id}`."""
 
-    id: str
-    kind: Literal["ingest"]
-    state: JobState
-    name: str | None
-    files: list[str]
-    options: dict[str, Any]
-    created_at: str
-    started_at: str | None
-    finished_at: str | None
-    progress: JobProgress
+    id: Annotated[str, _d("Job id.")]
+    kind: Annotated[Literal["ingest"], _d("Always ingest.")]
+    state: Annotated[JobState, _d("queued, running, then succeeded, failed or cancelled.")]
+    name: Annotated[str | None, _d("Set name requested.")]
+    files: Annotated[list[str], _d("Uploaded file names.")]
+    options: Annotated[
+        dict[str, Any], _d("Ingest options (format, frames, mine, overwrite, force).")
+    ]
+    created_at: Annotated[str, _d("ISO 8601 UTC.")]
+    started_at: Annotated[str | None, _d("ISO 8601 UTC.")]
+    finished_at: Annotated[str | None, _d("ISO 8601 UTC.")]
+    progress: Annotated[JobProgress, _d("Progress so far.")]
     result: Annotated[Logset | None, _d("The manifest once succeeded.")]
     error: Annotated[ErrorInfo | None, _d("Set once failed.")]
 
@@ -502,8 +509,8 @@ class Job(Struct, kw_only=True, tag_field="schema", tag="job.v1"):
 class Jobs(Struct, kw_only=True, tag_field="schema", tag="jobs.v1"):
     """Jobs of this server process, newest first: `GET /api/jobs`."""
 
-    count: int
-    items: list[Job]
+    count: Annotated[int, _d("Number of items.")]
+    items: Annotated[list[Job], _d("job.v1 documents.")]
 
 
 # --- reports
@@ -512,8 +519,8 @@ class Jobs(Struct, kw_only=True, tag_field="schema", tag="jobs.v1"):
 class ReportFile(Struct, kw_only=True, tag_field="schema", tag="report-file.v1"):
     """A written HTML report: `report`."""
 
-    path: str
-    bytes: int
+    path: Annotated[str, _d("Absolute path of the HTML file.")]
+    bytes: Annotated[int, _d("File size.")]
     groups: Annotated[int, _d("Groups in the report.")]
     entries: Annotated[int, _d("Embedded example entries.")]
     compare: Annotated[bool, _d("Compared with --compare.")]
@@ -522,34 +529,34 @@ class ReportFile(Struct, kw_only=True, tag_field="schema", tag="report-file.v1")
 class ReportEntries(Struct, kw_only=True, tag_field="schema", tag="report-entries.v1"):
     """A group's examples in the report.v1 entry shape: `GET .../groups/{sig}/examples`."""
 
-    logset: str
-    signature: str
+    logset: Annotated[str, _d("Set id.")]
+    signature: Annotated[str, _d("Group signature.")]
     items: Annotated[dict[str, dict[str, Any]], _d("Entries by id (report.v1 entries).")]
 
 
 class ReportOptions(Struct, kw_only=True):
     """Build options of a report payload."""
 
-    min_level: str | None
-    examples: int
-    max_raw: int
-    max_groups: int | None
-    truncated_groups: int
+    min_level: Annotated[str | None, _d("Level filter or null.")]
+    examples: Annotated[int, _d("Example entries per group.")]
+    max_raw: Annotated[int, _d("Characters of raw kept; 0 = all.")]
+    max_groups: Annotated[int | None, _d("Largest groups kept; null = all.")]
+    truncated_groups: Annotated[int, _d("Groups cut by max_groups.")]
 
 
 class Report(Struct, kw_only=True, tag_field="schema", tag="report.v1"):
     """The HTML report's payload (envelope; docs/formats/report.v1.md has the parts)."""
 
-    generated_at: str
-    tool_version: str
-    options: ReportOptions
-    logset: Logset
+    generated_at: Annotated[str, _d("Build time, YYYY-MM-DDTHH:MM:SSZ.")]
+    tool_version: Annotated[str, _d("Version that built the payload.")]
+    options: Annotated[ReportOptions, _d("Build options.")]
+    logset: Annotated[Logset, _d("The set's manifest.")]
     stats: Annotated[dict[str, Any], _d("stats.v1 body without sources.")]
     timeline: Annotated[dict[str, Any], _d("{hours, levels}.")]
     groups: Annotated[list[dict[str, Any]], _d("Compact group rows.")]
     entries: Annotated[dict[str, dict[str, Any]], _d("Example entries by id.")]
-    merges: list[dict[str, Any]]
-    compare: dict[str, Any] | None
+    merges: Annotated[list[dict[str, Any]], _d("Drain3 proposals within the groups.")]
+    compare: Annotated[dict[str, Any] | None, _d("Comparison with --compare; null without.")]
     entries_url: Annotated[str, _d("Web app: examples URL template.")] | UnsetType = UNSET
 
 
@@ -560,7 +567,7 @@ class ManifestStep(Struct, kw_only=True):
     """One step of the workflow, or one situation of `when`."""
 
     run: Annotated[str, _d("Command line, e.g. triage SET.")]
-    purpose: str
+    purpose: Annotated[str, _d("What it answers.")]
     output: Annotated[str | None, _d("Document printed.")] = None
 
 
@@ -576,9 +583,9 @@ class ManifestParam(Struct, array_like=True, omit_defaults=True):
 class ManifestCommand(Struct, kw_only=True, omit_defaults=True):
     """One command."""
 
-    summary: str
+    summary: Annotated[str, _d("First line of --help.")]
     args: Annotated[list[str], _d("Positional arguments; help in common.")] = []
-    params: list[ManifestParam] = []
+    params: Annotated[list[ManifestParam], _d("Options.")] = []
     output: Annotated[str | None, _d("Document printed.")] = None
     exit: Annotated[list[int], _d("Possible exit codes.")] = []
 
@@ -586,26 +593,26 @@ class ManifestCommand(Struct, kw_only=True, omit_defaults=True):
 class ManifestDocuments(Struct, kw_only=True):
     """Where the document schemas are."""
 
-    get: str
-    names: list[str]
+    get: Annotated[str, _d("How to get a schema.")]
+    names: Annotated[list[str], _d("Document names.")]
 
 
 class Manifest(Struct, kw_only=True, tag_field="schema", tag="manifest.v1"):
     """How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `/api/manifest`."""
 
-    tool: str
-    version: str
-    usage: str
-    notes: list[str]
-    workflow: list[ManifestStep]
-    when: list[ManifestStep]
-    commands: dict[str, ManifestCommand]
+    tool: Annotated[str, _d("Command name.")]
+    version: Annotated[str, _d("Tool version.")]
+    usage: Annotated[str, _d("Command line shape.")]
+    notes: Annotated[list[str], _d("Conventions every command follows.")]
+    workflow: Annotated[list[ManifestStep], _d("The usual order of commands.")]
+    when: Annotated[list[ManifestStep], _d("Commands for other situations.")]
+    commands: Annotated[dict[str, ManifestCommand], _d("Every command by name.")]
     common: Annotated[dict[str, str], _d("Help of arguments and options shared by commands.")]
-    global_options: list[ManifestParam]
-    exit_codes: dict[str, str]
-    documents: ManifestDocuments
+    global_options: Annotated[list[ManifestParam], _d("Options of every command.")]
+    exit_codes: Annotated[dict[str, str], _d("Meaning of each exit code.")]
+    documents: Annotated[ManifestDocuments, _d("The output documents and their schemas.")]
     presets: Annotated[dict[str, list[str]], _d("Columns of the --brief presets.")]
-    env: dict[str, str]
+    env: Annotated[dict[str, str], _d("Environment variables.")]
 
 
 Document = (
@@ -790,7 +797,8 @@ def _rewrite(node: Any, ref: str, rename: dict[str, str]) -> Any:
     if not isinstance(node, dict):
         return node
     if _ROW in node:
-        return {"$ref": ref.format(name=ROW_COMPONENTS[node[_ROW]])}
+        row = {"$ref": ref.format(name=ROW_COMPONENTS[node[_ROW]])}
+        return {"description": node["description"], **row} if "description" in node else row
     out = {k: _rewrite(v, ref, rename) for k, v in node.items()}
     target = out.get("$ref")
     if isinstance(target, str) and target.startswith(ref.format(name="")):

@@ -1,0 +1,507 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "triage.v1.schema.json",
+  "title": "triage.v1",
+  "description": "New kinds of errors since the baseline? `triage`, `GET /api/sets/{ref}/triage`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "triage.v1"
+      ]
+    },
+    "set": {
+      "description": "The judged set.",
+      "$ref": "#/$defs/TriageSet"
+    },
+    "baseline": {
+      "description": "null: no baseline found (verdict no_baseline).",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriageBaseline"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "min_level": {
+      "description": "Echo of --min-level.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "verdict": {
+      "description": "new_errors > new_warnings > new_exceptions > clean; no_baseline.",
+      "enum": [
+        "clean",
+        "new_errors",
+        "new_exceptions",
+        "new_warnings",
+        "no_baseline"
+      ]
+    },
+    "summary": {
+      "description": "null without a baseline.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/TriageSummary"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "coverage": {
+      "description": "Spans of both sets in hours.",
+      "$ref": "#/$defs/Coverage"
+    },
+    "warnings": {
+      "description": "Spans differ by more than 4x.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "description": "New groups at/above min_level, most severe first.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "new_exceptions": {
+      "description": "New lower-level groups with an exception.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "grew": {
+      "description": "Hourly rate rose at least --grow times.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "vanished": {
+      "description": "Groups at/above min_level only in the baseline.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "report_url": {
+      "description": "API: the set's report page.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "set",
+    "baseline",
+    "min_level",
+    "verdict",
+    "summary",
+    "coverage",
+    "warnings",
+    "new",
+    "new_exceptions",
+    "grew",
+    "vanished"
+  ],
+  "$defs": {
+    "Coverage": {
+      "title": "Coverage",
+      "description": "Spans of both sets in hours.",
+      "type": "object",
+      "properties": {
+        "hours_baseline": {
+          "description": "Baseline span; null without a baseline.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hours_set": {
+          "description": "Set span.",
+          "type": "number"
+        },
+        "ratio": {
+          "description": "hours_set / hours_baseline.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "hours_baseline",
+        "hours_set",
+        "ratio"
+      ]
+    },
+    "DiffRow": {
+      "title": "diff row",
+      "description": "One group compared between baseline A and set B (counts are 0 on the missing side).",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Primary signature (16 hex chars).",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level (see entries.level).",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count_a": {
+          "description": "Entries in A.",
+          "type": "integer"
+        },
+        "count_b": {
+          "description": "Entries in B.",
+          "type": "integer"
+        },
+        "first_seen_a": {
+          "description": "First entry in A (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen_a": {
+          "description": "Last entry in A (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_seen_b": {
+          "description": "First entry in B (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen_b": {
+          "description": "Last entry in B (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ratio": {
+          "description": "changed: count_b / count_a.",
+          "type": "number"
+        },
+        "rate_a": {
+          "description": "--rate, triage grew: count_a per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_b": {
+          "description": "--rate, triage grew: count_b per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_ratio": {
+          "description": "rate_b / rate_a.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_per_hour": {
+          "description": "triage new: count_b per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_url": {
+          "description": "API triage: report page of the group.",
+          "type": "string"
+        }
+      }
+    },
+    "TriageBaseline": {
+      "title": "TriageBaseline",
+      "description": "The baseline set and how it was chosen.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Baseline id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Baseline name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "First entry, as in the manifest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Last entry, as in the manifest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "resolved_by": {
+          "description": "auto = picked, param = given.",
+          "enum": [
+            "auto",
+            "param"
+          ]
+        },
+        "reason": {
+          "description": "Why this baseline was picked.",
+          "type": "string"
+        },
+        "entries": {
+          "description": "Entries of the baseline.",
+          "type": "integer"
+        },
+        "shared_sources": {
+          "description": "Source files shared with the set.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "candidates": {
+          "description": "Other sets considered, with reasons.",
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "first_ts",
+        "last_ts",
+        "resolved_by"
+      ]
+    },
+    "TriageSet": {
+      "title": "TriageSet",
+      "description": "The judged set.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "First entry, as in the manifest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Last entry, as in the manifest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "description": "Entries of the set.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "first_ts",
+        "last_ts",
+        "entries"
+      ]
+    },
+    "TriageSummary": {
+      "title": "TriageSummary",
+      "description": "Counts of all rows (the lists are cut to --limit).",
+      "type": "object",
+      "properties": {
+        "new": {
+          "description": "Rows of new.",
+          "type": "integer"
+        },
+        "new_by_level": {
+          "description": "New groups per level name.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "new_exceptions": {
+          "description": "Rows of new_exceptions.",
+          "type": "integer"
+        },
+        "grew": {
+          "description": "Rows of grew.",
+          "type": "integer"
+        },
+        "vanished": {
+          "description": "Rows of vanished.",
+          "type": "integer"
+        },
+        "changed": {
+          "description": "Groups in both sets with another count.",
+          "type": "integer"
+        },
+        "unchanged": {
+          "description": "Groups in both sets with the same count.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "new",
+        "new_by_level",
+        "new_exceptions",
+        "grew",
+        "vanished",
+        "changed",
+        "unchanged"
+      ]
+    }
+  }
+}

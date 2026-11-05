@@ -32,3 +32,27 @@ same columns (with `signature` = `coarse_signature`) plus `signatures` (member l
 | `top_threads` | `list<struct<value: string, count: int64>>` | yes | Up to 10 most frequent threads with counts, descending. |
 | `sources` | `list<struct<value: string, count: int64>>` | yes | All source files with counts, descending. |
 | `examples` | `list<string>` | yes | Ids of representative entries. |
+
+## JSON document `groups.v1`
+
+One page of groups: `groups`, `GET /api/sets/{ref}/groups`.
+
+Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`groups.v1.schema.json`](groups.v1.schema.json), also `atlas-log schema groups.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+
+| Key | Type | Required | Description |
+|---|---|---|---|
+| `schema` | `"groups.v1"` | yes |  |
+| `logset` | `string` | yes | Set id. |
+| `count` | `integer` | yes | Rows in items. |
+| `total` | `integer` | yes | Matching groups before offset/limit. |
+| `offset` | `integer` | yes | Echo of --offset. |
+| `truncated` | `boolean` | yes | More rows follow (offset + count < total). |
+| `items` | `list<GroupRow>` | yes | groups.v1 rows (all columns unless --columns). |
+
+### `GroupRow`
+
+Rows hold the columns above (`--columns`/`--brief` select them, so every column is optional in JSON), plus:
+
+| Column | Type | Description |
+|---|---|---|
+| `signatures` | `list<string>` | --coarse only: the member signatures. |

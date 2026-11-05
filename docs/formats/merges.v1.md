@@ -11,3 +11,5 @@ Dropped by `regroup` because it refers to the old signatures.
 | `cluster_id` | `int64` | no | Drain3 cluster id. |
 | `drain_template` | `string` | yes | Template proposed by Drain3 (<*> wildcards). |
 | `signatures` | `list<string>` | yes | Signatures proposed to be merged. |
+
+In JSON (`logset.v1` `merges` after `ingest --mine`, `query` over the `merges` view) a row is an object with these columns: `MergeRow` in the documents' JSON Schemas (`atlas-log schema logset.v1`).

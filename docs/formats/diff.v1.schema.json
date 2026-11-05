@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "diff.v1.schema.json",
+  "title": "diff.v1",
+  "description": "Groups of B compared with baseline A: `diff`, `GET /api/diff`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "diff.v1"
+      ]
+    },
+    "a": {
+      "description": "Baseline set id.",
+      "type": "string"
+    },
+    "b": {
+      "description": "Compared set id.",
+      "type": "string"
+    },
+    "new": {
+      "description": "Only in B, by count_b.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "vanished": {
+      "description": "Only in A, by count_a.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "changed": {
+      "description": "In both with another count.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DiffRow"
+      }
+    },
+    "unchanged_count": {
+      "description": "Groups in both with the same count.",
+      "type": "integer"
+    },
+    "totals": {
+      "description": "Section sizes before --limit.",
+      "$ref": "#/$defs/DiffTotals"
+    },
+    "truncated": {
+      "description": "A section was cut by --limit.",
+      "type": "boolean"
+    },
+    "warnings": {
+      "description": "Spans differ by more than 4x.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "a",
+    "b",
+    "new",
+    "vanished",
+    "changed",
+    "unchanged_count",
+    "totals",
+    "truncated"
+  ],
+  "$defs": {
+    "DiffRow": {
+      "title": "diff row",
+      "description": "One group compared between baseline A and set B (counts are 0 on the missing side).",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Primary signature (16 hex chars).",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level (see entries.level).",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count_a": {
+          "description": "Entries in A.",
+          "type": "integer"
+        },
+        "count_b": {
+          "description": "Entries in B.",
+          "type": "integer"
+        },
+        "first_seen_a": {
+          "description": "First entry in A (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen_a": {
+          "description": "Last entry in A (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_seen_b": {
+          "description": "First entry in B (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen_b": {
+          "description": "Last entry in B (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ratio": {
+          "description": "changed: count_b / count_a.",
+          "type": "number"
+        },
+        "rate_a": {
+          "description": "--rate, triage grew: count_a per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_b": {
+          "description": "--rate, triage grew: count_b per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_ratio": {
+          "description": "rate_b / rate_a.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "rate_per_hour": {
+          "description": "triage new: count_b per hour.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "report_url": {
+          "description": "API triage: report page of the group.",
+          "type": "string"
+        }
+      }
+    },
+    "DiffTotals": {
+      "title": "DiffTotals",
+      "description": "Section sizes before --limit.",
+      "type": "object",
+      "properties": {
+        "new": {
+          "description": "Groups only in B.",
+          "type": "integer"
+        },
+        "vanished": {
+          "description": "Groups only in A.",
+          "type": "integer"
+        },
+        "changed": {
+          "description": "Groups in both with another count.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "new",
+        "vanished",
+        "changed"
+      ]
+    }
+  }
+}

@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "version.v1.schema.json",
+  "title": "version.v1",
+  "description": "Tool, schema and signature versions: `version`, `GET /api/version`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "version.v1"
+      ]
+    },
+    "version": {
+      "description": "atlas-log-analyzer version.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Store schema version <major>.<minor>.",
+      "type": "string"
+    },
+    "signature_version": {
+      "description": "Signature algorithm version.",
+      "type": "integer"
+    },
+    "mask_rules_version": {
+      "description": "Built-in masking rules version.",
+      "type": "integer"
+    },
+    "python": {
+      "description": "Python version.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "version",
+    "schema_version",
+    "signature_version",
+    "mask_rules_version",
+    "python"
+  ]
+}

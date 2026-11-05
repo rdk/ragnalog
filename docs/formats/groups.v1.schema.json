@@ -1,0 +1,247 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "groups.v1.schema.json",
+  "title": "groups.v1",
+  "description": "One page of groups: `groups`, `GET /api/sets/{ref}/groups`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "groups.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "total": {
+      "description": "Matching groups before offset/limit.",
+      "type": "integer"
+    },
+    "offset": {
+      "description": "Echo of --offset.",
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "More rows follow (offset + count < total).",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "groups.v1 rows (all columns unless --columns).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GroupRow"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "count",
+    "total",
+    "offset",
+    "truncated",
+    "items"
+  ],
+  "$defs": {
+    "GroupRow": {
+      "title": "groups.v1 row",
+      "description": "One group; the groups.v1 columns (atlas-log schema groups).",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Primary signature (16 hex chars).",
+          "type": "string"
+        },
+        "coarse_signature": {
+          "description": "Coarse signature shared by the group's entries.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level (see entries.level).",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "description": "Number of entries.",
+          "type": "integer"
+        },
+        "first_seen": {
+          "description": "Timestamp of the earliest entry (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "description": "Timestamp of the latest entry (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user_count": {
+          "description": "Number of distinct users.",
+          "type": "integer"
+        },
+        "thread_count": {
+          "description": "Number of distinct threads.",
+          "type": "integer"
+        },
+        "source_count": {
+          "description": "Number of distinct source files.",
+          "type": "integer"
+        },
+        "top_users": {
+          "description": "Up to 10 most frequent users with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "top_threads": {
+          "description": "Up to 10 most frequent threads with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "description": "All source files with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "examples": {
+          "description": "Ids of representative entries.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signatures": {
+          "description": "--coarse only: the member signatures.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

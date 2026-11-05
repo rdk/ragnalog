@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "stats.v1.schema.json",
+  "title": "stats.v1",
+  "description": "Summary statistics of a set: `stats`, `GET /api/sets/{ref}/stats`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "stats.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "id": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Set name.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "format": {
+      "description": "Format name.",
+      "type": "string"
+    },
+    "entry_count": {
+      "description": "Entries.",
+      "type": "integer"
+    },
+    "group_count": {
+      "description": "Groups.",
+      "type": "integer"
+    },
+    "parse_errors": {
+      "description": "Entries whose header was not recognised.",
+      "type": "integer"
+    },
+    "levels": {
+      "description": "Entries per level name.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "loggers": {
+      "description": "Top 20 loggers.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/LoggerCount"
+      }
+    },
+    "hours": {
+      "description": "Entries per hour (UTC).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/HourCount"
+      }
+    },
+    "time_range": {
+      "description": "Time of the first and the last entry.",
+      "$ref": "#/$defs/TimeRange"
+    },
+    "sources": {
+      "description": "The ingested files.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Source"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "id",
+    "name",
+    "format",
+    "entry_count",
+    "group_count",
+    "parse_errors",
+    "levels",
+    "loggers",
+    "hours",
+    "time_range",
+    "sources"
+  ],
+  "$defs": {
+    "HourCount": {
+      "title": "HourCount",
+      "description": "Entries in one hour.",
+      "type": "object",
+      "properties": {
+        "hour": {
+          "description": "Hour start, ISO 8601 UTC.",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "hour",
+        "count"
+      ]
+    },
+    "LoggerCount": {
+      "title": "LoggerCount",
+      "description": "Entries of one logger.",
+      "type": "object",
+      "properties": {
+        "logger": {
+          "description": "Logger name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "description": "Entries.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "logger",
+        "count"
+      ]
+    },
+    "Source": {
+      "title": "Source",
+      "description": "One ingested file of a log set.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path of the file as given at ingest.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer"
+        },
+        "xxh3": {
+          "description": "xxh3-64 hex digest of the content.",
+          "type": "string"
+        },
+        "first_ts": {
+          "description": "ISO 8601 time of the file's earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 time of the file's latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "description": "Entries of the file kept after deduplication.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "xxh3",
+        "first_ts",
+        "last_ts",
+        "entries"
+      ]
+    },
+    "TimeRange": {
+      "title": "TimeRange",
+      "description": "Time of the first and the last entry.",
+      "type": "object",
+      "properties": {
+        "first": {
+          "description": "First entry, ISO 8601 UTC.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last": {
+          "description": "Last entry, ISO 8601 UTC.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "first",
+        "last"
+      ]
+    }
+  }
+}

@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "schema.v1.schema.json",
+  "title": "schema.v1",
+  "description": "Schema descriptions: `schema [NAME]`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "schema.v1"
+      ]
+    },
+    "definitions": {
+      "description": "Stored tables: {schema, version, fields}; documents: a JSON Schema.",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "documents": {
+      "description": "Without NAME: the document names.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "definitions"
+  ]
+}

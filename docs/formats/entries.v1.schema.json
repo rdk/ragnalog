@@ -1,0 +1,659 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "entries.v1.schema.json",
+  "title": "entries.v1",
+  "description": "Entries: `entries` (a page), `show` (one group), `context` (around an entry).",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "entries.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "entries.v1 rows (all columns unless --columns).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EntryRow"
+      }
+    },
+    "total": {
+      "description": "entries: matches before offset/limit.",
+      "type": "integer"
+    },
+    "offset": {
+      "description": "entries: echo of --offset.",
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "entries: more rows follow.",
+      "type": "boolean"
+    },
+    "next_offset": {
+      "description": "API entries: next page.",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "signature": {
+      "description": "show: the full signature.",
+      "type": "string"
+    },
+    "group": {
+      "description": "show: the groups.v1 row.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GroupRow"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "anchor": {
+      "description": "context: the anchor entry id.",
+      "type": "string"
+    },
+    "thread": {
+      "description": "context: the anchor's thread.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "any_thread": {
+      "description": "context: echo of --any-thread.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "EntryRow": {
+      "title": "entries.v1 row",
+      "description": "One entry; the entries.v1 columns (atlas-log schema entries).",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Entry id: xxh3-64 hex of (format, timestamp, thread, logger, raw).",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Timestamp in UTC, millisecond precision.",
+          "type": "string",
+          "format": "date-time"
+        },
+        "tz_offset": {
+          "description": "Original UTC offset of the timestamp in minutes.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level: TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60 UNKNOWN=0.",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name: TRACE, DEBUG, INFO, WARN, ERROR, FATAL or UNKNOWN.",
+          "type": "string"
+        },
+        "thread": {
+          "description": "Thread name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "logger": {
+          "description": "Logger (category) name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "message": {
+          "description": "First line of the message (header remainder).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body": {
+          "description": "Continuation lines joined with LF; empty when single-line.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user": {
+          "description": "User from the request context.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_id": {
+          "description": "Request id from the request context.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "session": {
+          "description": "Session id from the request context.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "ip": {
+          "description": "Client IP address(es) from the request context.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "url": {
+          "description": "URL(s) from the thread segment.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "request_url": {
+          "description": "URL from the request context.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "context": {
+          "description": "Other format-specific header fields (keys without a dedicated column).",
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Type of the outermost exception, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_message": {
+          "description": "Message of the outermost exception, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_chain": {
+          "description": "Parsed exception chain, outermost first; empty list when none.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "type": {
+                    "type": "string"
+                  },
+                  "message": {
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "frames": {
+                    "anyOf": [
+                      {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "location": {
+                              "type": "string"
+                            },
+                            "file": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "line": {
+                              "anyOf": [
+                                {
+                                  "type": "integer"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            },
+                            "module": {
+                              "anyOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          },
+                          "required": [
+                            "location"
+                          ]
+                        }
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  },
+                  "omitted_frames": {
+                    "anyOf": [
+                      {
+                        "type": "integer"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
+                  }
+                },
+                "required": [
+                  "type"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "description": "Primary signature (16 hex chars); key into groups.",
+          "type": "string"
+        },
+        "coarse_signature": {
+          "description": "Coarse signature (format, level, logger, masked message).",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked first message line with <PLACEHOLDERS>.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "variables": {
+          "description": "Values replaced by placeholders, in order.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_path": {
+          "description": "Path of the source file.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_line": {
+          "description": "1-based line number of the header line.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_offset": {
+          "description": "Byte offset of the header line in the source file.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "raw": {
+          "description": "Exact original text (header and continuation lines).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "parse_error": {
+          "description": "Set when the header line was not recognised.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "body_truncated": {
+          "description": "Only on rows whose raw or body was cut (--max-raw).",
+          "const": true
+        },
+        "raw_chars": {
+          "description": "Original length of raw (of body without raw); cut rows only.",
+          "type": "integer"
+        }
+      }
+    },
+    "GroupRow": {
+      "title": "groups.v1 row",
+      "description": "One group; the groups.v1 columns (atlas-log schema groups).",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Primary signature (16 hex chars).",
+          "type": "string"
+        },
+        "coarse_signature": {
+          "description": "Coarse signature shared by the group's entries.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level (see entries.level).",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type, if any.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "description": "Number of entries.",
+          "type": "integer"
+        },
+        "first_seen": {
+          "description": "Timestamp of the earliest entry (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "description": "Timestamp of the latest entry (UTC).",
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "user_count": {
+          "description": "Number of distinct users.",
+          "type": "integer"
+        },
+        "thread_count": {
+          "description": "Number of distinct threads.",
+          "type": "integer"
+        },
+        "source_count": {
+          "description": "Number of distinct source files.",
+          "type": "integer"
+        },
+        "top_users": {
+          "description": "Up to 10 most frequent users with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "top_threads": {
+          "description": "Up to 10 most frequent threads with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sources": {
+          "description": "All source files with counts, descending.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "value": {
+                    "type": "string"
+                  },
+                  "count": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "value",
+                  "count"
+                ]
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "examples": {
+          "description": "Ids of representative entries.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signatures": {
+          "description": "--coarse only: the member signatures.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}

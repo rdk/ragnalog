@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "error.v1.schema.json",
+  "title": "error.v1",
+  "description": "A failure (CLI: on stdout in json/jsonl mode, with exit code 1-3; API: 4xx/5xx).",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "error.v1"
+      ]
+    },
+    "error": {
+      "description": "The error.",
+      "$ref": "#/$defs/ErrorInfo"
+    }
+  },
+  "required": [
+    "schema",
+    "error"
+  ],
+  "$defs": {
+    "ErrorInfo": {
+      "title": "ErrorInfo",
+      "description": "The `error` object of `error.v1` (also `job.v1` `error`).",
+      "type": "object",
+      "properties": {
+        "code": {
+          "description": "Stable error code, e.g. usage, invalid_value, not_found.",
+          "type": "string"
+        },
+        "message": {
+          "description": "What went wrong.",
+          "type": "string"
+        },
+        "hint": {
+          "description": "Suggested next step.",
+          "type": "string"
+        },
+        "reason": {
+          "description": "Finer cause within the code.",
+          "type": "string"
+        },
+        "store": {
+          "description": "The store searched (CLI, unknown set).",
+          "type": "string"
+        },
+        "candidates": {
+          "description": "Matching signatures of an ambiguous prefix (up to 5).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    }
+  }
+}

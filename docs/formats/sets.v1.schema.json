@@ -1,0 +1,236 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "sets.v1.schema.json",
+  "title": "sets.v1",
+  "description": "The log sets of the store, newest first: `sets`, `GET /api/sets`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "sets.v1"
+      ]
+    },
+    "store": {
+      "description": "CLI: the store path; API: the store directory's name.",
+      "type": "string"
+    },
+    "count": {
+      "description": "Number of items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "The sets; with --brief only id, name, first_ts, last_ts, counts, summary.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SetItem"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "store",
+    "count",
+    "items"
+  ],
+  "$defs": {
+    "SetItem": {
+      "title": "SetItem",
+      "description": "One set of `sets.v1`: its manifest without `schema` plus `summary`.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "xxh3-64 hex of the LF-joined sorted source xxh3 digests.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Human alias given at ingest.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_ts": {
+          "description": "ISO 8601 timestamp (UTC) of the earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 timestamp (UTC) of the latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entry_count": {
+          "description": "Rows in entries.parquet.",
+          "type": "integer"
+        },
+        "group_count": {
+          "description": "Rows in groups.parquet.",
+          "type": "integer"
+        },
+        "summary": {
+          "description": "null when the set cannot be read.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SetSummary"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "format": {
+          "description": "Not with --brief.",
+          "type": "string"
+        },
+        "sources": {
+          "description": "Not with --brief.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Source"
+          }
+        },
+        "created_at": {
+          "description": "Not with --brief.",
+          "type": "string"
+        },
+        "tool_version": {
+          "description": "Not with --brief.",
+          "type": "string"
+        },
+        "schema_version": {
+          "description": "Not with --brief.",
+          "type": "string"
+        },
+        "signature_version": {
+          "description": "Not with --brief.",
+          "type": "integer"
+        },
+        "mask_rules_version": {
+          "description": "Not with --brief.",
+          "type": "integer"
+        },
+        "signature_spec": {
+          "description": "Not with --brief.",
+          "type": "string"
+        },
+        "recipe_key": {
+          "description": "Key of the parse recipe.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "description": "Built by an older version; see upgrade.",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "first_ts",
+        "last_ts",
+        "entry_count",
+        "group_count",
+        "summary"
+      ]
+    },
+    "SetSummary": {
+      "title": "SetSummary",
+      "description": "Entry counts by severity of a set, from its groups table.",
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Entries at ERROR or FATAL.",
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "Entries at WARN.",
+          "type": "integer"
+        },
+        "error_groups": {
+          "description": "Groups at ERROR or FATAL.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "errors",
+        "warnings",
+        "error_groups"
+      ]
+    },
+    "Source": {
+      "title": "Source",
+      "description": "One ingested file of a log set.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path of the file as given at ingest.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer"
+        },
+        "xxh3": {
+          "description": "xxh3-64 hex digest of the content.",
+          "type": "string"
+        },
+        "first_ts": {
+          "description": "ISO 8601 time of the file's earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 time of the file's latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "description": "Entries of the file kept after deduplication.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "xxh3",
+        "first_ts",
+        "last_ts",
+        "entries"
+      ]
+    }
+  }
+}

@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "logset.v1.schema.json",
+  "title": "logset.v1",
+  "description": "A log set's manifest: `ingest`, `set`, `regroup`, `GET /api/sets/{ref}`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "logset.v1"
+      ]
+    },
+    "id": {
+      "description": "xxh3-64 hex of the LF-joined sorted source xxh3 digests.",
+      "type": "string"
+    },
+    "name": {
+      "description": "Human alias given at ingest.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "format": {
+      "description": "Format registry key, e.g. jira.",
+      "type": "string"
+    },
+    "sources": {
+      "description": "Ingested files in ingest order; timestamps ISO 8601 or null; entries = rows kept after deduplication.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/Source"
+      }
+    },
+    "first_ts": {
+      "description": "ISO 8601 timestamp (UTC) of the earliest entry.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "last_ts": {
+      "description": "ISO 8601 timestamp (UTC) of the latest entry.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "entry_count": {
+      "description": "Rows in entries.parquet.",
+      "type": "integer"
+    },
+    "group_count": {
+      "description": "Rows in groups.parquet.",
+      "type": "integer"
+    },
+    "created_at": {
+      "description": "ISO 8601 time (UTC) the set was written.",
+      "type": "string"
+    },
+    "tool_version": {
+      "description": "atlas-log-analyzer version that wrote the set.",
+      "type": "string"
+    },
+    "schema_version": {
+      "description": "Store schema version <major>.<minor>.",
+      "type": "string"
+    },
+    "signature_version": {
+      "description": "Signature algorithm version.",
+      "type": "integer"
+    },
+    "mask_rules_version": {
+      "description": "Built-in masking rules version.",
+      "type": "integer"
+    },
+    "signature_spec": {
+      "description": "SignatureSpec.key used for the primary signature.",
+      "type": "string"
+    },
+    "recipe_key": {
+      "description": "Key of the parse recipe.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "ingest": {
+      "description": "Only from ingest (CLI and job result).",
+      "$ref": "#/$defs/IngestInfo"
+    },
+    "merges": {
+      "description": "Drain3 merge proposals (ingest --mine).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MergeRow"
+      }
+    },
+    "summary": {
+      "description": "Only from set and GET /api/sets/{ref}.",
+      "$ref": "#/$defs/SetSummary"
+    }
+  },
+  "required": [
+    "schema",
+    "id",
+    "name",
+    "format",
+    "sources",
+    "first_ts",
+    "last_ts",
+    "entry_count",
+    "group_count",
+    "created_at",
+    "tool_version",
+    "schema_version",
+    "signature_version",
+    "mask_rules_version",
+    "signature_spec"
+  ],
+  "$defs": {
+    "IngestInfo": {
+      "title": "IngestInfo",
+      "description": "What one ingest did (`atlas-log ingest`, `job.v1` `result`).",
+      "type": "object",
+      "properties": {
+        "parsed_entries": {
+          "description": "Entries parsed from the files.",
+          "type": "integer"
+        },
+        "parse_errors": {
+          "description": "Entries whose header was not recognised.",
+          "type": "integer"
+        },
+        "elapsed_s": {
+          "description": "Seconds the ingest took.",
+          "type": "number"
+        },
+        "existing": {
+          "description": "The set existed already and was reused.",
+          "type": "boolean"
+        },
+        "skipped": {
+          "description": "Files found in a directory that are not in the format.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "warnings": {
+          "description": "E.g. that --name was ignored for an existing set.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "parsed_entries",
+        "parse_errors",
+        "elapsed_s",
+        "existing",
+        "skipped",
+        "warnings"
+      ]
+    },
+    "MergeRow": {
+      "title": "merges.v1 row",
+      "description": "One Drain3 merge proposal (atlas-log schema merges).",
+      "type": "object",
+      "properties": {
+        "cluster_id": {
+          "description": "Drain3 cluster id.",
+          "type": "integer"
+        },
+        "drain_template": {
+          "description": "Template proposed by Drain3 (<*> wildcards).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signatures": {
+          "description": "Signatures proposed to be merged.",
+          "anyOf": [
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "SetSummary": {
+      "title": "SetSummary",
+      "description": "Entry counts by severity of a set, from its groups table.",
+      "type": "object",
+      "properties": {
+        "errors": {
+          "description": "Entries at ERROR or FATAL.",
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "Entries at WARN.",
+          "type": "integer"
+        },
+        "error_groups": {
+          "description": "Groups at ERROR or FATAL.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "errors",
+        "warnings",
+        "error_groups"
+      ]
+    },
+    "Source": {
+      "title": "Source",
+      "description": "One ingested file of a log set.",
+      "type": "object",
+      "properties": {
+        "path": {
+          "description": "Path of the file as given at ingest.",
+          "type": "string"
+        },
+        "size": {
+          "description": "Size in bytes.",
+          "type": "integer"
+        },
+        "xxh3": {
+          "description": "xxh3-64 hex digest of the content.",
+          "type": "string"
+        },
+        "first_ts": {
+          "description": "ISO 8601 time of the file's earliest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "ISO 8601 time of the file's latest entry.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "entries": {
+          "description": "Entries of the file kept after deduplication.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "path",
+        "size",
+        "xxh3",
+        "first_ts",
+        "last_ts",
+        "entries"
+      ]
+    }
+  }
+}

@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report-entries.v1.schema.json",
+  "title": "report-entries.v1",
+  "description": "A group's examples in the report.v1 entry shape: `GET .../groups/{sig}/examples`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "report-entries.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "signature": {
+      "description": "Group signature.",
+      "type": "string"
+    },
+    "items": {
+      "description": "Entries by id (report.v1 entries).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "signature",
+    "items"
+  ]
+}

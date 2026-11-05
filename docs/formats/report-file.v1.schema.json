@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "report-file.v1.schema.json",
+  "title": "report-file.v1",
+  "description": "A written HTML report: `report`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "report-file.v1"
+      ]
+    },
+    "path": {
+      "description": "Absolute path of the HTML file.",
+      "type": "string"
+    },
+    "bytes": {
+      "description": "File size.",
+      "type": "integer"
+    },
+    "groups": {
+      "description": "Groups in the report.",
+      "type": "integer"
+    },
+    "entries": {
+      "description": "Embedded example entries.",
+      "type": "integer"
+    },
+    "compare": {
+      "description": "Compared with --compare.",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "schema",
+    "path",
+    "bytes",
+    "groups",
+    "entries",
+    "compare"
+  ]
+}
