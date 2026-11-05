@@ -456,7 +456,7 @@ pre.trace { white-space: normal; line-height: 1.5; }
 .trace .t-exc { color: var(--ink); font-weight: 700; }
 .trace .t-msg { color: var(--ink-2); }
 .trace .t-kw { color: var(--muted); }
-.trace .fr { white-space: pre; padding-left: 4px; border-left: 2px solid transparent; }
+.trace .fr { white-space: pre-wrap; word-break: break-all; padding-left: 4px; text-indent: -2ch; margin-left: 2ch; border-left: 2px solid transparent; }
 .trace .fr-app { border-left-color: var(--blue); }
 .trace .t-at, .trace .t-pkg { color: var(--muted); }
 .trace .t-cm { color: var(--ink); }

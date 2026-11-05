@@ -1157,7 +1157,7 @@
   const T_MORE = /^\s*\.\.\.\s*\d+\s+(more|common frames omitted)\b/;
   const T_HEAD = /^(\s*)((?:Caused by|Suppressed):\s*)?([A-Za-z_$][\w$]*(?:\.[\w$]+)*\.[A-Z][\w$]*|[A-Z][\w$]*(?:Exception|Error|Throwable))(?::\s?(.*))?$/;
   const LIB = /^(?:[\w.]*\/\/?)?(?:java\.|javax\.|jakarta\.|jdk\.|sun\.|com\.sun\.|org\.springframework\.|org\.apache\.)/;
-  const FOLD_KEEP = 4;
+  const FOLD_KEEP = Infinity; // every line of an entry is shown; library frames are only dimmed
   function frameHtml(ln) {
     const m = T_FRAME.exec(ln);
     const q = m[2];
@@ -1216,7 +1216,7 @@
       `</div><div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
       `<div class="e-foot">` + (src ? `<span class="mono" title="${esc(src)}">${esc(basename(src))}${e.source_line != null ? ":" + esc(e.source_line) : ""}</span>` : "") +
-      (e.raw_truncated ? `<span class="muted">raw truncated to ${fmt(raw.length)} characters</span>` : "") +
+      (e.raw_truncated ? `<span class="muted">${URLS && URLS.examples ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
       `<span class="grow"></span>` +
       (canCtx ? `<button type="button" class="btn small" data-ctx="${esc(str(e.set) + "~" + id)}" data-cts="${esc(e.ts)}" title="What every node logged within 30 s of this entry">±30 s on all nodes</button>` : "") +
       (sig && GBY.has(sig) && sig !== S.sig ? `<button type="button" class="btn small" data-open="${esc(sig)}">Open group</button>` : "") +
@@ -1276,6 +1276,7 @@
       const cur = exNodes.includes(S.ex) ? S.ex : exNodes[0];
       const ids = arr(r.examples[cur]).map(String);
       const have = ids.filter((id) => ENTRIES[id]);
+      loadFullExamples(r, cur, ids);
       exBody = `<div class="ex-tabs" role="tablist">${exNodes.map((n) =>
         `<button type="button" role="tab" data-ex="${esc(n)}" aria-selected="${n === cur}">${nodeBadge(n)}<span class="n">${fmt(arr(r.examples[n]).length)}</span></button>`).join("")}</div>` +
         (have.length ? have.map((id) => entryHtml(id, ENTRIES[id])).join("") : `<div class="muted">The examples of ${esc(cur)} are not in this report.</div>`);
@@ -1349,6 +1350,22 @@
       cross.setAttribute("visibility", "hidden");
       tip.hidden = true;
     });
+  }
+  /** Web app: fetch a node's examples of a group in full (max_raw=0) when the payload cut them. */
+  const FULL = new Set();
+  function loadFullExamples(r, node, ids) {
+    if (!URLS || !URLS.examples) return;
+    const set = setOf(node).id || (ids.map((id) => ENTRIES[id]).find((e) => e && e.set) || {}).set;
+    const key = set + "|" + r.sig;
+    if (!set || FULL.has(key) || !ids.some((id) => !ENTRIES[id] || ENTRIES[id].raw_truncated)) return;
+    FULL.add(key);
+    fetchJson(new URL(urlFill(URLS.examples, { set, sig: r.sig }), location.href).toString())
+      .then((doc) => {
+        for (const [id, e] of Object.entries(obj(doc && doc.items))) ENTRIES[id] = Object.assign({}, ENTRIES[id] || {}, e, { node, set });
+        drawnKey = null;
+        renderDrawer();
+      })
+      .catch(() => null);
   }
   const renderDrawer = guard(function renderDrawer() {
     const dr = $("drawer");

@@ -144,3 +144,4 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `urls.entries` | `string` | yes | Merged entries of the capture. |
 | `urls.context` | `string` | yes | Context on all nodes of one entry (template). |
 | `urls.set_report` | `string` | yes | Report page of one node's set (template). |
+| `urls.examples` | `string \| null` | no | A group's example entries on one node's set, in full (template). |

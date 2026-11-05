@@ -109,6 +109,7 @@ def test_cluster_payload_urls_and_cache(client: TestClient, tmp_path: Path) -> N
         "entries": f"/api/captures/capture:{JOB_ID}/entries",
         "context": "/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
         "set_report": "/sets/{set}",
+        "examples": "/api/sets/{set}/groups/{sig}/examples?max_raw=0",
     }
     assert client.get(url).content == first.content  # cached
     member = payload["capture"]["nodes"][0]["set"]["id"]
@@ -139,3 +140,15 @@ def test_stale_spool_is_removed_at_start(store_dir: Path) -> None:
     os.utime(old, (hours_ago, hours_ago))
     with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))):
         assert not old.exists() and fresh.exists()  # a running ingest keeps its spool
+
+
+def test_cluster_examples_url_returns_full_entries(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    payload = client.get(f"/api/captures/capture:{JOB_ID}/report").json()
+    group = next(g for g in payload["groups"] if any(g["examples"].values()))
+    node, ids = next((n, i) for n, i in group["examples"].items() if i)
+    set_id = next(m["set"]["id"] for m in payload["capture"]["nodes"] if m["node"] == node)
+    url = payload["urls"]["examples"].replace("{set}", set_id).replace("{sig}", group["signature"])
+    items = client.get(url).json()["items"]
+    assert set(ids) <= set(items)
+    assert not any(e.get("raw_truncated") for e in items.values())

@@ -1180,6 +1180,9 @@ class ClusterReportUrls(Struct, kw_only=True):
     entries: Annotated[str, _d("Merged entries of the capture.")]
     context: Annotated[str, _d("Context on all nodes of one entry (template).")]
     set_report: Annotated[str, _d("Report page of one node's set (template).")]
+    examples: Annotated[
+        str | None, _d("A group's example entries on one node's set, in full (template).")
+    ] = None
 
 
 class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-report.v1"):

@@ -773,6 +773,18 @@
         "set_report": {
           "description": "Report page of one node's set (template).",
           "type": "string"
+        },
+        "examples": {
+          "description": "A group's example entries on one node's set, in full (template).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

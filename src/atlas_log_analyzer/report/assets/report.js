@@ -950,7 +950,7 @@
   const T_MORE = /^\s*\.\.\.\s*\d+\s+(more|common frames omitted)\b/;
   const T_HEAD = /^(\s*)((?:Caused by|Suppressed):\s*)?([A-Za-z_$][\w$]*(?:\.[\w$]+)*\.[A-Z][\w$]*|[A-Z][\w$]*(?:Exception|Error|Throwable))(?::\s?(.*))?$/;
   const LIB = /^(?:[\w.]*\/\/?)?(?:java\.|javax\.|jakarta\.|jdk\.|sun\.|com\.sun\.|org\.springframework\.|org\.apache\.)/;
-  const FOLD_KEEP = 4;
+  const FOLD_KEEP = Infinity; // every line of an entry is shown; library frames are only dimmed
   function frameHtml(ln) {
     const m = T_FRAME.exec(ln);
     const q = m[2];
@@ -1003,7 +1003,7 @@
       `</div><div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
       `<div class="e-foot"><span class="mono" title="${esc(srcPath(e.source ?? e.source_path))}">${esc(basename(srcPath(e.source ?? e.source_path)))}:${esc(e.source_line)}</span>` +
-      (e.raw_truncated ? `<span class="muted">raw truncated to ${fmt(raw.length)} characters</span>` : "") +
+      (e.raw_truncated ? `<span class="muted">${ENTRIES_URL ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
       `<span class="grow"></span><button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
   const LEVEL_NUM = { TRACE: 10, DEBUG: 20, INFO: 30, WARN: 40, ERROR: 50, FATAL: 60 };
@@ -1016,12 +1016,12 @@
   /** Webapp: fetch examples missing from the payload (entries.v1), then redraw the drawer once. */
   function loadExamples(r) {
     if (!ENTRIES_URL) return;
-    const sigs = (r.members || [r]).filter((m) => m.g && (m.g.examples || []).some((id) => !ENTRIES[id])).map((m) => m.sig);
+    const sigs = (r.members || [r]).filter((m) => m.g && (m.g.examples || []).some((id) => !ENTRIES[id] || ENTRIES[id].raw_truncated)).map((m) => m.sig);
     const todo = sigs.filter((s) => !LAZY.has(s));
     if (!todo.length) return;
     for (const s of todo) LAZY.add(s);
     Promise.all(todo.map((s) =>
-      fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(s)), { headers: { Accept: "application/json" } })
+      fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(s)) + (ENTRIES_URL.includes("?") ? "&" : "?") + "max_raw=0", { headers: { Accept: "application/json" } })
         .then((res) => (res.ok ? res.json() : null))
         .then((doc) => { if (doc && doc.items) Object.assign(ENTRIES, doc.items); })
         .catch(() => null)))
