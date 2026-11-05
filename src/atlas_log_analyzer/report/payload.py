@@ -13,6 +13,7 @@ from typing import Any
 import polars as pl
 
 from atlas_log_analyzer import __version__
+from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE
 from atlas_log_analyzer.store.filters import GroupFilter
 from atlas_log_analyzer.store.logset import LogSet, to_records
 from atlas_log_analyzer.store.query import diff
@@ -39,7 +40,7 @@ ENTRY_COLUMNS = (
 )
 """entries.v1 columns copied into ``entries`` (besides the derived ones)."""
 
-OPTIONAL_ENTRY_KEYS = ("user", "ip", "url", "request_id", "variables", "raw_truncated")
+OPTIONAL_ENTRY_KEYS = ("user", "ip", "url", "request_id", "variables", "raw_truncated", "preamble")
 """Entry keys omitted from the payload when null, empty or false."""
 
 
@@ -114,7 +115,8 @@ def _entries(
     """Fetch the example entries by id in one scan; ``raw`` cut to ``max_raw`` characters.
 
     ``source`` is the index of the entry's file in ``logset.sources`` (-1 if unknown);
-    the keys in :data:`OPTIONAL_ENTRY_KEYS` are dropped when null, empty or false.
+    ``preamble`` is ``context["preamble"]`` (banner lines attached before the entry); the
+    keys in :data:`OPTIONAL_ENTRY_KEYS` are dropped when null, empty or false.
     """
     if not ids:
         return {}
@@ -134,6 +136,7 @@ def _entries(
             *(pl.col(c).cast(pl.String) if c in strings else pl.col(c) for c in ENTRY_COLUMNS),
             raw.alias("raw"),
             truncated.alias("raw_truncated"),
+            pl.col("context").map.get(CTX_PREAMBLE).alias("preamble"),
             pl.col("source_path").cast(pl.String),
             pl.col("source_line").cast(pl.Int64),
         )

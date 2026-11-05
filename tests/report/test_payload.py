@@ -23,7 +23,7 @@ GROUP_KEYS = {
     "source_count", "top_users", "top_threads", "sources", "examples", "hourly",
 }  # fmt: skip
 ENTRY_KEYS = {"ts", "level_name", "thread", "logger", "message", "raw", "source", "source_line"}
-OPTIONAL_ENTRY_KEYS = {"user", "request_id", "ip", "url", "variables", "raw_truncated"}
+OPTIONAL_ENTRY_KEYS = {"user", "request_id", "ip", "url", "variables", "raw_truncated", "preamble"}
 
 
 @pytest.fixture(scope="module")

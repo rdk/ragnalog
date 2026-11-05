@@ -29,7 +29,7 @@ Size-driven conventions (2026-10-29, still `report.v1`):
   and `compare.changed` `[[signature, count_a, count_b], ...]` (template, level
   etc. come from the group row).
 - Empty values are omitted: entry keys `user, ip, url, request_id, variables,
-  raw_truncated` only appear when non-null/non-empty/true; `coarse_signature`
+  raw_truncated, preamble` only appear when non-null/non-empty/true; `coarse_signature`
   only when it differs from `signature`. Readers must default them.
 - Entries carry no exception data (`exception_chain`/`exception_type` were
   dropped; the stack trace is in `raw`, the outermost type on the group).
@@ -70,6 +70,7 @@ Size-driven conventions (2026-10-29, still `report.v1`):
       "user": "...", "request_id": "...", "ip": "...", "url": "...", "variables": ["ABC-123"],
                                               // ^ each omitted when null / empty
       "raw": "...",                           // truncated to max_raw chars; "raw_truncated": true only when cut
+      "preamble": "...",                      // banner lines attached before the entry (context.preamble), when any
       "source": 0, "source_line": 123         // source = index into logset.sources
     }
   },
@@ -143,6 +144,29 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 - Theme: follows `prefers-color-scheme`, toggle persisted in `localStorage`;
   all colors are CSS custom properties on `:root`.
 - Print: drawer and filters collapse; the table prints.
+
+### Entry cards
+
+An example entry (the drawer's examples; on the cluster page also the merged
+log and the ±30 s context) is a card: level, time, thread, user, request, IP and
+URL; the message with the masked variables highlighted; the body as a stack
+trace (frames tokenised, library frames dimmed, nothing folded); the file and
+line; "Copy raw".
+
+- A body of more than 500 lines shows its first 500 and a "show all N lines"
+  button, which renders the rest in place from the raw the page already holds
+  (the web app loads cut examples in full, `max_raw=0`, before that). The choice
+  is kept per entry while the page is open. "Copy raw" always copies the whole
+  `raw`. Jira's startup report (one entry of about 12,000 lines) stays light
+  until asked for.
+- An entry with banner lines attached by the format (`preamble` of a report
+  entry, `context.preamble` of an `entries.v1` row) shows them dimmed above the
+  message, labelled "banner line before this entry". They are not part of
+  `raw`.
+
+`tests/report/test_entry_card.py` runs the cards' code
+(`// @entry-card` … `// @entry-card-end` in `report.js` and `cluster.js`) in node
+on entries of a real payload.
 
 ### Visual rules (from the dataviz method)
 

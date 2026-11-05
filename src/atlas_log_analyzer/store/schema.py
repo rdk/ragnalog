@@ -95,7 +95,9 @@ ENTRIES_SCHEMA: pa.Schema = pa.schema(
         _f(
             "context",
             pa.map_(pa.string(), pa.string()),
-            "Other format-specific header fields (keys without a dedicated column).",
+            "Other format-specific header fields (keys without a dedicated column); "
+            "preamble: banner lines attached before the entry (their raw text, LF-joined), "
+            "only on entries that have them.",
         ),
         _f("exception_type", pa.string(), "Type of the outermost exception, if any."),
         _f("exception_message", pa.string(), "Message of the outermost exception, if any."),

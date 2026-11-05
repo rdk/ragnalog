@@ -1140,6 +1140,7 @@
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   const iconCopy = (text, what) =>
     `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
+  // @entry-card: msgHtml … showAllLines (tests/report/test_entry_card.py runs this part with node)
   function msgHtml(message, vars) {
     message = str(message);
     let out = "", pos = 0;
@@ -1199,12 +1200,28 @@
     flush();
     return html;
   }
+  const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
+  const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
+  /** Lines after the header line of a raw entry, trailing white space dropped. */
+  function bodyLines(raw) {
+    const nl = raw.indexOf("\n");
+    return nl < 0 ? [] : raw.slice(nl + 1).trimEnd().split("\n");
+  }
+  /** Banner lines attached before the entry (report.v1 `preamble`, entries.v1 `context.preamble`). */
+  function preambleHtml(e) {
+    const text = str(e.preamble) || str(obj(e.context).preamble);
+    if (!text) return "";
+    const lines = text.split("\n");
+    return `<div class="e-pre"><span class="k">banner line${lines.length === 1 ? "" : "s"} before this entry</span>` +
+      lines.map((ln) => `<div class="ln">${esc(ln)}</div>`).join("") + `</div>`;
+  }
   /** One entry (report.v1 entry shape plus node/set, or an entries.v1 row) with its actions. */
   function entryHtml(id, e) {
     e = obj(e);
     const raw = str(e.raw);
-    const nl = raw.indexOf("\n");
-    const body = nl < 0 ? [] : raw.slice(nl + 1).replace(/\s+$/, "").split("\n");
+    const all = bodyLines(raw);
+    const cut = all.length > BODY_LINES && !FULL_BODIES.has(str(id));
+    const body = cut ? all.slice(0, BODY_LINES) : all;
     const meta = [["", tsFull(e.ts) + " UTC"], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
       .filter((x) => x[1]);
     const src = e.source_path || (typeof e.source === "string" ? e.source : "");
@@ -1213,8 +1230,9 @@
     const canCtx = node && e.set != null && e.ts;
     return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${node ? nodeBadge(node) : ""}${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div><div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
+      `</div>${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
+      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "") +
       `<div class="e-foot">` + (src ? `<span class="mono" title="${esc(src)}">${esc(basename(src))}${e.source_line != null ? ":" + esc(e.source_line) : ""}</span>` : "") +
       (e.raw_truncated ? `<span class="muted">${URLS && URLS.examples ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
       `<span class="grow"></span>` +
@@ -1222,6 +1240,22 @@
       (sig && GBY.has(sig) && sig !== S.sig ? `<button type="button" class="btn small" data-open="${esc(sig)}">Open group</button>` : "") +
       `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
+  /** The raw text of an entry on the page: an example, or a row of the merged log. */
+  function rawOf(id) {
+    const row = ENTRIES[id] || (VIEW.find((r) => r.id === id) || {}).e || {};
+    return str(row.raw);
+  }
+  /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
+  function showAllLines(btn) {
+    const id = btn.dataset.allLines;
+    FULL_BODIES.add(id);
+    const card = btn.closest(".entry");
+    const pre = card && card.querySelector(".e-body");
+    if (pre) pre.innerHTML = traceHtml(bodyLines(rawOf(id)));
+    const more = btn.closest(".e-more");
+    if (more) more.remove();
+  }
+  // @entry-card-end
   function nodeTable(r) {
     const rows = NODES.map((n, i) => {
       const p = obj(r.pn[n]);
@@ -1810,22 +1844,21 @@
     if (k === "q") $("f-search").value = "";
     if (CLEAR[k]) commit(CLEAR[k]);
   }
-  /** Clicks shared by every panel: open a group, jump to the log, show a context, copy, unfold. */
+  /** Clicks shared by every panel: open a group, jump to the log, show a context, copy, unfold,
+      show every line of an entry. */
   function onCommonClick(e) {
-    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-ex],[data-node-filter]");
+    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-all-lines],[data-ex],[data-node-filter]");
     if (!t) return false;
     const d = t.dataset;
-    if (d.unfold != null) {
+    if (d.allLines != null) showAllLines(t);
+    else if (d.unfold != null) {
       const f = t.closest(".fold");
       const opened = f.classList.toggle("open");
       const n = +d.unfold;
       t.textContent = opened ? "hide frames" : `show ${fmt(n)} more frame${n === 1 ? "" : "s"}`;
     } else if (d.copy != null) copy(d.copy);
-    else if (d.copyRaw != null) {
-      const id = d.copyRaw;
-      const row = ENTRIES[id] || (VIEW.find((r) => r.id === id) || {}).e || {};
-      copy(str(row.raw));
-    } else if (d.ctx != null) {
+    else if (d.copyRaw != null) copy(rawOf(d.copyRaw));
+    else if (d.ctx != null) {
       commit({ tab: "l", ctx: d.ctx, cts: d.cts || "", at: "" }, { keepPage: true });
       scrollToTabs();
     } else if (d.at != null) openLogAt(d.at);

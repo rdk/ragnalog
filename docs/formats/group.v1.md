@@ -36,7 +36,7 @@ One entry; the entries.v1 columns (atlas-log schema entries). Every column is op
 | `ip` | `string \| null` | Client IP address(es) from the request context. |
 | `url` | `string \| null` | URL(s) from the thread segment. |
 | `request_url` | `string \| null` | URL from the request context. |
-| `context` | `map<string, string> \| null` | Other format-specific header fields (keys without a dedicated column). |
+| `context` | `map<string, string> \| null` | Other format-specific header fields (keys without a dedicated column); preamble: banner lines attached before the entry (their raw text, LF-joined), only on entries that have them. |
 | `exception_type` | `string \| null` | Type of the outermost exception, if any. |
 | `exception_message` | `string \| null` | Message of the outermost exception, if any. |
 | `exception_chain` | `list<object> \| null` | Parsed exception chain, outermost first; empty list when none. |

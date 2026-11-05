@@ -33,7 +33,7 @@ on `id`. Parquet, zstd compression, row groups of about 64k rows, rows in ingest
 | `ip` | `string` | yes | Client IP address(es) from the request context. |
 | `url` | `string` | yes | URL(s) from the thread segment. |
 | `request_url` | `string` | yes | URL from the request context. |
-| `context` | `map<string, string>` | yes | Other format-specific header fields (keys without a dedicated column). |
+| `context` | `map<string, string>` | yes | Other format-specific header fields (keys without a dedicated column); preamble: banner lines attached before the entry (their raw text, LF-joined), only on entries that have them. |
 | `exception_type` | `string` | yes | Type of the outermost exception, if any. |
 | `exception_message` | `string` | yes | Message of the outermost exception, if any. |
 | `exception_chain` | `list<struct<type: string, message: string, frames: list<struct<location: string, file: string, line: int32, module: string>>, omitted_frames: int32>>` | yes | Parsed exception chain, outermost first; empty list when none. |

@@ -933,6 +933,7 @@
     return `<ul class="members">` + rows.map((m) =>
       `<li><button type="button" data-open="${esc(m.id)}">${badge(m.lvl, m.level)}<span class="n">${fmt(m.count)}</span><span class="t" title="${esc(m.tpl)}">${tplHtml(m.tpl)}</span><span class="s">${esc(m.sig)}</span></button></li>`).join("") + `</ul>`;
   }
+  // @entry-card: msgHtml … showAllLines (tests/report/test_entry_card.py runs this part with node)
   function msgHtml(message, vars) {
     message = message || "";
     let out = "", pos = 0;
@@ -992,20 +993,49 @@
     flush();
     return html;
   }
+  const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
+  const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
+  /** Lines after the header line of a raw entry, trailing white space dropped. */
+  function bodyLines(raw) {
+    const nl = raw.indexOf("\n");
+    return nl < 0 ? [] : raw.slice(nl + 1).trimEnd().split("\n");
+  }
+  /** Banner lines attached before the entry (report.v1 `preamble`, entries.v1 `context.preamble`). */
+  function preambleHtml(e) {
+    const text = e.preamble || (e.context && typeof e.context === "object" ? e.context.preamble : "") || "";
+    if (!text) return "";
+    const lines = String(text).split("\n");
+    return `<div class="e-pre"><span class="k">banner line${lines.length === 1 ? "" : "s"} before this entry</span>` +
+      lines.map((ln) => `<div class="ln">${esc(ln)}</div>`).join("") + `</div>`;
+  }
   function entryHtml(id, e) {
     const raw = e.raw || "";
-    const nl = raw.indexOf("\n");
-    const body = nl < 0 ? [] : raw.slice(nl + 1).replace(/\s+$/, "").split("\n");
+    const all = bodyLines(raw);
+    const cut = all.length > BODY_LINES && !FULL_BODIES.has(id);
+    const body = cut ? all.slice(0, BODY_LINES) : all;
     const meta = [["", tsFull(e.ts) + " UTC"], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
       .filter((x) => x[1]);
     return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div><div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
+      `</div>${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
+      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "") +
       `<div class="e-foot"><span class="mono" title="${esc(srcPath(e.source ?? e.source_path))}">${esc(basename(srcPath(e.source ?? e.source_path)))}:${esc(e.source_line)}</span>` +
       (e.raw_truncated ? `<span class="muted">${ENTRIES_URL ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
       `<span class="grow"></span><button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
+  /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
+  function showAllLines(btn) {
+    const id = btn.dataset.allLines;
+    const e = ENTRIES[id];
+    FULL_BODIES.add(id);
+    const card = btn.closest(".entry");
+    const pre = card && card.querySelector(".e-body");
+    if (pre && e) pre.innerHTML = traceHtml(bodyLines(e.raw || ""));
+    const more = btn.closest(".e-more");
+    if (more) more.remove();
+  }
+  // @entry-card-end
   const LEVEL_NUM = { TRACE: 10, DEBUG: 20, INFO: 30, WARN: 40, ERROR: 50, FATAL: 60 };
   const levelNum = (name) => LEVEL_NUM[name] || 0;
 
@@ -1353,9 +1383,10 @@
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines]");
       if (!t) return;
-      if (t.dataset.unfold != null) {
+      if (t.dataset.allLines != null) showAllLines(t);
+      else if (t.dataset.unfold != null) {
         const f = t.closest(".fold");
         const opened = f.classList.toggle("open");
         const n = +t.dataset.unfold;

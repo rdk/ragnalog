@@ -70,6 +70,7 @@ All `groups.v1` columns (`atlas-log schema groups`) plus `hourly`, in a compact 
 | `variables` | list<string>, optional | Values masking replaced in the template, in order; omitted when empty. |
 | `raw` | string | Original text (header, continuation lines and stack trace), cut to `options.max_raw` characters. |
 | `raw_truncated` | `true`, optional | Present (and `true`) only when `raw` was cut. |
+| `preamble` | string, optional | Banner lines the format attached before the entry (entries.v1 `context.preamble`: their raw text, LF-joined, never cut); omitted when there are none. |
 | `source`, `source_line` | int, int | Index of the file in `logset.sources`, and 1-based line of the header. |
 
 Entries carry no parsed exception data; the outermost type is on the group
