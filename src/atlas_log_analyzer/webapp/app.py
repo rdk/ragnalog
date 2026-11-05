@@ -13,7 +13,7 @@ from starlette.responses import Response
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.store.store import LogSetNotFound
-from atlas_log_analyzer.webapp import api, pages
+from atlas_log_analyzer.webapp import api, openapi, pages
 from atlas_log_analyzer.webapp.errors import error_doc, install_handlers
 from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.settings import Settings
@@ -26,8 +26,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     """Build the web app over the store in ``settings`` (default: from the environment).
 
     Routes: ``/`` sets index, ``/sets/{ref}`` interactive report, ``/sets/{ref}/triage``,
-    ``/api/...`` JSON (OpenAPI at ``/docs``). Errors are ``error.v1`` documents on
-    ``/api`` and HTML pages elsewhere.
+    ``/api/...`` JSON (OpenAPI at ``/docs``, with the document schemas). Errors are
+    ``error.v1`` documents on ``/api`` and HTML pages elsewhere.
     """
     settings = settings or Settings.from_env()
     state = AppState(settings)
@@ -71,7 +71,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return JSON(error_doc(code, str(exc.detail)), exc.status_code)
 
     app.include_router(api.router)
+    app.include_router(openapi.router)  # GET /api/manifest
     app.include_router(pages.router)
     static = resources.files("atlas_log_analyzer.webapp") / "static"
     app.mount("/static", StaticFiles(directory=str(static)), name="static")
+    openapi.install(app)  # document schemas in /openapi.json
     return app

@@ -35,7 +35,7 @@ process that sees only the environment, so `serve` exports every setting
 | `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. |
 | `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. |
 | `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
-| `/docs` | OpenAPI (Swagger UI) for the JSON API. |
+| `/docs` | OpenAPI (Swagger UI) for the JSON API; `/openapi.json` is the schema, with every response document as a component. |
 
 `{ref}` is a set id, a unique id prefix or a name, as in the CLI. Unknown sets
 and paths render a 404 page; under `/api` they return `error.v1`.
@@ -58,6 +58,7 @@ the CLI's codes (an ambiguous signature prefix adds `"candidates"`). Status code
 |---|---|---|
 | `GET /api/health` | | `health.v1` |
 | `GET /api/version` | | `version.v1` |
+| `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `atlas-log manifest`) |
 | `GET /api/formats` | | `formats.v1` |
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
@@ -86,6 +87,14 @@ with up to 5 `candidates` when several groups match), as in the CLI.
 before the set's last entry; blank means unset. `level` and `min_level` take
 the CLI's level names (`TRACE` … `FATAL`, `WARNING` = `WARN`, `UNKNOWN` for
 `parse_error` rows; blank = unset; anything else is `invalid_level`).
+
+Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
+`atlas-log schema NAME`); `/openapi.json` holds the same schemas as components
+(`triage.v1`, `groups.v1`, … and the rows `EntryRow`, `GroupRow`, `DiffRow`,
+`MergeRow`), each operation's success response refers to its document, and
+every `/api` operation documents its errors as `error.v1` (status 400 for a bad
+parameter, not FastAPI's 422). `webapp/openapi.py` maps the operations to
+the documents; a new route needs an entry there (a test checks it).
 
 Differences from the CLI: `GET /api/sets/{ref}/entries` pages with
 `1 <= limit <= 10000` (no `limit=0` for "all"; follow `next_offset` instead),
@@ -151,7 +160,9 @@ run next to the server.
 
 ## Design notes
 
-- **Dependencies:** `webapp` imports `core`, `store` and `report`, never `cli`.
+- **Dependencies:** `webapp` imports `core`, `store`, `report` and `service`; it
+  imports `cli` only in `GET /api/manifest`, whose document describes the CLI's
+  commands.
   The CLI imports FastAPI and uvicorn only inside `serve`, and fails with exit 1
   and an install hint when the `web` extra is missing.
 - **Concurrency:** request threads and the ingest worker share one `Store`.
@@ -188,6 +199,7 @@ src/atlas_log_analyzer/webapp/
   pages.py      HTML routes (Jinja2), report page assembly
   jobs.py       JobManager, Job (job.v1), upload spool
   errors.py     ApiError, error.v1 handlers
+  openapi.py    document schemas in /openapi.json, GET /api/manifest
   responses.py  msgspec JSON response
   templates/    base, index, triage, 404
   static/       webapp.css, webapp.js
