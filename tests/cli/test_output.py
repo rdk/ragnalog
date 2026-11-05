@@ -11,8 +11,8 @@ import polars as pl
 import pytest
 
 from atlas_log_analyzer.cli.output import (
-    CliError,
     ExitCode,
+    OpError,
     Output,
     default_mode,
     encode_json,
@@ -119,7 +119,7 @@ def test_table_quiet_suppresses_info() -> None:
 @pytest.mark.parametrize("mode", ["json", "jsonl"])
 def test_error_envelope_on_stdout(mode: str) -> None:
     output, out, err = make_output(mode)
-    code = output.error(CliError("store_error", "no such log set: x", ExitCode.STORE))
+    code = output.error(OpError("store_error", "no such log set: x"))
     assert code == 3
     assert json.loads(out.getvalue()) == {
         "schema": "error.v1",
@@ -130,7 +130,7 @@ def test_error_envelope_on_stdout(mode: str) -> None:
 
 def test_error_in_table_mode_goes_to_stderr() -> None:
     output, out, err = make_output("table")
-    code = output.error(CliError("not_found", "nothing", ExitCode.NOT_FOUND))
+    code = output.error(OpError("not_found", "nothing"))
     assert code == 2
     assert out.getvalue() == ""
     assert "nothing" in err.getvalue() and "not_found" in err.getvalue()
@@ -143,7 +143,8 @@ def test_error_in_table_mode_goes_to_stderr() -> None:
         (ValueError("bad"), "invalid_value", 1),
         (FileNotFoundError(2, "No such file", "x.log"), "file_not_found", 2),
         (UnknownFormatError("nope"), "unknown_format", 1),
-        (CliError("x", "y", ExitCode.NOT_FOUND), "x", 2),
+        (OpError("not_found", "y"), "not_found", 2),
+        (OpError("x", "y"), "x", 1),  # a code missing from SPEC exits 1
     ],
 )
 def test_error_from_exception(exc: Exception, code: str, exit_code: int) -> None:

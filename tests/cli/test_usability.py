@@ -82,6 +82,7 @@ def test_unknown_set_same_error_everywhere(
     err = res.json()["error"]
     assert err == {
         "code": "store_error",
+        "reason": "set_not_found",
         "message": "no log set 'nope'",
         "hint": "available sets: mini",
         "store": store_dir.as_posix(),

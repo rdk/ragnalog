@@ -12,9 +12,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.responses import Response
 
 from atlas_log_analyzer import __version__
+from atlas_log_analyzer.service import errors
+from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.store.store import LogSetNotFound
 from atlas_log_analyzer.webapp import api, openapi, pages
-from atlas_log_analyzer.webapp.errors import error_doc, install_handlers
+from atlas_log_analyzer.webapp.errors import error_response, install_handlers
 from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.settings import Settings
 from atlas_log_analyzer.webapp.state import AppState
@@ -61,14 +63,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         message = str(exc).split(f" in {settings.store}", 1)[0]
         if _html(request):
             return pages.not_found_page(request, message)
-        return JSON(error_doc("not_found", message, "list the sets with GET /api/sets"), 404)
+        hint = errors.hint("set_not_found", "api")
+        return error_response(OpError.because("set_not_found", "api", message, hint=hint))
 
     @app.exception_handler(StarletteHTTPException)
     async def _http(request: Request, exc: StarletteHTTPException) -> Response:
         if exc.status_code == 404 and _html(request):
             return pages.not_found_page(request, f"There is nothing at {request.url.path}.")
         code = {404: "not_found", 405: "usage", 401: "unauthorized"}.get(exc.status_code, "http")
-        return JSON(error_doc(code, str(exc.detail)), exc.status_code)
+        return error_response(OpError(code, str(exc.detail)), exc.status_code)
 
     app.include_router(api.router)
     app.include_router(openapi.router)  # GET /api/manifest

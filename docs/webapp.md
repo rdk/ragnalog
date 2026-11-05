@@ -49,10 +49,46 @@ from `/api/sets/{id}/groups/{sig}/examples`.
 ## JSON API
 
 All responses carry `"schema": "<name>.v1"`; listings put rows under `"items"`.
-Errors are `{"schema": "error.v1", "error": {"code", "message", "hint"?}}` with
-the CLI's codes (an ambiguous signature prefix adds `"candidates"`). Status codes: 400 `usage`/`invalid_value`/`invalid_level`,
-401 `unauthorized`, 404 `not_found`, 409 `ambiguous`/`incompatible_sets`,
-413 `payload_too_large`, 500 `store_error`.
+Errors are `{"schema": "error.v1", "error": {"code", "message", "hint"?, "reason"?}}`
+(an ambiguous signature prefix adds `"candidates"`). Codes and statuses come from
+one table shared with the CLI (`service/errors.py`, `SPEC`); the exit column is the
+CLI's:
+
+| Code | Exit | HTTP | Meaning |
+|---|---|---|---|
+| `usage` | 1 | 400 | Bad option or argument (parse error, unexpected argument, `brief` with `columns`, a page over the API's cap). |
+| `invalid_value` | 1 | 400 | A value that does not parse or is out of range (time, column, limit, bucket); in the CLI also sets that are not comparable. |
+| `invalid_level` | 1 | 400 | Unknown level name. |
+| `unknown_format` | 1 | 400 | Unknown format name. |
+| `sql_error` | 1 | 400 | DuckDB rejected the SQL of `query`. |
+| `ambiguous` | 1 | 409 | A signature prefix (or, in the API, a set reference) matches several; signature errors list `candidates`. |
+| `incompatible_sets` | 1 | 409 | The API's code for sets built with different signature or mask-rule versions or specs. |
+| `missing_dependency` | 1 | 500 | An optional extra is not installed (`mine`, `web`). |
+| `unauthorized` | 1 | 401 | Missing or wrong API token. |
+| `payload_too_large` | 1 | 413 | An upload over the size limit. |
+| `file_not_found` | 2 | 404 | A named file or directory is missing. |
+| `no_sources` | 2 | 422 | No log files in the given paths. |
+| `format_not_detected` | 2 | 422 | No format recognises the files. |
+| `not_in_format` | 2 | 422 | A named file over 64 MiB is not in the format (force reads it). |
+| `no_entries` | 2 | 422 | No entries could be parsed. |
+| `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
+| `store_error` | 3 | 500 | Store failure: corrupt manifest, newer schema, store refused or in use; in the CLI also an unknown or ambiguous set. |
+| `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
+| `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
+
+Where the CLI and the API report one failure under different codes (an unknown
+set is the CLI's `store_error` but the API's `not_found`), both carry the same
+`"reason"`; branch on it when present:
+
+| Reason | CLI code | API code | Meaning |
+|---|---|---|---|
+| `set_not_found` | `store_error` | `not_found` | No log set has this id, name or id prefix. |
+| `ambiguous_ref` | `store_error` | `ambiguous` | Several log sets share this name or id prefix. |
+| `ambiguous_signature` | `ambiguous` | `ambiguous` | A signature prefix matches several groups (`candidates`). |
+| `incompatible_sets` | `invalid_value` | `incompatible_sets` | The sets were built with different signature or mask-rule versions or specs (`diff` takes force). |
+| `group_not_found` | `not_found` | `not_found` | No group (or no entries) with this signature. |
+| `entry_not_found` | `not_found` | `not_found` | No entry with this id. |
+| `ref_not_found` | `not_found` | `not_found` | `frames`: neither an entry id nor a group signature. |
 
 | Method and path | Parameters | Document |
 |---|---|---|

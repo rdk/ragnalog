@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 import os
 import shutil
 import threading
@@ -221,6 +222,10 @@ class Store:
     def set_dir(self, set_id: str) -> Path:
         """Directory of the set with id ``set_id`` (whether or not it exists)."""
         return self.root / set_id
+
+    def manifests(self) -> builtins.list[LogSetManifest]:
+        """Return :meth:`list` (the ``Sets`` protocol of :mod:`atlas_log_analyzer.service`)."""
+        return self.list()
 
     def open(self, ref: str) -> LogSet:
         """Open a log set by id, unique id prefix, or name.

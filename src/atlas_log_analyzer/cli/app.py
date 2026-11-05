@@ -28,9 +28,9 @@ from cyclopts import App, CycloptsError, Group, Parameter, UnusedCliTokensError
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.cli.output import (
-    CliError,
     ColorMode,
     ExitCode,
+    OpError,
     Output,
     OutputMode,
     app_packages,
@@ -48,6 +48,7 @@ from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
+from atlas_log_analyzer.service.errors import hint
 from atlas_log_analyzer.service.views import (
     DEFAULT_MAX_RAW,
     DETAIL_BRIEF,
@@ -226,12 +227,11 @@ def _store(*, create: bool = False) -> Store:
     if create and ctx.implicit_store and not ctx.store.exists():
         repo = _in_git_work_tree(Path.cwd().resolve())
         if repo is not None:
-            raise CliError(
+            raise OpError(
                 "store_error",
                 f"refusing to create the default store {ctx.store.as_posix()} inside the git "
                 f"work tree {repo.as_posix()}: a store inside a repository risks committing "
                 "real logs",
-                ExitCode.STORE,
                 hint=f"pass --store DIR outside the repository or set {STORE_ENV}",
             )
     from atlas_log_analyzer.store.store import Store
@@ -240,27 +240,14 @@ def _store(*, create: bool = False) -> Store:
 
 
 def _open(ref: str) -> LogSet:
-    from atlas_log_analyzer.store.store import StoreError
+    from atlas_log_analyzer.service.sets import open_set
 
-    store = _store()
     try:
-        return store.open(ref)
-    except StoreError as exc:
-        if not str(exc).startswith("no log set"):
-            raise
-        names = [m.name or m.id for m in store.list()]
-        hint = (
-            f"available sets: {', '.join(names)}"
-            if names
-            else "the store is empty; create a set with `atlas-log ingest PATH`"
-        )
-        raise CliError(
-            "store_error",
-            f"no log set {ref!r}",
-            ExitCode.STORE,
-            hint=hint,
-            extra={"store": _ctx().store.as_posix()},
-        ) from exc
+        return open_set(_store(), ref, front="cli")
+    except OpError as exc:
+        if exc.reason == "set_not_found":
+            exc.extra.setdefault("store", _ctx().store.as_posix())
+        raise
 
 
 _RELATIVE_RE = re.compile(r"^(\d+)\s*([smhd])$")
@@ -279,7 +266,7 @@ def _when(value: str | None, flag: str, anchor: datetime | None) -> datetime | N
     try:
         return _aware(datetime.fromisoformat(text))
     except ValueError:
-        raise CliError(
+        raise OpError(
             "invalid_value",
             f"{flag} {value!r} is not a time; use ISO 8601 (2026-10-29T09:00, naive = UTC), "
             "a date (2026-10-29) or a duration before the last entry of the set "
@@ -292,7 +279,7 @@ def _level(value: str | None) -> str | None:
     try:
         return parse_levels(value)
     except InvalidLevel as exc:
-        raise CliError("invalid_level", str(exc)) from None
+        raise OpError("invalid_level", str(exc)) from None
 
 
 def _aware(value: datetime | None) -> datetime | None:
@@ -303,13 +290,13 @@ def _aware(value: datetime | None) -> datetime | None:
 
 def _limit(value: int) -> int | None:
     if value < 0:
-        raise CliError("invalid_value", "--limit must be >= 0 (0 = no limit)")
+        raise OpError("invalid_value", "--limit must be >= 0 (0 = no limit)")
     return value or None
 
 
 def _offset(value: int) -> int:
     if value < 0:
-        raise CliError("invalid_value", "--offset must be >= 0")
+        raise OpError("invalid_value", "--offset must be >= 0")
     return value
 
 
@@ -321,7 +308,7 @@ def _max_raw(value: int | None, *, text: bool) -> int | None:
     """
     if value is not None:
         if value < 0:
-            raise CliError("invalid_value", "--max-raw must be >= 0 (0 = no limit)")
+            raise OpError("invalid_value", "--max-raw must be >= 0 (0 = no limit)")
         return value or None
     if text or _out().mode == "table":
         return None
@@ -347,7 +334,7 @@ def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | 
             if name not in valid:
                 close = difflib.get_close_matches(name, valid, n=1)
                 guess = f" (did you mean {close[0]!r}?)" if close else ""
-                raise CliError(
+                raise OpError(
                     "invalid_value",
                     f"unknown column {name!r} in --columns{guess}",
                     hint=f"valid columns: {', '.join(valid)}",
@@ -355,7 +342,7 @@ def _columns(values: Sequence[str] | None, valid: Sequence[str]) -> list[str] | 
             if name not in chosen:
                 chosen.append(name)
     if not chosen:
-        raise CliError(
+        raise OpError(
             "invalid_value", "--columns is empty", hint=f"valid columns: {', '.join(valid)}"
         )
     return chosen
@@ -366,7 +353,7 @@ def _selection(
 ) -> list[str] | None:
     """Columns chosen by ``--columns`` or ``--brief`` (``None`` = all); both is a usage error."""
     if brief and columns:
-        raise CliError(
+        raise OpError(
             "usage",
             "--brief and --columns cannot be combined",
             hint=f"--brief is --columns {','.join(preset)}",
@@ -384,18 +371,17 @@ def _select(paths: Sequence[Path], name: str | None, *, force: bool = False) -> 
     )
 
     if not paths:
-        raise CliError("usage", "at least one PATH is required")
+        raise OpError("usage", "at least one PATH is required")
     try:
         selection = select_sources(paths, name, force=force)
     except NoSourcesFound as exc:
-        raise CliError("no_sources", str(exc), ExitCode.NOT_FOUND) from exc
+        raise OpError("no_sources", str(exc)) from exc
     except FormatNotDetected as exc:
-        raise CliError("format_not_detected", str(exc), ExitCode.NOT_FOUND) from exc
+        raise OpError("format_not_detected", str(exc)) from exc
     except NotInFormat as exc:
-        raise CliError(
+        raise OpError(
             "not_in_format",
             str(exc),
-            ExitCode.NOT_FOUND,
             hint="name the right file or --format, or pass --force to read it anyway",
         ) from exc
     if selection.skipped:
@@ -449,7 +435,7 @@ def _meta(
     global _CTX
     if width is not None and width < 40:
         return Output(output or default_mode()).error(
-            CliError("invalid_value", "--width must be >= 40")
+            OpError("invalid_value", "--width must be >= 40")
         )
     out = Output(output or default_mode(), quiet=quiet, width=width, color_mode=color)
     if store is None:
@@ -536,7 +522,7 @@ def ingest(
 
     out = _out()
     if frames is not None and frames < 0:
-        raise CliError("invalid_value", "--frames must be >= 0")
+        raise OpError("invalid_value", "--frames must be >= 0")
     selection = _select(paths, format, force=force)
     sources, fmt = selection.sources, selection.fmt
     store = _store(create=True)
@@ -584,7 +570,7 @@ def _mine(logset: LogSet) -> list[dict[str, Any]]:
         pairs = list(logset.groups().select("signature", "template").iter_rows())
         proposals = list(mining.propose_merges(pairs))
     except ImportError as exc:
-        raise CliError(
+        raise OpError(
             "missing_dependency",
             f"--mine needs the optional 'mine' extra (drain3): {exc}. "
             "Install it with `uv sync --extra mine`.",
@@ -836,11 +822,11 @@ def show(
     signature = resolve_signature(ls, signature)
     df = ls.entries(signature=signature, limit=lim, columns=None if raw else columns)
     if df.height == 0:
-        raise CliError(
-            "not_found",
+        raise OpError.because(
+            "group_not_found",
+            "cli",
             f"no entries with signature {signature!r} in log set {ls.manifest.id}",
-            ExitCode.NOT_FOUND,
-            hint=f"list signatures with `atlas-log groups {ls.manifest.name or ls.manifest.id}`",
+            hint=hint("group_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
         )
     out = _out()
     if raw:
@@ -1063,19 +1049,17 @@ def context(
     """
     for flag, value in (("--before", before), ("--after", after)):
         if value < 0:
-            raise CliError("invalid_value", f"{flag} must be >= 0")
+            raise OpError("invalid_value", f"{flag} must be >= 0")
     cap = _max_raw(max_raw, text=False)
     columns = _selection(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
     ls = _open(logset)
     df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
     if df is None:
-        ref = ls.manifest.name or ls.manifest.id
-        raise CliError(
-            "not_found",
+        raise OpError.because(
+            "entry_not_found",
+            "cli",
             f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
-            ExitCode.NOT_FOUND,
-            hint=f'entry ids are the "id" column of `atlas-log entries {ref} --brief` '
-            f"or `atlas-log show {ref} SIGNATURE`",
+            hint=hint("entry_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
         )
     at = df["id"].to_list().index(entry_id)
     thread = df["thread"][at]
@@ -1159,13 +1143,11 @@ def frames(
     ls = _open(logset)
     doc = frames_view(ls, ref, limit=lim, all_frames=all_, app_packages=app_packages())
     if doc is None:
-        name = ls.manifest.name or ls.manifest.id
-        raise CliError(
-            "not_found",
+        raise OpError.because(
+            "ref_not_found",
+            "cli",
             f"no entry or group {ref!r} in log set {ls.manifest.id}",
-            ExitCode.NOT_FOUND,
-            hint=f"pass an entry id (`atlas-log entries {name} --with-exception --brief`) "
-            f"or a group signature (`atlas-log groups {name} --with-exception --brief`)",
+            hint=hint("ref_not_found", "cli", set=ls.manifest.name or ls.manifest.id),
         )
     items: list[dict[str, Any]] = doc["items"]
     out = _out()
@@ -1252,7 +1234,7 @@ def query(logset: str, sql: str, /) -> None:
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
         message = str(exc).strip()
         views = [v for v in VIEW_FIELDS if v != "merges" or ls.merges_path.exists()]
-        raise CliError("sql_error", message, hint=_sql_hint(message, views)) from exc
+        raise OpError("sql_error", message, hint=_sql_hint(message, views)) from exc
     items = jsonable_rows(df)
     _out().emit(
         "query.v1",
@@ -1424,7 +1406,12 @@ def diff(
 
     min_lvl, lim = _level(min_level), _limit(limit)
     a, b = _open(set_a), _open(set_b)
-    result = store_diff(a, b, min_level=min_lvl, coarse=coarse, force=force)
+    try:
+        result = store_diff(a, b, min_level=min_lvl, coarse=coarse, force=force)
+    except ValueError as exc:  # the only ValueError left: the sets are not comparable
+        raise OpError.because(
+            "incompatible_sets", "cli", str(exc), hint=hint("incompatible_sets", "cli")
+        ) from exc
     changed = with_rates(result.changed, span_hours(a), span_hours(b)) if rate else result.changed
     sections = {
         name: jsonable_rows(frame if lim is None else frame.head(lim))
@@ -1565,7 +1552,7 @@ def triage(
 
     lvl, lim = _level(min_level), _limit(limit)
     if not grow > 1:
-        raise CliError("invalid_value", "--grow must be > 1")
+        raise OpError("invalid_value", "--grow must be > 1")
     ls = _open(logset)
     if baseline == "auto":
         choice = rank_baselines(_store().list(), ls.manifest)
@@ -1573,7 +1560,10 @@ def triage(
     else:
         base = _open(baseline)
         choice = explicit_baseline(ls.manifest, base.manifest)
-    doc = store_triage(ls, base, min_level=lvl, grow=grow, limit=lim, choice=choice)
+    try:
+        doc = store_triage(ls, base, min_level=lvl, grow=grow, limit=lim, choice=choice)
+    except ValueError as exc:  # options are checked above: the sets are not comparable
+        raise OpError.because("incompatible_sets", "cli", str(exc)) from exc
     out = _out()
     if out.mode == "table":
         for warning in doc["warnings"]:
@@ -1678,19 +1668,22 @@ def report(
         ("--max-groups", max_groups),
     ):
         if value < 0:
-            raise CliError("invalid_value", f"{flag} must be >= 0")
+            raise OpError("invalid_value", f"{flag} must be >= 0")
     ls = _open(logset)
     baseline = _open(compare) if compare is not None else None
     path = out if out is not None else _report_filename(ls)
-    info = write_report(
-        ls,
-        path,
-        compare=baseline,
-        min_level=min_lvl,
-        examples=examples,
-        max_raw=max_raw,
-        max_groups=max_groups or None,
-    )
+    try:
+        info = write_report(
+            ls,
+            path,
+            compare=baseline,
+            min_level=min_lvl,
+            examples=examples,
+            max_raw=max_raw,
+            max_groups=max_groups or None,
+        )
+    except ValueError as exc:  # options are checked above: the sets are not comparable
+        raise OpError.because("incompatible_sets", "cli", str(exc)) from exc
     resolved = info.path.resolve()
     doc = {
         "path": resolved.as_posix(),
@@ -1762,7 +1755,7 @@ def parse(*paths: Path, format: str | None = None, limit: int = 0, force: bool =
         stream.write(b"\n".join(batch).decode("utf-8") + "\n")
     stream.flush()
     if count == 0:
-        raise CliError("no_entries", "no entries were parsed", ExitCode.NOT_FOUND)
+        raise OpError("no_entries", "no entries were parsed")
     _out().info(f"parsed {count:,} entries")
     return 0
 
@@ -1788,7 +1781,7 @@ def regroup(logset: str, /, *, frames: int = 0, no_exceptions: bool = False) -> 
 
     """
     if frames < 0:
-        raise CliError("invalid_value", "--frames must be >= 0")
+        raise OpError("invalid_value", "--frames must be >= 0")
     ls = _open(logset)
     store = _store()
     spec = dataclasses.replace(
@@ -1832,13 +1825,13 @@ def upgrade(*logsets: str, all: bool = False) -> None:
     """
     store = _store()
     if all and logsets:
-        raise CliError("invalid_value", "give SET arguments or --all, not both")
+        raise OpError("invalid_value", "give SET arguments or --all, not both")
     if all:
         refs = [m.id for m in store.list()]
     elif logsets:
         refs = [_open(ref).manifest.id for ref in logsets]
     else:
-        raise CliError("invalid_value", "give one or more SETs, or --all")
+        raise OpError("invalid_value", "give one or more SETs, or --all")
     items = []
     for set_id in dict.fromkeys(refs):
         result = store.upgrade(set_id)
@@ -1938,7 +1931,7 @@ def schema(name: str | None = None, /) -> None:
         doc = {"definitions": {name: document_schema(name)}}
     else:
         tables = ", ".join(f'"{n}"' for n in SCHEMA_NAMES)
-        raise CliError(
+        raise OpError(
             "usage",
             f"unknown schema {name!r}; expected a table ({tables}) or a document name "
             'such as "triage.v1" (listed under "documents" by `atlas-log schema`)',
@@ -2041,15 +2034,15 @@ def serve(
 
         from atlas_log_analyzer.webapp import Settings, create_app
     except ImportError as exc:
-        raise CliError(
+        raise OpError(
             "missing_dependency",
             f"the web app needs the 'web' extra ({exc.name or exc}); "
             "install it with: uv sync --extra web  (or pip install 'atlas-log-analyzer[web]')",
         ) from exc
     if not 0 < port < 65536:
-        raise CliError("invalid_value", "--port must be between 1 and 65535")
+        raise OpError("invalid_value", "--port must be between 1 and 65535")
     if max_upload_mb is not None and max_upload_mb < 1:
-        raise CliError("invalid_value", "--max-upload-mb must be >= 1")
+        raise OpError("invalid_value", "--max-upload-mb must be >= 1")
     store = _store(create=True)  # uploads create the store directory
     settings = Settings.from_env(store=store.root, max_upload_mb=max_upload_mb, token=token)
     from atlas_log_analyzer.webapp.state import lock_server
@@ -2131,7 +2124,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     return int(result) if isinstance(result, int) else 0
 
 
-def _usage_error(exc: CycloptsError, tokens: Sequence[str]) -> CliError:
+def _usage_error(exc: CycloptsError, tokens: Sequence[str]) -> OpError:
     """Map a cyclopts parse error to ``usage`` with the command's ``--help`` as hint.
 
     Cyclopts' messages are kept (they name the option and the expected values),
@@ -2144,7 +2137,7 @@ def _usage_error(exc: CycloptsError, tokens: Sequence[str]) -> CliError:
     message = str(exc).strip()
     if isinstance(exc, UnusedCliTokensError) and command and exc.unused_tokens:
         message = _unexpected(command, list(exc.unused_tokens), tokens)
-    return CliError("usage", message, hint=hint)
+    return OpError("usage", message, hint=hint)
 
 
 def _unexpected(command: str, unused: Sequence[str], tokens: Sequence[str]) -> str:
@@ -2211,7 +2204,7 @@ def main() -> None:
             raise
         out = _CTX.output if _CTX is not None else Output(_sniff_mode(tokens))
         code = out.error(
-            CliError("internal_error", f"{type(exc).__name__}: {exc} (set ATLAS_LOG_DEBUG=1)")
+            OpError("internal_error", f"{type(exc).__name__}: {exc} (set ATLAS_LOG_DEBUG=1)")
         )
     sys.exit(code)
 

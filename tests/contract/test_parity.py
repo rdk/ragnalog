@@ -7,8 +7,9 @@ the case's allowed differences. :data:`CASES` is the written parity contract
 difference by design and says why; a known drift is a case marked
 ``xfail(strict=True)``, so fixing it makes the case fail until the marker is removed.
 
-Errors compare ``error.code`` of both sides plus the documented CLI exit code and
-HTTP status of the case.
+Errors compare the shared ``error.reason`` of both sides (``error.code`` when there
+is none: the codes predate the reasons and may differ, see
+``service/errors.py``) plus the documented CLI exit code and HTTP status of the case.
 """
 
 from __future__ import annotations
@@ -54,9 +55,11 @@ class Case:
     allowed: frozenset[str] = frozenset()
     """Key paths that may differ (``a.b``; ``items[].x`` = key ``x`` of every item)."""
     exit: int | None = None
-    """Error case: the CLI exit code (its ``error.code`` must equal the API's)."""
+    """Error case: the CLI exit code (its ``reason``, else ``code``, must equal the API's)."""
     status: int | None = None
     """Error case: the HTTP status."""
+    reason: str | None = None
+    """Error case: the expected ``error.reason``."""
     masked: frozenset[str] = frozenset()
     """Key paths of a known drift that another (xfail) case pins down."""
     drift: str | None = None
@@ -239,7 +242,7 @@ CASES: list[Case] = [
         "/api/sets/nope/groups",
         exit=3,
         status=404,
-        drift="unknown set: CLI store_error (exit 3), API not_found (404)",
+        reason="set_not_found",
     ),
     Case(
         "error-ambiguous-name",
@@ -247,7 +250,7 @@ CASES: list[Case] = [
         "/api/sets/twin/groups",
         exit=3,
         status=409,
-        drift="ambiguous ref: CLI store_error, API ambiguous",
+        reason="ambiguous_ref",
     ),
     Case(
         "error-ambiguous-prefix",
@@ -255,7 +258,7 @@ CASES: list[Case] = [
         "/api/sets/aaaa/stats",
         exit=3,
         status=409,
-        drift="ambiguous ref: CLI store_error, API ambiguous",
+        reason="ambiguous_ref",
     ),
     Case(
         "error-incompatible-sets",
@@ -263,7 +266,7 @@ CASES: list[Case] = [
         "/api/diff?a=edge&b=edge-f1",
         exit=1,
         status=409,
-        drift="incompatible sets: CLI invalid_value, API incompatible_sets",
+        reason="incompatible_sets",
     ),
     Case(
         "error-bad-level",
@@ -299,6 +302,7 @@ CASES: list[Case] = [
         "/api/sets/edge/frames/0000000000000000",
         exit=2,
         status=404,
+        reason="ref_not_found",
     ),
     Case(
         "error-no-entry",
@@ -306,6 +310,7 @@ CASES: list[Case] = [
         "/api/sets/edge/entries/0000000000000000/context",
         exit=2,
         status=404,
+        reason="entry_not_found",
     ),
 ]
 
@@ -358,7 +363,11 @@ def store_dir(tmp_path_factory: pytest.TempPathFactory) -> Path:
     copies = {
         "aaaa000000000001": {"name": "twin"},
         "aaaa000000000002": {"name": "twin"},
-        "bbbb000000000001": {"name": "edge-f1", "signature_spec": "L+G+E+F1"},
+        "bbbb000000000001": {
+            "name": "edge-f1",
+            "signature_spec": "L+G+E+F1",
+            "recipe_key": (edge.recipe_key or "").replace("|L+G+E+F0|", "|L+G+E+F1|"),
+        },
     }
     for k, (set_id, changes) in enumerate(copies.items(), start=1):
         # distinct created_at: listings sort by it, so ties would leave the order to the FS
@@ -442,6 +451,12 @@ def _normalise(doc: Any, keys: frozenset[str]) -> Any:
     return doc
 
 
+def _identity(doc: Any) -> str:
+    """What both front ends must agree on for an error: its reason, else its code."""
+    error = doc["error"]
+    return str(error.get("reason") or error["code"])
+
+
 def _params() -> list[Any]:
     return [
         pytest.param(
@@ -468,7 +483,9 @@ def test_cli_and_api_agree(
     status, api_doc = _api(client, case.api.format(**refs))
     if case.exit is not None:
         assert (code, status) == (case.exit, case.status), (cli_doc, api_doc)
-        assert cli_doc["error"]["code"] == api_doc["error"]["code"], (cli_doc, api_doc)
+        assert _identity(cli_doc) == _identity(api_doc), (cli_doc, api_doc)
+        if case.reason is not None:
+            assert cli_doc["error"]["reason"] == case.reason
         return
     assert (code, status) == (0, 200), (cli_doc, api_doc)
     keys = case.allowed | case.masked

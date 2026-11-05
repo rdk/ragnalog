@@ -5,7 +5,8 @@ Every JSON document written by the CLI is an object carrying a ``"schema"`` key
 listings are written one row per line (without the envelope); single documents
 are written as one line. Errors in ``json``/``jsonl`` mode are written to
 stdout as ``{"schema": "error.v1", "error": {"code": ..., "message": ...}}``;
-in ``table`` mode they go to stderr. Diagnostics always go to stderr.
+in ``table`` mode they go to stderr. Diagnostics always go to stderr. Errors and
+exit codes are :mod:`atlas_log_analyzer.service.errors`.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ import re
 import sys
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from datetime import date, datetime
-from enum import Enum, IntEnum
+from enum import Enum
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, TextIO
 
@@ -29,6 +30,7 @@ from atlas_log_analyzer.core.java import (
     is_app_frame,
 )
 from atlas_log_analyzer.core.models import LogEntry
+from atlas_log_analyzer.service.errors import ExitCode, OpError, from_exception
 
 # polars and rich are imported where used: JSON output of a command that reads no
 # log set needs neither, and rich is needed only for tables and coloured raw text.
@@ -41,8 +43,8 @@ if TYPE_CHECKING:
 __all__ = [
     "APP_PACKAGES_ENV",
     "LIBRARY_PACKAGES",
-    "CliError",
     "ExitCode",
+    "OpError",
     "Output",
     "OutputMode",
     "app_packages",
@@ -100,83 +102,17 @@ LEVEL_STYLES: Mapping[str, str] = {"FATAL": "bold red", "ERROR": "red", "WARN": 
 """Styles of ``level_name`` cells when stdout is a terminal."""
 
 
-class ExitCode(IntEnum):
-    """Process exit codes shared by all commands."""
+def error_from_exception(exc: BaseException) -> OpError | None:
+    """Map a known exception to the CLI's :class:`OpError`; ``None`` for unknown ones.
 
-    OK = 0
-    USAGE = 1
-    """Invalid arguments, unknown format, bad SQL, version mismatch without ``--force``."""
-    NOT_FOUND = 2
-    """Nothing found (no files, no entries for a signature) or nothing could be parsed."""
-    STORE = 3
-    """Store failure: unknown log set, corrupt manifest, unsupported schema version."""
-
-
-class CliError(Exception):
-    """A failure reported to the user as an error envelope plus an exit code."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        exit_code: ExitCode = ExitCode.USAGE,
-        *,
-        hint: str | None = None,
-        extra: Mapping[str, Any] | None = None,
-    ) -> None:
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.exit_code = exit_code
-        self.hint = hint
-        """Optional suggestion for the next step (``"hint"`` in ``error.v1``)."""
-        self.extra = dict(extra or {})
-        """Extra keys of the ``error`` object, e.g. ``{"store": path}``."""
-
-    def envelope(self) -> dict[str, Any]:
-        """Return the ``error.v1`` document."""
-        error: dict[str, Any] = {"code": self.code, "message": self.message}
-        if self.hint is not None:
-            error["hint"] = self.hint
-        error.update(self.extra)
-        return {"schema": "error.v1", "error": error}
-
-
-def error_from_exception(exc: BaseException) -> CliError | None:
-    """Map a known library exception to a :class:`CliError`; ``None`` for unknown ones."""
+    Library exceptions as :func:`atlas_log_analyzer.service.errors.from_exception`;
+    a cyclopts parse error is ``usage``.
+    """
     from cyclopts import CycloptsError
 
-    from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-    from atlas_log_analyzer.service.views import AmbiguousSignature
-    from atlas_log_analyzer.store.store import StoreError
-
-    if isinstance(exc, CliError):
-        return exc
-    if isinstance(exc, AmbiguousSignature):
-        return CliError(
-            "ambiguous",
-            str(exc),
-            ExitCode.USAGE,
-            hint="pass more characters of the signature, or the full one",
-            extra={"candidates": exc.candidates},
-        )
-    if isinstance(exc, StoreError):
-        return CliError("store_error", str(exc), ExitCode.STORE)
-    if isinstance(exc, UnknownFormatError):
-        return CliError("unknown_format", _message(exc), ExitCode.USAGE)
-    if isinstance(exc, FileNotFoundError):
-        name = exc.filename if exc.filename is not None else _message(exc)
-        return CliError("file_not_found", f"no such file or directory: {name}", ExitCode.NOT_FOUND)
     if isinstance(exc, CycloptsError):
-        return CliError("usage", str(exc).strip(), ExitCode.USAGE)
-    if isinstance(exc, ValueError):
-        return CliError("invalid_value", str(exc), ExitCode.USAGE)
-    return None
-
-
-def _message(exc: BaseException) -> str:
-    # str() of a LookupError with one argument adds quotes around it.
-    return str(exc.args[0]) if len(exc.args) == 1 else str(exc)
+        return OpError("usage", str(exc).strip())
+    return from_exception(exc, "cli")
 
 
 def default_mode(stream: TextIO | None = None) -> OutputMode:
@@ -672,7 +608,7 @@ class Output:
         for tbl in mapping_tables(doc, title=title):
             console.print(tbl)
 
-    def error(self, err: CliError) -> int:
+    def error(self, err: OpError) -> int:
         """Report ``err`` (stdout envelope in json/jsonl mode, stderr in table mode)."""
         if self.mode in ("json", "jsonl"):
             self.write_line(encode_json(err.envelope()))

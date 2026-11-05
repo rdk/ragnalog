@@ -14,6 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from atlas_log_analyzer.service.errors import OpError, from_exception
 from atlas_log_analyzer.store.pipeline import IngestProgress, IngestResult, ingest_paths
 from atlas_log_analyzer.store.store import Store, StoreError
 
@@ -57,7 +58,7 @@ class Job:
     bytes_read: int = 0
     current_file: str | None = None
     result: dict[str, Any] | None = None
-    error: dict[str, str] | None = None
+    error: dict[str, Any] | None = None
     cancel_requested: bool = False
 
     def to_dict(self) -> dict[str, Any]:
@@ -215,9 +216,8 @@ class JobManager:
             self._finish(job, "failed")
             return
         except (StoreError, OSError, ValueError, LookupError) as exc:
-            job.error = {"code": _code(exc), "message": str(exc)}
-            if job.error["code"] == "not_in_format":
-                job.error["hint"] = "upload the right file or format, or send force=true"
+            err = from_exception(exc, "api") or OpError("store_error", str(exc))
+            job.error = err.envelope()["error"]
             self._finish(job, "failed")
             return
         manifest = dict(result.logset.manifest.to_dict())
@@ -248,16 +248,3 @@ class JobManager:
             progress=progress,
             progress_every=20_000,
         )
-
-
-def _code(exc: Exception) -> str:
-    name = type(exc).__name__
-    known = {
-        "NoSourcesFound": "no_sources",
-        "FormatNotDetected": "format_not_detected",
-        "NotInFormat": "not_in_format",
-        "UnknownFormatError": "unknown_format",
-    }
-    if name in known:
-        return known[name]
-    return "store_error" if isinstance(exc, StoreError) else "invalid_value"

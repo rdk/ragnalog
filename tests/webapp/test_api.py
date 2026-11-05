@@ -75,6 +75,7 @@ def test_unknown_set_is_error_doc(client: TestClient) -> None:
     doc = _json(client, "/api/sets/nope", 404)
     assert doc["schema"] == "error.v1"
     assert doc["error"]["code"] == "not_found"
+    assert doc["error"]["reason"] == "set_not_found"
     assert "hint" in doc["error"]
     assert "store" not in doc["error"]["message"].lower()
 

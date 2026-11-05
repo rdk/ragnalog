@@ -352,9 +352,14 @@ dropped. Differences by design are listed per case in `allowed`, each with its
 reason (the API names only the store directory and adds per-set `summary`; `show`
 is `entries.v1` while the API's group page gets `group.v1` with a histogram; a cut
 text says `use --max-raw 0` or `use max_raw=0`). `HTTP_CAPS` lists the page caps
-only the API has. Errors must agree on `error.code`, with the documented CLI exit
-code and HTTP status. Known drifts are `xfail(strict=True)` cases: fixing one
-makes its case fail until the marker is removed.
+only the API has. Errors must agree on `error.reason` (on `error.code` when they
+carry none), with the documented CLI exit code and HTTP status: one error model
+(`service/errors.py`) gives every code its exit code and status (`SPEC`), and a
+failure that the two front ends report under different codes, kept for
+compatibility, carries the same `reason` (`REASONS`: an unknown set is CLI
+`store_error`, API `not_found`, both `set_not_found`). Known drifts are
+`xfail(strict=True)` cases: fixing one makes its case fail until the marker is
+removed.
 
 ### Typed documents
 

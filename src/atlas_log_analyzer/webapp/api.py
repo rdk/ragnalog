@@ -18,6 +18,8 @@ from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.report import example_entries
+from atlas_log_analyzer.service.errors import OpError, hint
+from atlas_log_analyzer.service.sets import open_set
 from atlas_log_analyzer.service.views import (
     DEFAULT_MAX_RAW,
     DETAIL_BRIEF,
@@ -40,7 +42,6 @@ from atlas_log_analyzer.store.query import span_hours, with_rates
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
 from atlas_log_analyzer.store.triage import BaselineChoice, explicit_baseline, rank_baselines
 from atlas_log_analyzer.store.triage import triage as store_triage
-from atlas_log_analyzer.webapp.errors import ApiError
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.state import AppState, get_state
@@ -61,7 +62,7 @@ def _auth(request: Request) -> None:
     import hmac
 
     if not hmac.compare_digest(given.encode(), token.encode()):
-        raise ApiError("unauthorized", "missing or wrong API token", 401)
+        raise OpError("unauthorized", "missing or wrong API token")
 
 
 router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=[Depends(_auth)])
@@ -83,7 +84,7 @@ def parse_time(value: str | None, name: str, anchor: datetime | None) -> datetim
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:
-        raise ApiError(
+        raise OpError(
             "invalid_value",
             f"{name}={value!r} is not a time; use ISO 8601, YYYY-MM-DD or 30m/2h/1d",
         ) from None
@@ -95,7 +96,7 @@ def _levels(value: str | None, name: str) -> str | None:
     try:
         return parse_levels(value)
     except InvalidLevel as exc:
-        raise ApiError("invalid_level", f"{name}: {exc}") from None
+        raise OpError("invalid_level", f"{name}: {exc}") from None
 
 
 def manifest_item(m: LogSetManifest) -> dict[str, Any]:
@@ -123,7 +124,7 @@ def _choose(
         choice = rank_baselines(state.manifests(), ls.manifest)
         base = state.open(choice.manifest.id) if choice.manifest is not None else None
         return base, choice
-    base = state.open(ref)
+    base = open_set(state, ref, front="api")
     return base, explicit_baseline(ls.manifest, base.manifest)
 
 
@@ -190,7 +191,7 @@ def list_sets(state: StateDep, brief: bool = False) -> dict[str, Any]:
 @router.get("/sets/{ref}")
 def get_set(ref: str, state: StateDep) -> dict[str, Any]:
     """One manifest (``logset.v1``) plus ``summary``."""
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     doc = dict(ls.manifest.to_dict())
     doc["summary"] = state.summary(ls)
     return doc
@@ -206,7 +207,7 @@ def delete_set(ref: str, state: StateDep) -> dict[str, Any]:
 @router.get("/sets/{ref}/stats")
 def stats(ref: str, state: StateDep) -> dict[str, Any]:
     """Statistics of a set (``stats.v1``)."""
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     return {"schema": "stats.v1", "logset": ls.manifest.id, **ls.stats()}
 
 
@@ -215,14 +216,14 @@ def _columns(
 ) -> list[str] | None:
     """Columns chosen by ``columns`` (comma-separated and/or repeated) or ``brief``."""
     if brief and columns:
-        raise ApiError(
+        raise OpError(
             "usage", "brief and columns cannot be combined", hint=f"brief is {','.join(preset)}"
         )
     if brief:
         return list(preset)
     chosen, unknown = select_columns(columns, valid)
     if unknown:
-        raise ApiError(
+        raise OpError(
             "invalid_value",
             f"unknown column(s) {', '.join(map(repr, unknown))} in columns",
             hint=f"valid columns: {', '.join(valid)}",
@@ -267,7 +268,7 @@ def groups(
     """
     valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
     cols = _columns(columns, brief, valid, GROUP_BRIEF)
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     last = ls.manifest.last_ts
     where = GroupFilter(
         level=_levels(level, "level"),
@@ -315,15 +316,15 @@ def group(
     ``groups`` brief columns.
     """
     cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     signature = resolve_signature(ls, signature, coarse=coarse)
     row = ls.group(signature, coarse=coarse)
     if row is None:
-        raise ApiError(
-            "not_found",
+        raise OpError.because(
+            "group_not_found",
+            "api",
             f"no group {signature!r} in log set {ls.manifest.id}",
-            404,
-            hint=f"list signatures with GET /api/sets/{ls.manifest.id}/groups",
+            hint=hint("group_not_found", "api", id=ls.manifest.id),
         )
     if coarse:
         df = ls.entries(coarse_signature=signature, limit=limit or None, columns=cols)
@@ -353,10 +354,12 @@ def group_examples(
 
     The report page loads these lazily when its payload was built without examples.
     """
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     row = ls.group(signature)
     if row is None:
-        raise ApiError("not_found", f"no group {signature!r} in log set {ls.manifest.id}", 404)
+        raise OpError.because(
+            "group_not_found", "api", f"no group {signature!r} in log set {ls.manifest.id}"
+        )
     ids = [str(i) for i in row.get("examples") or []]
     return {
         "schema": "report-entries.v1",
@@ -398,7 +401,7 @@ def entries(
     ``body_truncated`` and ``raw_chars``.
     """
     cols = _columns(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     last = ls.manifest.last_ts
     where = EntryFilter(
         signature=resolve_signature(ls, signature) if signature else signature,
@@ -450,14 +453,14 @@ def context(
     ``columns`` or ``brief`` select the columns as ``atlas-log context``.
     """
     cols = _columns(columns, brief, ENTRY_FIELDS, DETAIL_BRIEF)
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)
     if df is None:
-        raise ApiError(
-            "not_found",
+        raise OpError.because(
+            "entry_not_found",
+            "api",
             f"no entry with id {entry_id!r} in log set {ls.manifest.id}",
-            404,
-            hint=f"entry ids are the id column of GET /api/sets/{ls.manifest.id}/entries",
+            hint=hint("entry_not_found", "api", id=ls.manifest.id),
         )
     at = df["id"].to_list().index(entry_id)
     thread = df["thread"][at]
@@ -490,17 +493,16 @@ def frames(
     exception (0 = all), ``all`` adds every frame with an ``app`` flag.
     ``ATLAS_LOG_APP_PACKAGES`` of the server process defines application code when set.
     """
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     doc = frames_view(
         ls, item, limit=limit or None, all_frames=all, app_packages=app_packages_from_env()
     )
     if doc is None:
-        raise ApiError(
-            "not_found",
+        raise OpError.because(
+            "ref_not_found",
+            "api",
             f"no entry or group {item!r} in log set {ls.manifest.id}",
-            404,
-            hint=f"pass an entry id or a signature from GET /api/sets/{ls.manifest.id}/groups"
-            "?with_exception=true",
+            hint=hint("ref_not_found", "api", id=ls.manifest.id),
         )
     return {"schema": "frames.v1", **doc}
 
@@ -517,7 +519,7 @@ def timeline(
     until: str | None = None,
 ) -> dict[str, Any]:
     """Entry counts per time bucket (``timeline.v1``)."""
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     last = ls.manifest.last_ts
     try:
         items = ls.histogram(
@@ -529,7 +531,7 @@ def timeline(
             until=parse_time(until, "until", last),
         )
     except ValueError as exc:
-        raise ApiError("invalid_value", str(exc)) from exc
+        raise OpError("invalid_value", str(exc)) from exc
     return {
         "schema": "timeline.v1",
         "logset": ls.manifest.id,
@@ -556,7 +558,7 @@ async def report(
     """
 
     def build() -> bytes:
-        ls = state.open(ref)
+        ls = open_set(state, ref, front="api")
         base = _baseline(state, ls, compare)
         try:
             return state.report_bytes(
@@ -569,7 +571,7 @@ async def report(
                 entries_url=f"/api/sets/{ls.manifest.id}/groups/{{sig}}/examples",
             )
         except ValueError as exc:
-            raise ApiError("incompatible_sets", str(exc), 409) from exc
+            raise OpError.because("incompatible_sets", "api", str(exc)) from exc
 
     data = await run_in_threadpool(build)
     return Response(data, media_type="application/json")
@@ -595,14 +597,14 @@ def diff(
     set's span) to ``changed`` and sorts it by ``rate_ratio``. ``warnings`` is
     present when the spans differ by more than 4x (new/vanished are unreliable).
     """
-    sa, sb = state.open(a), state.open(b)
+    sa, sb = open_set(state, a, front="api"), open_set(state, b, front="api")
     try:
         result = store_diff(
             sa, sb, min_level=_levels(min_level, "min_level"), coarse=coarse, force=force
         )
     except ValueError as exc:
-        raise ApiError(
-            "incompatible_sets", str(exc), 409, hint="pass force=true to compare anyway"
+        raise OpError.because(
+            "incompatible_sets", "api", str(exc), hint=hint("incompatible_sets", "api")
         ) from exc
     changed = with_rates(result.changed, span_hours(sa), span_hours(sb)) if rate else result.changed
     parts = {"new": result.new, "vanished": result.vanished, "changed": changed}
@@ -641,7 +643,7 @@ def triage(
     sets whose spans differ by more than 4x. The document is
     :func:`atlas_log_analyzer.store.triage.triage` plus ``report_url`` links.
     """
-    ls = state.open(ref)
+    ls = open_set(state, ref, front="api")
     lvl = _levels(min_level, "min_level")
     base, choice = _choose(state, ls, baseline)
     try:
@@ -655,7 +657,7 @@ def triage(
             choice=choice,
         )
     except ValueError as exc:
-        raise ApiError("incompatible_sets", str(exc), 409) from exc
+        raise OpError.because("incompatible_sets", "api", str(exc)) from exc
     me = ls.manifest
     doc["report_url"] = f"/sets/{me.id}"
     if base is not None:
@@ -693,13 +695,13 @@ async def ingest(
     format = format or _form_str(form.get("format"))
     if frames is None and (text := _form_str(form.get("frames"))) is not None:
         if not (text.isascii() and text.isdigit()):
-            raise ApiError("invalid_value", f"frames must be an integer >= 0, not {text!r}")
+            raise OpError("invalid_value", f"frames must be an integer >= 0, not {text!r}")
         frames = int(text)
     mine = mine or _form_str(form.get("mine")) in ("1", "true", "on", "yes")
     overwrite = overwrite or _form_str(form.get("overwrite")) in ("1", "true", "on", "yes")
     force = force or _form_str(form.get("force")) in ("1", "true", "on", "yes")
     if not files:
-        raise ApiError("usage", "send one or more log files as multipart field 'files'")
+        raise OpError("usage", "send one or more log files as multipart field 'files'")
     limit = state.settings.max_upload_mb * 1024 * 1024
     job_id, folder = state.jobs.new_upload_dir()
     paths: list[Path] = []
@@ -713,10 +715,9 @@ async def ingest(
                 while chunk := await upload.read(1 << 20):
                     written += len(chunk)
                     if written > limit:
-                        raise ApiError(
+                        raise OpError(
                             "payload_too_large",
                             f"upload exceeds {state.settings.max_upload_mb} MiB",
-                            413,
                         )
                     fh.write(chunk)
             paths.append(target)
@@ -753,7 +754,7 @@ def job(job_id: str, state: StateDep) -> dict[str, Any]:
     """One job (``job.v1``)."""
     found = state.jobs.get(job_id)
     if found is None:
-        raise ApiError("not_found", f"no job {job_id!r}", 404)
+        raise OpError("not_found", f"no job {job_id!r}")
     return found.to_dict()
 
 
@@ -762,5 +763,5 @@ def cancel(job_id: str, state: StateDep) -> dict[str, Any]:
     """Cancel a queued or running job (``job.v1``)."""
     found = state.jobs.cancel(job_id)
     if found is None:
-        raise ApiError("not_found", f"no job {job_id!r}", 404)
+        raise OpError("not_found", f"no job {job_id!r}")
     return found.to_dict()

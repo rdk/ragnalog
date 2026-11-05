@@ -1,4 +1,4 @@
-"""``error.v1`` responses shared by every route (same codes as the CLI)."""
+"""``error.v1`` responses shared by every route (:mod:`atlas_log_analyzer.service.errors`)."""
 
 from __future__ import annotations
 
@@ -8,79 +8,46 @@ from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from starlette.responses import Response
 
+from atlas_log_analyzer.service.errors import OpError, from_exception
 from atlas_log_analyzer.service.views import AmbiguousSignature
 from atlas_log_analyzer.store.store import AmbiguousLogSet, StoreError
 from atlas_log_analyzer.webapp.responses import JSON
 
-__all__ = ["ApiError", "error_doc", "install_handlers"]
-
-
-class ApiError(Exception):
-    """An error with an ``error.v1`` code, an HTTP status and an optional next-step hint."""
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        status: int = 400,
-        hint: str | None = None,
-        extra: dict[str, Any] | None = None,
-    ) -> None:
-        """Create the error; ``extra`` adds keys to the ``error`` object (e.g. candidates)."""
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.status = status
-        self.hint = hint
-        self.extra = dict(extra or {})
+__all__ = ["error_doc", "error_response", "install_handlers"]
 
 
 def error_doc(
     code: str, message: str, hint: str | None = None, extra: dict[str, Any] | None = None
 ) -> dict[str, Any]:
     """Build the ``error.v1`` document."""
-    error: dict[str, Any] = {"code": code, "message": message}
-    if hint:
-        error["hint"] = hint
-    error.update(extra or {})
-    return {"schema": "error.v1", "error": error}
+    return OpError(code, message, hint=hint, extra=extra).envelope()
 
 
-def _respond(
-    status: int,
-    code: str,
-    message: str,
-    hint: str | None = None,
-    extra: dict[str, Any] | None = None,
-) -> Response:
-    return JSON(error_doc(code, message, hint, extra), status_code=status)
+def error_response(err: OpError, status: int | None = None) -> Response:
+    """Return the ``error.v1`` response of ``err`` (its own HTTP status unless ``status``)."""
+    return JSON(err.envelope(), status_code=status or err.status)
 
 
 def install_handlers(app: FastAPI) -> None:
-    """Map library and validation exceptions to ``error.v1`` responses.
+    """Map :class:`OpError`, library and validation exceptions to ``error.v1`` responses.
 
+    Status codes come from :data:`~atlas_log_analyzer.service.errors.SPEC`.
     ``LogSetNotFound`` and HTTP errors are handled in :func:`create_app` (HTML or JSON).
     """
 
-    @app.exception_handler(ApiError)
-    async def _api(_: Request, exc: ApiError) -> Response:
-        return _respond(exc.status, exc.code, exc.message, exc.hint, exc.extra)
+    @app.exception_handler(OpError)
+    async def _op(_: Request, exc: OpError) -> Response:
+        return error_response(exc)
 
     @app.exception_handler(AmbiguousSignature)
-    async def _ambiguous_signature(_: Request, exc: AmbiguousSignature) -> Response:
-        hint = "pass more characters of the signature, or the full one"
-        return _respond(409, "ambiguous", str(exc), hint, {"candidates": exc.candidates})
-
     @app.exception_handler(AmbiguousLogSet)
-    async def _ambiguous(_: Request, exc: AmbiguousLogSet) -> Response:
-        return _respond(409, "ambiguous", str(exc))
-
     @app.exception_handler(StoreError)
-    async def _store(_: Request, exc: StoreError) -> Response:
-        return _respond(500, "store_error", str(exc))
+    async def _library(_: Request, exc: Exception) -> Response:
+        err = from_exception(exc, "api")
+        return error_response(err if err is not None else OpError("internal_error", str(exc)))
 
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> Response:
         first = exc.errors()[0] if exc.errors() else {}
         where = ".".join(str(p) for p in first.get("loc", ()) if p not in ("query", "body"))
-        return _respond(400, "usage", f"{where}: {first.get('msg', 'invalid request')}")
+        return error_response(OpError("usage", f"{where}: {first.get('msg', 'invalid request')}"))
