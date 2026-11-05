@@ -1,0 +1,87 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cluster-timeline.v1.schema.json",
+  "title": "cluster-timeline.v1",
+  "description": "Entries per time bucket and node, by level or of one group.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "cluster-timeline.v1"
+      ]
+    },
+    "bucket": {
+      "description": "Bucket size, e.g. 1h.",
+      "type": "string"
+    },
+    "buckets": {
+      "description": "Bucket starts, ISO 8601 UTC, contiguous over the window.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "nodes": {
+      "description": "Counts by node id.",
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/$defs/ClusterNodeTimeline"
+      }
+    },
+    "signature": {
+      "description": "The group counted, when one was asked for.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "schema",
+    "bucket",
+    "buckets",
+    "nodes"
+  ],
+  "$defs": {
+    "ClusterNodeTimeline": {
+      "title": "ClusterNodeTimeline",
+      "description": "One node's counts per bucket.",
+      "type": "object",
+      "properties": {
+        "levels": {
+          "description": "Entries per bucket by ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE), OTHER; only \"count\" with a signature.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "coverage": {
+          "description": "Indices of the buckets of the node's first and last entry; null outside.",
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "items": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "levels",
+        "coverage"
+      ]
+    }
+  }
+}

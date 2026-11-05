@@ -432,6 +432,14 @@
         "raw_chars": {
           "description": "Original length of raw (of body without raw); cut rows only.",
           "type": "integer"
+        },
+        "node": {
+          "description": "Entries of a capture: the entry's node.",
+          "type": "string"
+        },
+        "set": {
+          "description": "Entries of a capture: the id of the node's set.",
+          "type": "string"
         }
       }
     },

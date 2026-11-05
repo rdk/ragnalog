@@ -1,0 +1,1230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "cluster-report.v1.schema.json",
+  "title": "cluster-report.v1",
+  "description": "The cluster page's payload: a capture, its timeline, groups, events and interactions.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "cluster-report.v1"
+      ]
+    },
+    "generated_at": {
+      "description": "Build time, YYYY-MM-DDTHH:MM:SSZ.",
+      "type": "string"
+    },
+    "tool_version": {
+      "description": "Version that built the payload.",
+      "type": "string"
+    },
+    "capture": {
+      "description": "capture.v1 without schema.",
+      "$ref": "#/$defs/ClusterCaptureBody"
+    },
+    "nodes": {
+      "description": "Node ids; their order is the colour order.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "timeline": {
+      "description": "cluster-timeline.v1, bucket 1h (15m when the window < 12 h).",
+      "$ref": "#/$defs/ClusterTimelineBody"
+    },
+    "groups": {
+      "description": "Matrix rows by count, at most max_groups.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ClusterReportGroup"
+      }
+    },
+    "entries": {
+      "description": "Example entries by id: report.v1 entries plus node and set (an id two nodes share, an identical line in the same millisecond, is the first node's).",
+      "type": "object",
+      "additionalProperties": {
+        "type": "object"
+      }
+    },
+    "events": {
+      "description": "events.v1 without schema.",
+      "$ref": "#/$defs/ClusterEventsBody"
+    },
+    "interactions": {
+      "description": "interactions.v1 without schema.",
+      "$ref": "#/$defs/ClusterInteractionsBody"
+    },
+    "options": {
+      "description": "Build options.",
+      "$ref": "#/$defs/ClusterReportOptions"
+    },
+    "urls": {
+      "description": "null; the web app fills it.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ClusterReportUrls"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema",
+    "generated_at",
+    "tool_version",
+    "capture",
+    "nodes",
+    "timeline",
+    "groups",
+    "entries",
+    "events",
+    "interactions",
+    "options",
+    "urls"
+  ],
+  "$defs": {
+    "BurstSide": {
+      "title": "BurstSide",
+      "description": "A group on one node.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Group template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groups": {
+          "description": "Groups of the node that burst together with it (itself included); it stands for them as the one with most bursts.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "signature",
+        "template",
+        "groups"
+      ]
+    },
+    "ClusterBaseline": {
+      "title": "ClusterBaseline",
+      "description": "The node's own earlier set its triage compared with.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Baseline set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Baseline set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "description": "Why it was picked, in one line.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "reason"
+      ]
+    },
+    "ClusterCaptureBody": {
+      "title": "ClusterCaptureBody",
+      "description": "capture.v1 without its schema key.",
+      "type": "object",
+      "properties": {
+        "capture": {
+          "description": "Capture id; null when not known.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cluster": {
+          "description": "Cluster name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "description": "The window of the counts.",
+          "$ref": "#/$defs/ClusterWindow"
+        },
+        "nodes": {
+          "description": "The nodes, sorted by node id.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClusterNodeSummary"
+          }
+        },
+        "skew": {
+          "description": "Clock offset estimates from simultaneous event pairs (index, re-index and cluster lock events less than 5 s apart); [] when there are none.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClusterSkew"
+          }
+        }
+      },
+      "required": [
+        "capture",
+        "cluster",
+        "window",
+        "nodes",
+        "skew"
+      ]
+    },
+    "ClusterEvent": {
+      "title": "ClusterEvent",
+      "description": "One event: a group matched by an event rule, repeats within a short time folded in.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Time of its first entry.",
+          "type": "string"
+        },
+        "last_ts": {
+          "description": "Time of its last entry (= ts when count is 1).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "start, stop, health_failed, cache_replication, … job_run.",
+          "type": "string"
+        },
+        "subject": {
+          "description": "What it is about: a node id, a health check, a lock, a job key.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject_node": {
+          "description": "subject when it is a node of the capture.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "description": "Group signature of the first entry.",
+          "type": "string"
+        },
+        "entry_id": {
+          "description": "Id of the first entry (in the node's set).",
+          "type": "string"
+        },
+        "text": {
+          "description": "Message of the first entry, at most 300 characters.",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries folded into the event: same node, kind and subject within 60 s of the first (job_run 120 s, start and stop 10 min); health_failed and job_run also fold repeats at most 2 h (job_run 30 min) after the previous one.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "ts",
+        "last_ts",
+        "kind",
+        "subject",
+        "subject_node",
+        "signature",
+        "entry_id",
+        "text",
+        "count"
+      ]
+    },
+    "ClusterEventsBody": {
+      "title": "ClusterEventsBody",
+      "description": "events.v1 without its schema key.",
+      "type": "object",
+      "properties": {
+        "rules_version": {
+          "description": "EVENT_RULES_VERSION of the rules used.",
+          "type": "integer"
+        },
+        "count": {
+          "description": "Rows in items.",
+          "type": "integer"
+        },
+        "items": {
+          "description": "Events by time, then node.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ClusterEvent"
+          }
+        },
+        "pairs": {
+          "description": "Kind pairs on different nodes with lift >= 3, by count; without job_run (see interactions.concurrent_jobs); at most 50. Computed before scheduled repeats are folded.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/EventPair"
+          }
+        }
+      },
+      "required": [
+        "rules_version",
+        "count",
+        "items",
+        "pairs"
+      ]
+    },
+    "ClusterInteractionsBody": {
+      "title": "ClusterInteractionsBody",
+      "description": "interactions.v1 without its schema key.",
+      "type": "object",
+      "properties": {
+        "delta_s": {
+          "description": "Echo of delta_s (co-bursts).",
+          "type": "integer"
+        },
+        "mentions": {
+          "description": "By count.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/MentionEdge"
+          }
+        },
+        "co_bursts": {
+          "description": "Pairs with hits >= 3, hits >= of / 2 and lift >= 3, by hits then lift; each group at most once as a and once as b; at most 50.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/CoBurst"
+          }
+        },
+        "concurrent_jobs": {
+          "description": "By slots.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/ConcurrentJob"
+          }
+        },
+        "sessions": {
+          "description": "By count; session ids are not listed.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SessionPair"
+          }
+        },
+        "jobs": {
+          "description": "Job ownership: job_run events per node, most nodes first; at most 100.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/JobRuns"
+          }
+        }
+      },
+      "required": [
+        "delta_s",
+        "mentions",
+        "co_bursts",
+        "concurrent_jobs",
+        "sessions",
+        "jobs"
+      ]
+    },
+    "ClusterNodeSummary": {
+      "title": "ClusterNodeSummary",
+      "description": "One node of a capture.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "set": {
+          "description": "The node's log set.",
+          "$ref": "#/$defs/ClusterSetRef"
+        },
+        "first_ts": {
+          "description": "The set's first entry (whole set).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "The set's last entry (whole set).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "description": "The node's logs inside the window; null when it has none there.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterSpan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gaps": {
+          "description": "[since, until] of runs of at least 15 empty minutes inside the coverage, oldest first, at most 100.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "items": false
+          }
+        },
+        "entries": {
+          "description": "Entries in the window.",
+          "type": "integer"
+        },
+        "errors": {
+          "description": "ERROR and FATAL entries in the window.",
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "WARN entries in the window.",
+          "type": "integer"
+        },
+        "errors_per_hour": {
+          "description": "errors per hour of coverage.",
+          "type": "number"
+        },
+        "warnings_per_hour": {
+          "description": "warnings per hour of coverage.",
+          "type": "number"
+        },
+        "top_error": {
+          "description": "Largest error group; null without errors.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterTopError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "description": "Triage against the node's own baseline; null unless asked for.",
+          "anyOf": [
+            {
+              "enum": [
+                "clean",
+                "new_errors",
+                "new_exceptions",
+                "new_warnings",
+                "no_baseline"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseline": {
+          "description": "The baseline of verdict; null without one or unless asked.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterBaseline"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "events": {
+          "description": "Events in the window by kind.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "node",
+        "set",
+        "first_ts",
+        "last_ts",
+        "coverage",
+        "gaps",
+        "entries",
+        "errors",
+        "warnings",
+        "errors_per_hour",
+        "warnings_per_hour",
+        "top_error",
+        "verdict",
+        "baseline",
+        "events"
+      ]
+    },
+    "ClusterNodeTimeline": {
+      "title": "ClusterNodeTimeline",
+      "description": "One node's counts per bucket.",
+      "type": "object",
+      "properties": {
+        "levels": {
+          "description": "Entries per bucket by ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE), OTHER; only \"count\" with a signature.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            }
+          }
+        },
+        "coverage": {
+          "description": "Indices of the buckets of the node's first and last entry; null outside.",
+          "anyOf": [
+            {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "items": false
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "levels",
+        "coverage"
+      ]
+    },
+    "ClusterReportGroup": {
+      "title": "ClusterReportGroup",
+      "description": "A matrix row with its counts per bucket and examples per node.",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level.",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "description": "Entries on all nodes in the window.",
+          "type": "integer"
+        },
+        "per_node": {
+          "description": "Every node of the capture by id.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MatrixNodeCount"
+          }
+        },
+        "spread": {
+          "description": "only: on one node; skewed: missing from a node that has logs in the window, or skew >= skew_min; all: otherwise.",
+          "enum": [
+            "all",
+            "only",
+            "skewed"
+          ]
+        },
+        "skew": {
+          "description": "Max/min, over the nodes that have the group, of count / the node's entries in the window; null when only.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_node": {
+          "description": "Node with the earliest first_seen.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lead_ms": {
+          "description": "first_seen of the next node minus that of first_node; null when only.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "hourly": {
+          "description": "Per node, sparse [bucket index into timeline.buckets, count].",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 2,
+              "prefixItems": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "integer"
+                }
+              ],
+              "items": false
+            }
+          }
+        },
+        "examples": {
+          "description": "Per node, entry ids present in entries.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "required": [
+        "signature",
+        "template",
+        "level",
+        "level_name",
+        "logger",
+        "exception_type",
+        "total",
+        "per_node",
+        "spread",
+        "skew",
+        "first_node",
+        "lead_ms",
+        "hourly",
+        "examples"
+      ]
+    },
+    "ClusterReportOptions": {
+      "title": "ClusterReportOptions",
+      "description": "Build options of a cluster report payload.",
+      "type": "object",
+      "properties": {
+        "window": {
+          "description": "Window mode.",
+          "enum": [
+            "explicit",
+            "overlap",
+            "union"
+          ]
+        },
+        "examples": {
+          "description": "Example entries per group and node.",
+          "type": "integer"
+        },
+        "max_raw": {
+          "description": "Characters of raw kept; 0 = all.",
+          "type": "integer"
+        },
+        "max_groups": {
+          "description": "Largest groups kept.",
+          "type": "integer"
+        },
+        "truncated_groups": {
+          "description": "Groups cut by max_groups.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "window",
+        "examples",
+        "max_raw",
+        "max_groups",
+        "truncated_groups"
+      ]
+    },
+    "ClusterReportUrls": {
+      "title": "ClusterReportUrls",
+      "description": "Links the web app adds.",
+      "type": "object",
+      "properties": {
+        "entries": {
+          "description": "Merged entries of the capture.",
+          "type": "string"
+        },
+        "context": {
+          "description": "Context on all nodes of one entry (template).",
+          "type": "string"
+        },
+        "set_report": {
+          "description": "Report page of one node's set (template).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "entries",
+        "context",
+        "set_report"
+      ]
+    },
+    "ClusterSetRef": {
+      "title": "ClusterSetRef",
+      "description": "The log set of a node.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "ClusterSkew": {
+      "title": "ClusterSkew",
+      "description": "Estimated clock offset of node b against node a (informational, never applied).",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "b": {
+          "description": "Node id, after a in node order.",
+          "type": "string"
+        },
+        "offset_ms": {
+          "description": "Median of ts on b minus ts on a over the pairs.",
+          "type": "integer"
+        },
+        "pairs": {
+          "description": "Event pairs the estimate rests on.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "offset_ms",
+        "pairs"
+      ]
+    },
+    "ClusterSpan": {
+      "title": "ClusterSpan",
+      "description": "A node's logs inside the window: from its first to its last entry there.",
+      "type": "object",
+      "properties": {
+        "since": {
+          "description": "ISO 8601 UTC.",
+          "type": "string"
+        },
+        "until": {
+          "description": "ISO 8601 UTC.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ]
+    },
+    "ClusterTimelineBody": {
+      "title": "ClusterTimelineBody",
+      "description": "cluster-timeline.v1 without its schema key.",
+      "type": "object",
+      "properties": {
+        "bucket": {
+          "description": "Bucket size, e.g. 1h.",
+          "type": "string"
+        },
+        "buckets": {
+          "description": "Bucket starts, ISO 8601 UTC, contiguous over the window.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "nodes": {
+          "description": "Counts by node id.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/ClusterNodeTimeline"
+          }
+        },
+        "signature": {
+          "description": "The group counted, when one was asked for.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "bucket",
+        "buckets",
+        "nodes"
+      ]
+    },
+    "ClusterTopError": {
+      "title": "ClusterTopError",
+      "description": "The ERROR/FATAL group with the most entries of a node in the window.",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Group template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "description": "Its entries on the node in the window.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "signature",
+        "template",
+        "count"
+      ]
+    },
+    "ClusterWindow": {
+      "title": "ClusterWindow",
+      "description": "The time window of a capture view; both ends inclusive.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "overlap: latest first entry to earliest last entry of the nodes; union: earliest first to latest last; explicit: since/until given.",
+          "enum": [
+            "explicit",
+            "overlap",
+            "union"
+          ]
+        },
+        "since": {
+          "description": "Start, ISO 8601 UTC.",
+          "type": "string"
+        },
+        "until": {
+          "description": "End, ISO 8601 UTC.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "since",
+        "until"
+      ]
+    },
+    "CoBurst": {
+      "title": "CoBurst",
+      "description": "When group a burst on node a, group b burst on node b within delta_s.",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "The group that bursts first.",
+          "$ref": "#/$defs/BurstSide"
+        },
+        "b": {
+          "description": "The group that follows, on another node.",
+          "$ref": "#/$defs/BurstSide"
+        },
+        "hits": {
+          "description": "Bursts of a followed by a burst of b.",
+          "type": "integer"
+        },
+        "of": {
+          "description": "Bursts of a.",
+          "type": "integer"
+        },
+        "median_lag_ms": {
+          "description": "Median lag from a to b, whole minutes in ms.",
+          "type": "integer"
+        },
+        "lift": {
+          "description": "hits / expected, expected = of x P(a burst of b in delta_s).",
+          "type": "number"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "hits",
+        "of",
+        "median_lag_ms",
+        "lift"
+      ]
+    },
+    "ConcurrentJob": {
+      "title": "ConcurrentJob",
+      "description": "A job run on several nodes in the same slot.",
+      "type": "object",
+      "properties": {
+        "job": {
+          "description": "Job key (job_run subject).",
+          "type": "string"
+        },
+        "nodes": {
+          "description": "Nodes it ran on together.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "slots": {
+          "description": "Slots of 60 s in which it ran on 2 or more nodes.",
+          "type": "integer"
+        },
+        "examples": {
+          "description": "Start of up to 3 such slots.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "job",
+        "nodes",
+        "slots",
+        "examples"
+      ]
+    },
+    "EventPair": {
+      "title": "EventPair",
+      "description": "Events of kind a on node a followed within 60 s by events of kind b on node b.",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "The earlier event.",
+          "$ref": "#/$defs/EventSide"
+        },
+        "b": {
+          "description": "The later event, on another node.",
+          "$ref": "#/$defs/EventSide"
+        },
+        "count": {
+          "description": "Events a followed by an event b.",
+          "type": "integer"
+        },
+        "of": {
+          "description": "Events a in the window.",
+          "type": "integer"
+        },
+        "median_lag_ms": {
+          "description": "Median time from a to the first b after it.",
+          "type": "integer"
+        },
+        "lift": {
+          "description": "count / expected, expected = of x min(1, events b x 60 s / window).",
+          "type": "number"
+        },
+        "examples": {
+          "description": "Up to 3 [ts a, ts b].",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "items": false
+          }
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "count",
+        "of",
+        "median_lag_ms",
+        "lift",
+        "examples"
+      ]
+    },
+    "EventSide": {
+      "title": "EventSide",
+      "description": "One side of an event pair.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Event kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "kind"
+      ]
+    },
+    "JobRuns": {
+      "title": "JobRuns",
+      "description": "Which nodes run a job: job_run events per node.",
+      "type": "object",
+      "properties": {
+        "job": {
+          "description": "Job key.",
+          "type": "string"
+        },
+        "runs": {
+          "description": "job_run events by node.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "job",
+        "runs"
+      ]
+    },
+    "MatrixNodeCount": {
+      "title": "MatrixNodeCount",
+      "description": "A group on one node in the window.",
+      "type": "object",
+      "properties": {
+        "count": {
+          "description": "Entries; 0 when absent.",
+          "type": "integer"
+        },
+        "rate_per_hour": {
+          "description": "Entries per hour of the node's coverage.",
+          "type": "number"
+        },
+        "first_seen": {
+          "description": "First entry; null when absent.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "description": "Last entry; null when absent.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "rate_per_hour",
+        "first_seen",
+        "last_seen"
+      ]
+    },
+    "MentionEdge": {
+      "title": "MentionEdge",
+      "description": "Entries of one node naming another node of the capture.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "The node whose entries name the other.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The node named (whole word, case-sensitive).",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries in the window.",
+          "type": "integer"
+        },
+        "groups": {
+          "description": "Their signatures, most entries first, at most 20.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "count",
+        "groups"
+      ]
+    },
+    "SessionPair": {
+      "title": "SessionPair",
+      "description": "Sessions seen on both nodes within an hour.",
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "description": "The two nodes.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "items": false
+        },
+        "count": {
+          "description": "Sessions.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "nodes",
+        "count"
+      ]
+    }
+  }
+}

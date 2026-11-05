@@ -1,0 +1,258 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "interactions.v1.schema.json",
+  "title": "interactions.v1",
+  "description": "How the nodes affect each other: mentions, co-bursts, concurrent jobs, sessions.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "interactions.v1"
+      ]
+    },
+    "delta_s": {
+      "description": "Echo of delta_s (co-bursts).",
+      "type": "integer"
+    },
+    "mentions": {
+      "description": "By count.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MentionEdge"
+      }
+    },
+    "co_bursts": {
+      "description": "Pairs with hits >= 3, hits >= of / 2 and lift >= 3, by hits then lift; each group at most once as a and once as b; at most 50.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/CoBurst"
+      }
+    },
+    "concurrent_jobs": {
+      "description": "By slots.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ConcurrentJob"
+      }
+    },
+    "sessions": {
+      "description": "By count; session ids are not listed.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/SessionPair"
+      }
+    },
+    "jobs": {
+      "description": "Job ownership: job_run events per node, most nodes first; at most 100.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/JobRuns"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "delta_s",
+    "mentions",
+    "co_bursts",
+    "concurrent_jobs",
+    "sessions",
+    "jobs"
+  ],
+  "$defs": {
+    "BurstSide": {
+      "title": "BurstSide",
+      "description": "A group on one node.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Group template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "groups": {
+          "description": "Groups of the node that burst together with it (itself included); it stands for them as the one with most bursts.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "signature",
+        "template",
+        "groups"
+      ]
+    },
+    "CoBurst": {
+      "title": "CoBurst",
+      "description": "When group a burst on node a, group b burst on node b within delta_s.",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "The group that bursts first.",
+          "$ref": "#/$defs/BurstSide"
+        },
+        "b": {
+          "description": "The group that follows, on another node.",
+          "$ref": "#/$defs/BurstSide"
+        },
+        "hits": {
+          "description": "Bursts of a followed by a burst of b.",
+          "type": "integer"
+        },
+        "of": {
+          "description": "Bursts of a.",
+          "type": "integer"
+        },
+        "median_lag_ms": {
+          "description": "Median lag from a to b, whole minutes in ms.",
+          "type": "integer"
+        },
+        "lift": {
+          "description": "hits / expected, expected = of x P(a burst of b in delta_s).",
+          "type": "number"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "hits",
+        "of",
+        "median_lag_ms",
+        "lift"
+      ]
+    },
+    "ConcurrentJob": {
+      "title": "ConcurrentJob",
+      "description": "A job run on several nodes in the same slot.",
+      "type": "object",
+      "properties": {
+        "job": {
+          "description": "Job key (job_run subject).",
+          "type": "string"
+        },
+        "nodes": {
+          "description": "Nodes it ran on together.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "slots": {
+          "description": "Slots of 60 s in which it ran on 2 or more nodes.",
+          "type": "integer"
+        },
+        "examples": {
+          "description": "Start of up to 3 such slots.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "job",
+        "nodes",
+        "slots",
+        "examples"
+      ]
+    },
+    "JobRuns": {
+      "title": "JobRuns",
+      "description": "Which nodes run a job: job_run events per node.",
+      "type": "object",
+      "properties": {
+        "job": {
+          "description": "Job key.",
+          "type": "string"
+        },
+        "runs": {
+          "description": "job_run events by node.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "job",
+        "runs"
+      ]
+    },
+    "MentionEdge": {
+      "title": "MentionEdge",
+      "description": "Entries of one node naming another node of the capture.",
+      "type": "object",
+      "properties": {
+        "from": {
+          "description": "The node whose entries name the other.",
+          "type": "string"
+        },
+        "to": {
+          "description": "The node named (whole word, case-sensitive).",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries in the window.",
+          "type": "integer"
+        },
+        "groups": {
+          "description": "Their signatures, most entries first, at most 20.",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "from",
+        "to",
+        "count",
+        "groups"
+      ]
+    },
+    "SessionPair": {
+      "title": "SessionPair",
+      "description": "Sessions seen on both nodes within an hour.",
+      "type": "object",
+      "properties": {
+        "nodes": {
+          "description": "The two nodes.",
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "items": false
+        },
+        "count": {
+          "description": "Sessions.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "nodes",
+        "count"
+      ]
+    }
+  }
+}

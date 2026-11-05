@@ -1,0 +1,384 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "capture.v1.schema.json",
+  "title": "capture.v1",
+  "description": "The nodes of a capture side by side: coverage, gaps, volume, events, verdicts.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "capture.v1"
+      ]
+    },
+    "capture": {
+      "description": "Capture id; null when not known.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "cluster": {
+      "description": "Cluster name.",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "window": {
+      "description": "The window of the counts.",
+      "$ref": "#/$defs/ClusterWindow"
+    },
+    "nodes": {
+      "description": "The nodes, sorted by node id.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ClusterNodeSummary"
+      }
+    },
+    "skew": {
+      "description": "Clock offset estimates from simultaneous event pairs (index, re-index and cluster lock events less than 5 s apart); [] when there are none.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ClusterSkew"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "capture",
+    "cluster",
+    "window",
+    "nodes",
+    "skew"
+  ],
+  "$defs": {
+    "ClusterBaseline": {
+      "title": "ClusterBaseline",
+      "description": "The node's own earlier set its triage compared with.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Baseline set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Baseline set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "description": "Why it was picked, in one line.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name",
+        "reason"
+      ]
+    },
+    "ClusterNodeSummary": {
+      "title": "ClusterNodeSummary",
+      "description": "One node of a capture.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "set": {
+          "description": "The node's log set.",
+          "$ref": "#/$defs/ClusterSetRef"
+        },
+        "first_ts": {
+          "description": "The set's first entry (whole set).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "The set's last entry (whole set).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "description": "The node's logs inside the window; null when it has none there.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterSpan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "gaps": {
+          "description": "[since, until] of runs of at least 15 empty minutes inside the coverage, oldest first, at most 100.",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "items": false
+          }
+        },
+        "entries": {
+          "description": "Entries in the window.",
+          "type": "integer"
+        },
+        "errors": {
+          "description": "ERROR and FATAL entries in the window.",
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "WARN entries in the window.",
+          "type": "integer"
+        },
+        "errors_per_hour": {
+          "description": "errors per hour of coverage.",
+          "type": "number"
+        },
+        "warnings_per_hour": {
+          "description": "warnings per hour of coverage.",
+          "type": "number"
+        },
+        "top_error": {
+          "description": "Largest error group; null without errors.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterTopError"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "verdict": {
+          "description": "Triage against the node's own baseline; null unless asked for.",
+          "anyOf": [
+            {
+              "enum": [
+                "clean",
+                "new_errors",
+                "new_exceptions",
+                "new_warnings",
+                "no_baseline"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "baseline": {
+          "description": "The baseline of verdict; null without one or unless asked.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ClusterBaseline"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "events": {
+          "description": "Events in the window by kind.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
+        }
+      },
+      "required": [
+        "node",
+        "set",
+        "first_ts",
+        "last_ts",
+        "coverage",
+        "gaps",
+        "entries",
+        "errors",
+        "warnings",
+        "errors_per_hour",
+        "warnings_per_hour",
+        "top_error",
+        "verdict",
+        "baseline",
+        "events"
+      ]
+    },
+    "ClusterSetRef": {
+      "title": "ClusterSetRef",
+      "description": "The log set of a node.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "description": "Set id.",
+          "type": "string"
+        },
+        "name": {
+          "description": "Set name.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "id",
+        "name"
+      ]
+    },
+    "ClusterSkew": {
+      "title": "ClusterSkew",
+      "description": "Estimated clock offset of node b against node a (informational, never applied).",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "b": {
+          "description": "Node id, after a in node order.",
+          "type": "string"
+        },
+        "offset_ms": {
+          "description": "Median of ts on b minus ts on a over the pairs.",
+          "type": "integer"
+        },
+        "pairs": {
+          "description": "Event pairs the estimate rests on.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "offset_ms",
+        "pairs"
+      ]
+    },
+    "ClusterSpan": {
+      "title": "ClusterSpan",
+      "description": "A node's logs inside the window: from its first to its last entry there.",
+      "type": "object",
+      "properties": {
+        "since": {
+          "description": "ISO 8601 UTC.",
+          "type": "string"
+        },
+        "until": {
+          "description": "ISO 8601 UTC.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "since",
+        "until"
+      ]
+    },
+    "ClusterTopError": {
+      "title": "ClusterTopError",
+      "description": "The ERROR/FATAL group with the most entries of a node in the window.",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Group template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "count": {
+          "description": "Its entries on the node in the window.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "signature",
+        "template",
+        "count"
+      ]
+    },
+    "ClusterWindow": {
+      "title": "ClusterWindow",
+      "description": "The time window of a capture view; both ends inclusive.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "overlap: latest first entry to earliest last entry of the nodes; union: earliest first to latest last; explicit: since/until given.",
+          "enum": [
+            "explicit",
+            "overlap",
+            "union"
+          ]
+        },
+        "since": {
+          "description": "Start, ISO 8601 UTC.",
+          "type": "string"
+        },
+        "until": {
+          "description": "End, ISO 8601 UTC.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "since",
+        "until"
+      ]
+    }
+  }
+}

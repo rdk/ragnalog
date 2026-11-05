@@ -1,0 +1,195 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "events.v1.schema.json",
+  "title": "events.v1",
+  "description": "What every node did: restarts, health checks, index and cache events, jobs.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "events.v1"
+      ]
+    },
+    "rules_version": {
+      "description": "EVENT_RULES_VERSION of the rules used.",
+      "type": "integer"
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "items": {
+      "description": "Events by time, then node.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ClusterEvent"
+      }
+    },
+    "pairs": {
+      "description": "Kind pairs on different nodes with lift >= 3, by count; without job_run (see interactions.concurrent_jobs); at most 50. Computed before scheduled repeats are folded.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/EventPair"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "rules_version",
+    "count",
+    "items",
+    "pairs"
+  ],
+  "$defs": {
+    "ClusterEvent": {
+      "title": "ClusterEvent",
+      "description": "One event: a group matched by an event rule, repeats within a short time folded in.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Time of its first entry.",
+          "type": "string"
+        },
+        "last_ts": {
+          "description": "Time of its last entry (= ts when count is 1).",
+          "type": "string"
+        },
+        "kind": {
+          "description": "start, stop, health_failed, cache_replication, … job_run.",
+          "type": "string"
+        },
+        "subject": {
+          "description": "What it is about: a node id, a health check, a lock, a job key.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "subject_node": {
+          "description": "subject when it is a node of the capture.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "signature": {
+          "description": "Group signature of the first entry.",
+          "type": "string"
+        },
+        "entry_id": {
+          "description": "Id of the first entry (in the node's set).",
+          "type": "string"
+        },
+        "text": {
+          "description": "Message of the first entry, at most 300 characters.",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries folded into the event: same node, kind and subject within 60 s of the first (job_run 120 s, start and stop 10 min); health_failed and job_run also fold repeats at most 2 h (job_run 30 min) after the previous one.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "node",
+        "ts",
+        "last_ts",
+        "kind",
+        "subject",
+        "subject_node",
+        "signature",
+        "entry_id",
+        "text",
+        "count"
+      ]
+    },
+    "EventPair": {
+      "title": "EventPair",
+      "description": "Events of kind a on node a followed within 60 s by events of kind b on node b.",
+      "type": "object",
+      "properties": {
+        "a": {
+          "description": "The earlier event.",
+          "$ref": "#/$defs/EventSide"
+        },
+        "b": {
+          "description": "The later event, on another node.",
+          "$ref": "#/$defs/EventSide"
+        },
+        "count": {
+          "description": "Events a followed by an event b.",
+          "type": "integer"
+        },
+        "of": {
+          "description": "Events a in the window.",
+          "type": "integer"
+        },
+        "median_lag_ms": {
+          "description": "Median time from a to the first b after it.",
+          "type": "integer"
+        },
+        "lift": {
+          "description": "count / expected, expected = of x min(1, events b x 60 s / window).",
+          "type": "number"
+        },
+        "examples": {
+          "description": "Up to 3 [ts a, ts b].",
+          "type": "array",
+          "items": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 2,
+            "prefixItems": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "items": false
+          }
+        }
+      },
+      "required": [
+        "a",
+        "b",
+        "count",
+        "of",
+        "median_lag_ms",
+        "lift",
+        "examples"
+      ]
+    },
+    "EventSide": {
+      "title": "EventSide",
+      "description": "One side of an event pair.",
+      "type": "object",
+      "properties": {
+        "node": {
+          "description": "Node id.",
+          "type": "string"
+        },
+        "kind": {
+          "description": "Event kind.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "node",
+        "kind"
+      ]
+    }
+  }
+}
