@@ -288,7 +288,7 @@ per node:
 |---|---|
 | `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files (one node each). Otherwise: one set, as before. |
 | `prefix` | Files named `<NODE>_<log name>` (one node is enough). |
-| `dir` | Each directory given is a node, or the sub-directories of the one directory given. |
+| `dir` | Each directory given is a node, or the sub-directories of the one directory given (the node id is the `<NODE>_` prefix all its files share, else the directory name). |
 | `none` | Never: one set (`job.json` is not read). |
 
 Files that belong to no node are left out with a warning; a node whose files are

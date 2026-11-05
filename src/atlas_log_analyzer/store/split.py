@@ -378,6 +378,14 @@ def _by_prefix(files: list[Path]) -> tuple[list[NodeFiles], list[Path], set[str]
     return [NodeFiles(n, tuple(fs)) for n, fs in assigned.items()], rest, shared
 
 
+def _dir_node(directory: Path, files: Sequence[Path]) -> str:
+    """Node id of a node directory: the ``<NODE>_`` prefix all its files share, else its name."""
+    prefixes = {m["node"] if (m := _PREFIX_RE.match(f.name)) else None for f in files}
+    if len(prefixes) == 1 and (prefix := prefixes.pop()) is not None:
+        return safe_node(prefix)
+    return safe_node(directory.resolve().name)
+
+
 def _by_dirs(dirs: Sequence[Path]) -> tuple[list[NodeFiles], tuple[Path, ...]]:
     """One node per directory that holds log files; also return those directories."""
     nodes: dict[str, NodeFiles] = {}
@@ -386,7 +394,7 @@ def _by_dirs(dirs: Sequence[Path]) -> tuple[list[NodeFiles], tuple[Path, ...]]:
         files = _logs(d)
         if not files:
             continue
-        node = safe_node(d.resolve().name)
+        node = _dir_node(d, files)
         if node in nodes:
             raise SplitError(f"two node directories are named {node}: give each node its own name")
         nodes[node] = NodeFiles(node, tuple(files))
@@ -415,7 +423,8 @@ def plan_split(paths: Sequence[Path], mode: SplitMode = "auto") -> Split:
        share a log name (``NODE1_atlassian-jira.log``, ``NODE2_atlassian-jira.log.1``);
        a node id holds a letter and ends at the name's last ``_``;
     3. ``dir``: one input directory without log files of its own whose (at least two)
-       sub-directories hold log files, one node per sub-directory.
+       sub-directories hold log files, one node per sub-directory (named after the
+       ``<NODE>_`` prefix all its files share, else after the directory).
 
     Otherwise the inputs stay one set. ``prefix`` and ``dir`` force that kind (``dir``
     also takes several input directories, one per node); ``none`` never splits. Files

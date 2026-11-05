@@ -248,6 +248,14 @@ def test_node_directories(tmp_path: Path) -> None:
     assert plan_split([tmp_path / "logs"], "none").kind is None
 
 
+def test_a_file_prefix_names_a_node_directory(tmp_path: Path) -> None:
+    write_node_files(tmp_path / "logs" / "first", "NODE1", parts=2)
+    write_node_files(tmp_path / "logs" / "second", "NODE2", parts=1)
+    (tmp_path / "logs" / "second" / "atlassian-jira.log").write_text("x\n", encoding="utf-8")
+    split = plan_split([tmp_path / "logs"])
+    assert split.kind == "dir" and list(_names(split.nodes)) == ["NODE1", "second"]
+
+
 def test_dir_split_errors(tmp_path: Path) -> None:
     write_node_files(tmp_path / "flat", "NODE1", parts=1, prefix=False)
     with pytest.raises(SplitError, match="--split dir"):
