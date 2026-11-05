@@ -316,7 +316,7 @@ substring); entry filters take `request_id=`. Uploads go through
   `Caused by:` and exception lines don't count against it, and no header scores 0.
 - **Startup guard** (`tests/cli/test_startup.py`): a JSON read command loads no
   DuckDB, `pyarrow.compute`, `rich.table`, ingest pipeline or Parquet writer;
-  `version` and `formats` load no polars. `store/__init__.py` resolves its names
+  `version`, `formats`, `manifest` and `schema NAME.v1` load no polars. `store/__init__.py` resolves its names
   on first use (PEP 562), and the version is a literal (`_version.py`).
 
 ### CLI and API parity
@@ -332,6 +332,23 @@ text says `use --max-raw 0` or `use max_raw=0`). `HTTP_CAPS` lists the page caps
 only the API has. Errors must agree on `error.code`, with the documented CLI exit
 code and HTTP status. Known drifts are `xfail(strict=True)` cases: fixing one
 makes its case fail until the marker is removed.
+
+### Typed documents
+
+Every JSON document (`"schema": "<name>.v1"`) of the CLI and the API is typed
+once, as a msgspec Struct in `service/documents.py` (`tag_field="schema"`).
+Rows stay plain dicts, because `--columns`/`--brief` make them partial; their
+JSON Schemas are derived from the Arrow schemas of `store/schema.py`, every
+column optional. A key that only some commands, modes or front ends add is
+optional (`UNSET`); unknown keys are ignored, so v1 documents may gain keys.
+Generated from the Structs: the JSON Schemas and field tables in
+`docs/formats/` (`docs/formats/generate.py`, `atlas-log schema NAME.v1`), the
+OpenAPI components and response schemas of the web app (`webapp/openapi.py`)
+and the document list of the agent manifest (`manifest.v1`, `cli/manifest.py`,
+which takes everything else but its workflow table from the cyclopts app).
+`tests/contract/test_schemas.py` validates every parity-case document, from
+both front ends, against its Struct and its JSON Schema; a key missing from the
+Struct fails it.
 
 ## 11. Implementation notes and deviations (v0.1)
 

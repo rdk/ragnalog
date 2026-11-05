@@ -12,17 +12,22 @@ src/atlas_log_analyzer/
   store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff,
              triage (triage.v1, shared by the CLI and the web app)
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
-  cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes)
+  service/   documents.py: one msgspec Struct per JSON document, their JSON Schemas
+  cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes),
+             manifest.py (manifest.v1, the agent manifest)
   webapp/    FastAPI app (`atlas-log serve`): api.py (/api JSON), pages.py + templates/
-             (HTML), jobs.py (background ingest), state.py (store lock, caches)
+             (HTML), jobs.py (background ingest), state.py (store lock, caches),
+             openapi.py (document schemas in /openapi.json, GET /api/manifest)
 tests/
   core/  store/  cli/  report/  webapp/   one directory per package
   contract/test_parity.py    CLI <-> API parity contract (docs/design.md, "CLI and API parity")
+  contract/test_schemas.py   every document matches its Struct and JSON Schema
   golden/signatures.json     golden signatures of the fixtures (`pytest --update-golden`)
   fixtures/jira/*.log        masked Jira log excerpts shared by all tests
   fixtures/foreign/*.log     non-Jira text (access, GC logs) no format may claim
   cli/data/mini.log          10-entry Jira log used by the CLI end-to-end tests
-docs/        requirements, research, design, cli reference, formats/*.v1.md
+docs/        requirements, research, design, cli reference,
+             formats/*.v1.md and *.v1.schema.json (generated)
 ```
 
 ## Dependency direction
@@ -41,7 +46,7 @@ uv run ruff format .                 # format (CI runs `ruff format --check .`)
 uv run mypy                          # strict type check of the package
 uv run pytest                        # all tests; `uv run pytest tests/cli -q` for one package
 uv run atlas-log --help              # the CLI from the working tree
-uv run python docs/formats/generate.py   # regenerate docs/formats and the column lists in docs/cli.md
+uv run python docs/formats/generate.py   # regenerate docs/formats (md + JSON Schema) and docs/cli.md lists
 ```
 
 CI (`.github/workflows/ci.yml`) runs lint, format check, mypy and pytest on
@@ -57,7 +62,12 @@ ubuntu-latest and windows-latest.
   breaking change and regenerate `docs/formats/`. Changing masking rules or the
   signature algorithm requires bumping `MASK_RULES_VERSION` / `SIGNATURE_VERSION`.
 - CLI commands are thin wrappers over `core`/`store`. Every JSON document has a
-  `"schema": "<name>.v1"` key; listings use `"items"`. Exit codes: 0 ok,
+  `"schema": "<name>.v1"` key; listings use `"items"`. Documents are typed only in
+  `service/documents.py`: a new document or key gets its Struct field there
+  (optional when only some commands or modes add it), then regenerate
+  `docs/formats/`; a new `/api` route gets its document in `webapp/openapi.py`.
+  `atlas-log manifest` is generated from the commands; only its workflow/`when`
+  table in `cli/manifest.py` is written by hand, and it must stay under 8 KB. Exit codes: 0 ok,
   1 usage, 2 nothing found / parse failure, 3 store error. Results go to stdout,
   diagnostics to stderr. A command's docstring is its `--help`: keep the output
   shape and exit codes in it accurate, and update `docs/cli.md` with it.

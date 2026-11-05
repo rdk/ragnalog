@@ -102,7 +102,13 @@ same `triage.v1` document as `atlas-log triage SET`. See `docs/webapp.md`.
 
 ## Agent workflow
 
+Start with `atlas-log manifest` (bare `atlas-log` prints the same when stdout is
+not a terminal): about 7 KB of JSON with this workflow, every command's usage,
+output document and exit codes, one-line help per parameter, the `--brief`
+presets and where the document schemas are (`atlas-log schema triage.v1`).
+
 ```sh
+atlas-log manifest                                          # 0. how to use the tool (manifest.v1)
 atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
 atlas-log triage today                                      # 2. verdict vs the previous set
 atlas-log groups today --min-level ERROR --limit 20 --brief # 3. groups: check "total"/"truncated"
@@ -142,7 +148,9 @@ sets with their error and warning counts, `atlas-log set SET` shows one.
   (`--max-raw N`, `0` = all); cut rows carry `"body_truncated": true` and
   `"raw_chars"`. `--raw` (plain text) is never cut unless `--max-raw` is given.
 - `atlas-log schema` describes the stored tables (`entries`, `groups`,
-  `merges`, `logset`) field by field; `atlas-log COMMAND --help` documents the
+  `merges`, `logset`) field by field; `atlas-log schema NAME.v1` prints the JSON
+  Schema of a document (`triage.v1`, `error.v1`, …; also
+  `docs/formats/NAME.v1.schema.json`); `atlas-log COMMAND --help` documents the
   JSON shape and exit codes of each command.
 
 ```sh
