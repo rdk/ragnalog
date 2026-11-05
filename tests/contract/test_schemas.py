@@ -143,6 +143,7 @@ EXTRA: list[Extra] = [
     Extra("query.v1", cli=["query", "edge", "select level, count(*) n from entries group by 1"]),
     Extra("schema.v1", cli=["schema"]),
     Extra("schema.v1", cli=["schema", "entries"]),
+    Extra("schema.v1", cli=["schema", "triage.v1"]),
     Extra("health.v1", api="/api/health"),
     Extra("timeline.v1", api="/api/sets/edge/timeline"),
     Extra("report.v1", api="/api/sets/edge/report?compare=sample"),

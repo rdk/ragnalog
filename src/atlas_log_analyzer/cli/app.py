@@ -1830,27 +1830,47 @@ def formats_(*, sample: Path | None = None) -> None:
 
 
 @app.command
-def schema(name: Literal["entries", "groups", "merges", "logset"] | None = None, /) -> None:
-    """Print the JSON description of the stored data schemas (for agents).
+def schema(name: str | None = None, /) -> None:
+    """Print the JSON description of a stored table or the JSON Schema of a document.
 
     "entries", "groups" and "merges" are the Parquet tables (also the views
-    available to `query`); "logset" is manifest.json. Without NAME all four
-    are printed.
+    available to `query`); "logset" is manifest.json. A document name such
+    as "triage.v1" prints the JSON Schema (draft 2020-12) of that document,
+    as in docs/formats/<name>.schema.json; rows are described by the tables'
+    columns, all optional. Without NAME the four tables are printed and
+    "documents" lists the document names.
 
     Output (json):
-      {"schema": "schema.v1", "definitions": {<name>: <schema description>, ...}}
-    In table mode the same document is pretty-printed as JSON.
+      {"schema": "schema.v1", "definitions": {<name>: <schema description>, ...},
+       "documents": [str, ...]}
+    "documents" only without NAME. In table mode the same document is
+    pretty-printed as JSON.
 
     Exit codes: 0 ok; 1 unknown NAME.
 
     Args:
-        name: Which schema to print.
+        name: A table (entries, groups, merges, logset) or a document, e.g. triage.v1.
 
     """
+    from atlas_log_analyzer.service.documents import document_names, document_schema
     from atlas_log_analyzer.store.schema import schema_json
 
-    names = (name,) if name is not None else SCHEMA_NAMES
-    doc = {"definitions": {n: schema_json(n) for n in names}}
+    documents = document_names()
+    doc: dict[str, Any]
+    if name is None:
+        doc = {"definitions": {n: schema_json(n) for n in SCHEMA_NAMES}, "documents": documents}
+    elif name in SCHEMA_NAMES:
+        doc = {"definitions": {name: schema_json(name)}}
+    elif name in documents:
+        doc = {"definitions": {name: document_schema(name)}}
+    else:
+        tables = ", ".join(f'"{n}"' for n in SCHEMA_NAMES)
+        raise CliError(
+            "usage",
+            f"unknown schema {name!r}; expected a table ({tables}) or a document name "
+            'such as "triage.v1" (listed under "documents" by `atlas-log schema`)',
+            hint="atlas-log schema --help",
+        )
     out = _out()
     if out.mode == "table":
         out.write_line(encode_json({"schema": "schema.v1", **doc}, indent=2))

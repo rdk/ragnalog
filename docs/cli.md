@@ -2,7 +2,8 @@
 
 `atlas-log --help` and `atlas-log COMMAND --help` print the same information;
 this page is the long form. Column-level schemas of the stored tables are
-printed by `atlas-log schema` (see also `design.md` §7).
+printed by `atlas-log schema`, the JSON Schema of every document by
+`atlas-log schema NAME.v1` (see also `design.md` §7 and `docs/formats/`).
 
 Typical flow:
 
@@ -531,13 +532,18 @@ Diffs against sets with a different spec then need `--force`. Exit: 0; 1; 3.
 
 `confidence` (0–1) only with `--sample`; items are then sorted by it. Exit: 0; 2.
 
-### `schema [entries|groups|merges|logset]`
+### `schema [entries|groups|merges|logset|NAME.v1]`
 
 ```json
 {"schema": "schema.v1", "definitions": {"groups": {"schema": "groups.v1", "version": "1.0", "fields": [{"name", "type", "nullable", "description"}]}}}
 ```
 
-All four without an argument. Table mode prints the same JSON indented. Exit: 0; 1.
+A table name prints its columns; a document name (`triage.v1`, `error.v1`, …)
+prints the document's JSON Schema (draft 2020-12, the same as
+`docs/formats/NAME.schema.json`; rows are described by the table columns, all
+optional). Without an argument: the four tables plus `"documents"`, the list of
+document names. Table mode prints the same JSON indented. Exit: 0; 1 unknown
+name (`usage`).
 
 ### `remove SET`
 
