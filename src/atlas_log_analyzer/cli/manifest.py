@@ -3,8 +3,9 @@
 Generated from the cyclopts app (commands, parameters with type, default and
 help, the output document named in each docstring, exit codes), from
 :mod:`atlas_log_analyzer.service.documents` (document names) and
-:mod:`atlas_log_analyzer.store.views` (``--brief`` presets). Only
-:data:`WORKFLOW`, :data:`WHEN`, :data:`NOTES` and :data:`ENV` are written here.
+:mod:`atlas_log_analyzer.service.views` (``--brief`` presets) and
+:data:`atlas_log_analyzer.config.ENV_VARS` (environment). Only :data:`WORKFLOW`,
+:data:`WHEN` and :data:`NOTES` are written here.
 ``atlas-log manifest``, bare ``atlas-log`` on a pipe and ``GET /api/manifest``
 print it.
 """
@@ -21,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from atlas_log_analyzer import __version__
+from atlas_log_analyzer.config import ENV_VARS
 from atlas_log_analyzer.service.documents import (
     Manifest,
     ManifestCommand,
@@ -28,7 +30,7 @@ from atlas_log_analyzer.service.documents import (
     ManifestStep,
     document_names,
 )
-from atlas_log_analyzer.store.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
+from atlas_log_analyzer.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
 
 if TYPE_CHECKING:
     from cyclopts import App
@@ -64,16 +66,12 @@ NOTES: tuple[str, ...] = (
 """Conventions shared by every command (hand-written)."""
 
 ENV: dict[str, str] = {
-    "ATLAS_LOG_STORE": "default of --store",
-    "ATLAS_LOG_APP_PACKAGES": "frames: application package prefixes",
-    "ATLAS_LOG_TOKEN": "default of serve --token",
-    "ATLAS_LOG_MAX_UPLOAD_MB": "default of serve --max-upload-mb",
-    "ATLAS_LOG_REPORT_CACHE": "serve: reports kept in memory",
-    "ATLAS_LOG_DEBUG": "traceback of an internal_error",
+    **{var.name: var.short for var in ENV_VARS},
     "NO_COLOR": "--color auto: no colour",
     "COLUMNS": "default of --width",
 }
-"""Environment variables read by atlas-log."""
+"""Environment variables read by atlas-log: the settings' (:data:`~atlas_log_analyzer.config.
+ENV_VARS`) and the two of the terminal."""
 
 _OUTPUT = re.compile(r'"schema": "([\w.-]+\.v\d+)"')
 _EXIT = re.compile(r"(?:Exit codes:|;)\s*(\d)\b")

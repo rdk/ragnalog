@@ -9,14 +9,10 @@ from typing import Any
 import pytest
 
 from atlas_log_analyzer.cli.app import run
+from atlas_log_analyzer.config import ENV_VARS
 from atlas_log_analyzer.webapp import Settings
 
-ENV_KEYS = (
-    "ATLAS_LOG_STORE",
-    "ATLAS_LOG_TOKEN",
-    "ATLAS_LOG_MAX_UPLOAD_MB",
-    "ATLAS_LOG_REPORT_CACHE",
-)
+ENV_KEYS = tuple(var.name for var in ENV_VARS)
 
 
 @pytest.fixture
@@ -61,7 +57,14 @@ def test_serve_env_max_upload(calls: list[Any], tmp_path: Path, monkeypatch: Any
 
 
 def test_settings_env_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    settings = Settings(store=tmp_path, max_upload_mb=5, token="t", report_cache=3)
+    settings = Settings(
+        store=tmp_path,
+        max_upload_mb=5,
+        token="t",
+        report_cache=3,
+        app_packages=("org.acme.", "com.example."),
+        debug=True,
+    )
     for key, value in settings.to_env().items():
         monkeypatch.setenv(key, value)
     assert Settings.from_env() == settings
@@ -69,3 +72,9 @@ def test_settings_env_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 
 def test_serve_rejects_bad_max_upload(tmp_path: Path) -> None:
     assert run(["--output", "json", "--store", str(tmp_path), "serve", "--max-upload-mb", "0"]) == 1
+
+
+def test_reload_passes_app_packages(calls: list[Any], tmp_path: Path, monkeypatch: Any) -> None:
+    monkeypatch.setenv("ATLAS_LOG_APP_PACKAGES", "org.acme.")
+    assert run(["--store", str(tmp_path / "s"), "serve", "--reload"]) == 0
+    assert Settings.from_env().app_packages == ("org.acme.",)

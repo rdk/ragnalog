@@ -31,7 +31,6 @@ from atlas_log_analyzer.cli.output import (
     OpError,
     Output,
     OutputMode,
-    app_packages,
     default_mode,
     encode_json,
     entry_to_dict,
@@ -41,6 +40,7 @@ from atlas_log_analyzer.cli.output import (
     rows_table,
 )
 from atlas_log_analyzer.cli.output import _cell as _cell
+from atlas_log_analyzer.config import Settings
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
@@ -79,7 +79,6 @@ if TYPE_CHECKING:
 
 __all__ = ["app", "main", "run"]
 
-DEFAULT_STORE = Path(".atlas-log")
 STORE_ENV = "ATLAS_LOG_STORE"
 SNIFF_LINES = 200
 """Number of leading lines of the first source used for format detection."""
@@ -176,28 +175,25 @@ app = App(
 @dataclasses.dataclass
 class _Context:
     output: Output
-    store: Path
-    implicit_store: bool = False
-    """True when neither --store nor ATLAS_LOG_STORE was given (``./.atlas-log``)."""
+    settings: Settings
+    """``--store`` and the ``ATLAS_LOG_*`` variables (:mod:`atlas_log_analyzer.config`)."""
+
+    @property
+    def store(self) -> Path:
+        return self.settings.store
+
+    @property
+    def implicit_store(self) -> bool:
+        """True when neither --store nor ATLAS_LOG_STORE was given (``./.atlas-log``)."""
+        return self.settings.implicit_store
 
 
 _CTX: _Context | None = None
 
 
-def _env_store() -> Path | None:
-    """Return the store named by ``ATLAS_LOG_STORE``; ``None`` when unset or blank.
-
-    A blank value counts as unset: ``Path("")`` would silently make the current
-    directory the store.
-    """
-    value = os.environ.get(STORE_ENV, "").strip()
-    return Path(value) if value else None
-
-
 def _ctx() -> _Context:
     if _CTX is None:  # only when a command function is called outside the CLI
-        env = _env_store()
-        return _Context(Output(default_mode()), env or DEFAULT_STORE, env is None)
+        return _Context(Output(default_mode()), Settings.load(env=os.environ))
     return _CTX
 
 
@@ -347,10 +343,18 @@ def _meta(
         return Output(output or default_mode()).error(
             OpError("invalid_value", "--width must be >= 40")
         )
-    out = Output(output or default_mode(), quiet=quiet, width=width, color_mode=color)
-    if store is None:
-        store = _env_store()
-    _CTX = _Context(out, store or DEFAULT_STORE, store is None)
+    try:
+        settings = Settings.load({"store": store}, os.environ)
+    except ValueError as exc:  # an ATLAS_LOG_* variable that does not parse
+        return Output(output or default_mode()).error(OpError("invalid_value", str(exc)))
+    out = Output(
+        output or default_mode(),
+        quiet=quiet,
+        width=width,
+        color_mode=color,
+        app_packages=settings.app_packages,
+    )
+    _CTX = _Context(out, settings)
     if not tokens and out.mode != "table":  # bare `atlas-log` on a pipe: the agent manifest
         _emit_manifest(out)
         return 0
@@ -925,7 +929,7 @@ def frames(
         ref,
         limit=page.limit,
         all_frames=all_,
-        app_packages=app_packages(),
+        app_packages=_ctx().settings.app_packages,
         front="cli",
     )
     items: list[dict[str, Any]] = doc["items"]
@@ -1794,7 +1798,7 @@ def serve(
     try:
         import uvicorn
 
-        from atlas_log_analyzer.webapp import Settings, create_app
+        from atlas_log_analyzer.webapp import create_app
     except ImportError as exc:
         raise OpError(
             "missing_dependency",
@@ -1806,7 +1810,8 @@ def serve(
     if max_upload_mb is not None and max_upload_mb < 1:
         raise OpError("invalid_value", "--max-upload-mb must be >= 1")
     store = _store(create=True)  # uploads create the store directory
-    settings = Settings.from_env(store=store.root, max_upload_mb=max_upload_mb, token=token)
+    flags = {"store": store.root, "max_upload_mb": max_upload_mb, "token": token}
+    settings = Settings.load(flags, os.environ)
     from atlas_log_analyzer.webapp.state import lock_server
 
     if (probe := lock_server(settings.store)) is not None:  # a clear error if already served
@@ -1959,6 +1964,13 @@ def _stdout_closed(exc: BaseException) -> bool:
     return False
 
 
+def _debug() -> bool:
+    """``ATLAS_LOG_DEBUG`` of this invocation (also when its settings could not be built)."""
+    if _CTX is not None:
+        return _CTX.settings.debug
+    return bool(os.environ.get("ATLAS_LOG_DEBUG", "").strip())
+
+
 def main() -> None:
     """Console-script entry point (``atlas-log``)."""
     _utf8_streams()
@@ -1973,7 +1985,7 @@ def main() -> None:
             devnull = os.open(os.devnull, os.O_WRONLY)
             os.dup2(devnull, sys.stdout.fileno())
             sys.exit(1)
-        if os.environ.get("ATLAS_LOG_DEBUG"):
+        if _debug():
             raise
         out = _CTX.output if _CTX is not None else Output(_sniff_mode(tokens))
         code = out.error(

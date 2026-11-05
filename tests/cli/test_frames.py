@@ -108,7 +108,7 @@ def test_frames_table_and_jsonl(cli: Invoke, mix: dict[str, str], store_dir: Pat
     ]
 
 
-def test_highlight_platform_frames_are_not_bold(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_highlight_platform_frames_are_not_bold() -> None:
     def bold(text: object, needle: str) -> bool:
         from rich.text import Text
 
@@ -121,6 +121,5 @@ def test_highlight_platform_frames_are_not_bold(monkeypatch: pytest.MonkeyPatch)
     assert bold(text, "StatTypeHelper.resolve") and bold(text, "ReportService.build")
     assert not bold(text, "CustomFieldImpl.getValue")
     assert not bold(text, "Iterators.transform")
-    monkeypatch.setenv("ATLAS_LOG_APP_PACKAGES", "org.acme.")
-    text = highlight_entry(raw)
+    text = highlight_entry(raw, ("org.acme.",))  # ATLAS_LOG_APP_PACKAGES, via the settings
     assert bold(text, "ReportService.build") and not bold(text, "StatTypeHelper.resolve")

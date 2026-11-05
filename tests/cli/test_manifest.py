@@ -12,7 +12,7 @@ import msgspec
 from atlas_log_analyzer.cli.app import app
 from atlas_log_analyzer.cli.manifest import ENV, WORKFLOW, build_manifest
 from atlas_log_analyzer.service.documents import DOCUMENTS, Manifest, convert
-from atlas_log_analyzer.store.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
+from atlas_log_analyzer.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
 
 from .conftest import Invoke
 

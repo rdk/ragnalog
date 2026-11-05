@@ -37,6 +37,22 @@ Global options may appear before or after the command name.
 | `--help`, `-h` | | Help for the app or a command. |
 | `--version` | | Print the tool version. |
 
+### Environment variables
+
+One settings object (`config.py`, `Settings` and `ENV_VARS`) serves the CLI and
+the web app: a flag wins over its variable, a variable over the default, and a
+blank variable counts as unset. A number that does not parse is error
+`invalid_value` (exit 1).
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `ATLAS_LOG_STORE` | `./.atlas-log` | Store directory holding the log sets (`--store` wins). |
+| `ATLAS_LOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
+| `ATLAS_LOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
+| `ATLAS_LOG_TOKEN` | none | `serve`: API token (`--token` wins). |
+| `ATLAS_LOG_MAX_UPLOAD_MB` | 2048 | `serve`: largest upload in MiB (`--max-upload-mb` wins). |
+| `ATLAS_LOG_REPORT_CACHE` | 8 | `serve`: report payloads kept in memory. |
+
 ### Output modes
 
 - **json** — exactly one JSON document on stdout. Every document is an object

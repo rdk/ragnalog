@@ -23,12 +23,7 @@ from typing import TYPE_CHECKING, Any, Literal, TextIO
 
 import msgspec
 
-from atlas_log_analyzer.core.java import (
-    APP_PACKAGES_ENV,
-    LIBRARY_PACKAGES,
-    app_packages_from_env,
-    is_app_frame,
-)
+from atlas_log_analyzer.core.java import LIBRARY_PACKAGES, is_app_frame
 from atlas_log_analyzer.core.models import LogEntry
 from atlas_log_analyzer.service.errors import ExitCode, OpError, from_exception
 
@@ -41,13 +36,11 @@ if TYPE_CHECKING:
     from rich.text import Text
 
 __all__ = [
-    "APP_PACKAGES_ENV",
     "LIBRARY_PACKAGES",
     "ExitCode",
     "OpError",
     "Output",
     "OutputMode",
-    "app_packages",
     "default_mode",
     "encode_json",
     "entry_to_dict",
@@ -373,10 +366,6 @@ _FRAME_RE = re.compile(
 _MORE_RE = re.compile(r"^\s*\.\.\. \d+ (?:more|common frames omitted)\s*$")
 
 
-app_packages = app_packages_from_env
-"""Application package prefixes from ``ATLAS_LOG_APP_PACKAGES`` (see ``core.java``)."""
-
-
 HEADER_LEVEL_STYLES: Mapping[str, str] = {
     "FATAL": "bold red",
     "ERROR": "bold red",
@@ -387,19 +376,19 @@ HEADER_LEVEL_STYLES: Mapping[str, str] = {
 }
 
 
-def highlight_entry(raw: str) -> Text:
+def highlight_entry(raw: str, app_packages: Sequence[str] | None = None) -> Text:
     """Return the raw text of one log entry as a styled :class:`rich.text.Text`.
 
     Header line: timestamp dim, level coloured (ERROR/FATAL bold red, WARN
     yellow, DEBUG/TRACE dim), logger cyan. Exception lines: class name bold,
     ``Caused by:``/``Suppressed:`` magenta. Stack frames: package dim,
     ``(File.java:12)`` cyan, application frames (outside :data:`LIBRARY_PACKAGES`,
-    or inside ``ATLAS_LOG_APP_PACKAGES`` when set) bold. ``... N more`` dim italic.
-    Unrecognised lines are unstyled.
+    or inside ``app_packages`` when given: ``ATLAS_LOG_APP_PACKAGES``) bold.
+    ``... N more`` dim italic. Unrecognised lines are unstyled.
     """
     from rich.text import Text
 
-    prefixes = app_packages()
+    prefixes = app_packages
     text = Text()
     for i, line in enumerate(raw.replace("\r", "").split("\n")):
         if i:
@@ -461,6 +450,8 @@ class Output:
     width: int | None = None
     color_mode: ColorMode = "auto"
     """``--color``: ``auto`` colours a terminal unless ``NO_COLOR`` is set."""
+    app_packages: tuple[str, ...] | None = None
+    """Application package prefixes for highlighting (``ATLAS_LOG_APP_PACKAGES``)."""
     """Table width (``--width``); default: the terminal, else ``COLUMNS``, else 160."""
     stdout: TextIO | None = None
     stderr: TextIO | None = None
@@ -528,7 +519,7 @@ class Output:
         console = self.console()
         for raw, label in entries:
             console.rule(Text(label or "", style="dim"), style="dim", align="left")
-            console.print(highlight_entry(raw), soft_wrap=True)
+            console.print(highlight_entry(raw, self.app_packages), soft_wrap=True)
 
     def write_line(self, text: str) -> None:
         """Write one line to stdout."""

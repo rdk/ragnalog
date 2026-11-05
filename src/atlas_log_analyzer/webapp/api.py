@@ -11,7 +11,6 @@ from starlette.responses import Response
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.core.formats import registry
-from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.service import queries
@@ -293,7 +292,7 @@ def frames(
     ``item`` is an entry id or a group signature or unique signature prefix (its
     first example entry), as ``atlas-log frames``; ``limit`` application frames per
     exception (0 = all), ``all`` adds every frame with an ``app`` flag.
-    ``ATLAS_LOG_APP_PACKAGES`` of the server process defines application code when set.
+    ``ATLAS_LOG_APP_PACKAGES`` of the server's settings defines application code when set.
     """
     return queries.frames(
         state,
@@ -301,7 +300,7 @@ def frames(
         item,
         limit=limit or None,
         all_frames=all,
-        app_packages=app_packages_from_env(),
+        app_packages=state.settings.app_packages,
         front="api",
     )
 

@@ -7,6 +7,7 @@ before changing behaviour; `docs/cli.md` documents the command contract.
 
 ```
 src/atlas_log_analyzer/
+  config.py  Settings + ENV_VARS (stdlib only): flags > ATLAS_LOG_* > defaults; core reads no env
   core/      pure library: models, formats (registry, jira), reader, parser,
              java stack traces, masking, signatures, grouping, pipeline (Recipe:
              format + spec + rules -> masker/signer/grouper and the recipe key),

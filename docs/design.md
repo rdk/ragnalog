@@ -12,6 +12,7 @@ atlas-log-analyzer/
 ├── docs/                          requirements, research, design, format specs
 │   └── formats/                   entries.v1.md, groups.v1.md, logset.v1.md
 ├── src/atlas_log_analyzer/
+│   ├── config.py                  Settings, ENV_VARS: flags > ATLAS_LOG_* > defaults (stdlib)
 │   ├── core/                      pure library — no I/O policy, no CLI, no web
 │   │   ├── models.py              LogEntry, LogLevel, ExceptionInfo, Frame, SourceRef
 │   │   ├── formats/               LogFormat protocol + registry
