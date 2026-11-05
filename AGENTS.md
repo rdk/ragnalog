@@ -12,8 +12,9 @@ src/atlas_log_analyzer/
              format + spec + rules -> masker/signer/grouper and the recipe key),
              mining (drain3, optional)
   store/     Parquet + manifest persistence (polars/pyarrow; manifest.py needs neither),
-             DuckDB queries, diff, regroup (column-wise re-signing), triage
-             (triage.v1 and rank_baselines, shared by the CLI and the web app)
+             typed filters (filters.py), DuckDB queries, diff, regroup (column-wise
+             re-signing), triage (triage.v1 and rank_baselines, shared by the CLI and the
+             web app)
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
   service/   documents.py: one msgspec Struct per JSON document, their JSON Schemas
   cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes),

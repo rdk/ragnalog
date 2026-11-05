@@ -12,15 +12,21 @@ Directory layout::
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Unpack
 
 import polars as pl
 
-from atlas_log_analyzer.core.models import LogLevel
-from atlas_log_analyzer.store.levels import level_values
+from atlas_log_analyzer.store.filters import (
+    EntryFilter,
+    EntryFilterArgs,
+    GroupFilter,
+    GroupFilterArgs,
+    LevelSpec,
+    entry_filter,
+    group_filter,
+)
 from atlas_log_analyzer.store.manifest import (
     ENTRIES_FILE,
     GROUPS_FILE,
@@ -38,147 +44,10 @@ GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
 """Values accepted by ``LogSet.groups(sort=...)``."""
 TOP_LOGGERS = 20
 
-type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
-"""A level filter: a :class:`LogLevel`, a name or comma-separated names, or an iterable.
-
-Names as in :mod:`atlas_log_analyzer.store.levels` (``UNKNOWN`` included, ``WARNING``
-= ``WARN``); a blank string means no filter."""
-
 _BUCKET_UNITS_MS = {"s": 1_000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 _BUCKET_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
 MAX_HISTOGRAM_BUCKETS = 100_000
 """Upper bound on the number of (zero-filled) buckets :meth:`LogSet.histogram` returns."""
-
-
-def _utc(ts: datetime) -> datetime:
-    """Naive datetimes are taken as UTC."""
-    return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
-
-
-def _level_values(spec: LevelSpec) -> list[int]:
-    """Normalise a :data:`LevelSpec` to level values; ``[]`` for a blank string.
-
-    Names are parsed by :func:`~atlas_log_analyzer.store.levels.parse_levels`, the
-    parser of the CLI and the web API.
-
-    Raises:
-        InvalidLevel: An unknown level name.
-        ValueError: An empty iterable.
-
-    """
-    if isinstance(spec, LogLevel):
-        return [int(spec)]
-    if isinstance(spec, str):
-        return level_values(spec)
-    out: list[int] = []
-    for item in spec:
-        out.extend([int(item)] if isinstance(item, LogLevel) else level_values(item))
-    if not out:
-        raise ValueError("empty level filter")
-    return out
-
-
-def _level_filters(level: LevelSpec | None, min_level: LevelSpec | None) -> list[pl.Expr]:
-    out: list[pl.Expr] = []
-    if level is not None and (values := _level_values(level)):
-        out.append(pl.col("level").is_in(values))
-    if min_level is not None and (lv := _level_values(min_level)):
-        if len(lv) != 1:
-            raise ValueError("min_level takes a single level")
-        out.append((pl.col("level") >= lv[0]) & (pl.col("level") != int(LogLevel.UNKNOWN)))
-    return out
-
-
-def _logger_filter(logger: str) -> pl.Expr:
-    """Exact logger name, or any logger in that package (``com.foo`` matches ``com.foo.Bar``)."""
-    col = pl.col("logger").cast(pl.String)
-    return (col == logger) | col.str.starts_with(logger + ".")
-
-
-def _icontains(column: str, text: str) -> pl.Expr:
-    """Case-insensitive literal substring test on a (possibly dictionary-encoded) column."""
-    return pl.col(column).cast(pl.String).str.contains(f"(?i){re.escape(text)}")
-
-
-def _exception_filters(with_exception: bool, exception: str | None) -> list[pl.Expr]:
-    out: list[pl.Expr] = []
-    if with_exception:
-        out.append(pl.col("exception_type").is_not_null())
-    if exception is not None:
-        out.append(_icontains("exception_type", exception))
-    return out
-
-
-def _and(exprs: Iterable[pl.Expr]) -> pl.Expr | None:
-    result: pl.Expr | None = None
-    for e in exprs:
-        result = e if result is None else result & e
-    return result
-
-
-def _entry_predicate(
-    *,
-    signature: str | None = None,
-    coarse_signature: str | None = None,
-    level: LevelSpec | None = None,
-    min_level: LevelSpec | None = None,
-    logger: str | None = None,
-    user: str | None = None,
-    thread: str | None = None,
-    since: datetime | None = None,
-    until: datetime | None = None,
-    contains: str | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
-    request_id: str | None = None,
-) -> pl.Expr | None:
-    """Conjunction of the entry filters of :meth:`LogSet.entries`, or ``None`` when none."""
-    filters = _level_filters(level, min_level)
-    filters += _exception_filters(with_exception, exception)
-    if request_id is not None:
-        filters.append(pl.col("request_id") == request_id)
-    if signature is not None:
-        filters.append(pl.col("signature") == signature)
-    if coarse_signature is not None:
-        filters.append(pl.col("coarse_signature") == coarse_signature)
-    if logger is not None:
-        filters.append(_logger_filter(logger))
-    if user is not None:
-        filters.append(pl.col("user") == user)
-    if thread is not None:
-        filters.append(pl.col("thread") == thread)
-    if since is not None:
-        filters.append(pl.col("ts") >= _utc(since))
-    if until is not None:
-        filters.append(pl.col("ts") < _utc(until))
-    if contains is not None:
-        filters.append(pl.col("raw").str.contains(f"(?i){re.escape(contains)}"))
-    return _and(filters)
-
-
-def _group_predicate(
-    *,
-    level: LevelSpec | None = None,
-    min_level: LevelSpec | None = None,
-    logger: str | None = None,
-    since: datetime | None = None,
-    until: datetime | None = None,
-    with_exception: bool = False,
-    exception: str | None = None,
-    contains: str | None = None,
-) -> pl.Expr | None:
-    """Conjunction of the group filters of :meth:`LogSet.groups`, or ``None`` when none."""
-    filters = _level_filters(level, min_level)
-    filters += _exception_filters(with_exception, exception)
-    if contains is not None:
-        filters.append(_icontains("template", contains))
-    if logger is not None:
-        filters.append(_logger_filter(logger))
-    if since is not None:
-        filters.append(pl.col("last_seen") >= _utc(since))
-    if until is not None:
-        filters.append(pl.col("first_seen") < _utc(until))
-    return _and(filters)
 
 
 def _bucket_ms(bucket: str) -> int:
@@ -319,29 +188,20 @@ class LogSet:
     def groups(
         self,
         *,
-        level: LevelSpec | None = None,
-        min_level: LevelSpec | None = None,
-        logger: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
+        where: GroupFilter | None = None,
         sort: str = "count",
         limit: int | None = None,
         offset: int = 0,
         coarse: bool = False,
-        with_exception: bool = False,
-        exception: str | None = None,
-        contains: str | None = None,
+        **filters: Unpack[GroupFilterArgs],
     ) -> pl.DataFrame:
         """Return filtered, sorted groups; ``coarse=True`` aggregates by ``coarse_signature``.
 
+        Filters come as one :class:`~atlas_log_analyzer.store.filters.GroupFilter`
+        (``where=``) or as its fields given as keywords (``level="ERROR"``), not both.
+
         Args:
-            level: Level, level name, comma-separated names (``"WARN,ERROR"``) or an
-                iterable of levels/names.
-            min_level: Lowest level to include (``"WARN"`` or ``LogLevel.WARN`` → WARN,
-                ERROR, FATAL).
-            logger: Logger name; also matches loggers below it (``com.foo`` → ``com.foo.Bar``).
-            since: Keep groups seen at or after this time (``last_seen >= since``).
-            until: Keep groups seen before this time (``first_seen < until``).
+            where: The filters (default: none).
             sort: One of ``count`` (desc), ``last_seen`` (desc), ``first_seen`` (asc),
                 ``signature``, ``template``.
             limit: Maximum number of rows.
@@ -353,27 +213,19 @@ class LogSet:
                 the maximum over members (a lower bound) and ``top_users``/``top_threads``
                 merge the members' top-10 lists. Template, level, logger and exception type
                 come from the largest member. Filters apply to the member groups.
-            with_exception: Keep groups whose ``exception_type`` is not null (any level).
-            exception: Case-insensitive substring of ``exception_type``.
-            contains: Case-insensitive substring of ``template``.
+            **filters: The fields of :class:`GroupFilter` (``level``, ``min_level``,
+                ``logger``, ``since``, ``until``, ``with_exception``, ``exception``,
+                ``contains``) instead of ``where``.
 
         Raises:
             ValueError: Unknown level name or sort key.
+            TypeError: Both ``where`` and keyword filters.
 
         """
         if sort not in GROUP_SORTS:
             raise ValueError(f"unknown sort {sort!r}; expected one of {', '.join(GROUP_SORTS)}")
         lf = self.groups_lazy()
-        cond = _group_predicate(
-            level=level,
-            min_level=min_level,
-            logger=logger,
-            since=since,
-            until=until,
-            with_exception=with_exception,
-            exception=exception,
-            contains=contains,
-        )
+        cond = group_filter(where, filters).predicate()
         if cond is not None:
             lf = lf.filter(cond)
         if coarse:
@@ -394,36 +246,27 @@ class LogSet:
     def count_groups(
         self,
         *,
-        level: LevelSpec | None = None,
-        min_level: LevelSpec | None = None,
-        logger: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
+        where: GroupFilter | None = None,
         coarse: bool = False,
-        with_exception: bool = False,
-        exception: str | None = None,
-        contains: str | None = None,
+        **filters: Unpack[GroupFilterArgs],
     ) -> int:
         """Count the groups :meth:`groups` would return with the same filters (no limit).
 
         With ``coarse=True`` this counts distinct ``coarse_signature`` values among
         the matching groups.
 
+        Args:
+            where: The filters (default: none).
+            coarse: Count coarse groups.
+            **filters: The fields of :class:`GroupFilter` instead of ``where``.
+
         Raises:
             ValueError: Unknown level name.
+            TypeError: Both ``where`` and keyword filters.
 
         """
         lf = self.groups_lazy()
-        cond = _group_predicate(
-            level=level,
-            min_level=min_level,
-            logger=logger,
-            since=since,
-            until=until,
-            with_exception=with_exception,
-            exception=exception,
-            contains=contains,
-        )
+        cond = group_filter(where, filters).predicate()
         if cond is not None:
             lf = lf.filter(cond)
         agg = pl.col("coarse_signature").n_unique() if coarse else pl.len()
@@ -445,62 +288,33 @@ class LogSet:
     def entries(
         self,
         *,
-        signature: str | None = None,
-        level: LevelSpec | None = None,
-        min_level: LevelSpec | None = None,
-        logger: str | None = None,
-        user: str | None = None,
-        thread: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        contains: str | None = None,
+        where: EntryFilter | None = None,
         limit: int | None = None,
         offset: int = 0,
         columns: list[str] | None = None,
-        coarse_signature: str | None = None,
-        with_exception: bool = False,
-        exception: str | None = None,
-        request_id: str | None = None,
+        **filters: Unpack[EntryFilterArgs],
     ) -> pl.DataFrame:
         """Return filtered entries, ordered by timestamp (ties keep file order).
 
+        Filters come as one :class:`~atlas_log_analyzer.store.filters.EntryFilter`
+        (``where=``) or as its fields given as keywords (``signature="…"``), not both.
+
         Args:
-            signature: Primary signature (exact).
-            level: Level, level name, comma-separated names or an iterable (see :meth:`groups`).
-            min_level: Lowest level to include.
-            logger: Logger name or package prefix (see :meth:`groups`).
-            user: User (exact).
-            thread: Thread name (exact).
-            since: Inclusive lower bound on ``ts`` (naive = UTC).
-            until: Exclusive upper bound on ``ts`` (naive = UTC).
-            contains: Case-insensitive literal substring of ``raw``.
+            where: The filters (default: none).
             limit: Maximum number of rows.
             offset: Number of rows to skip (in timestamp order) before ``limit`` applies.
             columns: Columns to return (default: all entries.v1 columns).
-            coarse_signature: Coarse signature (exact).
-            with_exception: Keep entries whose ``exception_type`` is not null (any level).
-            exception: Case-insensitive substring of ``exception_type``.
-            request_id: Request id from the request context (exact).
+            **filters: The fields of :class:`EntryFilter` (``signature``,
+                ``coarse_signature``, ``level``, ``min_level``, ``logger``, ``user``,
+                ``thread``, ``request_id``, ``since``, ``until``, ``contains``,
+                ``with_exception``, ``exception``) instead of ``where``.
 
         Raises:
             ValueError: Unknown level name.
+            TypeError: Both ``where`` and keyword filters.
 
         """
-        cond = _entry_predicate(
-            signature=signature,
-            coarse_signature=coarse_signature,
-            level=level,
-            min_level=min_level,
-            logger=logger,
-            user=user,
-            thread=thread,
-            since=since,
-            until=until,
-            contains=contains,
-            with_exception=with_exception,
-            exception=exception,
-            request_id=request_id,
-        )
+        cond = entry_filter(where, filters).predicate()
         lf = self.entries_lazy()
         if cond is not None:
             lf = lf.filter(cond)
@@ -512,43 +326,20 @@ class LogSet:
         return lf.collect()
 
     def count_entries(
-        self,
-        *,
-        signature: str | None = None,
-        level: LevelSpec | None = None,
-        min_level: LevelSpec | None = None,
-        logger: str | None = None,
-        user: str | None = None,
-        thread: str | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
-        contains: str | None = None,
-        coarse_signature: str | None = None,
-        with_exception: bool = False,
-        exception: str | None = None,
-        request_id: str | None = None,
+        self, *, where: EntryFilter | None = None, **filters: Unpack[EntryFilterArgs]
     ) -> int:
         """Count the entries :meth:`entries` would return with the same filters (no limit).
 
+        Args:
+            where: The filters (default: none).
+            **filters: The fields of :class:`EntryFilter` instead of ``where``.
+
         Raises:
             ValueError: Unknown level name.
+            TypeError: Both ``where`` and keyword filters.
 
         """
-        cond = _entry_predicate(
-            signature=signature,
-            coarse_signature=coarse_signature,
-            level=level,
-            min_level=min_level,
-            logger=logger,
-            user=user,
-            thread=thread,
-            since=since,
-            until=until,
-            contains=contains,
-            with_exception=with_exception,
-            exception=exception,
-            request_id=request_id,
-        )
+        cond = entry_filter(where, filters).predicate()
         lf = self.entries_lazy()
         if cond is not None:
             lf = lf.filter(cond)
@@ -558,11 +349,8 @@ class LogSet:
         self,
         bucket: str = "1h",
         *,
-        signature: str | None = None,
-        level: LevelSpec | None = None,
-        min_level: LevelSpec | None = None,
-        since: datetime | None = None,
-        until: datetime | None = None,
+        where: EntryFilter | None = None,
+        **filters: Unpack[EntryFilterArgs],
     ) -> list[dict[str, Any]]:
         """Entry counts per time bucket, contiguous from the first to the last non-empty one.
 
@@ -572,11 +360,8 @@ class LogSet:
 
         Args:
             bucket: ``<n><unit>`` with unit ``s``, ``m``, ``h`` or ``d`` (``"5m"``, ``"1h"``).
-            signature: Primary signature (exact).
-            level: Level filter (see :meth:`entries`).
-            min_level: Lowest level to include.
-            since: Inclusive lower bound on ``ts``.
-            until: Exclusive upper bound on ``ts``.
+            where: Entry filters (see :meth:`entries`).
+            **filters: The fields of :class:`EntryFilter` instead of ``where``.
 
         Returns:
             ``[{"bucket": "2026-10-29T13:00:00Z", "count": int}, ...]`` (empty buckets
@@ -585,12 +370,11 @@ class LogSet:
         Raises:
             ValueError: Malformed bucket, unknown level, or more than
                 :data:`MAX_HISTOGRAM_BUCKETS` buckets.
+            TypeError: Both ``where`` and keyword filters.
 
         """
         size = _bucket_ms(bucket)
-        cond = _entry_predicate(
-            signature=signature, level=level, min_level=min_level, since=since, until=until
-        )
+        cond = entry_filter(where, filters).predicate()
         lf = self.entries_lazy().filter(pl.col("ts").is_not_null())
         if cond is not None:
             lf = lf.filter(cond)

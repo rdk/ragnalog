@@ -18,6 +18,7 @@ from atlas_log_analyzer.core.java import app_packages_from_env
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION
 from atlas_log_analyzer.report import example_entries
+from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
 from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest, to_records
 from atlas_log_analyzer.store.query import diff as store_diff
@@ -268,19 +269,18 @@ def groups(
     cols = _columns(columns, brief, valid, GROUP_BRIEF)
     ls = state.open(ref)
     last = ls.manifest.last_ts
-    filters: dict[str, Any] = {
-        "level": _levels(level, "level"),
-        "min_level": _levels(min_level, "min_level"),
-        "logger": logger,
-        "since": parse_time(since, "since", last),
-        "until": parse_time(until, "until", last),
-        "coarse": coarse,
-        "with_exception": with_exception,
-        "exception": exception,
-        "contains": contains,
-    }
-    df = ls.groups(**filters, sort=sort, limit=limit or None, offset=offset)
-    total = ls.count_groups(**filters)
+    where = GroupFilter(
+        level=_levels(level, "level"),
+        min_level=_levels(min_level, "min_level"),
+        logger=logger,
+        since=parse_time(since, "since", last),
+        until=parse_time(until, "until", last),
+        with_exception=with_exception,
+        exception=exception,
+        contains=contains,
+    )
+    df = ls.groups(where=where, coarse=coarse, sort=sort, limit=limit or None, offset=offset)
+    total = ls.count_groups(where=where, coarse=coarse)
     items = to_records(df if cols is None else df.select(cols))
     return {
         "schema": "groups.v1",
@@ -400,23 +400,23 @@ def entries(
     cols = _columns(columns, brief, ENTRY_FIELDS, ENTRY_BRIEF)
     ls = state.open(ref)
     last = ls.manifest.last_ts
-    filters: dict[str, Any] = {
-        "signature": resolve_signature(ls, signature) if signature else signature,
-        "coarse_signature": coarse_signature,
-        "level": _levels(level, "level"),
-        "min_level": _levels(min_level, "min_level"),
-        "logger": logger,
-        "user": user,
-        "thread": thread,
-        "request_id": request_id,
-        "since": parse_time(since, "since", last),
-        "until": parse_time(until, "until", last),
-        "contains": contains,
-        "with_exception": with_exception,
-        "exception": exception,
-    }
-    df = ls.entries(**filters, limit=limit, offset=offset, columns=cols)
-    total = ls.count_entries(**filters)
+    where = EntryFilter(
+        signature=resolve_signature(ls, signature) if signature else signature,
+        coarse_signature=coarse_signature,
+        level=_levels(level, "level"),
+        min_level=_levels(min_level, "min_level"),
+        logger=logger,
+        user=user,
+        thread=thread,
+        request_id=request_id,
+        since=parse_time(since, "since", last),
+        until=parse_time(until, "until", last),
+        contains=contains,
+        with_exception=with_exception,
+        exception=exception,
+    )
+    df = ls.entries(where=where, limit=limit, offset=offset, columns=cols)
+    total = ls.count_entries(where=where)
     items = cap_texts(to_records(df), _max_raw(max_raw), how=MAX_RAW_HOW)
     nxt = offset + len(items)
     return {

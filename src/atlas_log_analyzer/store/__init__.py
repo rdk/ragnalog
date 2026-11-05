@@ -9,6 +9,7 @@ Public API::
     ls = store.open("prod-2026-10-29") # by id, name or id prefix
     ls.groups()                        # polars DataFrame
     ls.entries(signature="…")          # polars DataFrame
+    ls.entries(where=EntryFilter(min_level="WARN", user="jdoe"))   # typed filters
     ls.sql("select … from entries")    # DuckDB → polars DataFrame
     diff(store.open(a), store.open(b)) # DiffResult
 
@@ -17,7 +18,8 @@ Stable read API (used by the CLI and the web app): :meth:`Store.list`,
 both :class:`StoreError`) and the read methods of :class:`LogSet` —
 ``manifest``, ``groups``/``count_groups``/``group``, ``entries``/``count_entries``/
 ``entry``/``context``, ``histogram``, ``stats`` and ``sql`` — plus :func:`rows` and
-:func:`to_records` to turn frames into Python or JSON-ready dicts.
+:func:`to_records` to turn frames into Python or JSON-ready dicts. Filters are
+:class:`GroupFilter` / :class:`EntryFilter` (``where=``) or their fields as keywords.
 
 Names are resolved on first access (PEP 562), so ``import atlas_log_analyzer.store``
 loads neither polars nor pyarrow, and reading a set does not load the ingest
@@ -30,6 +32,7 @@ import importlib
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
+    from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
     from atlas_log_analyzer.store.logset import LevelSpec, LogSet, rows, to_records
     from atlas_log_analyzer.store.manifest import LogSetManifest, SourceInfo
     from atlas_log_analyzer.store.pipeline import (
@@ -45,6 +48,8 @@ if TYPE_CHECKING:
     from atlas_log_analyzer.store.store import AmbiguousLogSet, LogSetNotFound, Store, StoreError
 
 _EXPORTS: dict[str, str] = {
+    "EntryFilter": "filters",
+    "GroupFilter": "filters",
     "LevelSpec": "logset",
     "LogSet": "logset",
     "LogSetManifest": "manifest",
@@ -72,7 +77,9 @@ __all__ = [
     "SCHEMA_VERSION",
     "AmbiguousLogSet",
     "DiffResult",
+    "EntryFilter",
     "FormatNotDetected",
+    "GroupFilter",
     "IngestProgress",
     "IngestResult",
     "LevelSpec",

@@ -33,6 +33,7 @@ atlas-log-analyzer/
 │   │   ├── manifest.py            logset.v1 manifest (recipe_key), directory file names
 │   │   ├── logset.py              LogSet read API
 │   │   │                          (groups/entries/counts/group/histogram/stats/sql)
+│   │   ├── filters.py             GroupFilter/EntryFilter: typed filters → polars predicates
 │   │   ├── store.py               Store: list/open (typed errors), ingest, regroup, upgrade, remove
 │   │   ├── regroup.py             column-wise re-signing of entries.parquet (regroup, upgrade)
 │   │   ├── pipeline.py            ingest_paths/ingest_sources: discover → parse → sign → store
@@ -307,10 +308,14 @@ cached per `Store` instance and re-read when their file changes) and on `LogSet`
 `context(id, before=, after=, same_thread=)` (entries around one entry),
 `histogram(bucket, ...)` (epoch-aligned integer buckets, no tz database),
 `stats()` and `sql(query, max_rows=)` (file access limited to the set's Parquet
-files, configuration locked). `level`/`min_level` accept a `LogLevel`, a name,
-a comma-separated string or an iterable. Group and entry filters also take
-`with_exception=`/`exception=` (and `contains=` on groups, a template
-substring); entry filters take `request_id=`. Uploads go through
+files, configuration locked). The filters of `groups`/`count_groups` and
+`entries`/`count_entries`/`histogram` are one frozen, keyword-only dataclass
+passed as `where=` (`store/filters.py`: `GroupFilter`, `EntryFilter`, each with
+`predicate() -> pl.Expr | None`); their fields may also be given as keywords
+(`ls.entries(level="ERROR")`), but not both. `level`/`min_level` accept a
+`LogLevel`, a name, a comma-separated string or an iterable. Group and entry
+filters also take `with_exception`/`exception` (and `contains` on groups, a
+template substring); entry filters take `request_id`. Uploads go through
 `store.pipeline.ingest_paths(..., progress=)`, which reports `IngestProgress`.
 
 ## 10. Quality

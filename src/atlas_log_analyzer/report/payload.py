@@ -13,6 +13,7 @@ from typing import Any
 import polars as pl
 
 from atlas_log_analyzer import __version__
+from atlas_log_analyzer.store.filters import GroupFilter
 from atlas_log_analyzer.store.logset import LogSet, to_records
 from atlas_log_analyzer.store.query import diff
 
@@ -260,7 +261,7 @@ def build_payload(
     if max_groups is not None and max_groups < 0:
         raise ValueError("max_groups must be >= 0")
     source_index = {src.path: i for i, src in enumerate(logset.manifest.sources)}
-    gdf = logset.groups(min_level=min_level, sort="count")
+    gdf = logset.groups(where=GroupFilter(min_level=min_level), sort="count")
     truncated_groups = 0
     if max_groups is not None and gdf.height > max_groups:
         truncated_groups = gdf.height - max_groups

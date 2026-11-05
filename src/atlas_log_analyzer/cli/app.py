@@ -48,6 +48,7 @@ from atlas_log_analyzer.core.formats.registry import UnknownFormatError
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.reader import iter_lines
 from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec
+from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
 from atlas_log_analyzer.store.levels import InvalidLevel, parse_levels
 from atlas_log_analyzer.store.schema import MERGES_SCHEMA
 from atlas_log_analyzer.store.views import (
@@ -744,20 +745,19 @@ def groups(
     columns = _selection(columns, brief, valid, GROUP_BRIEF)
     ls = _open(logset)
     last = ls.manifest.last_ts
-    filters: dict[str, Any] = {
-        "level": lvl,
-        "min_level": min_lvl,
-        "logger": logger,
-        "since": _when(since, "--since", last),
-        "until": _when(until, "--until", last),
-        "coarse": coarse,
-        "with_exception": with_exception,
-        "exception": exception,
-        "contains": contains,
-    }
-    df = ls.groups(**filters, sort=sort, limit=lim, offset=skip)
+    where = GroupFilter(
+        level=lvl,
+        min_level=min_lvl,
+        logger=logger,
+        since=_when(since, "--since", last),
+        until=_when(until, "--until", last),
+        with_exception=with_exception,
+        exception=exception,
+        contains=contains,
+    )
+    df = ls.groups(where=where, coarse=coarse, sort=sort, limit=lim, offset=skip)
     complete = skip == 0 and (lim is None or df.height < lim)
-    total = df.height if complete else ls.count_groups(**filters)
+    total = df.height if complete else ls.count_groups(where=where, coarse=coarse)
     items = jsonable_rows(df if columns is None else df.select(columns))
     _out().emit(
         "groups.v1",
@@ -969,28 +969,28 @@ def entries(
     cap = _max_raw(max_raw, text=raw)
     ls = _open(logset)
     last = ls.manifest.last_ts
-    filters: dict[str, Any] = {
-        "signature": resolve_signature(ls, signature) if signature else signature,
-        "level": lvl,
-        "min_level": min_lvl,
-        "logger": logger,
-        "user": user,
-        "thread": thread,
-        "request_id": request_id,
-        "since": _when(since, "--since", last),
-        "until": _when(until, "--until", last),
-        "contains": contains,
-        "with_exception": with_exception,
-        "exception": exception,
-    }
+    where = EntryFilter(
+        signature=resolve_signature(ls, signature) if signature else signature,
+        level=lvl,
+        min_level=min_lvl,
+        logger=logger,
+        user=user,
+        thread=thread,
+        request_id=request_id,
+        since=_when(since, "--since", last),
+        until=_when(until, "--until", last),
+        contains=contains,
+        with_exception=with_exception,
+        exception=exception,
+    )
     if raw:
         cols = ["raw", "source_path", "source_line"]
-        page = ls.entries(**filters, limit=lim, offset=skip, columns=cols)
+        page = ls.entries(where=where, limit=lim, offset=skip, columns=cols)
         _out().raw_entries(_raw_pairs(page, cap))
         return
-    df = ls.entries(**filters, limit=lim, offset=skip, columns=columns)
+    df = ls.entries(where=where, limit=lim, offset=skip, columns=columns)
     complete = skip == 0 and (lim is None or df.height < lim)
-    total = df.height if complete else _count_entries(ls, filters)
+    total = df.height if complete else ls.count_entries(where=where)
     items = _cap_items(jsonable_rows(df), cap)
     _out().emit(
         "entries.v1",
@@ -1363,14 +1363,6 @@ def _raw_pairs(df: Any, max_raw: int | None = None) -> list[tuple[str, str | Non
             raw = cap_text(raw, max_raw)
         pairs.append((raw, label))
     return pairs
-
-
-def _count_entries(ls: LogSet, filters: dict[str, Any]) -> int:
-    """Count the entries matching ``filters`` (no limit)."""
-    count = getattr(ls, "count_entries", None)
-    if callable(count):
-        return int(count(**filters))
-    return int(ls.entries(**filters, columns=["id"]).height)
 
 
 @app.command
