@@ -51,7 +51,8 @@ export ATLAS_LOG_STORE=~/atlas-log-store                       # where log sets 
 atlas-log ingest /var/atlassian/jira/log/ --name prod-1030     # build a log set
 atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
 atlas-log ingest jira-logs_export.zip --cluster jira-prod      # cluster export: one set per node
-atlas-log captures                                             # sets of several nodes collected together
+atlas-log capture cluster:jira-prod                            # the nodes side by side, a verdict per node
+atlas-log matrix cluster:jira-prod --spread only --min-level WARN  # groups on one node only
 atlas-log groups prod-1030 --min-level WARN --brief            # one row per signature
 atlas-log groups prod-1030 --with-exception --brief            # stack traces at any level
 atlas-log show prod-1030 83d1828c --brief                      # entries of a group (unique signature prefix)
@@ -100,12 +101,16 @@ with a progress bar; the pages keep answering meanwhile. One server per store:
 a second `serve` on the same store exits with code 3, while CLI commands may run
 next to it. Everything is also JSON under `/api` (OpenAPI at `/docs`);
 `GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call — the
-same `triage.v1` document as `atlas-log triage SET`. See `docs/webapp.md`.
+same `triage.v1` document as `atlas-log triage SET`. A cluster export (one set
+per node) opens on its **cluster page** `/captures/cluster:NAME`: the nodes side
+by side, their events on one time axis, the groups by node and the merged log
+(the static twin: `atlas-log report cluster:NAME`). See `docs/webapp.md` and
+`docs/cluster.md`.
 
 ## Agent workflow
 
 Start with `atlas-log manifest` (bare `atlas-log` prints the same when stdout is
-not a terminal): about 7 KB of JSON with this workflow, every command's usage,
+not a terminal): about 10 KB of JSON with this workflow, every command's usage,
 output document and exit codes, one-line help per parameter, the `--brief`
 presets and where the document schemas are (`atlas-log schema triage.v1`).
 `atlas-log manifest COMMAND` gives one command in full (every parameter with its

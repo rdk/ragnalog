@@ -1,8 +1,11 @@
 # Clusters: logs of several nodes
 
 Status: implemented 2026-11-05 (identity, capture views, interactions, cluster
-page). §11 is the contract the parts were built to; §11.1, §11.5 and
-`report.md` §5 record where the result differs from the text above.
+page) and wired into the CLI and the web app (commands `capture`, `timeline`,
+`matrix`, `events`, `interactions`, `entries`/`context --all-nodes`/`report` of
+a capture; `/api/captures/{ref}…`, `/captures/{ref}`). §11 is the contract the
+parts were built to; §11.1, §11.5, §11.6 and `report.md` §5 record where the
+result differs from the text above.
 Builds on `design.md` (store, service layer), `report.md` (the page and
 its payload) and `webapp.md`; the commands are in `cli.md`.
 
@@ -121,9 +124,16 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   node being compared with its neighbour's logs, which is what happens today.
   When the set has a node, a candidate of the same node is preferred to one
   without a node (after "ends before", before the span rule).
-- `triage CAPTURE` triages each node against that node's previous set. The
-  cluster verdict is the worst of the node verdicts. Each `new` row gets a
-  `nodes` list: new on NODE2 only, or new on all nodes.
+- Per-node triage: each node is triaged against that node's previous set.
+  As built, this is part of `capture.v1` (`verdict` and `baseline` per node;
+  `atlas-log capture REF`, on by default, `--no-triage` to skip;
+  `GET /api/captures/{ref}?triage=true`) and of the cluster page, not a
+  `triage.v1` variant: `triage CAPTURE` is a `usage` error whose hint is
+  `atlas-log capture REF --triage`. One triage document per node already says
+  what is new on that node; a merged `triage.v1` with a `nodes` list per `new`
+  row was left out (the matrix's `spread` answers "on one node or on all").
+  It costs a few tens of milliseconds per node on two nodes of about 700k
+  entries, so it is on by default.
 - `diff` between two nodes of the same capture already works. The matrix
   (§6) is its N-node form, restricted to the overlap window.
 
@@ -142,19 +152,23 @@ References:
 - `cluster:NAME@2026-11-05`, its capture of that day.
 
 The CLI and the API accept a capture reference wherever this section says
-`CAPTURE`. Set references are unchanged.
+`CAPTURE`. Set references are unchanged. As built, `capture`, `timeline`
+(`--by-node`), `matrix`, `events`, `interactions` and `/api/captures/{ref}…`
+also take a set: the capture it belongs to, else the set as a capture of one
+node; `entries` and `report` take a capture only through a capture reference
+(a set stays a set there).
 
 | Document | CLI | API | Content |
 |---|---|---|---|
 | `captures.v1` | `captures` | `GET /api/captures` | `CaptureInfo` items (§11.1), newest first; built (phase A) from the manifests alone |
-| `capture.v1` | `capture CAPTURE` | `GET /api/captures/{ref}` | cluster, capture, window, and per node: set, coverage, gaps ≥ 15 min, entries, errors and warnings per hour, top error group, triage verdict against its own baseline, event counts, clock skew estimate |
-| `cluster-timeline.v1` | `timeline CAPTURE --by-node` | `GET /api/captures/{ref}/timeline` | buckets, and per node counts by level; with `signature`, that group per node; coverage per node |
+| `capture.v1` | `capture CAPTURE [--no-triage]` | `GET /api/captures/{ref}` | cluster, capture, window, and per node: set, coverage, gaps ≥ 15 min, entries, errors and warnings per hour, top error group, triage verdict against its own baseline, event counts, clock skew estimate |
+| `cluster-timeline.v1` | `timeline CAPTURE`, `timeline SET --by-node` | `GET /api/captures/{ref}/timeline` | buckets, and per node counts by level; with `signature`, that group per node; coverage per node |
 | `matrix.v1` | `matrix CAPTURE` | `GET /api/captures/{ref}/matrix` | one row per signature: group fields, and per node `count, rate_per_hour, first_seen, last_seen`; `spread` (`all`, `only`, `skewed`), `skew`, `first_node`, `lead_ms`. Filters as `groups`, plus `node`, `spread`, `sort=count\|skew\|lead` |
 | `events.v1` | `events CAPTURE\|SET` | `GET /api/captures/{ref}/events` | `items` `{node, ts, kind, subject_node?, signature, entry_id, text}`; `pairs` of events on different nodes that follow each other (§7) |
 | `interactions.v1` | `interactions CAPTURE` | `GET /api/captures/{ref}/interactions` | mention matrix, co-bursts, concurrent jobs, sessions on several nodes (§7) |
 | `entries.v1` + `node` | `entries CAPTURE --since … --until …` | `GET /api/captures/{ref}/entries` | entries of all nodes interleaved by time; rows add `node`, `set` |
-| `entries.v1` | `context SET ENTRY --all-nodes [--window 30s]` | `…/context?all_nodes=1&window=30s` | what every node logged within the window around one entry |
-| `triage.v1` + `nodes` | `triage CAPTURE` | `GET /api/captures/{ref}/triage` | §5 |
+| `entries.v1` | `context SET ENTRY --all-nodes [--window 30]` | `…/context?all_nodes=1&window=30` | what every node logged within the window (seconds) around one entry |
+| (`capture.v1` verdicts) | `capture CAPTURE` (`triage CAPTURE`: usage error) | (no route) | §5 as built |
 | `cluster-report.v1` | `report CAPTURE` | `GET /api/captures/{ref}/report` | payload of the cluster page (§8) |
 
 `spread` is computed on rates normalised by each node's total volume in the
@@ -505,3 +519,44 @@ the second node comes 22 s *before* the first node's `index_snapshot` event (its
 cluster lock release) and 11 s after its re-index ended: the pairs found are
 `reindex` → `index_replay` (+11 s) and `index_replay` → `index_snapshot` (+22 s),
 too far apart for a skew estimate.
+
+### 11.6 Front ends as built (I)
+
+- `service/capture_queries.py` turns a reference and the request options into the
+  documents, for both front ends: `capture_from_ref(sets, ref, front=)` (capture
+  reference → `resolve_capture` → member sets → `open_capture`; a set with
+  `capture` → that capture; a set without → one node, its `node`, else its name,
+  without a capture id), `CaptureWindow(window, since, until)` (the flattened
+  `--window/--since/--until` and the API's query parameters), and `capture`,
+  `timeline`, `matrix`, `events`, `interactions`, `entries`, `raw_entries`,
+  `context`, `report_payload`, `report_file`.
+- `matrix` and merged `entries` reuse `GroupQuery`/`EntryQuery`; their
+  `since`/`until` are the window (explicit), not filters on the group or entry
+  (both would cut to the same time anyway). `--signature` is a unique prefix
+  resolved in any member's groups (`cluster.resolve_signature`; `matrix(...,
+  signature=)` was added). `--columns` of a capture's entries may name `node`
+  and `set` (always present); `context_all_nodes` gained `columns`.
+- `timeline` is a new CLI command for sets too (`timeline.v1`, the twin of the
+  existing `GET /api/sets/{ref}/timeline`): the contract's `timeline CAPTURE
+  --by-node` needed a `timeline` command, and "otherwise unchanged" meant the
+  set's document. `--level`/`--min-level` with a capture and `--window` with a
+  set are usage errors (as `--window` for `entries`/`report` of a set).
+- `context --all-nodes --window N` and `?all_nodes=1&window=N` take seconds
+  (a number; §11.3 wrote `30s`). A set in no capture is `invalid_value` with a
+  hint to label it. `--before/--after/--any-thread` do not apply.
+- `report CAPTURE` writes the cluster page; `report-file.v1` gained the optional
+  keys `capture` and `nodes`. `--max-groups` defaults to 500 for a capture and
+  to all for a set; `cluster_payload(max_groups=0)` now means all groups (it
+  meant none). `--compare`/`--min-level` with a capture are usage errors.
+- The web app fills `urls`: `entries` = `/api/captures/capture:ID/entries`
+  (the set id for a one-node capture without id), `context` =
+  `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`, `set_report` =
+  `/sets/{set}`. The payload is cached as bytes per member set versions, nodes
+  and options (`ATLAS_LOG_REPORT_CACHE` entries) and the whole cache is
+  dropped whenever any set changes (members and baselines may change).
+  `/captures/{ref}` is the page, with a navigation bar (sets, node reports);
+  the report of a member set gets a node switcher and "Open cluster view"; a
+  split upload opens the capture page. At start the server deletes `.spool`
+  entries older than 6 hours (left by a crashed ingest).
+- The agent manifest lists `capture`, `matrix`, `events` and `interactions` in
+  `when`; with the new commands it is about 10 KB, so its budget is now 10 KB.

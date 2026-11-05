@@ -19,7 +19,10 @@ Typical flow:
 `sets --brief` and `set SET` show what is in the store. A Jira Data Center
 cluster export (one ZIP with `job.json` and `NODE_atlassian-jira.log*`) becomes
 one set per node; `captures` lists such sets collected together and `label`
-sets a node, cluster or capture by hand (`cluster.md`). Agents start with
+sets a node, cluster or capture by hand (`cluster.md`). `capture`, `matrix`,
+`events`, `interactions`, `timeline`, `entries`, `context --all-nodes` and
+`report` show the nodes of a capture side by side (recipe "Clusters" at the
+end). Agents start with
 `atlas-log manifest` (bare `atlas-log` prints the same JSON when stdout is not a
 terminal): the workflow, every command with its usage, output document and exit
 codes, and where the document schemas are.
@@ -185,8 +188,17 @@ A capture (the sets of several cluster nodes collected together, see
 `cluster:NAME` (the newest capture of the cluster) or `cluster:NAME@YYYY-MM-DD`
 (the cluster's capture whose last entry falls on that UTC day). No match is
 reason `capture_not_found` (`not_found`, exit 2), several are
-`ambiguous_capture` (`ambiguous`, exit 1). The commands that take a capture
-come with the cluster views (`cluster.md` §6).
+`ambiguous_capture` (`ambiguous`, exit 1). `capture`, `timeline`, `matrix`,
+`events`, `interactions`, `entries` and `report` take a capture reference
+(`cluster.md` §6); the first five also take a set: the capture it belongs to,
+else that set as a capture of one node.
+
+Every capture view counts within one **window**: `--window overlap` (default:
+from the latest first entry of the nodes to the earliest last entry, the time
+all nodes have logs for, so a group is not "only on NODE2" because NODE1's
+files start later), `--window union` (earliest first to latest last), or
+`--since`/`--until` (an explicit window; relative times count back from the
+capture's last entry). Both ends are inclusive.
 
 ### Signature prefixes
 
@@ -373,6 +385,34 @@ export, one `ingest` that split its input, or `label --capture`), newest
 name); `cluster` is the members' (the most common one when they differ).
 `--brief` keeps only `node`, `id` and `name` per node. Exit: 0 (also empty); 3.
 
+### `capture REF [--window overlap|union] [--since] [--until] [--no-triage]`
+
+The nodes of a capture side by side; the twin of `GET /api/captures/{ref}`.
+`REF` is a capture reference or a set (see [Log-set references](#log-set-references)).
+
+```json
+{"schema": "capture.v1", "capture": "2026-11-05_05-44-10-107_ABC", "cluster": "jira-test",
+ "window": {"mode": "overlap", "since": "…", "until": "…"},
+ "nodes": [{"node": "NODE1", "set": {"id", "name"}, "first_ts", "last_ts",
+            "coverage": {"since", "until"} | null, "gaps": [["since", "until"]],
+            "entries", "errors", "warnings", "errors_per_hour", "warnings_per_hour",
+            "top_error": {"signature", "template", "count"} | null,
+            "verdict": "new_errors" | … | "no_baseline" | null,
+            "baseline": {"id", "name", "reason"} | null, "events": {"job_run": 12}}],
+ "skew": [{"a": "NODE1", "b": "NODE2", "offset_ms": 40, "pairs": 2}]}
+```
+
+`coverage` is the node's first to last entry within the window, `gaps` runs of
+at least 15 minutes without entries inside it; rates are per hour of
+coverage. Each node is triaged against **its own** previous set (as `triage`;
+another member of the capture is never a baseline) and gets `verdict` and
+`baseline`; `--no-triage` skips it (both `null`). It costs a few tens of
+milliseconds per node (two nodes of about 700k entries: under 0.1 s), so it is
+on by default. `skew` is a clock skew estimate from paired events, shown and
+never applied. The table prints one row per node. Exit: 0; 1 bad option or
+time, or the nodes' logs do not overlap (use `--window union`); 2 unknown
+capture; 3 unknown set.
+
 ### `label SET [--node N] [--cluster C] [--capture ID]`
 
 Sets the cluster node, cluster and capture of a stored set and prints its
@@ -447,7 +487,7 @@ repeats the stack trace in `raw`, `body`, `exception_chain` and
 Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no
 entries with this signature; 3.
 
-### `entries SET [--signature] [--coarse-signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N]`
+### `entries SET|CAPTURE [--signature] [--coarse-signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N] [--window overlap|union]`
 
 `--user`/`--thread`/`--request-id` are exact (`--request-id` is the Jira
 request id of the request context, e.g. `540x101x1`: all entries of one HTTP
@@ -468,6 +508,16 @@ request_id, logger, message, exception_type, signature` (not combinable with
 `next_offset` is where the next page starts (`offset + count`), `null` on the
 last page, as in `GET /api/sets/{ref}/entries`.
 
+A capture reference gives the **merged log**: the entries of all nodes
+interleaved by time (then node), the twin of `GET /api/captures/{ref}/entries`.
+`logset` is `capture:ID` and every row adds `node` and `set` (the node's set
+id; `--columns` may name both, they are always there). `--since`/`--until`
+set the window, else `--window` (overlap by default); the other filters,
+paging, `--columns`, `--brief` and `--max-raw` work as for a set, and
+`--signature` is resolved in the groups of any node. `--raw` prints the raw
+texts; with colour on, each rule names the node and `file:line`. `--window`
+with a set is a usage error.
+
 <!-- generated:entries-columns by docs/formats/generate.py from store/schema.py -->
 entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
 `logger`, `message`, `body`, `user`, `request_id`, `session`, `ip`, `url`,
@@ -477,9 +527,9 @@ entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
 <!-- /generated -->
 
 Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with
-`--columns`; 3.
+`--columns`, `--window` with a set; 2 unknown capture; 3.
 
-### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N] [--columns C[,C…]]... [--brief]`
+### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N] [--columns C[,C…]]... [--brief] [--all-nodes] [--window 30]`
 
 The entries immediately around one entry in time order (ties in file order),
 restricted to the anchor's thread unless `--any-thread`; the anchor itself is
@@ -496,8 +546,18 @@ exception_type, signature, variables`).
 At most `--before + 1 + --after` items. `jsonl`: one row per line, the anchor
 row with an extra `"anchor": true` (also when `--columns` leaves out `id`).
 The table marks the anchor row with `▶`.
-Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no entry
-with this id (`not_found`, with a hint); 3.
+
+`--all-nodes` answers "what did every node do at that moment?": the entries of
+all nodes of the set's capture within `--window` seconds (default 30) before
+and after the anchor, all threads, in time then node order; the twin of
+`…/context?all_nodes=1&window=30`. `--before`, `--after` and `--any-thread`
+do not apply. Rows add `node` and `set`, `any_thread` is `true`; at most 2000
+rows (the nearest to the anchor), `total` and `truncated` say when there were
+more. A set in no capture is `invalid_value` whose hint says how to label one.
+
+Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`,
+`--all-nodes` for a set in no capture; 2 no entry with this id (`not_found`,
+with a hint); 3.
 
 ### `frames SET REF [--limit 10] [--all]`
 
@@ -575,6 +635,95 @@ The table shows `hours` compactly: one row per day with the day total, the
 busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
+
+### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--since] [--until] [--window overlap|union] [--by-node]`
+
+Entries per time bucket (`<n>s|m|h|d`, aligned to the epoch in UTC). A set
+gives `timeline.v1`, the twin of `GET /api/sets/{ref}/timeline` (`--level`,
+`--min-level`, `--since`, `--until` filter the entries). A capture reference,
+or a set with `--by-node` (its capture; a set in no capture is one node), gives
+`cluster-timeline.v1`, the twin of `GET /api/captures/{ref}/timeline`: per node
+and bucket the entries by level, or with `--signature` those of one group,
+over the window (`--window`, `--since`, `--until`).
+
+```json
+{"schema": "timeline.v1", "logset": "…", "bucket": "1h", "count": 24, "items": [{"bucket", "count"}]}
+{"schema": "cluster-timeline.v1", "bucket": "1h", "buckets": ["2026-11-02T09:00:00Z", …],
+ "nodes": {"NODE1": {"levels": {"ERROR": [n…], "WARN", "INFO", "DEBUG", "OTHER"},
+                     "coverage": [first_bucket, last_bucket] | null}}, "signature"?: "…"}
+```
+
+The table prints one row per bucket (a capture: a column per node; blank
+where the node has no logs). Exit: 0; 1 bad option, bucket, level or time,
+`--level` with a capture, `--window` with a set, ambiguous signature prefix;
+2 unknown capture or group; 3.
+
+### `matrix REF [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--window overlap|union] [--node N] [--spread all|only|skewed] [--sort count|skew|lead] [--skew-min 4.0] [--signature SIG] [--limit 50] [--offset 0]`
+
+"Is it cluster-wide or one node's problem, and which node saw it first?": one
+row per group with a count column per node; the twin of
+`GET /api/captures/{ref}/matrix`. The filters are those of `groups`;
+`--since`/`--until` set the window (else `--window`).
+
+```json
+{"schema": "matrix.v1", "window": {…}, "nodes": ["NODE1", "NODE2"], "count": 2, "total": 9,
+ "offset": 0, "truncated": true,
+ "items": [{"signature", "template", "level", "level_name", "logger", "exception_type", "total",
+            "per_node": {"NODE1": {"count", "rate_per_hour", "first_seen", "last_seen"}},
+            "spread": "all" | "only" | "skewed", "skew": 35.2 | null,
+            "first_node": "NODE2", "lead_ms": 68400000 | null}]}
+```
+
+`spread`: `only` (on one node), `skewed` (missing from a node that has logs in
+the window while on two or more, or the max/min of `count / node entries in
+the window` is at least `--skew-min`), `all` otherwise. `lead_ms` is the gap
+between the first two nodes' first entries. `--node` keeps groups present on
+that node, `--spread` one spread, `--signature` one group (a unique prefix
+works); `--sort count|skew|lead` (descending); `--limit` (0 = all) and
+`--offset` page as in `groups`. Exit: 0 (also empty); 1 bad option, level,
+time, node, or ambiguous signature prefix; 2 unknown capture or group; 3.
+
+### `events REF [--window overlap|union] [--since] [--until] [--kind K]...`
+
+What every node did, on one time axis: restarts, health-check failures, index
+snapshots, restores and replays, re-indexes, cluster locks, cache replication
+and peers, job runs (rules over the group templates, `cluster.md` §7 and
+§11.5); the twin of `GET /api/captures/{ref}/events`.
+
+```json
+{"schema": "events.v1", "rules_version": 1, "count": 3,
+ "items": [{"node", "ts", "last_ts", "kind", "subject", "subject_node", "signature",
+            "entry_id", "count", "text"}],
+ "pairs": [{"a": {"node", "kind"}, "b": {"node", "kind"}, "count", "of", "median_lag_ms",
+            "lift", "examples": [["ts_a", "ts_b"]]}]}
+```
+
+`--kind` keeps these kinds (comma-separated and/or repeated; an unknown one is
+`invalid_value` listing the kinds). `pairs` are kinds on different nodes that
+follow each other within 60 s at least 3 times more often than by chance.
+Exit: 0 (also empty); 1 bad option, kind or time; 2 unknown capture; 3.
+
+### `interactions REF [--window overlap|union] [--since] [--until] [--delta 300]`
+
+How the nodes affect each other; the twin of
+`GET /api/captures/{ref}/interactions`: `mentions` (entries on one node naming
+another node id, with the groups behind each edge), `co_bursts` (a group
+bursting on one node followed by a burst of a group on another within
+`--delta` seconds, with hits, median lag and lift), `concurrent_jobs` (one
+job key run on several nodes in the same minute), `sessions` (a session seen
+on two nodes within an hour) and `jobs` (job runs per node).
+
+```json
+{"schema": "interactions.v1", "delta_s": 300,
+ "mentions": [{"from", "to", "count", "groups": ["sig"]}],
+ "co_bursts": [{"a": {"node", "signature", "template", "groups"}, "b": {…}, "hits", "of",
+                "median_lag_ms", "lift"}],
+ "concurrent_jobs": [{"job", "nodes", "slots", "examples"}],
+ "sessions": [{"nodes": ["NODE1", "NODE2"], "count"}], "jobs": [{"job", "runs": {"NODE1": 3}}]}
+```
+
+The table prints co-bursts as sentences. Exit: 0; 1 bad option or time; 2
+unknown capture; 3.
 
 ### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 50] [--rate]`
 
@@ -691,10 +840,15 @@ SET's sources, or tiny (a set signed with another recipe still fails as in
 - `jsonl` prints the document on one line; the table prints the verdict, the
   summary and one table per list, with the warnings on stderr.
 
-Exit: 0 whatever the verdict (also `no_baseline`); 1 bad option, invalid level,
-`--grow` not > 1, or the sets were signed differently; 3 unknown set.
+SET is one set: a capture reference is a `usage` error whose hint is
+`atlas-log capture REF --triage`, which gives the verdict of every node
+against its own previous set (`cluster.md` §5).
 
-### `report SET [--out FILE] [--compare SET_B] [--min-level L] [--examples 3] [--max-raw 4000] [--max-groups 0] [--open]`
+Exit: 0 whatever the verdict (also `no_baseline`); 1 bad option, invalid level,
+`--grow` not > 1, a capture reference, or the sets were signed differently; 3
+unknown set.
+
+### `report SET|CAPTURE [--out FILE] [--compare SET_B] [--min-level L] [--examples 3] [--max-raw 4000] [--max-groups N] [--window overlap|union] [--open]`
 
 Writes a single self-contained HTML file (CSS, JS and data inlined; no network
 requests, works from `file://`, light and dark theme): overview tiles, a
@@ -719,8 +873,20 @@ opens the file in the default browser.
 ```
 
 `groups`: groups in the report; `entries`: embedded example entries. Table mode
-prints one line (`wrote <path> (…)`). Exit: 0; 1 bad option, invalid level, or
-the sets were signed differently; 2 output directory does not exist; 3.
+prints one line (`wrote <path> (…)`).
+
+A capture reference writes the **cluster page** instead (`cluster.md` §8,
+`report.md` §5), its `cluster-report.v1` payload embedded: node cards with each
+node's verdict against its own previous set, a timeline band per node with its
+events, the groups by node, the interactions and the example entries of all
+nodes, within `--window` (overlap by default). `--out` defaults to
+`<cluster>_<capture id>.html`; `--examples` counts per group and node;
+`--max-groups` defaults to 500 for a capture (all for a set; 0 = all).
+`--compare` and `--min-level` apply to sets only. The document adds
+`"capture": "<id>"` and `"nodes": 2`.
+
+Exit: 0; 1 bad option, invalid level, or the sets were signed differently; 2
+output directory does not exist, unknown capture; 3.
 
 ### `parse PATH... [--format F] [--limit 0] [--force]`
 
@@ -787,8 +953,8 @@ name (`usage`).
 
 ### `manifest`
 
-`manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 8 KB
-of compact JSON (under 9 KB), for agents:
+`manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 10 KB
+of compact JSON (under 10 KB), for agents:
 
 ```json
 {"schema": "manifest.v1", "tool": "atlas-log", "version": "0.1.0", "usage": "...", "notes": [str],
@@ -902,4 +1068,15 @@ atlas-log triage after --baseline before
 # The last 2 hours of the log (relative to its last entry)
 atlas-log groups after --since 2h --min-level ERROR
 atlas-log entries after --since 2h --level ERROR --raw
+
+# Clusters: the nodes of one export side by side
+atlas-log ingest jira-logs_2026-11-05_EXPORT.zip --cluster jira-test   # one set per node
+atlas-log captures --brief
+atlas-log capture cluster:jira-test            # per node: coverage, errors/h, verdict, events
+atlas-log matrix cluster:jira-test --spread only --min-level WARN   # groups on one node only
+atlas-log matrix cluster:jira-test --sort lead --limit 10           # who saw it first
+atlas-log events cluster:jira-test --kind start,index_replay,cluster_lock
+atlas-log interactions cluster:jira-test        # mentions, co-bursts, concurrent jobs
+atlas-log context jira-test_node1 ENTRY_ID --all-nodes   # every node, ±30 s
+atlas-log report cluster:jira-test --open       # the cluster page
 ```

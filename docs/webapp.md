@@ -20,7 +20,7 @@ atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a networ
 | `--port` | | `8321` |
 | `--token` | `ATLAS_LOG_TOKEN` | none: no auth |
 | `--max-upload-mb` | `ATLAS_LOG_MAX_UPLOAD_MB` | `2048` |
-| | `ATLAS_LOG_REPORT_CACHE` | `8` report payloads kept in memory |
+| | `ATLAS_LOG_REPORT_CACHE` | `8` report payloads kept in memory (and as many cluster payloads) |
 | `--reload` | | off (development) |
 
 Flags win over the environment. With `--reload` uvicorn runs the app in a child
@@ -33,7 +33,8 @@ process that sees only the environment, so `serve` exports every setting
 | Path | Page |
 |---|---|
 | `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The sets of one capture (`captures`) are listed under one capture row: cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
-| `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. |
+| `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. A set of a capture also gets a node switcher (its sibling node sets, keeping the hash) and "Open cluster view". |
+| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through. The navigation bar links back to the sets and to each node's report. An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
 | `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
 | `/docs` | OpenAPI (Swagger UI) for the JSON API; `/openapi.json` is the schema, with every response document as a component. |
 
@@ -41,7 +42,7 @@ process that sees only the environment, so `serve` exports every setting
 and paths render a 404 page; under `/api` they return `error.v1`.
 
 The report page is the same `template.html`, `report.js` and `report.css` as the
-static file. The page is rendered without an embedded payload and
+static file (the cluster page: `cluster.html`, `cluster.js`, `cluster.css`). The page is rendered without an embedded payload and
 `data-report-url` points at `/api/sets/{id}/report`; the assets are served from
 `/assets/report/`. Example entries missing from the payload are fetched per group
 from `/api/sets/{id}/groups/{sig}/examples`.
@@ -104,12 +105,19 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
 | `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `atlas-log label`) | `logset.v1` |
 | `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
+| `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `atlas-log capture`) |
+| `GET /api/captures/{ref}/timeline` | window parameters, `bucket` (`1h`), `signature` | `cluster-timeline.v1` (as `timeline CAPTURE`) |
+| `GET /api/captures/{ref}/matrix` | the filters of `/groups` (`since`/`until` set the window), `window`, `node`, `spread` (`all`, `only`, `skewed`), `sort` (`count`, `skew`, `lead`), `skew_min` (4.0), `signature`, `limit` (50; 0 = all), `offset` | `matrix.v1` (as `atlas-log matrix`) |
+| `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `atlas-log events`) |
+| `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `atlas-log interactions`) |
+| `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
+| `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
 | `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw` | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape |
 | `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
-| `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief` | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context`) |
+| `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief`; `all_nodes` with `window` (30 s): every node of the set's capture around the entry | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context [--all-nodes]`; with `all_nodes` rows add `node`, `set`) |
 | `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
 | `GET /api/sets/{ref}/timeline` | `bucket` (`1h`, `15m`, `1d` …), `signature`, `level`, `min_level`, `since`, `until` | `timeline.v1`: `[{bucket, count}]` |
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
@@ -142,6 +150,15 @@ Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
 every `/api` operation documents its errors as `error.v1` (status 400 for a bad
 parameter, not FastAPI's 422). `webapp/openapi.py` maps the operations to
 the documents; a new route needs an entry there (a test checks it).
+
+`{ref}` under `/api/captures` is a capture reference (`capture:ID`, a unique
+id prefix; `cluster:NAME`, its newest capture; `cluster:NAME@YYYY-MM-DD`) or a
+set: the capture it belongs to, else that set as a capture of one node. The
+window parameters are `window` (`overlap`, the default: the time all nodes
+have logs for; `union`), `since` and `until` (an explicit window, the forms of
+`since` above, relative times counting back from the capture's last entry).
+An unknown capture is 404 with reason `capture_not_found`. Triage takes one
+set: per-node verdicts are `GET /api/captures/{ref}?triage=true`.
 
 Differences from the CLI: `GET /api/sets/{ref}/entries` pages with
 `1 <= limit <= 10000` (no `limit=0` for "all"; follow `next_offset` instead),
@@ -235,7 +252,13 @@ run next to the server.
   directory cannot be renamed or deleted while a reader has a file open, so
   `--overwrite` and delete retry for about 1.5 s. Set summaries and report
   payloads are cached per set id and `created_at`, and dropped on delete or
-  re-ingest.
+  re-ingest. Cluster payloads are cached per member set versions and options
+  and all dropped when any set is ingested, removed or relabelled (that can
+  change a capture's members and every node's triage baseline).
+- **Spools:** at start the server deletes the upload spools of an earlier
+  server (`<store>/.uploads`) and the entries of the ZIP spool
+  (`<store>/.spool`) older than 6 hours, which a crashed ingest left; younger
+  ones may belong to an ingest that is still running.
 - **Encoding:** large documents are encoded with msgspec. The report payload is
   cached as encoded bytes, so a repeat request for the 712k-entry sample set
   takes about 20 ms instead of about 200 ms.
@@ -256,10 +279,11 @@ src/atlas_log_analyzer/webapp/
   __init__.py   create_app, Settings
   app.py        create_app(): routers, static files, HTML/JSON error handling
   settings.py   re-exports config.Settings (flags > ATLAS_LOG_* env > defaults), shared with the CLI
-  state.py      AppState (a service Sets): store, server lock, summary and report caches, JobManager
+  state.py      AppState (a service Sets): store, server lock, summary, report and cluster
+                payload caches, spool cleanup, JobManager
   api.py        /api routes: bind the request, call service/, add report_url
   params.py     query_model(): a service request dataclass read from the query string
-  pages.py      HTML routes (Jinja2), report page assembly
+  pages.py      HTML routes (Jinja2), report and cluster page assembly, navigation bars
   jobs.py       JobManager, Job (job.v1), upload spool; ingest via service.ingest
   errors.py     error.v1 handlers for OpError (service/errors.py) and library errors
   openapi.py    document schemas in /openapi.json, GET /api/manifest

@@ -194,7 +194,9 @@ Exit codes as for the other commands.
 ## 5. Cluster page
 
 Status: page implemented 2026-11-05 (`docs/cluster.md` §8, contract §11.3/§11.4); the
-`cluster-report.v1` payload comes from `service/cluster.py`. The sample payload
+`cluster-report.v1` payload comes from `service/cluster.py`. `atlas-log report CAPTURE`
+writes the static page, the web app serves `/captures/{ref}` with `urls` filled
+(`docs/cluster.md` §11.6). The sample payload
 `tests/report/data/cluster_payload.json` (two invented nodes) is the page's fixture;
 `tests/report/cluster_data.py` derives 5- and 10-node variants from it.
 
