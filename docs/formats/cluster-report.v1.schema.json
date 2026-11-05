@@ -266,7 +266,7 @@
           "type": "string"
         },
         "text": {
-          "description": "Message of the first entry, at most 300 characters.",
+          "description": "Message of the first entry (its group's template when the message is blank), at most 300 characters.",
           "type": "string"
         },
         "count": {

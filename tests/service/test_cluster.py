@@ -357,6 +357,27 @@ def test_events(capture: C.Capture, window: C.Window) -> None:
     assert all("job_run" not in (p["a"]["kind"], p["b"]["kind"]) for p in d["pairs"])
 
 
+def test_event_text_of_a_blank_message_is_the_group_title(tmp_path: Path) -> None:
+    """Jira's startup logger writes its text below an empty header message."""
+    head = "2026-11-02 09:00:0{}+0000 localhost-startStop-1 INFO      [c.a.jira.startup.{}] {}"
+    log = tmp_path / "NODE1" / "atlassian-jira.log"
+    log.parent.mkdir()
+    lines = [
+        head.format("0,000", "JiraStartupLogger", ""),
+        "    ",
+        "    ****************",
+        "    Jira starting...",
+        "    ****************",
+        head.format("5,000", "LauncherContextListener", "Startup is complete."),
+    ]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    st = Store(tmp_path / "store")
+    cap = C.open_capture([("NODE1", ingest_paths(st, [log]).logset)], capture_id="c1")
+    d = doc(C.events(cap, window=C.resolve_window(cap)))
+    [start] = d["items"]
+    assert (start["kind"], start["count"], start["text"]) == ("start", 2, "Jira starting...")
+
+
 def test_events_kinds(capture: C.Capture, window: C.Window) -> None:
     d = doc(C.events(capture, window=window, kinds=["cache_peer", "cache_replication"]))
     assert {e["kind"] for e in d["items"]} == {"cache_peer", "cache_replication"}

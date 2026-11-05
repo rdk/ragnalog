@@ -548,10 +548,12 @@ def _collect_events(db: _Db, window: Window) -> _Events:
 
     rules = _rules(db.capture)
     matched: dict[str, tuple[EventRule, re.Match[str]]] = {}
+    titles: dict[str, str] = {}
     for sig, (template, _, _, logger, _) in db.attrs().items():
         found = classify(rules, logger, template)
         if found is not None:
             matched[sig] = found
+            titles[sig] = template or ""
     if not matched:
         return _Events([])
     rows = db.rows(
@@ -579,7 +581,8 @@ def _collect_events(db: _Db, window: Window) -> _Events:
             subject_node=_node_of(subject, nodes),
             signature=sig,
             entry_id=entry_id,
-            text=(message or "")[:EVENT_TEXT_CHARS],
+            # a blank message (text on the lines below it): the group's title instead
+            text=(message if message and not message.isspace() else titles[sig])[:EVENT_TEXT_CHARS],
             last=int(ts),
         )
         open_events[key] = event

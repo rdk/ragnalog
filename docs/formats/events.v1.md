@@ -18,7 +18,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items[].subject_node` | `string \| null` | yes | subject when it is a node of the capture. |
 | `items[].signature` | `string` | yes | Group signature of the first entry. |
 | `items[].entry_id` | `string` | yes | Id of the first entry (in the node's set). |
-| `items[].text` | `string` | yes | Message of the first entry, at most 300 characters. |
+| `items[].text` | `string` | yes | Message of the first entry (its group's template when the message is blank), at most 300 characters. |
 | `items[].count` | `integer` | yes | Entries folded into the event: same node, kind and subject within 60 s of the first (job_run 120 s, start and stop 10 min); health_failed and job_run also fold repeats at most 2 h (job_run 30 min) after the previous one. |
 | `pairs` | `list<EventPair>` | yes | Kind pairs on different nodes with lift >= 3, by count; without job_run (see interactions.concurrent_jobs); at most 50. Computed before scheduled repeats are folded. |
 | `pairs[].a` | `EventSide` | yes | The earlier event. |

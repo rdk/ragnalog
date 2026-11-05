@@ -1019,7 +1019,13 @@ class ClusterEvent(Struct, kw_only=True):
     subject_node: Annotated[str | None, _d("subject when it is a node of the capture.")]
     signature: Annotated[str, _d("Group signature of the first entry.")]
     entry_id: Annotated[str, _d("Id of the first entry (in the node's set).")]
-    text: Annotated[str, _d("Message of the first entry, at most 300 characters.")]
+    text: Annotated[
+        str,
+        _d(
+            "Message of the first entry (its group's template when the message is blank), "
+            "at most 300 characters."
+        ),
+    ]
     count: Annotated[
         int,
         _d(
