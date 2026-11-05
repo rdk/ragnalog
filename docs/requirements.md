@@ -12,8 +12,8 @@ ones will be added to this repository later; it is deliberately *not* designed
 yet, but the layout must leave an obvious slot for it.
 
 Sample data lives outside the repository in `../atlas-log-analyzer-data/`
-(`logs_00`, `logs_01`: rotated `atlassian-jira.log*` files, ~20 MB each,
-~250k lines each, up to 11 files per set).
+(rotated `atlassian-jira.log*` files, ~20 MB and ~250k lines each, up to 11
+files per set; layout and conventions in that folder's `README.md`).
 
 ## R1 — Core library (`atlas_log_analyzer.core`)
 

@@ -11,7 +11,7 @@ from atlas_log_analyzer.core.parser import parse_file
 
 from .conftest import SAMPLE
 
-BENCH_FILE = Path("logs_01") / "atlassian-jira.log.3"
+BENCH_FILE = Path("sets/jira/jira-develop_2026-10-24_week/logs/atlassian-jira.log.3")
 MIN_MB_PER_S = 30.0
 
 
