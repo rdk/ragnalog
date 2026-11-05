@@ -30,6 +30,7 @@ from types import MappingProxyType
 
 import xxhash
 
+from atlas_log_analyzer.core.events import EventRule
 from atlas_log_analyzer.core.formats.base import (
     CTX_IP,
     CTX_REQUEST_ID,
@@ -39,6 +40,7 @@ from atlas_log_analyzer.core.formats.base import (
     CTX_USER,
     HeaderMatch,
 )
+from atlas_log_analyzer.core.formats.jira_events import JIRA_EVENT_RULES
 from atlas_log_analyzer.core.java import parse_exceptions
 from atlas_log_analyzer.core.masking import MaskRule
 from atlas_log_analyzer.core.models import EMPTY_CONTEXT, LogEntry, LogLevel, SourceRef
@@ -257,6 +259,8 @@ class JiraFormat:
     """Bump when :data:`JIRA_RULES` or the entries this format builds change signatures."""
     mask_rules: Sequence[MaskRule] = JIRA_RULES
     signature_spec: SignatureSpec = DEFAULT_SPEC
+    event_rules: tuple[EventRule, ...] = JIRA_EVENT_RULES
+    """Cluster event rules (:mod:`~atlas_log_analyzer.core.formats.jira_events`)."""
 
     def __init__(self) -> None:
         # (line, groups) of the last successful is_header call; one tuple so that
