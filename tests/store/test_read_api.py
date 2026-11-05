@@ -186,7 +186,7 @@ def test_typed_open_errors(built: Built) -> None:
 def test_open_uses_manifest_cache(built: Built) -> None:
     store = Store(built.store.root)
     a = store.open("prod-a")
-    assert store.open("prod-a") is a  # cached, not reparsed
+    assert store.open("prod-a").manifest is a.manifest  # cached, not reparsed
     replace(a.manifest, name="renamed").write(a.path)
     manifest = a.path / MANIFEST_FILE
     st = manifest.stat()

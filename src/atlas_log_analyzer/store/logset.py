@@ -1,4 +1,4 @@
-"""Log set manifest and directory conventions.
+"""Reading a stored log set; its manifest is :mod:`atlas_log_analyzer.store.manifest`.
 
 Directory layout::
 
@@ -11,10 +11,8 @@ Directory layout::
 
 from __future__ import annotations
 
-import json
 import re
 from collections.abc import Iterable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -23,16 +21,19 @@ import polars as pl
 
 from atlas_log_analyzer.core.models import LogLevel
 from atlas_log_analyzer.store.levels import level_values
-from atlas_log_analyzer.store.schema import SCHEMA_VERSION, schema_major
+from atlas_log_analyzer.store.manifest import (
+    ENTRIES_FILE,
+    GROUPS_FILE,
+    MERGES_FILE,
+    LogSetManifest,
+    SourceInfo,
+    _iso,
+)
+from atlas_log_analyzer.store.manifest import MANIFEST_FILE as MANIFEST_FILE
+from atlas_log_analyzer.store.manifest import MANIFEST_SCHEMA as MANIFEST_SCHEMA
 
 __all__ = ["LevelSpec", "LogSet", "LogSetManifest", "SourceInfo", "rows", "to_records"]
 
-MANIFEST_FILE = "manifest.json"
-ENTRIES_FILE = "entries.parquet"
-GROUPS_FILE = "groups.parquet"
-MERGES_FILE = "merges.parquet"
-
-MANIFEST_SCHEMA = "logset.v1"
 GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
 """Values accepted by ``LogSet.groups(sort=...)``."""
 TOP_LOGGERS = 20
@@ -49,152 +50,9 @@ MAX_HISTOGRAM_BUCKETS = 100_000
 """Upper bound on the number of (zero-filled) buckets :meth:`LogSet.histogram` returns."""
 
 
-def _iso(ts: datetime | None) -> str | None:
-    return None if ts is None else ts.isoformat()
-
-
-def _parse_ts(text: str | None) -> datetime | None:
-    if text is None:
-        return None
-    ts = datetime.fromisoformat(text)
-    return ts if ts.tzinfo is not None else ts.replace(tzinfo=UTC)
-
-
 def _utc(ts: datetime) -> datetime:
     """Naive datetimes are taken as UTC."""
     return ts.replace(tzinfo=UTC) if ts.tzinfo is None else ts.astimezone(UTC)
-
-
-@dataclass(frozen=True, slots=True)
-class SourceInfo:
-    """One ingested file as recorded in the manifest."""
-
-    path: str
-    size: int
-    xxh3: str
-    first_ts: datetime | None
-    last_ts: datetime | None
-    entries: int
-
-    def to_dict(self) -> dict[str, Any]:
-        """JSON-serialisable dict (ISO timestamps)."""
-        return {
-            "path": self.path,
-            "size": self.size,
-            "xxh3": self.xxh3,
-            "first_ts": _iso(self.first_ts),
-            "last_ts": _iso(self.last_ts),
-            "entries": self.entries,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> SourceInfo:
-        """Inverse of :meth:`to_dict`."""
-        return cls(
-            path=str(data["path"]),
-            size=int(data["size"]),
-            xxh3=str(data["xxh3"]),
-            first_ts=_parse_ts(data.get("first_ts")),
-            last_ts=_parse_ts(data.get("last_ts")),
-            entries=int(data.get("entries", 0)),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class LogSetManifest:
-    """``manifest.json`` (schema ``logset.v1``)."""
-
-    id: str
-    """xxh3-64 hex of the sorted source digests."""
-    name: str | None
-    format: str
-    sources: tuple[SourceInfo, ...]
-    first_ts: datetime | None
-    last_ts: datetime | None
-    entry_count: int
-    group_count: int
-    created_at: datetime
-    tool_version: str
-    schema_version: str
-    signature_version: int
-    mask_rules_version: int
-    signature_spec: str
-    """``SignatureSpec.key`` used for the primary signature."""
-
-    def to_dict(self) -> dict[str, Any]:
-        """JSON-serialisable dict with ``"schema": "logset.v1"``."""
-        return {
-            "schema": MANIFEST_SCHEMA,
-            "id": self.id,
-            "name": self.name,
-            "format": self.format,
-            "sources": [s.to_dict() for s in self.sources],
-            "first_ts": _iso(self.first_ts),
-            "last_ts": _iso(self.last_ts),
-            "entry_count": self.entry_count,
-            "group_count": self.group_count,
-            "created_at": self.created_at.isoformat(),
-            "tool_version": self.tool_version,
-            "schema_version": self.schema_version,
-            "signature_version": self.signature_version,
-            "mask_rules_version": self.mask_rules_version,
-            "signature_spec": self.signature_spec,
-        }
-
-    @classmethod
-    def from_dict(cls, data: dict[str, Any]) -> LogSetManifest:
-        """Inverse of :meth:`to_dict`; raises ``ValueError`` on an unsupported schema version."""
-        schema = data.get("schema")
-        if not isinstance(schema, str) or not schema.startswith("logset.v"):
-            raise ValueError(f"not a logset manifest (schema={schema!r})")
-        try:
-            schema_v = int(schema.removeprefix("logset.v"))
-            version = str(data["schema_version"])
-            major = schema_major(version)
-        except (KeyError, ValueError) as exc:
-            raise ValueError(f"invalid manifest schema version: {exc}") from exc
-        current = schema_major(SCHEMA_VERSION)
-        if schema_v > current or major > current:
-            raise ValueError(
-                f"log set uses schema {schema} / {version}, newer than supported {SCHEMA_VERSION}"
-            )
-        try:
-            created = _parse_ts(data["created_at"])
-            assert created is not None
-            return cls(
-                id=str(data["id"]),
-                name=data.get("name"),
-                format=str(data["format"]),
-                sources=tuple(SourceInfo.from_dict(s) for s in data.get("sources", ())),
-                first_ts=_parse_ts(data.get("first_ts")),
-                last_ts=_parse_ts(data.get("last_ts")),
-                entry_count=int(data["entry_count"]),
-                group_count=int(data["group_count"]),
-                created_at=created,
-                tool_version=str(data["tool_version"]),
-                schema_version=version,
-                signature_version=int(data["signature_version"]),
-                mask_rules_version=int(data["mask_rules_version"]),
-                signature_spec=str(data["signature_spec"]),
-            )
-        except (KeyError, TypeError, AssertionError) as exc:
-            raise ValueError(f"invalid manifest: missing or bad field {exc}") from exc
-
-    def write(self, directory: Path) -> None:
-        """Write ``manifest.json`` into ``directory``."""
-        text = json.dumps(self.to_dict(), indent=2, ensure_ascii=False) + "\n"
-        (directory / MANIFEST_FILE).write_text(text, encoding="utf-8", newline="\n")
-
-    @classmethod
-    def read(cls, directory: Path) -> LogSetManifest:
-        """Read ``manifest.json`` from ``directory``; ``ValueError`` when invalid."""
-        try:
-            data = json.loads((directory / MANIFEST_FILE).read_text(encoding="utf-8"))
-        except json.JSONDecodeError as exc:
-            raise ValueError(f"corrupt manifest in {directory}: {exc}") from exc
-        if not isinstance(data, dict):
-            raise ValueError(f"corrupt manifest in {directory}: not an object")
-        return cls.from_dict(data)
 
 
 def _level_values(spec: LevelSpec) -> list[int]:

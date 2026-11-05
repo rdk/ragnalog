@@ -201,6 +201,14 @@ LOGSET_FIELDS: tuple[tuple[str, str, bool, str], ...] = (
     ("signature_version", "int64", False, "Signature algorithm version."),
     ("mask_rules_version", "int64", False, "Built-in masking rules version."),
     ("signature_spec", "string", False, "SignatureSpec.key used for the primary signature."),
+    (
+        "recipe_key",
+        "string",
+        False,
+        "Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> "
+        "and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are "
+        "comparable when it is equal; derived from the fields above for older manifests.",
+    ),
 )
 """logset.v1 manifest fields as ``(name, type, nullable, description)``."""
 

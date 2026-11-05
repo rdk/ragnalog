@@ -100,15 +100,17 @@ class DiffResult:
 
 
 def _check_compatible(a: LogSet, b: LogSet) -> None:
+    """Raise ``ValueError`` naming the recipe parts in which the sets differ."""
+    from atlas_log_analyzer.core.pipeline import recipe_differences
+
     ma, mb = a.manifest, b.manifest
-    problems = [
-        f"{field}: {getattr(ma, field)!r} != {getattr(mb, field)!r}"
-        for field in ("signature_version", "mask_rules_version", "signature_spec")
-        if getattr(ma, field) != getattr(mb, field)
-    ]
+    problems = recipe_differences(ma.recipe_key, mb.recipe_key)
     if problems:
         raise ValueError(
-            "log sets are not comparable (" + "; ".join(problems) + "); use force to override"
+            "log sets are not comparable (recipe "
+            + "; ".join(problems)
+            + "); rebuild the older set with `atlas-log upgrade SET` (same spec) or "
+            "`atlas-log regroup SET` (another spec), or use force to override"
         )
 
 

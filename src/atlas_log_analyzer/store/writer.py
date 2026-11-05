@@ -33,6 +33,7 @@ from atlas_log_analyzer.core.models import (
     LogLevel,
     SourceRef,
 )
+from atlas_log_analyzer.core.pipeline import unique_entries  # re-exported: moved to core
 from atlas_log_analyzer.store.schema import (
     DICT_STRING,
     ENTRIES_SCHEMA,
@@ -292,6 +293,7 @@ class EntriesWriter:
         level_name = pc.take(_LEVEL_NAMES, level.cast(pa.int32()))
         source_path = _dict_array(self._source_path)
         ts = pa.array(self._ts, TIMESTAMP)
+        parse_error = pa.array(self._parse_error, pa.string())
         arrays = [
             pa.array(self._id, pa.string()),
             ts,
@@ -320,22 +322,31 @@ class EntriesWriter:
             pa.array(self._source_line, pa.uint32()),
             pa.array(self._source_offset, pa.uint64()),
             pa.array(self._raw, pa.string()),
-            pa.array(self._parse_error, pa.string()),
+            parse_error,
         ]
         batch = pa.RecordBatch.from_arrays(arrays, schema=ENTRIES_SCHEMA)
         self._writer.write_batch(batch, row_group_size=self.row_group_size)
         self.count += n
-        # Per-source counts and time range, computed vectorised on the batch.
+        # Per-source counts and time range, computed vectorised on the batch. Parse errors
+        # without a timestamp (lines before a file's first header) sit at the epoch: they
+        # count, but do not stretch the time range back to 1970.
+        unknown = pc.and_(pc.is_valid(parse_error), pc.equal(ts.cast(pa.int64()), 0))
         per_source = (
-            pa.table({"p": source_path.cast(pa.string()), "ts": ts})
+            pa.table(
+                {
+                    "p": source_path.cast(pa.string()),
+                    "ts": ts,
+                    "known": pc.if_else(unknown, pa.scalar(None, TIMESTAMP), ts),
+                }
+            )
             .group_by("p")
-            .aggregate([("ts", "count"), ("ts", "min"), ("ts", "max")])
+            .aggregate([("ts", "count"), ("known", "min"), ("known", "max")])
         )
         for p, cnt, lo, hi in zip(
             per_source["p"].to_pylist(),
             per_source["ts_count"].to_pylist(),
-            per_source["ts_min"].cast(pa.int64()).to_pylist(),
-            per_source["ts_max"].cast(pa.int64()).to_pylist(),
+            per_source["known_min"].cast(pa.int64()).to_pylist(),
+            per_source["known_max"].cast(pa.int64()).to_pylist(),
             strict=True,
         ):
             self.sources.setdefault(p, SourceStats()).update(cnt, _ms(lo), _ms(hi))
@@ -509,39 +520,27 @@ def iter_entries(path: Path, fmt: str, *, batch_size: int = 8192) -> Iterator[Lo
                 yield _row_to_entry(row, fmt)
 
 
-def unique_entries(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
-    """Drop entries whose ``id`` was already seen (first occurrence wins).
-
-    Put this in front of the grouper so group statistics match the
-    deduplicated ``entries.parquet``.
-    """
-    seen: set[str] = set()
-    for e in entries:
-        if e.id not in seen:
-            seen.add(e.id)
-            yield e
-
-
 def groups_from_entries(entries_path: Path, out_path: Path, *, max_examples: int = 3) -> int:
     """Recompute ``groups.parquet`` from ``entries.parquet`` and return the number of rows.
 
+    The result equals what a :class:`~atlas_log_analyzer.core.grouping.Grouper` that
+    saw the stored entries in file order writes: attributes of a group's first entry,
+    users and threads counted when non-empty, ``most_common`` order (count descending,
+    then first appearance) and examples = first ``max_examples - 1`` ids plus the last.
     Used by :meth:`Store.ingest` when the caller's groups disagree with the
-    deduplicated entries (e.g. the grouper saw duplicate entries).
+    deduplicated entries (e.g. the grouper saw duplicate entries) and by
+    :meth:`Store.regroup`.
     """
-    lf = pl.scan_parquet(entries_path)
+    lf = pl.scan_parquet(entries_path).with_row_index("_row")
     base = lf.group_by("signature").agg(
         pl.col("coarse_signature").first(),
         pl.col("template").first(),
         pl.col("level").first(),
-        pl.col("level_name").cast(pl.String).first(),
-        pl.col("logger").cast(pl.String).first(),
+        pl.col("logger").cast(pl.String).fill_null("").first(),
         pl.col("exception_type").first(),
         pl.len().cast(pl.Int64).alias("count"),
         pl.col("ts").min().alias("first_seen"),
         pl.col("ts").max().alias("last_seen"),
-        pl.col("user").drop_nulls().n_unique().cast(pl.Int32).alias("user_count"),
-        pl.col("thread").drop_nulls().n_unique().cast(pl.Int32).alias("thread_count"),
-        pl.col("source_path").drop_nulls().n_unique().cast(pl.Int32).alias("source_count"),
         # first max_examples - 1 ids plus the last one, as Grouper does
         pl.col("id")
         .head(max_examples - 1)
@@ -549,22 +548,41 @@ def groups_from_entries(entries_path: Path, out_path: Path, *, max_examples: int
         .unique(maintain_order=True)
         .alias("examples"),
     )
-    for src, name, limit in (
-        ("user", "top_users", TOP_N),
-        ("thread", "top_threads", TOP_N),
-        ("source_path", "sources", None),
+    for src, name, count_name, limit in (
+        ("user", "top_users", "user_count", TOP_N),
+        ("thread", "top_threads", "thread_count", TOP_N),
+        ("source_path", "sources", "source_count", None),
     ):
-        vc = pl.struct(pl.col(src).cast(pl.String).alias("value"), pl.col("count"))
+        value = pl.col(src).cast(pl.String)
+        if src == "source_path":
+            counted = lf.with_columns(value.fill_null("").alias("_value"))  # every entry counts
+        else:
+            counted = lf.with_columns(value.alias("_value")).filter(
+                pl.col("_value").is_not_null() & (pl.col("_value") != "")
+            )
+        vc = pl.struct(pl.col("_value").alias("value"), pl.col("count"))
         top = (
-            lf.filter(pl.col(src).is_not_null())
-            .group_by("signature", src)
-            .agg(pl.len().cast(pl.Int64).alias("count"))
-            .sort(["count", src], descending=[True, False])
+            counted.group_by("signature", "_value")
+            .agg(pl.len().cast(pl.Int64).alias("count"), pl.col("_row").min().alias("_first"))
+            # Counter.most_common: count descending, ties in order of first appearance
+            .sort(["count", "_first"], descending=[True, False])
             .group_by("signature", maintain_order=True)
-            .agg((vc.head(limit) if limit is not None else vc).alias(name))
+            .agg(
+                (vc.head(limit) if limit is not None else vc).alias(name),
+                pl.len().cast(pl.Int32).alias(count_name),
+            )
         )
-        base = base.join(top, on="signature", how="left")
-    df = base.sort(["count", "signature"], descending=[True, False]).collect()
+        base = base.join(top, on="signature", how="left").with_columns(
+            pl.col(count_name).fill_null(0)
+        )
+    level_names = {int(v): v.name for v in LogLevel}
+    df = (
+        base.with_columns(
+            pl.col("level").replace_strict(level_names, return_dtype=pl.String).alias("level_name")
+        )
+        .sort(["count", "signature"], descending=[True, False])
+        .collect()
+    )
     table = df.to_arrow()
     arrays = []
     for field in GROUPS_SCHEMA:

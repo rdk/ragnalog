@@ -19,15 +19,14 @@ from typing import Any
 
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
-from atlas_log_analyzer.core.grouping import Grouper
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
 from atlas_log_analyzer.core.models import LogEntry
 from atlas_log_analyzer.core.parser import parse_sources
+from atlas_log_analyzer.core.pipeline import Recipe, unique_entries
 from atlas_log_analyzer.core.reader import SourceFile, discover_sources, iter_raw_lines
-from atlas_log_analyzer.core.signature import SignatureSpec, Signer
+from atlas_log_analyzer.core.signature import SignatureSpec
 from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.store.store import Store, StoreError
-from atlas_log_analyzer.store.writer import unique_entries, write_merges
+from atlas_log_analyzer.store.writer import write_merges
 
 __all__ = [
     "MAX_FOREIGN_BYTES",
@@ -305,7 +304,8 @@ def ingest_sources(
     spec = spec or fmt.signature_spec
     if frames is not None:
         spec = dataclasses.replace(spec, frames=frames)
-    grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), spec))
+    recipe = Recipe(fmt, spec)
+    grouper = recipe.grouper()
     counter = _Counter()
     started = time.perf_counter()
     parsed = _tracked(parse_sources(sources, fmt), counter, sources, progress, progress_every)
@@ -321,6 +321,7 @@ def ingest_sources(
         spec=spec,
         overwrite=overwrite,
         dedupe=False,
+        recipe=recipe,
     )
     elapsed = time.perf_counter() - started
     merges = _mine(logset) if mine else None

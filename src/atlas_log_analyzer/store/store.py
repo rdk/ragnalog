@@ -9,7 +9,7 @@ import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -19,25 +19,35 @@ import xxhash
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
-from atlas_log_analyzer.core.grouping import Group, Grouper, SignedEntry
-from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker
+from atlas_log_analyzer.core.grouping import Group, SignedEntry
+from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
+from atlas_log_analyzer.core.pipeline import Recipe
 from atlas_log_analyzer.core.reader import SourceFile
-from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec, Signer
+from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec
 from atlas_log_analyzer.store.locks import FileLock
-from atlas_log_analyzer.store.logset import (
+from atlas_log_analyzer.store.manifest import (
     ENTRIES_FILE,
     GROUPS_FILE,
     MANIFEST_FILE,
-    LogSet,
     LogSetManifest,
     SourceInfo,
+    current_recipe_key,
 )
 from atlas_log_analyzer.store.schema import SCHEMA_VERSION
 
 if TYPE_CHECKING:
+    from atlas_log_analyzer.store.logset import LogSet
     from atlas_log_analyzer.store.writer import SourceStats
 
-__all__ = ["MIN_PREFIX", "AmbiguousLogSet", "LogSetNotFound", "Store", "StoreError", "logset_id"]
+__all__ = [
+    "MIN_PREFIX",
+    "AmbiguousLogSet",
+    "LogSetNotFound",
+    "Store",
+    "StoreError",
+    "UpgradeResult",
+    "logset_id",
+]
 
 MIN_PREFIX = 4
 """Minimum length of an id prefix accepted by :meth:`Store.open`."""
@@ -115,10 +125,28 @@ def _remove_tree(path: Path) -> None:
         shutil.rmtree(path, ignore_errors=True)
 
 
+def _logset(path: Path, manifest: LogSetManifest) -> LogSet:
+    from atlas_log_analyzer.store.logset import LogSet  # loads polars
+
+    return LogSet(path, manifest)
+
+
 def _time_range(stats: Iterable[SourceStats]) -> tuple[datetime | None, datetime | None]:
     firsts = [s.first_ts for s in stats if s.first_ts is not None]
     lasts = [s.last_ts for s in stats if s.last_ts is not None]
     return (min(firsts) if firsts else None, max(lasts) if lasts else None)
+
+
+@dataclass(frozen=True, slots=True)
+class UpgradeResult:
+    """Outcome of :meth:`Store.upgrade` for one set."""
+
+    manifest: LogSetManifest
+    """The set's manifest after the call (unchanged when skipped)."""
+    upgraded: bool
+    reason: str | None
+    """Why the set was skipped: ``"current"`` or an unknown format/spec; ``None`` if upgraded."""
+    previous_recipe_key: str
 
 
 class Store:
@@ -130,19 +158,21 @@ class Store:
     One instance may be shared by threads. Reads take no lock beyond a short one
     around the manifest cache; a write locks the store (against other processes
     too, see :data:`WRITE_LOCK_FILE`) only for its final name check and rename.
+    Listing reads only manifests (no polars); :meth:`open` builds the
+    :class:`~atlas_log_analyzer.store.logset.LogSet`.
     """
 
     def __init__(self, root: Path) -> None:
         self.root = root
-        self._index: dict[Path, tuple[int, int, LogSet | None]] = {}
-        """Manifest cache: set dir → (manifest mtime_ns, size, loaded set or None if invalid)."""
+        self._index: dict[Path, tuple[int, int, LogSetManifest | None]] = {}
+        """Manifest cache: set dir → (manifest mtime_ns, size, manifest or None if invalid)."""
         self._index_lock = threading.Lock()
-        """Guards :attr:`_index`; manifests are loaded outside it."""
+        """Guards :attr:`_index`; manifests are read outside it."""
         self._write_lock = threading.Lock()
         """Serialises the installs and removals of this instance (see :meth:`_writing`)."""
 
-    def _cached(self, d: Path) -> LogSet | None:
-        """Load ``d`` through the manifest cache; ``None`` when unreadable or invalid."""
+    def _cached(self, d: Path) -> LogSetManifest | None:
+        """Read the manifest of ``d`` through the cache; ``None`` when unreadable or invalid."""
         try:
             st = (d / MANIFEST_FILE).stat()
         except OSError:
@@ -154,12 +184,12 @@ class Store:
         if hit is not None and hit[0] == st.st_mtime_ns and hit[1] == st.st_size:
             return hit[2]
         try:
-            ls: LogSet | None = LogSet.load(d)
+            m: LogSetManifest | None = LogSetManifest.read(d)
         except OSError, ValueError:
-            ls = None
+            m = None
         with self._index_lock:
-            self._index[d] = (st.st_mtime_ns, st.st_size, ls)
-        return ls
+            self._index[d] = (st.st_mtime_ns, st.st_size, m)
+        return m
 
     def _set_dirs(self) -> list[Path]:
         if not self.root.is_dir():
@@ -170,21 +200,22 @@ class Store:
             if p.is_dir() and not p.name.startswith(".") and (p / MANIFEST_FILE).is_file()
         ]
 
-    def _load_all(self) -> list[LogSet]:
+    def _load_all(self) -> list[tuple[Path, LogSetManifest]]:
         dirs = self._set_dirs()
         live = set(dirs)
         with self._index_lock:
             for stale in [d for d in self._index if d not in live]:
                 del self._index[stale]
         # corrupt or newer-schema sets are skipped by listings
-        return [ls for d in dirs if (ls := self._cached(d)) is not None]
+        return [(d, m) for d in dirs if (m := self._cached(d)) is not None]
 
     def list(self) -> list[LogSetManifest]:
         """Manifests of all log sets, newest first.
 
-        Sets whose manifest is unreadable or uses a newer schema are skipped.
+        Sets whose manifest is unreadable or uses a newer schema are skipped. Only
+        the (cached) ``manifest.json`` files are read, so listing does not load polars.
         """
-        manifests = [ls.manifest for ls in self._load_all()]
+        manifests = [m for _, m in self._load_all()]
         return sorted(manifests, key=lambda m: m.created_at, reverse=True)
 
     def open(self, ref: str) -> LogSet:
@@ -204,28 +235,28 @@ class Store:
         exact = self.root / ref
         plain = ref and not ref.startswith(".") and "/" not in ref and "\\" not in ref
         if plain and (exact / MANIFEST_FILE).is_file():
-            ls = self._cached(exact)
-            return ls if ls is not None else self._load(exact)
+            m = self._cached(exact)
+            return _logset(exact, m) if m is not None else self._load(exact)
         sets = self._load_all()
-        by_name = [ls for ls in sets if ls.manifest.name == ref]
+        by_name = [(d, m) for d, m in sets if m.name == ref]
         if len(by_name) == 1:
-            return by_name[0]
+            return _logset(*by_name[0])
         if len(by_name) > 1:
-            ids = ", ".join(ls.manifest.id for ls in by_name)
+            ids = ", ".join(m.id for _, m in by_name)
             raise AmbiguousLogSet(f"name {ref!r} is ambiguous: {ids}")
         if len(ref) >= MIN_PREFIX:
-            by_prefix = [ls for ls in sets if ls.manifest.id.startswith(ref.lower())]
+            by_prefix = [(d, m) for d, m in sets if m.id.startswith(ref.lower())]
             if len(by_prefix) == 1:
-                return by_prefix[0]
+                return _logset(*by_prefix[0])
             if len(by_prefix) > 1:
-                ids = ", ".join(ls.manifest.id for ls in by_prefix)
+                ids = ", ".join(m.id for _, m in by_prefix)
                 raise AmbiguousLogSet(f"id prefix {ref!r} is ambiguous: {ids}")
         raise LogSetNotFound(f"no log set {ref!r} in {self.root}")
 
     @staticmethod
     def _load(path: Path) -> LogSet:
         try:
-            return LogSet.load(path)
+            return _logset(path, LogSetManifest.read(path))
         except (OSError, ValueError) as exc:
             raise StoreError(f"cannot open log set {path.name}: {exc}") from exc
 
@@ -298,6 +329,7 @@ class Store:
         spec: SignatureSpec,
         overwrite: bool = False,
         dedupe: bool = True,
+        recipe: Recipe | None = None,
     ) -> LogSet:
         """Write a new log set.
 
@@ -319,6 +351,8 @@ class Store:
 
         Everything is written to a temporary directory inside the store and
         renamed into place at the end, so a failed ingest leaves no partial set.
+        The manifest records ``recipe.key`` (default ``Recipe(fmt, spec)``): the
+        recipe the caller signed ``signed`` with.
 
         Raises:
             StoreError: No sources were given, or ``name`` is already used by
@@ -363,6 +397,7 @@ class Store:
                 signature_version=SIGNATURE_VERSION,
                 mask_rules_version=MASK_RULES_VERSION,
                 signature_spec=spec.key,
+                recipe_key=(recipe or Recipe(fmt, spec)).key,
             )
             manifest.write(tmp)
             with self._writing():
@@ -375,22 +410,26 @@ class Store:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
-        return LogSet(final, manifest)
+        return _logset(final, manifest)
 
     def regroup(self, ref: str, spec: SignatureSpec) -> LogSet:
-        """Recompute ``groups.parquet`` from the stored entries with another spec.
+        """Re-sign the stored entries with another spec and recompute ``groups.parquet``.
 
-        Entries are re-signed from their stored columns with the set's format
-        rules, so ``entries.parquet`` is rewritten too (``signature``,
-        ``coarse_signature``, ``template``, ``variables`` change) and the manifest
-        records the new spec and current signature/mask-rule versions. Any
-        ``merges.parquet`` is dropped because it refers to the old signatures.
+        Entries are re-signed from their stored columns with the current recipe of
+        the set's format (:class:`~atlas_log_analyzer.core.pipeline.Recipe`), each
+        distinct (level, logger, message, exception chain) once, so
+        ``entries.parquet`` is rewritten too (``signature``, ``coarse_signature``,
+        ``template``, ``variables`` change; every other column is kept) and the
+        manifest records the new spec, recipe key and current signature/mask-rule
+        versions. Any ``merges.parquet`` is dropped because it refers to the old
+        signatures.
 
         Raises:
             StoreError: The set does not exist or its format is unknown.
 
         """
-        from atlas_log_analyzer.store.writer import EntriesWriter, iter_entries, write_groups
+        from atlas_log_analyzer.store.regroup import resign_entries
+        from atlas_log_analyzer.store.writer import groups_from_entries
 
         ls = self.open(ref)
         m = ls.manifest
@@ -398,22 +437,21 @@ class Store:
             fmt = formats.get(m.format)
         except LookupError as exc:
             raise StoreError(f"unknown format {m.format!r} of log set {m.id}") from exc
-        grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), spec))
+        recipe = Recipe(fmt, spec)
         tmp = self._tmp_dir(m.id)
         try:
-            # stored ids are unique: no deduplication set needed
-            with EntriesWriter(tmp / ENTRIES_FILE, dedupe=False) as writer:
-                writer.write(grouper.sign(iter_entries(ls.entries_path, m.format)))
-            group_count = write_groups(tmp / GROUPS_FILE, grouper.groups.values())
+            count = resign_entries(ls.entries_path, tmp / ENTRIES_FILE, recipe, m.format)
+            group_count = groups_from_entries(tmp / ENTRIES_FILE, tmp / GROUPS_FILE)
             manifest = replace(
                 m,
-                entry_count=writer.count,
+                entry_count=count,
                 group_count=group_count,
                 tool_version=__version__,
                 schema_version=SCHEMA_VERSION,
                 signature_version=SIGNATURE_VERSION,
                 mask_rules_version=MASK_RULES_VERSION,
                 signature_spec=spec.key,
+                recipe_key=recipe.key,
             )
             manifest.write(tmp)
             with self._writing():
@@ -421,7 +459,35 @@ class Store:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
-        return LogSet(final, manifest)
+        return _logset(final, manifest)
+
+    def upgrade(self, ref: str) -> UpgradeResult:
+        """Rebuild a set at the current recipe of its format, keeping its signature spec.
+
+        A set is stale when its ``recipe_key`` differs from the key this tool would
+        sign it with today (a format, signature or masking-rule version changed);
+        stale sets are not comparable with new ones. The set is re-signed as by
+        :meth:`regroup` with its own spec; a set that is current, or whose format
+        is not registered, is left untouched and reported as skipped.
+
+        Raises:
+            StoreError: The set does not exist.
+
+        """
+        ls = self.open(ref)
+        m = ls.manifest
+        current = current_recipe_key(m.format, m.signature_spec)
+        if current is None:
+            reason = f"format {m.format!r} or signature spec {m.signature_spec!r} is unknown"
+            return UpgradeResult(m, upgraded=False, reason=reason, previous_recipe_key=m.recipe_key)
+        if current == m.recipe_key:
+            return UpgradeResult(
+                m, upgraded=False, reason="current", previous_recipe_key=m.recipe_key
+            )
+        rebuilt = self.regroup(m.id, SignatureSpec.from_key(m.signature_spec))
+        return UpgradeResult(
+            rebuilt.manifest, upgraded=True, reason=None, previous_recipe_key=m.recipe_key
+        )
 
     def remove(self, ref: str) -> None:
         """Delete a log set directory.

@@ -553,10 +553,11 @@ def test_diff(built: Built, built_b: Built) -> None:
 
 def test_diff_refuses_incompatible(built: Built, built_b: Built) -> None:
     b = built_b.logset
-    other = LogSet(b.path, replace(b.manifest, signature_spec="L+G+E+F3"))
+    # an empty recipe_key is derived from the version fields again
+    other = LogSet(b.path, replace(b.manifest, signature_spec="L+G+E+F3", recipe_key=""))
     with pytest.raises(ValueError, match="signature_spec"):
         diff(built.logset, other)
-    other2 = LogSet(b.path, replace(b.manifest, mask_rules_version=99))
+    other2 = LogSet(b.path, replace(b.manifest, mask_rules_version=99, recipe_key=""))
     with pytest.raises(ValueError, match="mask_rules_version"):
         diff(built.logset, other2)
     assert diff(built.logset, other, force=True).new.height == 1

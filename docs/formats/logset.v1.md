@@ -27,6 +27,7 @@ in-progress writes and are ignored.
 | `signature_version` | `int64` | no | Signature algorithm version. |
 | `mask_rules_version` | `int64` | no | Built-in masking rules version. |
 | `signature_spec` | `string` | no | SignatureSpec.key used for the primary signature. |
+| `recipe_key` | `string` | no | Recipe the set was signed with: format@version, signature spec, sig<N>, mask<N> and rules:<xxh3> of extra masking rules (if any), joined by vertical bars. Sets are comparable when it is equal; derived from the fields above for older manifests. |
 
 ## JSON document `logset.v1`
 

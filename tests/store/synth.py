@@ -187,7 +187,8 @@ class MiniGrouper:
             g.last_seen = e.timestamp
         if user := e.context.get("user"):
             g.users[user] += 1
-        g.threads[e.thread] += 1
+        if e.thread:  # as Grouper: an empty thread is not counted
+            g.threads[e.thread] += 1
         g.sources[e.source.path] += 1
         if len(g.examples) < self.max_examples:
             g.examples.append(e.id)
