@@ -1,9 +1,10 @@
 # Clusters: logs of several nodes
 
-Status: design 2026-11-05. Phase A (identity: §2, §3, §5 baseline rule, the
-home page rows, §11.1) is implemented; B to D are not. Builds on `design.md`
-(store, service layer), `report.md` (the page and its payload) and `webapp.md`;
-the commands are in `cli.md` (`ingest`, `label`, `captures`).
+Status: implemented 2026-11-05 (identity, capture views, interactions, cluster
+page). §11 is the contract the parts were built to; §11.1, §11.5 and
+`report.md` §5 record where the result differs from the text above.
+Builds on `design.md` (store, service layer), `report.md` (the page and
+its payload) and `webapp.md`; the commands are in `cli.md`.
 
 A Jira Data Center cluster writes one `atlassian-jira.log*` family per node. A
 cluster log export (one ZIP with `job.json` and `<NODE>_atlassian-jira.log*`
@@ -181,7 +182,8 @@ can change without rebuilding sets. They are versioned
   - `cache_replication` (`ClusterReplicationHealthCheck`, which names the
     subject node);
   - `index_replication`, `index_snapshot`, `index_restore` and
-    `index_replay` (`DefaultNodeReindexService`, `IndexUtils`);
+    `index_replay` (`DefaultNodeReindexService`, `IndexUtils`), and `reindex`
+    (a full re-index starting or ending);
   - `cluster_lock`, acquired or refused;
   - `cache_peer` (`CachingRMICachePeerManager` re-creating a peer of node X);
   - `job_run`, carrying the job key.
@@ -423,3 +425,83 @@ They match group templates, never raw text.
 - A sample payload `tests/report/data/cluster_payload.json` uses two invented
   nodes, `NODE1` and `NODE2`, and is the fixture of the page tests.
 - Implemented; what the page does and reads is in `report.md` §5.
+
+### 11.5 Analytics as built (S)
+
+Additions to §11.2, all optional keyword arguments or extra keys:
+
+- Every builder, `open_capture` and `resolve_window` take `front="api"`, which
+  picks the error codes and how messages spell parameters, as in the other
+  builders. `cluster_payload` also takes `store=None` (node verdicts, as in
+  `capture_summary`). `Capture.ref` is `capture:<id>` (without an id:
+  `capture:` and the member set ids); merged entries carry it as `logset`.
+- `resolve_window(since=, until=)` takes datetimes or the strings of `--since`
+  (relative times count back from the capture's last entry); a missing end comes
+  from `mode`. Both ends of a window are inclusive.
+- `EventRule` has a fifth field, `logger_re` (regex searched in the logger), and
+  `subject_group="@logger"` means the logger's class name. `logger_prefix` is
+  compared with packages abbreviated to their initials, as Jira shortens loggers
+  (`com.atlassian.jira.index.ha.X` matches `c.a.j.index.ha.X`). The rules match
+  the template; a subject captured with a placeholder in it (`NODE<NUM>`: digits
+  at the end of a node id are masked) is taken from the entry's message.
+  `EVENT_RULES_VERSION` lives in `core/events.py`.
+- Documents: `matrix.v1` adds `window` and `count`; `events.v1` adds
+  `rules_version` and `count`, items add `subject` (node id, check, lock or job
+  key), `last_ts` and `count` (folded entries), pairs add `lift`;
+  `interactions.v1` adds `delta_s` and `jobs` (job ownership: `job_run` events per
+  node), co-burst sides add `groups`; entry rows of a capture add `node` and `set`.
+  A tuple in a document (`gaps`, `coverage`, `hourly` cells, examples) is a JSON
+  array of fixed length.
+
+Rules and thresholds (constants in `service/cluster.py`):
+
+- Gaps: runs of at least 15 empty minutes inside the coverage (at most 100 per
+  node). Rates are per hour of the node's coverage in the window.
+- Matrix: `skewed` also when a group is missing from a node that has logs in the
+  window while present on two or more; `skew` is then taken over the nodes that
+  have it. `lead_ms` is the gap between the first two nodes' `first_seen`.
+- Jira event rules (`core/formats/jira_events.py`, first match wins):
+  `index_replay` (`DefaultNodeReindexService` `[INDEX-REPLAY]`, subject
+  `sourceNodeId`), `index_restore`, `reindex` (`Reindex All`, `ReindexAll took`,
+  `Re-indexing started/finished/failed`, `Reindex took`), `index_snapshot` (any
+  `index snapshot` line of `com.atlassian.jira`, `ArchiveUtils` `Creating
+  archive`), `index_replication`, `cache_replication`
+  (`ClusterReplicationHealthCheck`, subject the node), `cache_peer`
+  (`CachingRMICachePeerManager`, subject the node), `health_failed`
+  (`SupportHealthCheckProcess`, subject the check), `cluster_lock` (any logger,
+  subject the lock), `stop` and `start` (`JiraStartupLogger`,
+  `LauncherContextListener`, `DefaultJiraLauncher`), `job_run` (a `JobRunner`
+  logger: its class; else a `jobId`; else job start/finish/skip lines: the
+  logger's class).
+- Folding: entries of one node, kind and subject within 60 s of an event's first
+  entry are one event (`job_run` 120 s, `start`/`stop` 10 min). In `events.v1`
+  items, the scheduled kinds fold further: a `health_failed` repeat at most 2 h
+  and a `job_run` repeat at most 30 min after the previous one join it (a check
+  failing hourly for a week is one item with its `count` and `last_ts`).
+- Event pairs use the events before that second fold: b on another node at most
+  60 s after a, listed when `count / (of × min(1, events b × 60 s / window))` is
+  at least 3; `job_run` takes no part (concurrent jobs cover it). The clock skew
+  uses pairs among `index_snapshot`, `index_replay`, `reindex` and `cluster_lock`
+  less than 5 s apart.
+- Co-bursts: minute counts of the groups at WARN and above or behind an event,
+  except `health_failed` and `job_run` groups (they recur by schedule). A burst
+  starts at a minute with at least the group's usual count (median of its
+  non-empty minutes) after 10 minutes below it. The 200 groups with most bursts
+  per node are kept; groups of one node whose bursts coincide within `delta_s`
+  80% of the time both ways form one family, shown by its member with most
+  bursts (`groups` counts them). A pair needs at least 3 hits, hits for at least
+  half the bursts of a, and lift at least 3; each group appears at most once on
+  each side (a same-minute pair only one way round), at most 50 pairs.
+- Concurrent jobs: `job_run` events with one job key on two or more nodes within
+  60 s of a slot's first run. Sessions: a session seen on two nodes within an
+  hour (counts per node pair only).
+- `cluster-report.v1`: an entry id that two nodes share (an identical line in the
+  same millisecond) is listed once, as the first node's; the other node's
+  examples omit it.
+
+On the sample capture (two nodes, about 615k and 747k entries) every builder
+takes under 1 s and the payload about 0.7 s and 5 MB. There, the index replay on
+the second node comes 22 s *before* the first node's `index_snapshot` event (its
+cluster lock release) and 11 s after its re-index ended: the pairs found are
+`reindex` → `index_replay` (+11 s) and `index_replay` → `index_snapshot` (+22 s),
+too far apart for a skew estimate.

@@ -56,7 +56,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | Key | Type | Required | Description |
 |---|---|---|---|
 | `schema` | `"entries.v1"` | yes |  |
-| `logset` | `string` | yes | Set id. |
+| `logset` | `string` | yes | Set id; capture:<id> for the merged entries of a capture (rows add node, set). |
 | `count` | `integer` | yes | Rows in items. |
 | `items` | `list<EntryRow>` | yes | entries.v1 rows (all columns unless --columns). |
 | `total` | `integer` | no | entries: matches before offset/limit. |
@@ -77,6 +77,8 @@ Rows hold the columns above (`--columns`/`--brief` select them, so every column 
 |---|---|---|
 | `body_truncated` | `true` | Only on rows whose raw or body was cut (--max-raw). |
 | `raw_chars` | `integer` | Original length of raw (of body without raw); cut rows only. |
+| `node` | `string` | Entries of a capture: the entry's node. |
+| `set` | `string` | Entries of a capture: the id of the node's set. |
 
 ### `GroupRow`
 

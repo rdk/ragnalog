@@ -397,7 +397,9 @@ class Group(Struct, kw_only=True, tag_field="schema", tag="group.v1"):
 class Entries(Struct, kw_only=True, tag_field="schema", tag="entries.v1"):
     """Entries: `entries` (a page), `show` (one group), `context` (around an entry)."""
 
-    logset: Annotated[str, _d("Set id.")]
+    logset: Annotated[
+        str, _d("Set id; capture:<id> for the merged entries of a capture (rows add node, set).")
+    ]
     count: Annotated[int, _d("Rows in items.")]
     items: Annotated[list[EntryRow], _d("entries.v1 rows (all columns unless --columns).")]
     total: Annotated[int, _d("entries: matches before offset/limit.")] | UnsetType = UNSET
@@ -806,6 +808,403 @@ class ManifestCommandDetail(
     params: Annotated[list[ManifestParam], _d("Arguments, then options, in --help order.")] = []
 
 
+# --- clusters: capture views of service/cluster.py (capture.v1, cluster-timeline.v1, matrix.v1,
+# events.v1, interactions.v1, cluster-report.v1). Times are ISO 8601 UTC with milliseconds,
+# bucket starts end in Z. A "...Body" Struct is its document without "schema", as
+# cluster-report.v1 embeds it.
+
+
+class ClusterWindow(Struct, kw_only=True):
+    """The time window of a capture view; both ends inclusive."""
+
+    mode: Annotated[
+        Literal["overlap", "union", "explicit"],
+        _d(
+            "overlap: latest first entry to earliest last entry of the nodes; union: earliest "
+            "first to latest last; explicit: since/until given."
+        ),
+    ]
+    since: Annotated[str, _d("Start, ISO 8601 UTC.")]
+    until: Annotated[str, _d("End, ISO 8601 UTC.")]
+
+
+class ClusterSpan(Struct, kw_only=True):
+    """A node's logs inside the window: from its first to its last entry there."""
+
+    since: Annotated[str, _d("ISO 8601 UTC.")]
+    until: Annotated[str, _d("ISO 8601 UTC.")]
+
+
+class ClusterSetRef(Struct, kw_only=True):
+    """The log set of a node."""
+
+    id: Annotated[str, _d("Set id.")]
+    name: Annotated[str | None, _d("Set name.")]
+
+
+class ClusterTopError(Struct, kw_only=True):
+    """The ERROR/FATAL group with the most entries of a node in the window."""
+
+    signature: Annotated[str, _d("Group signature.")]
+    template: Annotated[str | None, _d("Group template.")]
+    count: Annotated[int, _d("Its entries on the node in the window.")]
+
+
+class ClusterBaseline(Struct, kw_only=True):
+    """The node's own earlier set its triage compared with."""
+
+    id: Annotated[str, _d("Baseline set id.")]
+    name: Annotated[str | None, _d("Baseline set name.")]
+    reason: Annotated[str | None, _d("Why it was picked, in one line.")]
+
+
+class ClusterNodeSummary(Struct, kw_only=True):
+    """One node of a capture."""
+
+    node: Annotated[str, _d("Node id.")]
+    set: Annotated[ClusterSetRef, _d("The node's log set.")]
+    first_ts: Annotated[str | None, _d("The set's first entry (whole set).")]
+    last_ts: Annotated[str | None, _d("The set's last entry (whole set).")]
+    coverage: Annotated[
+        ClusterSpan | None, _d("The node's logs inside the window; null when it has none there.")
+    ]
+    gaps: Annotated[
+        list[tuple[str, str]],
+        _d(
+            "[since, until] of runs of at least 15 empty minutes inside the coverage, oldest "
+            "first, at most 100."
+        ),
+    ]
+    entries: Annotated[int, _d("Entries in the window.")]
+    errors: Annotated[int, _d("ERROR and FATAL entries in the window.")]
+    warnings: Annotated[int, _d("WARN entries in the window.")]
+    errors_per_hour: Annotated[float, _d("errors per hour of coverage.")]
+    warnings_per_hour: Annotated[float, _d("warnings per hour of coverage.")]
+    top_error: Annotated[ClusterTopError | None, _d("Largest error group; null without errors.")]
+    verdict: Annotated[
+        Verdict | None, _d("Triage against the node's own baseline; null unless asked for.")
+    ]
+    baseline: Annotated[
+        ClusterBaseline | None, _d("The baseline of verdict; null without one or unless asked.")
+    ]
+    events: Annotated[dict[str, int], _d("Events in the window by kind.")]
+
+
+class ClusterSkew(Struct, kw_only=True):
+    """Estimated clock offset of node b against node a (informational, never applied)."""
+
+    a: Annotated[str, _d("Node id.")]
+    b: Annotated[str, _d("Node id, after a in node order.")]
+    offset_ms: Annotated[int, _d("Median of ts on b minus ts on a over the pairs.")]
+    pairs: Annotated[int, _d("Event pairs the estimate rests on.")]
+
+
+class ClusterCaptureBody(Struct, kw_only=True):
+    """capture.v1 without its schema key."""
+
+    capture: Annotated[str | None, _d("Capture id; null when not known.")]
+    cluster: Annotated[str | None, _d("Cluster name.")]
+    window: Annotated[ClusterWindow, _d("The window of the counts.")]
+    nodes: Annotated[list[ClusterNodeSummary], _d("The nodes, sorted by node id.")]
+    skew: Annotated[
+        list[ClusterSkew],
+        _d(
+            "Clock offset estimates from simultaneous event pairs (index, re-index and cluster "
+            "lock events less than 5 s apart); [] when there are none."
+        ),
+    ]
+
+
+class ClusterCapture(ClusterCaptureBody, kw_only=True, tag_field="schema", tag="capture.v1"):
+    """The nodes of a capture side by side: coverage, gaps, volume, events, verdicts."""
+
+
+class ClusterNodeTimeline(Struct, kw_only=True):
+    """One node's counts per bucket."""
+
+    levels: Annotated[
+        dict[str, list[int]],
+        _d(
+            "Entries per bucket by ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE), OTHER; "
+            'only "count" with a signature.'
+        ),
+    ]
+    coverage: Annotated[
+        tuple[int, int] | None,
+        _d("Indices of the buckets of the node's first and last entry; null outside."),
+    ]
+
+
+class ClusterTimelineBody(Struct, kw_only=True):
+    """cluster-timeline.v1 without its schema key."""
+
+    bucket: Annotated[str, _d("Bucket size, e.g. 1h.")]
+    buckets: Annotated[list[str], _d("Bucket starts, ISO 8601 UTC, contiguous over the window.")]
+    nodes: Annotated[dict[str, ClusterNodeTimeline], _d("Counts by node id.")]
+    signature: Annotated[str, _d("The group counted, when one was asked for.")] | UnsetType = UNSET
+
+
+class ClusterTimeline(
+    ClusterTimelineBody, kw_only=True, tag_field="schema", tag="cluster-timeline.v1"
+):
+    """Entries per time bucket and node, by level or of one group."""
+
+
+class MatrixNodeCount(Struct, kw_only=True):
+    """A group on one node in the window."""
+
+    count: Annotated[int, _d("Entries; 0 when absent.")]
+    rate_per_hour: Annotated[float, _d("Entries per hour of the node's coverage.")]
+    first_seen: Annotated[str | None, _d("First entry; null when absent.")]
+    last_seen: Annotated[str | None, _d("Last entry; null when absent.")]
+
+
+class MatrixRow(Struct, kw_only=True):
+    """One group across the nodes."""
+
+    signature: Annotated[str, _d("Group signature.")]
+    template: Annotated[str | None, _d("Masked message template.")]
+    level: Annotated[int, _d("Numeric level.")]
+    level_name: Annotated[str, _d("Level name.")]
+    logger: Annotated[str | None, _d("Logger.")]
+    exception_type: Annotated[str | None, _d("Outermost exception type.")]
+    total: Annotated[int, _d("Entries on all nodes in the window.")]
+    per_node: Annotated[dict[str, MatrixNodeCount], _d("Every node of the capture by id.")]
+    spread: Annotated[
+        Literal["all", "only", "skewed"],
+        _d(
+            "only: on one node; skewed: missing from a node that has logs in the window, or "
+            "skew >= skew_min; all: otherwise."
+        ),
+    ]
+    skew: Annotated[
+        float | None,
+        _d(
+            "Max/min, over the nodes that have the group, of count / the node's entries in the "
+            "window; null when only."
+        ),
+    ]
+    first_node: Annotated[str | None, _d("Node with the earliest first_seen.")]
+    lead_ms: Annotated[
+        int | None, _d("first_seen of the next node minus that of first_node; null when only.")
+    ]
+
+
+class ClusterMatrix(Struct, kw_only=True, tag_field="schema", tag="matrix.v1"):
+    """Groups by node: where each group occurs, how often, and which node saw it first."""
+
+    window: Annotated[ClusterWindow, _d("The window of the counts.")]
+    nodes: Annotated[list[str], _d("Node ids, in order.")]
+    count: Annotated[int, _d("Rows in items.")]
+    total: Annotated[int, _d("Matching groups before offset/limit.")]
+    offset: Annotated[int, _d("Echo of offset.")]
+    truncated: Annotated[bool, _d("More rows follow.")]
+    items: Annotated[list[MatrixRow], _d("Rows by the sort (count, skew or lead), descending.")]
+
+
+class ClusterEvent(Struct, kw_only=True):
+    """One event: a group matched by an event rule, repeats within a short time folded in."""
+
+    node: Annotated[str, _d("Node id.")]
+    ts: Annotated[str, _d("Time of its first entry.")]
+    last_ts: Annotated[str, _d("Time of its last entry (= ts when count is 1).")]
+    kind: Annotated[str, _d("start, stop, health_failed, cache_replication, … job_run.")]
+    subject: Annotated[
+        str | None, _d("What it is about: a node id, a health check, a lock, a job key.")
+    ]
+    subject_node: Annotated[str | None, _d("subject when it is a node of the capture.")]
+    signature: Annotated[str, _d("Group signature of the first entry.")]
+    entry_id: Annotated[str, _d("Id of the first entry (in the node's set).")]
+    text: Annotated[str, _d("Message of the first entry, at most 300 characters.")]
+    count: Annotated[
+        int,
+        _d(
+            "Entries folded into the event: same node, kind and subject within 60 s of the "
+            "first (job_run 120 s, start and stop 10 min); health_failed and job_run also "
+            "fold repeats at most 2 h (job_run 30 min) after the previous one."
+        ),
+    ]
+
+
+class EventSide(Struct, kw_only=True):
+    """One side of an event pair."""
+
+    node: Annotated[str, _d("Node id.")]
+    kind: Annotated[str, _d("Event kind.")]
+
+
+class EventPair(Struct, kw_only=True):
+    """Events of kind a on node a followed within 60 s by events of kind b on node b."""
+
+    a: Annotated[EventSide, _d("The earlier event.")]
+    b: Annotated[EventSide, _d("The later event, on another node.")]
+    count: Annotated[int, _d("Events a followed by an event b.")]
+    of: Annotated[int, _d("Events a in the window.")]
+    median_lag_ms: Annotated[int, _d("Median time from a to the first b after it.")]
+    lift: Annotated[
+        float, _d("count / expected, expected = of x min(1, events b x 60 s / window).")
+    ]
+    examples: Annotated[list[tuple[str, str]], _d("Up to 3 [ts a, ts b].")]
+
+
+class ClusterEventsBody(Struct, kw_only=True):
+    """events.v1 without its schema key."""
+
+    rules_version: Annotated[int, _d("EVENT_RULES_VERSION of the rules used.")]
+    count: Annotated[int, _d("Rows in items.")]
+    items: Annotated[list[ClusterEvent], _d("Events by time, then node.")]
+    pairs: Annotated[
+        list[EventPair],
+        _d(
+            "Kind pairs on different nodes with lift >= 3, by count; without job_run (see "
+            "interactions.concurrent_jobs); at most 50. Computed before scheduled repeats "
+            "are folded."
+        ),
+    ]
+
+
+class ClusterEvents(ClusterEventsBody, kw_only=True, tag_field="schema", tag="events.v1"):
+    """What every node did: restarts, health checks, index and cache events, jobs."""
+
+
+class MentionEdge(Struct, kw_only=True):
+    """Entries of one node naming another node of the capture."""
+
+    from_: Annotated[str, _d("The node whose entries name the other.")] = msgspec.field(name="from")
+    to: Annotated[str, _d("The node named (whole word, case-sensitive).")]
+    count: Annotated[int, _d("Entries in the window.")]
+    groups: Annotated[list[str], _d("Their signatures, most entries first, at most 20.")]
+
+
+class BurstSide(Struct, kw_only=True):
+    """A group on one node."""
+
+    node: Annotated[str, _d("Node id.")]
+    signature: Annotated[str, _d("Group signature.")]
+    template: Annotated[str | None, _d("Group template.")]
+    groups: Annotated[
+        int,
+        _d(
+            "Groups of the node that burst together with it (itself included); it stands "
+            "for them as the one with most bursts."
+        ),
+    ]
+
+
+class CoBurst(Struct, kw_only=True):
+    """When group a burst on node a, group b burst on node b within delta_s."""
+
+    a: Annotated[BurstSide, _d("The group that bursts first.")]
+    b: Annotated[BurstSide, _d("The group that follows, on another node.")]
+    hits: Annotated[int, _d("Bursts of a followed by a burst of b.")]
+    of: Annotated[int, _d("Bursts of a.")]
+    median_lag_ms: Annotated[int, _d("Median lag from a to b, whole minutes in ms.")]
+    lift: Annotated[float, _d("hits / expected, expected = of x P(a burst of b in delta_s).")]
+
+
+class ConcurrentJob(Struct, kw_only=True):
+    """A job run on several nodes in the same slot."""
+
+    job: Annotated[str, _d("Job key (job_run subject).")]
+    nodes: Annotated[list[str], _d("Nodes it ran on together.")]
+    slots: Annotated[int, _d("Slots of 60 s in which it ran on 2 or more nodes.")]
+    examples: Annotated[list[str], _d("Start of up to 3 such slots.")]
+
+
+class SessionPair(Struct, kw_only=True):
+    """Sessions seen on both nodes within an hour."""
+
+    nodes: Annotated[tuple[str, str], _d("The two nodes.")]
+    count: Annotated[int, _d("Sessions.")]
+
+
+class JobRuns(Struct, kw_only=True):
+    """Which nodes run a job: job_run events per node."""
+
+    job: Annotated[str, _d("Job key.")]
+    runs: Annotated[dict[str, int], _d("job_run events by node.")]
+
+
+class ClusterInteractionsBody(Struct, kw_only=True):
+    """interactions.v1 without its schema key."""
+
+    delta_s: Annotated[int, _d("Echo of delta_s (co-bursts).")]
+    mentions: Annotated[list[MentionEdge], _d("By count.")]
+    co_bursts: Annotated[
+        list[CoBurst],
+        _d(
+            "Pairs with hits >= 3, hits >= of / 2 and lift >= 3, by hits then lift; each "
+            "group at most once as a and once as b; at most 50."
+        ),
+    ]
+    concurrent_jobs: Annotated[list[ConcurrentJob], _d("By slots.")]
+    sessions: Annotated[list[SessionPair], _d("By count; session ids are not listed.")]
+    jobs: Annotated[
+        list[JobRuns], _d("Job ownership: job_run events per node, most nodes first; at most 100.")
+    ]
+
+
+class ClusterInteractions(
+    ClusterInteractionsBody, kw_only=True, tag_field="schema", tag="interactions.v1"
+):
+    """How the nodes affect each other: mentions, co-bursts, concurrent jobs, sessions."""
+
+
+class ClusterReportGroup(MatrixRow, kw_only=True):
+    """A matrix row with its counts per bucket and examples per node."""
+
+    hourly: Annotated[
+        dict[str, list[tuple[int, int]]],
+        _d("Per node, sparse [bucket index into timeline.buckets, count]."),
+    ]
+    examples: Annotated[dict[str, list[str]], _d("Per node, entry ids present in entries.")]
+
+
+class ClusterReportOptions(Struct, kw_only=True):
+    """Build options of a cluster report payload."""
+
+    window: Annotated[Literal["overlap", "union", "explicit"], _d("Window mode.")]
+    examples: Annotated[int, _d("Example entries per group and node.")]
+    max_raw: Annotated[int, _d("Characters of raw kept; 0 = all.")]
+    max_groups: Annotated[int, _d("Largest groups kept.")]
+    truncated_groups: Annotated[int, _d("Groups cut by max_groups.")]
+
+
+class ClusterReportUrls(Struct, kw_only=True):
+    """Links the web app adds."""
+
+    entries: Annotated[str, _d("Merged entries of the capture.")]
+    context: Annotated[str, _d("Context on all nodes of one entry (template).")]
+    set_report: Annotated[str, _d("Report page of one node's set (template).")]
+
+
+class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-report.v1"):
+    """The cluster page's payload: a capture, its timeline, groups, events and interactions."""
+
+    generated_at: Annotated[str, _d("Build time, YYYY-MM-DDTHH:MM:SSZ.")]
+    tool_version: Annotated[str, _d("Version that built the payload.")]
+    capture: Annotated[ClusterCaptureBody, _d("capture.v1 without schema.")]
+    nodes: Annotated[list[str], _d("Node ids; their order is the colour order.")]
+    timeline: Annotated[
+        ClusterTimelineBody, _d("cluster-timeline.v1, bucket 1h (15m when the window < 12 h).")
+    ]
+    groups: Annotated[list[ClusterReportGroup], _d("Matrix rows by count, at most max_groups.")]
+    entries: Annotated[
+        dict[str, dict[str, Any]],
+        _d(
+            "Example entries by id: report.v1 entries plus node and set (an id two nodes "
+            "share, an identical line in the same millisecond, is the first node's)."
+        ),
+    ]
+    events: Annotated[ClusterEventsBody, _d("events.v1 without schema.")]
+    interactions: Annotated[ClusterInteractionsBody, _d("interactions.v1 without schema.")]
+    options: Annotated[ClusterReportOptions, _d("Build options.")]
+    urls: Annotated[ClusterReportUrls | None, _d("null; the web app fills it.")]
+
+
+# --- end of clusters
+
+
 Document = (
     Sets
     | Logset
@@ -834,6 +1233,12 @@ Document = (
     | Report
     | Manifest
     | ManifestCommandDetail
+    | ClusterCapture
+    | ClusterTimeline
+    | ClusterMatrix
+    | ClusterEvents
+    | ClusterInteractions
+    | ClusterReport
 )
 """Any document; `schema` selects the Struct."""
 
@@ -943,6 +1348,8 @@ def row_schemas() -> dict[str, dict[str, Any]]:
                     "description": "Original length of raw (of body without raw); cut rows only.",
                     **_INT,
                 },
+                "node": {"description": "Entries of a capture: the entry's node.", **_STR},
+                "set": {"description": "Entries of a capture: the id of the node's set.", **_STR},
             },
         ),
         "GroupRow": _row(

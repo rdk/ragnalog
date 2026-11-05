@@ -1,0 +1,249 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "matrix.v1.schema.json",
+  "title": "matrix.v1",
+  "description": "Groups by node: where each group occurs, how often, and which node saw it first.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "matrix.v1"
+      ]
+    },
+    "window": {
+      "description": "The window of the counts.",
+      "$ref": "#/$defs/ClusterWindow"
+    },
+    "nodes": {
+      "description": "Node ids, in order.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "total": {
+      "description": "Matching groups before offset/limit.",
+      "type": "integer"
+    },
+    "offset": {
+      "description": "Echo of offset.",
+      "type": "integer"
+    },
+    "truncated": {
+      "description": "More rows follow.",
+      "type": "boolean"
+    },
+    "items": {
+      "description": "Rows by the sort (count, skew or lead), descending.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/MatrixRow"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "window",
+    "nodes",
+    "count",
+    "total",
+    "offset",
+    "truncated",
+    "items"
+  ],
+  "$defs": {
+    "ClusterWindow": {
+      "title": "ClusterWindow",
+      "description": "The time window of a capture view; both ends inclusive.",
+      "type": "object",
+      "properties": {
+        "mode": {
+          "description": "overlap: latest first entry to earliest last entry of the nodes; union: earliest first to latest last; explicit: since/until given.",
+          "enum": [
+            "explicit",
+            "overlap",
+            "union"
+          ]
+        },
+        "since": {
+          "description": "Start, ISO 8601 UTC.",
+          "type": "string"
+        },
+        "until": {
+          "description": "End, ISO 8601 UTC.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "mode",
+        "since",
+        "until"
+      ]
+    },
+    "MatrixNodeCount": {
+      "title": "MatrixNodeCount",
+      "description": "A group on one node in the window.",
+      "type": "object",
+      "properties": {
+        "count": {
+          "description": "Entries; 0 when absent.",
+          "type": "integer"
+        },
+        "rate_per_hour": {
+          "description": "Entries per hour of the node's coverage.",
+          "type": "number"
+        },
+        "first_seen": {
+          "description": "First entry; null when absent.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_seen": {
+          "description": "Last entry; null when absent.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "count",
+        "rate_per_hour",
+        "first_seen",
+        "last_seen"
+      ]
+    },
+    "MatrixRow": {
+      "title": "MatrixRow",
+      "description": "One group across the nodes.",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "template": {
+          "description": "Masked message template.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "level": {
+          "description": "Numeric level.",
+          "type": "integer"
+        },
+        "level_name": {
+          "description": "Level name.",
+          "type": "string"
+        },
+        "logger": {
+          "description": "Logger.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "exception_type": {
+          "description": "Outermost exception type.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "total": {
+          "description": "Entries on all nodes in the window.",
+          "type": "integer"
+        },
+        "per_node": {
+          "description": "Every node of the capture by id.",
+          "type": "object",
+          "additionalProperties": {
+            "$ref": "#/$defs/MatrixNodeCount"
+          }
+        },
+        "spread": {
+          "description": "only: on one node; skewed: missing from a node that has logs in the window, or skew >= skew_min; all: otherwise.",
+          "enum": [
+            "all",
+            "only",
+            "skewed"
+          ]
+        },
+        "skew": {
+          "description": "Max/min, over the nodes that have the group, of count / the node's entries in the window; null when only.",
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "first_node": {
+          "description": "Node with the earliest first_seen.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lead_ms": {
+          "description": "first_seen of the next node minus that of first_node; null when only.",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "required": [
+        "signature",
+        "template",
+        "level",
+        "level_name",
+        "logger",
+        "exception_type",
+        "total",
+        "per_node",
+        "spread",
+        "skew",
+        "first_node",
+        "lead_ms"
+      ]
+    }
+  }
+}

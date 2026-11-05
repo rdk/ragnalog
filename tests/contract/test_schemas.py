@@ -103,7 +103,8 @@ def check(doc: Any) -> str:
     """Check one decoded document all three ways; return its schema name."""
     assert isinstance(doc, dict) and doc.get("schema") in DOCUMENTS, doc
     typed = convert(doc)
-    assert msgspec.to_builtins(typed) == doc, "a key of the document is not in its Struct"
+    again = json.loads(msgspec.json.encode(typed))  # tuples come back as lists, as in doc
+    assert again == doc, "a key of the document is not in its Struct"
     assert type(decode(json.dumps(doc))) is type(typed)
     root = document_schema(doc["schema"])
     validate(doc, root, root)
@@ -268,9 +269,20 @@ PARITY_DOCUMENTS = {
 }
 """Documents that the parity cases produce."""
 
+CLUSTER_DOCUMENTS = {
+    "capture.v1",
+    "cluster-timeline.v1",
+    "matrix.v1",
+    "events.v1",
+    "interactions.v1",
+    "cluster-report.v1",
+}
+"""Built by service/cluster.py, no front end yet: checked in tests/service/test_cluster.py."""
+
 
 def test_every_document_has_a_case() -> None:
     others = {e.schema for e in EXTRA} | {"report-file.v1", "job.v1", "jobs.v1", "remove.v1"}
     others.add("upgrade.v1")  # test_ingest_document
     others.add("ingest-capture.v1")  # test_split_ingest_documents
+    others |= CLUSTER_DOCUMENTS
     assert PARITY_DOCUMENTS | others == set(DOCUMENTS)

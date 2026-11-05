@@ -51,6 +51,8 @@ One entry; the entries.v1 columns (atlas-log schema entries). Every column is op
 | `parse_error` | `string \| null` | Set when the header line was not recognised. |
 | `body_truncated` | `true` | Only on rows whose raw or body was cut (--max-raw). |
 | `raw_chars` | `integer` | Original length of raw (of body without raw); cut rows only. |
+| `node` | `string` | Entries of a capture: the entry's node. |
+| `set` | `string` | Entries of a capture: the id of the node's set. |
 
 ### `GroupRow`
 

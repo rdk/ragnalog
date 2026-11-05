@@ -159,7 +159,7 @@ def _part(schema: dict[str, Any], defs: dict[str, Any]) -> tuple[str | None, str
     """Struct part a property holds (directly, nullable or as list items) and its suffix."""
     for option in schema.get("anyOf", [schema]):
         node, suffix = option, ""
-        if option.get("type") == "array" and "items" in option:
+        if option.get("type") == "array" and isinstance(option.get("items"), dict):
             node, suffix = option["items"], "[]"
         elif isinstance(option.get("additionalProperties"), dict):
             node, suffix = option["additionalProperties"], ".*"

@@ -1,0 +1,72 @@
+2026-11-02 08:00:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:05:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:10:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:10:00,000+0000 localhost-startStop-1 INFO      [org.acme.boot.Warmup] Warming caches for project XYZ
+2026-11-02 08:15:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:20:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:20:00,000+0000 localhost-startStop-1 INFO      [org.acme.boot.Warmup] Warming caches for project XYZ
+2026-11-02 08:25:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:30:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:35:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:40:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:45:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:50:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 08:55:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:00:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:05:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:10:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:12:10,000+0000 localq-reader-1 ERROR      [org.acme.cache.ReplicationQueue] Replication backlog above 100 messages
+2026-11-02 09:15:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:16:00,000+0000 Caesium-1-6 WARN      [org.acme.db.PoolMonitor] Pool usage at 80 percent
+2026-11-02 09:20:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:25:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:30:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:35:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:36:31,000+0000 Caesium-1-4 WARN ServiceRunner     [c.a.t.j.healthcheck.cluster.ClusterReplicationHealthCheck] Node NODE1 does not seem to replicate its cache
+2026-11-02 09:40:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:45:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:50:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 09:52:10,000+0000 localq-reader-1 ERROR      [org.acme.cache.ReplicationQueue] Replication backlog above 100 messages
+2026-11-02 09:55:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:00:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:05:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:05:40,000+0000 Caesium-1-2 INFO      [c.a.j.m.tracking.polling.PollerJobScheduler] PollerJobScheduler job started: jobId=acme-poller-job startTime=Mon Nov 02 10:05:40 UTC 2026
+2026-11-02 10:10:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:15:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:16:00,000+0000 Caesium-1-6 WARN      [org.acme.db.PoolMonitor] Pool usage at 80 percent
+2026-11-02 10:20:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:22:10,000+0000 localq-reader-1 ERROR      [org.acme.cache.ReplicationQueue] Replication backlog above 100 messages
+2026-11-02 10:25:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:30:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:30:20,000+0000 Caesium-1-3 INFO      [org.acme.jobs.CleanupJobRunner] Cleanup finished, removed 7 rows
+2026-11-02 10:35:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:36:31,000+0000 Caesium-1-4 WARN ServiceRunner     [c.a.t.j.healthcheck.cluster.ClusterReplicationHealthCheck] Node NODE1 does not seem to replicate its cache
+2026-11-02 10:36:31,500+0000 Caesium-1-4 ERROR ServiceRunner     [c.a.t.healthcheck.concurrent.SupportHealthCheckProcess] Health check 'Cluster Cache Replication' failed with severity 'critical': 'The node NODE1 is not replicating'
+2026-11-02 10:40:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:45:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:45:00,000+0000 http-nio-8080-exec-9 url: /browse/ABC-12; user: alice INFO alice 645x3001x1 s3ss10n1 10.0.0.21 /browse/ABC-12 [org.acme.web.IssueView] Rendered issue ABC-12
+2026-11-02 10:50:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 10:50:00,000+0000 http-nio-8080-exec-2 ERROR      [org.acme.web.RestFilter] Request failed
+org.acme.web.RestException: upstream timeout
+	at org.acme.web.RestFilter.doFilter(RestFilter.java:58)
+	at org.acme.web.Chain.next(Chain.java:12)
+2026-11-02 10:55:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:00:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:00:02,300+0000 NodeReindexServiceThread:thread-1 INFO      [c.a.j.index.ha.DefaultNodeReindexService] [INDEX-REPLAY] Re-index after last sync detected: operationName=FULL_REINDEX_END, sourceNodeId=NODE1, indexTime=2026-11-02T11:00:00.050+0000. Resetting index count and restoring index from snapshot
+2026-11-02 11:05:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:10:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:12:10,000+0000 localq-reader-1 ERROR      [org.acme.cache.ReplicationQueue] Replication backlog above 100 messages
+2026-11-02 11:15:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:16:00,000+0000 Caesium-1-6 WARN      [org.acme.db.PoolMonitor] Pool usage at 80 percent
+2026-11-02 11:20:00,000+0000 Caesium-1-6 INFO      [org.acme.sync.LdapSync] Synced 31 users from directory
+2026-11-02 11:20:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:25:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:30:00,000+0000 Caesium-1-3 INFO      [org.acme.jobs.CleanupJobRunner] Cleanup finished, removed 2 rows
+2026-11-02 11:30:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:35:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:36:31,000+0000 Caesium-1-4 WARN ServiceRunner     [c.a.t.j.healthcheck.cluster.ClusterReplicationHealthCheck] Node NODE1 does not seem to replicate its cache
+2026-11-02 11:40:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:45:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:50:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:55:00,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
+2026-11-02 11:59:30,000+0000 Caesium-2-1 INFO      [org.acme.health.Heartbeat] Heartbeat sent to monitoring
