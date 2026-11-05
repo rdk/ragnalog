@@ -243,12 +243,13 @@ implemented. Jobs are not persisted across restarts.
 src/atlas_log_analyzer/webapp/
   __init__.py   create_app, Settings
   app.py        create_app(): routers, static files, HTML/JSON error handling
-  settings.py   Settings (flags > ATLAS_LOG_* env > defaults)
-  state.py      AppState: store, server lock, summary and report caches, JobManager
-  api.py        /api routes; triage and the auto baseline come from store/triage.py
+  settings.py   re-exports config.Settings (flags > ATLAS_LOG_* env > defaults), shared with the CLI
+  state.py      AppState (a service Sets): store, server lock, summary and report caches, JobManager
+  api.py        /api routes: bind the request, call service/, add report_url
+  params.py     query_model(): a service request dataclass read from the query string
   pages.py      HTML routes (Jinja2), report page assembly
-  jobs.py       JobManager, Job (job.v1), upload spool
-  errors.py     ApiError, error.v1 handlers
+  jobs.py       JobManager, Job (job.v1), upload spool; ingest via service.ingest
+  errors.py     error.v1 handlers for OpError (service/errors.py) and library errors
   openapi.py    document schemas in /openapi.json, GET /api/manifest
   responses.py  msgspec JSON response
   templates/    base, index, triage, 404

@@ -42,17 +42,35 @@ atlas-log-analyzer/
 │   │   ├── query.py               diff() of two log sets, span/coverage helpers
 │   │   └── triage.py              triage.v1 (verdict, new/grew/vanished), rank_baselines
 │   ├── report/                    self-contained HTML report (payload.py, render.py, assets/)
+│   ├── service/                   every JSON document, built once for both front ends
+│   │   ├── queries.py             sets, set, stats, groups, group/show, entries, context, frames, timeline, query
+│   │   ├── compare.py             diff, triage (and the choice of a baseline)
+│   │   ├── ingest.py              ingest, regroup, upgrade, remove, report file
+│   │   ├── meta.py                version, formats, schema, health
+│   │   ├── params.py              request models: GroupQuery, EntryQuery, Page, Select, TextCap
+│   │   ├── errors.py              OpError, SPEC (code → exit, HTTP), REASONS, from_exception
+│   │   ├── sets.py                Sets protocol (Store, AppState), open_set
+│   │   ├── views.py               presets, text capping, signature prefixes, frames.v1 body
+│   │   └── documents.py           msgspec Structs of every document, JSON Schemas
 │   ├── cli/
-│   │   ├── app.py                 cyclopts app, one function per command
-│   │   └── output.py              json / jsonl / table rendering, exit codes
-│   └── webapp/                    FastAPI app (docs/webapp.md); depends on core, store, report
+│   │   ├── app.py                 root app, global options, run/main, error boundary,
+│   │   │                          lazy registration of the commands by import path
+│   │   ├── commands/              ingest.py, browse.py, compare.py, admin.py
+│   │   ├── context.py             output + settings of one invocation, the store
+│   │   ├── params.py              option defaults, --max-raw default per output mode
+│   │   ├── render.py              table renderers
+│   │   ├── manifest.py            manifest.v1
+│   │   └── output.py              json / jsonl / table rendering, error envelopes
+│   └── webapp/                    FastAPI app (docs/webapp.md); depends on service, config
 └── tests/
     ├── fixtures/jira/             masked excerpts of real logs
     └── ...
 ```
 
-Dependency direction: `cli` → `store` → `core`; `webapp` → `store` → `core`.
-`core` depends only on the standard library (+ `xxhash`). `store` adds
+Dependency direction: `cli`/`webapp` → `service` → `report` → `store` → `core`
+(`config` beside them, stdlib only). `cli` and `webapp` call `service` and
+render; they don't build documents or call store writers. `core` depends only on
+the standard library (+ `xxhash`) and reads no environment. `store` adds
 `polars`/`pyarrow`/`duckdb`. `mining` is an optional extra (`drain3`).
 
 ## 2. Core models (`core/models.py`)
@@ -291,8 +309,10 @@ error. JSON errors are `{"error": {"code": ..., "message": ...}}` on stdout;
 diagnostics on stderr. Every JSON document carries `"schema": "<name>.v1"`.
 
 MCP later: each command maps 1:1 onto a tool with the same JSON schema; the
-CLI functions are thin wrappers over `store`/`core` calls that the MCP server
-will reuse directly.
+commands are thin adapters over the `service` builders, which an MCP server
+can call directly. `cli/app.py` registers the commands of `cli/commands/` by
+import path, so a command loads only its module (`version` loads no polars).
+`batch` runs many command lines in one process.
 
 ## 9. Web app
 

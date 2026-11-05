@@ -17,14 +17,22 @@ src/atlas_log_analyzer/
              re-signing), triage (triage.v1 and rank_baselines, shared by the CLI and the
              web app)
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
-  service/   documents.py: one msgspec Struct per JSON document, their JSON Schemas
-  cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes),
-             manifest.py (manifest.v1, the agent manifest)
+  service/   builds every JSON document for both front ends (no cyclopts/fastapi/rich):
+             queries.py, compare.py, ingest.py, meta.py (the builders), params.py (request
+             models: GroupQuery, EntryQuery, Page, Select, TextCap), errors.py (OpError,
+             SPEC, REASONS), sets.py (Sets protocol), views.py (presets, capping, frames),
+             documents.py (one msgspec Struct per document, their JSON Schemas)
+  cli/       app.py (root app, global options, run/main, error boundary, lazy command
+             registration), commands/{ingest,browse,compare,admin}.py (the commands),
+             context.py (output, settings, store of one invocation), params.py (option
+             defaults), render.py (table renderers), output.py (json/jsonl/table, error
+             envelopes), manifest.py (manifest.v1, the agent manifest)
   webapp/    FastAPI app (`atlas-log serve`): api.py (/api JSON), pages.py + templates/
              (HTML), jobs.py (background ingest), state.py (store lock, caches),
              openapi.py (document schemas in /openapi.json, GET /api/manifest)
 tests/
-  core/  store/  cli/  report/  webapp/   one directory per package
+  core/  store/  service/  cli/  report/  webapp/   one directory per package
+  test_config.py             settings and the docs' environment table
   contract/test_parity.py    CLI <-> API parity contract (docs/design.md, "CLI and API parity")
   contract/test_schemas.py   every document matches its Struct and JSON Schema
   golden/signatures.json     golden signatures of the fixtures (`pytest --update-golden`)
@@ -37,10 +45,17 @@ docs/        requirements, research, design, cli reference,
 
 ## Dependency direction
 
-`core` ← `store` ← `cli` / `webapp`. `core` uses only the standard library and
-`xxhash`; it must never import `store`, `cli` or `webapp`. `store` must not
-import `cli` or `webapp`. Optional dependencies (`drain3`) are imported lazily
-and raise a clear `ImportError`.
+`core` ← `store` ← `report` ← `service` ← `cli` / `webapp` (`config` is stdlib
+and used by `cli`/`webapp`). `core` uses only the standard library and `xxhash`
+and reads no environment; it must never import `store`, `service`, `cli` or
+`webapp`. `store` must not import `service`, `cli` or `webapp` (the old
+`store/views.py` is only a re-export shim). `service` must not import `cli`,
+`webapp`, cyclopts, FastAPI or rich. **`cli` and `webapp` call `service` and
+render: they don't build documents or call store writers.** A new document or
+key is built in `service/` once, for both front ends; front-end differences are
+explicit arguments (`front`, `TextCap.how`, the `report_url` the API adds after
+building). Optional dependencies (`drain3`) are imported lazily and raise a
+clear `ImportError`.
 
 ## Commands
 
@@ -70,7 +85,14 @@ ubuntu-latest and windows-latest.
   manifest stores as `recipe_key` and which decides comparability (`diff`, triage
   baselines, `stale` in `sets`, `atlas-log upgrade`). Build maskers, signers and
   groupers through `core.pipeline.Recipe`, not by hand.
-- CLI commands are thin wrappers over `core`/`store`. Every JSON document has a
+- CLI commands are thin adapters over `service`: a new command goes in
+  `cli/commands/*.py` and is registered by import path in `cli/app.py` `COMMANDS`
+  (keep the module free of heavy imports at the top). Errors are `OpError` built
+  for one front end (`front="cli"`/`"api"`); never rename an error code, add a
+  `reason` (`service/errors.py` `REASONS`) when the front ends' codes differ, and
+  keep the tables in `docs/cli.md`/`docs/webapp.md` equal to `SPEC`/`REASONS`
+  (`tests/service/test_errors.py`). Settings and `ATLAS_LOG_*` variables are
+  `config.Settings`/`ENV_VARS` only. Every JSON document has a
   `"schema": "<name>.v1"` key; listings use `"items"`. Documents are typed only in
   `service/documents.py`: a new document or key gets its Struct field there
   (optional when only some commands or modes add it), then regenerate
@@ -88,6 +110,8 @@ ubuntu-latest and windows-latest.
 - Don't call `DataFrame.to_dicts()` on timezone-aware columns in code that runs
   on Windows without `tzdata`; use `store.logset.rows`/`to_records` or
   `cli.output.jsonable_rows`.
+- Rows go through one serialiser, `store.logset.to_records` (also behind
+  `cli.output.jsonable_rows`): ISO 8601 UTC with milliseconds, naive = UTC.
 - Tests: pytest, no network. CLI tests run the app in-process via
   `atlas_log_analyzer.cli.app.run(argv)` (fixtures in `tests/cli/conftest.py`).
   Web app tests use FastAPI's `TestClient` over a temp store (`tests/webapp/conftest.py`).
