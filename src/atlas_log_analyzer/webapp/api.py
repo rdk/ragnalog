@@ -382,6 +382,24 @@ def entries(
     return queries.entries(state, ref, q, Page(limit, offset), sel, cap, front="api")
 
 
+@router.get("/sets/{ref}/entries/{entry_id}/raw", include_in_schema=False)
+def entry_raw(ref: str, entry_id: str, state: StateDep) -> Response:
+    """Return the exact text of one entry (banner lines first) as ``text/plain``.
+
+    The pages' "Open raw" link; not a JSON document, so not in the OpenAPI schema.
+    """
+    text = queries.entry_raw(state, ref, entry_id, front="api")
+    name = entry_id if entry_id.isalnum() else "entry"
+    return Response(
+        text,
+        media_type="text/plain; charset=utf-8",
+        headers={
+            "X-Content-Type-Options": "nosniff",
+            "Content-Disposition": f'inline; filename="{name}.log"',
+        },
+    )
+
+
 @router.get("/sets/{ref}/entries/{entry_id}/context")
 def context(
     ref: str,

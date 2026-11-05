@@ -785,6 +785,18 @@
             }
           ],
           "default": null
+        },
+        "raw": {
+          "description": "One entry's exact text as text/plain (template).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

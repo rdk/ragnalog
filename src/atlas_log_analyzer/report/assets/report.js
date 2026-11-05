@@ -995,6 +995,14 @@
   }
   const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
   const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
+  const RAW_VIEW = new Set(); // ids of the entries shown as their exact text
+  /** The exact text of an entry as in the log file: banner lines before it, then its raw. */
+  const fullText = (e) => {
+    const pre = e.preamble || (e.context && typeof e.context === "object" ? e.context.preamble : "") || "";
+    return (pre ? pre + "\n" : "") + (e.raw || "");
+  };
+  /** Web app: the full raw entry as plain text (opens in a new tab). */
+  const rawUrl = (id) => (ENTRIES_URL && LS.id ? `/api/sets/${encodeURIComponent(LS.id)}/entries/${encodeURIComponent(id)}/raw` : "");
   /** Lines after the header line of a raw entry, trailing white space dropped. */
   function bodyLines(raw) {
     const nl = raw.indexOf("\n");
@@ -1017,14 +1025,24 @@
       .filter((x) => x[1]);
     return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div>${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
+      `</div>` + (RAW_VIEW.has(id) ? `<pre class="e-raw">${esc(fullText(e))}</pre>` : `${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
-      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "") +
+      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "")) +
       `<div class="e-foot"><span class="mono" title="${esc(srcPath(e.source ?? e.source_path))}">${esc(basename(srcPath(e.source ?? e.source_path)))}:${esc(e.source_line)}</span>` +
       (e.raw_truncated ? `<span class="muted">${ENTRIES_URL ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
-      `<span class="grow"></span><button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
+      `<span class="grow"></span>` +
+      `<button type="button" class="btn small" data-raw-view="${esc(id)}" aria-pressed="${RAW_VIEW.has(id)}" title="Show the exact text of the entry as in the log file, every line">${RAW_VIEW.has(id) ? "Formatted" : "Raw"}</button>` +
+      (rawUrl(id) ? `<a class="btn small" href="${esc(rawUrl(id))}" target="_blank" rel="noopener" title="The full entry as plain text in a new tab">Open raw ↗</a>` : "") +
+      `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
   /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
+  /** "Raw" / "Formatted": redraw one card in the other view. */
+  function toggleRaw(btn) {
+    const id = btn.dataset.rawView;
+    if (RAW_VIEW.has(id)) RAW_VIEW.delete(id); else RAW_VIEW.add(id);
+    const card = btn.closest(".entry");
+    if (card && ENTRIES[id]) card.outerHTML = entryHtml(id, ENTRIES[id]);
+  }
   function showAllLines(btn) {
     const id = btn.dataset.allLines;
     const e = ENTRIES[id];
@@ -1383,9 +1401,10 @@
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view]");
       if (!t) return;
-      if (t.dataset.allLines != null) showAllLines(t);
+      if (t.dataset.rawView != null) toggleRaw(t);
+      else if (t.dataset.allLines != null) showAllLines(t);
       else if (t.dataset.unfold != null) {
         const f = t.closest(".fold");
         const opened = f.classList.toggle("open");
@@ -1393,7 +1412,7 @@
         t.textContent = opened ? "hide frames" : `show ${fmt(n)} more frame${n === 1 ? "" : "s"}`;
       } else if (t.dataset.clip != null) toggleClip(DCHART);
       else if (t.dataset.copy != null) copy(t.dataset.copy);
-      else if (t.dataset.copyRaw != null) copy((ENTRIES[t.dataset.copyRaw] || {}).raw || "");
+      else if (t.dataset.copyRaw != null) copy(fullText(ENTRIES[t.dataset.copyRaw] || {}));
       else if (t.dataset.open != null) open(t.dataset.open);
     });
     $("btn-theme").onclick = toggleTheme;

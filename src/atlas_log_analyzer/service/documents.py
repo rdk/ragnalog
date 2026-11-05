@@ -1189,6 +1189,7 @@ class ClusterReportUrls(Struct, kw_only=True):
     examples: Annotated[
         str | None, _d("A group's example entries on one node's set, in full (template).")
     ] = None
+    raw: Annotated[str | None, _d("One entry's exact text as text/plain (template).")] = None
 
 
 class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-report.v1"):

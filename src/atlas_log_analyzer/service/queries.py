@@ -40,6 +40,7 @@ __all__ = [
     "Doc",
     "context",
     "entries",
+    "entry_raw",
     "frames",
     "group",
     "group_examples",
@@ -378,6 +379,25 @@ def timeline(sets: Sets, ref: str, q: EntryQuery, *, bucket: str, front: Front) 
         "count": len(items),
         "items": items,
     }
+
+
+def entry_raw(sets: Sets, ref: str, entry_id: str, *, front: Front) -> str:
+    """Return one entry's exact text as in its log file: its banner lines, then ``raw``.
+
+    Raises:
+        OpError: ``entry_not_found`` for an unknown id.
+
+    """
+    ls = open_set(sets, ref, front=front)
+    row = ls.entry(entry_id)
+    if row is None:
+        raise OpError.because(
+            "entry_not_found", front, f"no entry {entry_id!r} in log set {ls.manifest.id}"
+        )
+    context = row.get("context") or {}
+    preamble = context.get("preamble") if isinstance(context, dict) else None
+    raw = str(row.get("raw") or "")
+    return f"{preamble}\n{raw}" if preamble else raw
 
 
 def group_examples(sets: Sets, ref: str, signature: str, *, max_raw: int, front: Front) -> Doc:

@@ -501,3 +501,24 @@ def test_ingest_job_reports_ignored_name(client: TestClient) -> None:
     assert job["state"] == "succeeded" and job["name"] == "again"
     assert job["result"]["name"] == "mini" and job["result"]["ingest"]["existing"] is True
     assert job["result"]["ingest"]["warnings"] == ["--name again ignored: set exists as 'mini'"]
+
+
+def test_entry_raw_is_the_exact_text_with_its_banner(client: TestClient, store_dir: Path) -> None:
+    from atlas_log_analyzer.store.store import Store
+
+    ls = Store(store_dir).open("sample")
+    rows = list(ls.entries_lazy().select("id", "raw", "context").collect().iter_rows(named=True))
+    with_banner = next(r for r in rows if dict(r["context"] or []).get("preamble"))
+    plain = next(r for r in rows if not dict(r["context"] or []).get("preamble"))
+    preamble = dict(with_banner["context"])["preamble"]
+
+    res = client.get(f"/api/sets/sample/entries/{with_banner['id']}/raw")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("text/plain")
+    assert res.headers["x-content-type-options"] == "nosniff"
+    assert res.text == f"{preamble}\n{with_banner['raw']}"
+    assert client.get(f"/api/sets/sample/entries/{plain['id']}/raw").text == plain["raw"]
+
+    missing = client.get("/api/sets/sample/entries/0123456789abcdef/raw")
+    assert missing.status_code == 404
+    assert missing.json()["error"]["reason"] == "entry_not_found"

@@ -291,6 +291,7 @@ class AppState:
             context="/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
             set_report="/sets/{set}",
             examples="/api/sets/{set}/groups/{sig}/examples?max_raw=0",
+            raw="/api/sets/{set}/entries/{id}/raw",
         )
         data = _ENCODER.encode(payload)
         with self._cache_lock:

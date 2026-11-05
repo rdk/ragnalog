@@ -449,6 +449,7 @@ td.c-logger, td.c-exc { color: var(--ink-2); font-size: 12px; }
 .e-pre { padding: 6px 10px 0; font-family: var(--mono); font-size: 12px; color: var(--muted); }
 .e-pre .k { display: block; font: 11px var(--font); }
 .e-pre .ln { white-space: pre-wrap; overflow-wrap: anywhere; }
+.e-raw { margin: 6px 10px 8px; padding: 8px 10px; font: 12px/1.5 var(--mono); white-space: pre-wrap; word-break: break-all; tab-size: 4; max-height: 70vh; overflow: auto; background: color-mix(in srgb, currentColor 6%, transparent); border-radius: 4px; }
 .e-more { display: flex; align-items: center; gap: 8px; margin: -2px 10px 8px; font-size: 12px; }
 .e-body {
   margin: 0 10px 8px; padding: 6px 8px; background: var(--code-bg); border-radius: 6px;

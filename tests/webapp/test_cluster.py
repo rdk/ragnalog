@@ -110,6 +110,7 @@ def test_cluster_payload_urls_and_cache(client: TestClient, tmp_path: Path) -> N
         "context": "/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
         "set_report": "/sets/{set}",
         "examples": "/api/sets/{set}/groups/{sig}/examples?max_raw=0",
+        "raw": "/api/sets/{set}/entries/{id}/raw",
     }
     assert client.get(url).content == first.content  # cached
     member = payload["capture"]["nodes"][0]["set"]["id"]

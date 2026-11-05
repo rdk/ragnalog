@@ -147,6 +147,12 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 
 ### Entry cards
 
+Every card has **Raw**: it switches the card to the entry's exact text as in the log file
+(the banner lines it carries first, every line, no formatting) and back with **Formatted**.
+In the web app, **Open raw ↗** opens the full entry as plain text in a new tab
+(`/api/sets/{set}/entries/{id}/raw`; `urls.raw` on the cluster page). **Copy raw** copies the
+same text.
+
 An example entry (the drawer's examples; on the cluster page also the merged
 log and the ±30 s context) is a card: level, time, thread, user, request, IP and
 URL; the message with the masked variables highlighted; the body as a stack

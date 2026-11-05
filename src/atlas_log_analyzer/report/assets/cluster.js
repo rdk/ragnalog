@@ -1202,6 +1202,14 @@
   }
   const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
   const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
+  const RAW_VIEW = new Set(); // ids of the entries shown as their exact text
+  /** The exact text of an entry as in the log file: banner lines before it, then its raw. */
+  const fullText = (e) => {
+    const pre = str(e.preamble) || str(obj(e.context).preamble);
+    return (pre ? pre + "\n" : "") + str(e.raw);
+  };
+  /** Web app: the full raw entry as plain text (opens in a new tab). */
+  const rawUrl = (id, e) => (URLS && URLS.raw && e.set != null ? urlFill(URLS.raw, { set: e.set, id }) : "");
   /** Lines after the header line of a raw entry, trailing white space dropped. */
   function bodyLines(raw) {
     const nl = raw.indexOf("\n");
@@ -1230,20 +1238,29 @@
     const canCtx = node && e.set != null && e.ts;
     return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${node ? nodeBadge(node) : ""}${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div>${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
+      `</div>` + (RAW_VIEW.has(str(id)) ? `<pre class="e-raw">${esc(fullText(e))}</pre>` : `${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
       (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
-      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "") +
+      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "")) +
       `<div class="e-foot">` + (src ? `<span class="mono" title="${esc(src)}">${esc(basename(src))}${e.source_line != null ? ":" + esc(e.source_line) : ""}</span>` : "") +
       (e.raw_truncated ? `<span class="muted">${URLS && URLS.examples ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
       `<span class="grow"></span>` +
       (canCtx ? `<button type="button" class="btn small" data-ctx="${esc(str(e.set) + "~" + id)}" data-cts="${esc(e.ts)}" title="What every node logged within 30 s of this entry">±30 s on all nodes</button>` : "") +
       (sig && GBY.has(sig) && sig !== S.sig ? `<button type="button" class="btn small" data-open="${esc(sig)}">Open group</button>` : "") +
+      `<button type="button" class="btn small" data-raw-view="${esc(id)}" aria-pressed="${RAW_VIEW.has(str(id))}" title="Show the exact text of the entry as in the log file, every line">${RAW_VIEW.has(str(id)) ? "Formatted" : "Raw"}</button>` +
+      (rawUrl(id, e) ? `<a class="btn small" href="${esc(rawUrl(id, e))}" target="_blank" rel="noopener" title="The full entry as plain text in a new tab">Open raw ↗</a>` : "") +
       `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
   }
   /** The raw text of an entry on the page: an example, or a row of the merged log. */
+  const entryOf = (id) => ENTRIES[id] || (VIEW.find((r) => r.id === id) || {}).e || {};
   function rawOf(id) {
-    const row = ENTRIES[id] || (VIEW.find((r) => r.id === id) || {}).e || {};
-    return str(row.raw);
+    return fullText(obj(entryOf(id)));
+  }
+  /** "Raw" / "Formatted": redraw one card in the other view. */
+  function toggleRaw(btn) {
+    const id = btn.dataset.rawView;
+    if (RAW_VIEW.has(id)) RAW_VIEW.delete(id); else RAW_VIEW.add(id);
+    const card = btn.closest(".entry");
+    if (card) card.outerHTML = entryHtml(id, entryOf(id));
   }
   /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
   function showAllLines(btn) {
@@ -1251,7 +1268,7 @@
     FULL_BODIES.add(id);
     const card = btn.closest(".entry");
     const pre = card && card.querySelector(".e-body");
-    if (pre) pre.innerHTML = traceHtml(bodyLines(rawOf(id)));
+    if (pre) pre.innerHTML = traceHtml(bodyLines(str(obj(entryOf(id)).raw)));
     const more = btn.closest(".e-more");
     if (more) more.remove();
   }
@@ -1847,10 +1864,11 @@
   /** Clicks shared by every panel: open a group, jump to the log, show a context, copy, unfold,
       show every line of an entry. */
   function onCommonClick(e) {
-    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-all-lines],[data-ex],[data-node-filter]");
+    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-all-lines],[data-raw-view],[data-ex],[data-node-filter]");
     if (!t) return false;
     const d = t.dataset;
-    if (d.allLines != null) showAllLines(t);
+    if (d.rawView != null) toggleRaw(t);
+    else if (d.allLines != null) showAllLines(t);
     else if (d.unfold != null) {
       const f = t.closest(".fold");
       const opened = f.classList.toggle("open");
