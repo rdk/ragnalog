@@ -14,6 +14,7 @@ from atlas_log_analyzer.core.models import (
     SourceRef,
 )
 from atlas_log_analyzer.core.parser import parse
+from atlas_log_analyzer.core.pipeline import Recipe
 from atlas_log_analyzer.core.reader import discover_sources
 from atlas_log_analyzer.core.signature import SignatureSpec, Signer
 
@@ -25,6 +26,7 @@ __all__ = [
     "LogEntry",
     "LogLevel",
     "Masker",
+    "Recipe",
     "SignatureSpec",
     "SignedEntry",
     "Signer",

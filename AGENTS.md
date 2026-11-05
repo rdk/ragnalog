@@ -8,9 +8,12 @@ before changing behaviour; `docs/cli.md` documents the command contract.
 ```
 src/atlas_log_analyzer/
   core/      pure library: models, formats (registry, jira), reader, parser,
-             java stack traces, masking, signatures, grouping, mining (drain3, optional)
-  store/     Parquet + manifest persistence (polars/pyarrow), DuckDB queries, diff,
-             triage (triage.v1, shared by the CLI and the web app)
+             java stack traces, masking, signatures, grouping, pipeline (Recipe:
+             format + spec + rules -> masker/signer/grouper and the recipe key),
+             mining (drain3, optional)
+  store/     Parquet + manifest persistence (polars/pyarrow; manifest.py needs neither),
+             DuckDB queries, diff, regroup (column-wise re-signing), triage
+             (triage.v1 and rank_baselines, shared by the CLI and the web app)
   report/    HTML report: payload.py (report.v1), render.py, assets/ (template, css, js)
   service/   documents.py: one msgspec Struct per JSON document, their JSON Schemas
   cli/       app.py (cyclopts commands), output.py (json/jsonl/table, errors, exit codes),
@@ -60,7 +63,11 @@ ubuntu-latest and windows-latest.
   (iterators), not list-building.
 - Stored schemas live only in `store/schema.py`; bump `SCHEMA_VERSION` on a
   breaking change and regenerate `docs/formats/`. Changing masking rules or the
-  signature algorithm requires bumping `MASK_RULES_VERSION` / `SIGNATURE_VERSION`.
+  signature algorithm requires bumping `MASK_RULES_VERSION` / `SIGNATURE_VERSION`
+  (a format's own rules: its `version`); all are part of `Recipe.key`, which the
+  manifest stores as `recipe_key` and which decides comparability (`diff`, triage
+  baselines, `stale` in `sets`, `atlas-log upgrade`). Build maskers, signers and
+  groupers through `core.pipeline.Recipe`, not by hand.
 - CLI commands are thin wrappers over `core`/`store`. Every JSON document has a
   `"schema": "<name>.v1"` key; listings use `"items"`. Documents are typed only in
   `service/documents.py`: a new document or key gets its Struct field there
