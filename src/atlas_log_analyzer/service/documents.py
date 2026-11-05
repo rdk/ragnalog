@@ -369,9 +369,7 @@ class TriageBaseline(Struct, kw_only=True):
     resolved_by: Annotated[Literal["auto", "param"], _d("auto = picked, param = given.")]
     reason: Annotated[str, _d("Why this baseline was picked.")] | UnsetType = UNSET
     entries: Annotated[int, _d("Entries of the baseline.")] | UnsetType = UNSET
-    shared_sources: (
-        Annotated[int | list[str], _d("Source files shared with the set.")] | UnsetType
-    ) = UNSET
+    shared_sources: Annotated[int, _d("Source files shared with the set.")] | UnsetType = UNSET
     candidates: (
         Annotated[list[dict[str, Any]], _d("Other sets considered, with reasons.")] | UnsetType
     ) = UNSET

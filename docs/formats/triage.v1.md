@@ -21,7 +21,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `baseline.resolved_by` | `"auto" \| "param"` | yes | auto = picked, param = given. |
 | `baseline.reason` | `string` | no | Why this baseline was picked. |
 | `baseline.entries` | `integer` | no | Entries of the baseline. |
-| `baseline.shared_sources` | `integer \| list<string>` | no | Source files shared with the set. |
+| `baseline.shared_sources` | `integer` | no | Source files shared with the set. |
 | `baseline.candidates` | `list<object>` | no | Other sets considered, with reasons. |
 | `min_level` | `string \| null` | yes | Echo of --min-level. |
 | `verdict` | `"clean" \| "new_errors" \| "new_exceptions" \| "new_warnings" \| "no_baseline"` | yes | new_errors > new_warnings > new_exceptions > clean; no_baseline. |

@@ -373,17 +373,7 @@
         },
         "shared_sources": {
           "description": "Source files shared with the set.",
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "array",
-              "items": {
-                "type": "string"
-              }
-            }
-          ]
+          "type": "integer"
         },
         "candidates": {
           "description": "Other sets considered, with reasons.",
