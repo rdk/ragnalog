@@ -71,3 +71,71 @@ def test_label_route(client: TestClient) -> None:
     assert client.post("/api/sets/mini/label").status_code == 400
     missing = client.post("/api/sets/nope/label?node=NODE1")
     assert missing.status_code == 404 and missing.json()["error"]["reason"] == "set_not_found"
+
+
+# --- the capture page and the capture routes (documents: tests/contract)
+
+
+def test_capture_page_and_set_report_links(client: TestClient, tmp_path: Path) -> None:
+    job = _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    ref = f"capture:{JOB_ID}"
+    page = client.get(f"/captures/{ref}")
+    assert page.status_code == 200
+    html = page.text
+    assert f'data-report-url="/api/captures/{ref}/report"' in html
+    assert '<nav class="shell"' in html and "jira-test · capture" in html
+    first = job["capture"]["sets"][0]["id"]
+    assert f'href="/sets/{first}"' in html  # node reports
+    for name in ("report.css", "cluster.css", "cluster.js"):
+        assert f"/assets/report/{name}" in html
+        assert client.get(f"/assets/report/{name}").status_code == 200
+    # cluster:NAME and a member set lead to the same page
+    assert client.get("/captures/cluster:jira-test").status_code == 200
+    missing = client.get("/captures/cluster:nope", headers={"accept": "text/html"})
+    assert missing.status_code == 404 and "no capture" in missing.text
+    report = client.get(f"/sets/{first}").text
+    assert 'id="shell-node"' in report and f'href="/captures/{ref}"' in report
+    assert 'id="shell-node"' not in client.get("/sets/mini").text  # no capture: no node switch
+
+
+def test_cluster_payload_urls_and_cache(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    url = "/api/captures/cluster:jira-test/report?window=union"
+    first = client.get(url)
+    assert first.status_code == 200
+    payload = first.json()
+    assert payload["schema"] == "cluster-report.v1"
+    assert payload["urls"] == {
+        "entries": f"/api/captures/capture:{JOB_ID}/entries",
+        "context": "/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
+        "set_report": "/sets/{set}",
+    }
+    assert client.get(url).content == first.content  # cached
+    member = payload["capture"]["nodes"][0]["set"]["id"]
+    client.post(f"/api/sets/{member}/label?node=NODE9")  # relabelling drops the cache
+    again = client.get(url).json()
+    assert again["nodes"] == ["NODE2", "NODE9"]
+    # the page's merged log asks for since/until/min_level/limit/offset
+    since, until = payload["capture"]["window"]["since"], payload["capture"]["window"]["until"]
+    page = client.get(
+        payload["urls"]["entries"],
+        params={"since": since, "until": until, "min_level": "WARN", "limit": 200, "offset": 0},
+    ).json()
+    assert page["schema"] == "entries.v1" and page["total"] > 0
+    assert {r["level_name"] for r in page["items"]} <= {"WARN", "ERROR"}
+
+
+def test_stale_spool_is_removed_at_start(store_dir: Path) -> None:
+    import os
+    import time
+
+    from atlas_log_analyzer.webapp import Settings, create_app
+
+    spool = store_dir / ".spool"
+    old, fresh = spool / "old", spool / "fresh"
+    for d in (old, fresh):
+        (d / "x").mkdir(parents=True)
+    hours_ago = time.time() - 7 * 3600
+    os.utime(old, (hours_ago, hours_ago))
+    with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))):
+        assert not old.exists() and fresh.exists()  # a running ingest keeps its spool

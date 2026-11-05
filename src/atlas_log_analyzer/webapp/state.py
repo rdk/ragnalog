@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import shutil
 import threading
+import time
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import msgspec
 from fastapi import Request
@@ -19,10 +20,23 @@ from atlas_log_analyzer.store.store import UNSET, Label, Store, StoreError
 from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
 from atlas_log_analyzer.webapp.settings import Settings
 
-__all__ = ["SERVER_LOCK_FILE", "AppState", "StoreInUse", "get_state", "lock_server"]
+if TYPE_CHECKING:
+    from atlas_log_analyzer.service.capture_queries import CaptureWindow
+
+__all__ = [
+    "SERVER_LOCK_FILE",
+    "SPOOL_MAX_AGE_S",
+    "AppState",
+    "StoreInUse",
+    "clean_spool",
+    "get_state",
+    "lock_server",
+]
 
 SERVER_LOCK_FILE = ".server.lock"
 """Lock file in the store root held by the one server process that uses the store."""
+SPOOL_MAX_AGE_S = 6 * 3600
+"""Entries of the store's ZIP spool (``.spool``) older than this are left by a crashed ingest."""
 
 _ENCODER = msgspec.json.Encoder()
 
@@ -56,6 +70,33 @@ def lock_server(root: Path) -> FileLock | None:
     )
 
 
+def clean_spool(root: Path, *, max_age_s: float = SPOOL_MAX_AGE_S) -> int:
+    """Delete what a crashed ingest left in ``<root>/.spool``: entries older than ``max_age_s``.
+
+    A running ingest (a CLI next to the server) extracts into a fresh entry, so only old
+    ones are removed. Returns the number of entries deleted.
+    """
+    from atlas_log_analyzer.store.split import SPOOL_DIR
+
+    spool = root / SPOOL_DIR
+    if not spool.is_dir():
+        return 0
+    cutoff = time.time() - max_age_s
+    removed = 0
+    for entry in spool.iterdir():
+        try:
+            if entry.stat().st_mtime >= cutoff:
+                continue
+        except OSError:
+            continue
+        if entry.is_dir():
+            shutil.rmtree(entry, ignore_errors=True)
+        else:
+            entry.unlink(missing_ok=True)
+        removed += 1
+    return removed
+
+
 class AppState:
     """Everything the routes share.
 
@@ -73,18 +114,20 @@ class AppState:
         self.store = Store(settings.store)
         self.jobs = JobManager(self.store, on_done=self.invalidate, sync=settings.sync_jobs)
         self._reports: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
+        self._clusters: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
         self._summaries: dict[tuple[str, str], dict[str, int]] = {}
         self._cache_lock = threading.Lock()
         self._server_lock: FileLock | None = None
 
     def start(self) -> None:
-        """Claim the store for this server and delete upload spools left by an earlier one.
+        """Claim the store; delete upload spools of an earlier server and stale ZIP spools.
 
         Raises:
             StoreInUse: Another server process uses the store.
 
         """
         self._server_lock = lock_server(self.store.root)
+        clean_spool(self.store.root)
         if self._server_lock is None:
             return  # no store yet, or no locking: another server may own the spools
         spool = self.store.root / UPLOADS_DIR
@@ -131,10 +174,15 @@ class AppState:
         return m
 
     def invalidate(self, set_id: str) -> None:
-        """Drop cached payloads and summaries that involve ``set_id``."""
+        """Drop cached payloads and summaries that involve ``set_id``.
+
+        Cluster payloads are all dropped: a new, removed or relabelled set can change a
+        capture's members and every node's triage baseline.
+        """
         with self._cache_lock:
             for key in [k for k in self._reports if set_id in (k[0], k[2])]:
                 del self._reports[key]
+            self._clusters.clear()
             for key in [k for k in self._summaries if k[0] == set_id]:
                 del self._summaries[key]
 
@@ -192,6 +240,62 @@ class AppState:
             self._reports[key] = data
             while len(self._reports) > max(1, self.settings.report_cache):
                 self._reports.popitem(last=False)
+        return data
+
+    def cluster_report_bytes(
+        self,
+        ref: str,
+        w: CaptureWindow,
+        *,
+        examples: int,
+        max_raw: int,
+        max_groups: int,
+        triage: bool,
+    ) -> bytes:
+        """Return the encoded ``cluster-report.v1`` of a capture with the web app's ``urls``.
+
+        Built once per member set versions and options; :meth:`invalidate` drops them all.
+        """
+        from atlas_log_analyzer.service import capture_queries
+        from atlas_log_analyzer.service.documents import ClusterReportUrls
+
+        capture = capture_queries.capture_from_ref(self, ref, front="api")
+        key = (
+            tuple((m.node, m.logset.id, str(m.logset.manifest.created_at)) for m in capture.nodes),
+            capture.id,
+            capture.cluster,
+            w,
+            examples,
+            max_raw,
+            max_groups,
+            triage,
+        )
+        with self._cache_lock:
+            hit = self._clusters.get(key)
+            if hit is not None:
+                self._clusters.move_to_end(key)
+                return hit
+        payload = capture_queries.report_payload(
+            self,
+            capture,
+            w,
+            examples=examples,
+            max_raw=max_raw,
+            max_groups=max_groups,
+            triage=triage,
+            front="api",
+        )
+        target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
+        payload.urls = ClusterReportUrls(
+            entries=f"/api/captures/{target}/entries",
+            context="/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
+            set_report="/sets/{set}",
+        )
+        data = _ENCODER.encode(payload)
+        with self._cache_lock:
+            self._clusters[key] = data
+            while len(self._clusters) > max(1, self.settings.report_cache):
+                self._clusters.popitem(last=False)
         return data
 
 

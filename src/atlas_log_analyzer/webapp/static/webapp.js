@@ -28,10 +28,12 @@
     const tb = $("shell-theme");
     if (tb) { setThemeLabel(); tb.addEventListener("click", toggleTheme); }
 
-    // set switcher on the report page keeps compare/filters (hash) when switching sets
-    const sw = $("shell-set");
-    if (sw) sw.addEventListener("change", () => {
-      location.href = "/sets/" + encodeURIComponent(sw.value) + location.search + location.hash;
+    // set and node switchers on the report page keep compare/filters (hash) when switching
+    ["shell-set", "shell-node"].forEach((id) => {
+      const sw = $(id);
+      if (sw) sw.addEventListener("change", () => {
+        location.href = "/sets/" + encodeURIComponent(sw.value) + location.search + location.hash;
+      });
     });
 
     // triage verdict per set (one request each; the server caches nothing here, diffs are fast)
@@ -154,8 +156,10 @@
       bar(0.3 + 0.7 * (p.fraction || 0));
       if (j.state === "succeeded") {
         bar(1);
-        // a split upload (one set per node) shows its capture on the sets page
-        location.href = j.capture ? "/" : "/sets/" + encodeURIComponent(j.result.id) + "?compare=auto";
+        // a split upload (one set per node) opens the cluster page of its capture
+        location.href = j.capture
+          ? "/captures/capture:" + encodeURIComponent(j.capture.capture.capture)
+          : "/sets/" + encodeURIComponent(j.result.id) + "?compare=auto";
       } else if (j.state === "failed" || j.state === "cancelled") {
         fail(j.error ? j : { error: { message: j.state } });
         submit.disabled = false; cancel.hidden = true;

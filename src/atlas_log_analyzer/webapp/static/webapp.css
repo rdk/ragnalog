@@ -13,6 +13,8 @@
 .shell .shell-gap { flex: 1 1 auto; }
 .shell-switch { display: inline-flex; align-items: center; gap: 6px; }
 .shell-switch select { height: 26px; }
+.shell .shell-capture { color: var(--ink); font-weight: 600; white-space: nowrap; }
+.shell .shell-nodes { display: inline-flex; gap: 8px; white-space: nowrap; }
 
 body.app { min-height: 100vh; display: flex; flex-direction: column; }
 .page { width: 100%; max-width: 1320px; margin: 0 auto; padding: 20px 20px 40px; flex: 1 0 auto; }

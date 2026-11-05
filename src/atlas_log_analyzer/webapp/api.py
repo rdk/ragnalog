@@ -9,8 +9,9 @@ from fastapi import APIRouter, Depends, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import Response
 
-from atlas_log_analyzer.service import captures, compare, meta, queries
+from atlas_log_analyzer.service import capture_queries, captures, compare, meta, queries
 from atlas_log_analyzer.service import ingest as service_ingest
+from atlas_log_analyzer.service.capture_queries import CaptureWindow
 from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
@@ -144,6 +145,152 @@ def list_captures(state: StateDep, brief: bool = False) -> dict[str, Any]:
     return captures.captures_doc(state, brief=brief)
 
 
+CaptureWindowDep = Annotated[CaptureWindow, Depends(query_model(CaptureWindow))]
+WindowMode = Literal["overlap", "union"]
+
+
+@router.get("/captures/{ref}")
+def capture(ref: str, state: StateDep, w: CaptureWindowDep, triage: bool = True) -> dict[str, Any]:
+    """Show the nodes of a capture side by side (``capture.v1``), as ``atlas-log capture``.
+
+    ``ref`` is ``capture:ID`` (a unique id prefix), ``cluster:NAME`` (its newest capture),
+    ``cluster:NAME@YYYY-MM-DD``, or a set (its capture, else that one node). Counts are
+    within ``window`` (``overlap``: the time all nodes have logs for; ``union``) or
+    ``since``/``until``. ``triage`` (default true) triages each node against its own
+    previous set.
+    """
+    return capture_queries.capture(state, ref, w, triage=triage, front="api")
+
+
+@router.get("/captures/{ref}/timeline")
+def capture_timeline(
+    ref: str,
+    state: StateDep,
+    w: CaptureWindowDep,
+    bucket: str = "1h",
+    signature: str | None = None,
+) -> dict[str, Any]:
+    """Entries per bucket and node (``cluster-timeline.v1``), as ``timeline CAPTURE``.
+
+    By level, or of one group with ``signature`` (or a unique prefix of one).
+    """
+    return capture_queries.timeline(state, ref, w, bucket=bucket, signature=signature, front="api")
+
+
+@router.get("/captures/{ref}/matrix")
+def capture_matrix(
+    ref: str,
+    state: StateDep,
+    q: Annotated[GroupQuery, Depends(query_model(GroupQuery))],
+    window: WindowMode = "overlap",
+    node: str | None = None,
+    spread: Literal["all", "only", "skewed"] | None = None,
+    sort: Literal["count", "skew", "lead"] = "count",
+    skew_min: Annotated[float, Query(ge=1)] = 4.0,
+    signature: str | None = None,
+    limit: Annotated[int, Query(ge=0, le=100_000)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> dict[str, Any]:
+    """One row per group with a count per node (``matrix.v1``), as ``atlas-log matrix``.
+
+    The filters of ``/groups``; ``since``/``until`` set the window (else ``window``).
+    ``spread`` keeps ``all``, ``only`` (one node) or ``skewed`` rows, ``node`` the groups
+    present on that node; ``sort`` by ``count``, ``skew`` or ``lead``; ``limit=0`` = all.
+    """
+    return capture_queries.matrix(
+        state,
+        ref,
+        q,
+        Page(limit or None, offset),
+        window=window,
+        node=node,
+        spread=spread,
+        sort=sort,
+        skew_min=skew_min,
+        signature=signature,
+        front="api",
+    )
+
+
+@router.get("/captures/{ref}/events")
+def capture_events(
+    ref: str,
+    state: StateDep,
+    w: CaptureWindowDep,
+    kind: Annotated[list[str] | None, Query()] = None,
+) -> dict[str, Any]:
+    """Events of every node and the pairs across nodes (``events.v1``), as ``atlas-log events``.
+
+    ``kind`` (comma-separated and/or repeated) keeps only these kinds.
+    """
+    return capture_queries.events(state, ref, w, kinds=kind, front="api")
+
+
+@router.get("/captures/{ref}/interactions")
+def capture_interactions(
+    ref: str,
+    state: StateDep,
+    w: CaptureWindowDep,
+    delta: Annotated[int, Query(ge=0, le=86_400)] = 300,
+) -> dict[str, Any]:
+    """Mentions, co-bursts, concurrent jobs, sessions (``interactions.v1``).
+
+    As ``atlas-log interactions``; ``delta`` is the co-burst window in seconds.
+    """
+    return capture_queries.interactions(state, ref, w, delta_s=delta, front="api")
+
+
+@router.get("/captures/{ref}/entries")
+def capture_entries(
+    ref: str,
+    state: StateDep,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
+    sel: Annotated[Select, Depends(query_model(Select))],
+    window: WindowMode = "overlap",
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 100,
+    offset: Annotated[int, Query(ge=0)] = 0,
+    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+) -> dict[str, Any]:
+    """Entries of all nodes interleaved by time (``entries.v1``), as ``entries CAPTURE``.
+
+    Rows add ``node`` and ``set``; ``logset`` is ``capture:ID``. The filters of
+    ``/sets/{ref}/entries``; ``since``/``until`` set the window (else ``window``).
+    """
+    cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
+    return capture_queries.entries(
+        state, ref, q, Page(limit, offset), sel, cap, window=window, front="api"
+    )
+
+
+@router.get("/captures/{ref}/report")
+async def capture_report(
+    ref: str,
+    state: StateDep,
+    w: CaptureWindowDep,
+    examples: Annotated[int, Query(ge=0, le=50)] = 3,
+    max_raw: Annotated[int, Query(ge=0)] = 4000,
+    max_groups: Annotated[int, Query(ge=0)] = 500,
+    triage: bool = True,
+) -> Response:
+    """Return the payload of the cluster page (``cluster-report.v1``) with ``urls`` set.
+
+    Cached per member set versions and options (and dropped when any set changes).
+    """
+
+    def build() -> bytes:
+        return state.cluster_report_bytes(
+            ref,
+            w,
+            examples=examples,
+            max_raw=max_raw,
+            max_groups=max_groups,
+            triage=triage,
+        )
+
+    data = await run_in_threadpool(build)
+    return Response(data, media_type="application/json")
+
+
 @router.get("/sets/{ref}/stats")
 def stats(ref: str, state: StateDep) -> dict[str, Any]:
     """Statistics of a set (``stats.v1``)."""
@@ -245,14 +392,24 @@ def context(
     after: Annotated[int, Query(ge=0, le=10_000)] = 5,
     any_thread: bool = False,
     max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    all_nodes: bool = False,
+    window: Annotated[float, Query(ge=0, le=3_600)] = 30,
 ) -> dict[str, Any]:
     """Return the entries around one entry in time order (``entries.v1``), as ``context``.
 
     ``before``/``after`` entries of the anchor's thread (all threads with
     ``any_thread``), the anchor included; ``raw``/``body`` cut as in ``entries``;
     ``columns`` or ``brief`` select the columns as ``atlas-log context``.
+    ``all_nodes`` returns instead what every node of the set's capture logged within
+    ``window`` seconds of the anchor (rows add ``node`` and ``set``), as
+    ``context --all-nodes``.
     """
     cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
+    if all_nodes:
+        doc, _ = capture_queries.context(
+            state, ref, entry_id, window_s=window, sel=sel, cap=cap, front="api"
+        )
+        return doc
     doc, _ = queries.context(
         state,
         ref,

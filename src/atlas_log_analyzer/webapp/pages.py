@@ -1,12 +1,13 @@
-"""HTML pages: sets index, report (reusing ``report/assets``), triage, 404."""
+"""HTML pages: sets index, report and cluster page (reusing ``report/assets``), triage, 404."""
 
 from __future__ import annotations
 
 import html
+import re
 from datetime import datetime
 from importlib import resources
-from typing import Annotated, Any
-from urllib.parse import urlencode
+from typing import TYPE_CHECKING, Annotated, Any
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
@@ -14,10 +15,15 @@ from fastapi.templating import Jinja2Templates
 from starlette.responses import HTMLResponse, Response
 
 from atlas_log_analyzer import __version__
-from atlas_log_analyzer.report import asset_text, render_html
+from atlas_log_analyzer.report import asset_text, render_cluster_html, render_html
 from atlas_log_analyzer.service import queries
+from atlas_log_analyzer.service.errors import OpError
+from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.webapp import api
 from atlas_log_analyzer.webapp.state import AppState, get_state
+
+if TYPE_CHECKING:
+    from atlas_log_analyzer.service.cluster import Capture
 
 __all__ = ["index_rows", "not_found_page", "router", "templates"]
 
@@ -28,7 +34,7 @@ templates = Jinja2Templates(
 )
 templates.env.globals["tool_version"] = __version__
 
-REPORT_ASSETS = ("report.css", "report.js")
+REPORT_ASSETS = ("report.css", "report.js", "cluster.css", "cluster.js")
 
 
 def _fmt_int(value: Any) -> str:
@@ -152,6 +158,64 @@ def _shell(state: AppState, ref_id: str, extra: str = "") -> str:
     )
 
 
+def _capture_href(capture_id: str) -> str:
+    return "/captures/" + quote(f"capture:{capture_id}", safe=":@")
+
+
+def _node_switch(state: AppState, ls: LogSet) -> str:
+    """Node switcher and cluster link of a set's report when the set belongs to a capture."""
+    capture = ls.manifest.capture
+    if capture is None:
+        return ""
+    members = [m for m in state.manifests() if m.capture == capture]
+    members.sort(key=lambda m: (m.node or m.name or m.id, m.id))
+    options = []
+    for m in members:
+        label = html.escape(m.node or m.name or m.id)
+        selected = " selected" if m.id == ls.manifest.id else ""
+        options.append(f'<option value="{m.id}"{selected}>{label}</option>')
+    return (
+        '<label class="shell-switch">Node <select id="shell-node">'
+        + "".join(options)
+        + "</select></label>"
+        + f'<a href="{_capture_href(capture)}">Open cluster view</a>'
+    )
+
+
+def _capture_shell(capture: Capture) -> str:
+    """Navigation bar of the cluster page: back to the sets, the capture, its node reports."""
+    title = html.escape(capture.cluster or "Capture") + (
+        f" · capture {html.escape(capture.id)}" if capture.id else ""
+    )
+    nodes = "".join(
+        f'<a href="/sets/{quote(m.logset.id)}" title="Report of '
+        f'{html.escape(m.logset.manifest.name or m.logset.id)}">{html.escape(m.node)}</a>'
+        for m in capture.nodes
+    )
+    return (
+        '<nav class="shell" aria-label="atlas-log">'
+        '<a class="shell-home" href="/">atlas-log</a>'
+        '<a href="/">Sets</a>'
+        f'<span class="shell-capture">{title}</span>'
+        f'<span class="shell-nodes">Node reports: {nodes}</span>'
+        '<span class="shell-gap"></span>'
+        '<a href="/#upload">Ingest</a><a href="/docs">API</a></nav>'
+    )
+
+
+_HEAD = (
+    '<link rel="stylesheet" href="/static/webapp.css">'
+    '<script defer src="/static/webapp.js"></script>'
+)
+_BODY = re.compile(r"<body[^>]*>")
+
+
+def _with_shell(page: str, shell: str) -> str:
+    """Add the web app's CSS/JS and navigation bar to a report page."""
+    page = page.replace("</head>", _HEAD + "</head>", 1)
+    return _BODY.sub(lambda m: m.group(0) + shell, page, count=1)
+
+
 @router.get("/sets/{ref}")
 async def report_page(
     ref: str,
@@ -177,13 +241,32 @@ async def report_page(
         if base
         else f'<a href="/sets/{ls.manifest.id}?compare=auto">Compare with previous</a>'
     )
-    head = (
-        '<link rel="stylesheet" href="/static/webapp.css">'
-        '<script defer src="/static/webapp.js"></script>'
-    )
-    page = page.replace("</head>", head + "</head>", 1)
-    page = page.replace("<body>", "<body>" + _shell(state, ls.manifest.id, triage), 1)
-    return HTMLResponse(page)
+    shell = _shell(state, ls.manifest.id, _node_switch(state, ls) + triage)
+    return HTMLResponse(_with_shell(page, shell))
+
+
+@router.get("/captures/{ref}")
+async def capture_page(
+    ref: str, request: Request, state: StateDep, window: str | None = None
+) -> Response:
+    """Render the cluster page of a capture (``docs/cluster.md``, section 8).
+
+    ``ref`` is a capture reference or a set (its capture). The page fetches its
+    payload from ``/api/captures/{ref}/report``; ``window`` (``union``) passes through.
+    """
+    from atlas_log_analyzer.service.capture_queries import capture_from_ref
+
+    try:
+        capture = await run_in_threadpool(lambda: capture_from_ref(state, ref, front="api"))
+    except OpError as exc:
+        if exc.status == 404:
+            return not_found_page(request, exc.message)
+        raise
+    target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
+    query = urlencode({"window": window}) if window else ""
+    data_url = f"/api/captures/{quote(target, safe=':@')}/report" + (f"?{query}" if query else "")
+    page = render_cluster_html(None, data_url=data_url, asset_base="/assets/report/")
+    return HTMLResponse(_with_shell(page, _capture_shell(capture)))
 
 
 @router.get("/sets/{ref}/triage")
