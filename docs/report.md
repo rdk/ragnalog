@@ -161,13 +161,18 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 
 ```
 src/atlas_log_analyzer/report/
-├── __init__.py       build_report(logset, ...) -> str, write_report(logset, path, ...) -> ReportInfo
+├── __init__.py       build_report(logset, ...) -> str, write_report(logset, path, ...) -> ReportInfo,
+│                     write_cluster_report(payload, path) -> ClusterReportInfo
 ├── payload.py        build_payload(...)  (polars/duckdb over the LogSet)
-├── render.py         render_html(payload=None, *, data_url, inline_assets, asset_base), asset_text(name)
+├── render.py         render_html(payload=None, *, data_url, inline_assets, asset_base), asset_text(name),
+│                     render_cluster_html(payload=None, *, data_url, asset_base)
 └── assets/
     ├── template.html
     ├── report.css
-    └── report.js
+    ├── report.js
+    ├── cluster.html  the cluster page (§5)
+    ├── cluster.css
+    └── cluster.js
 ```
 
 Dependency direction unchanged: `report` → `store` → `core`; `cli` → `report`.
@@ -185,3 +190,105 @@ element, `data-report-url` on `<html>` and `<link>`/`<script src>` under
 Default `--out` is `<name or id>.html` in the current directory. JSON output:
 `{"schema": "report-file.v1", "path", "bytes", "groups", "entries", "compare"}`.
 Exit codes as for the other commands.
+
+## 5. Cluster page
+
+Status: page implemented 2026-11-05 (`docs/cluster.md` §8, contract §11.3/§11.4); the
+`cluster-report.v1` payload comes from `service/cluster.py`. The sample payload
+`tests/report/data/cluster_payload.json` (two invented nodes) is the page's fixture;
+`tests/report/cluster_data.py` derives 5- and 10-node variants from it.
+
+**Rendering.** `render_cluster_html(payload)` inlines `report.css`, then `cluster.css`
+and `cluster.js` (placeholders `/*__REPORT_CSS__*/`, `/*__CLUSTER_CSS__*/`,
+`/*__CLUSTER_JS__*/`) and embeds the payload in `#cluster-data` (`</` escaped): one
+file that works from `file://`. The web page is
+`render_cluster_html(None, data_url=…, asset_base="/assets/report/")`: `data-report-url`
+on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
+`cluster.js` under `asset_base` (the web app must serve those three via `asset_text`).
+`write_cluster_report(payload, path)` writes the static file. `cluster.js` shares no
+code with `report.js`; its formatting, stack-trace and column-chart helpers are copies.
+
+**Layout.**
+
+- Header: cluster, capture id, one chip per node (colour swatch plus `N1 NODE1`; a
+  "report ↗" link when `urls.set_report` is set), window mode and range, node and group
+  counts, the clock-skew estimate ("estimate, not applied"), theme toggle, JSON download.
+- Node cards: entries, errors, warnings, errors/h, events (totals, or within the
+  brushed window from the timeline), coverage with gap count and length, top error
+  (opens the group), triage verdict chip and baseline, events by kind, "Groups on N1".
+- Timeline: one SVG, one row per node on a shared UTC axis. Each row is an event lane
+  (a glyph per kind in ink colour; legend under the chart) above a band of columns
+  stacked by level in the report's status colours. Hatching marks time outside a node's
+  coverage and its gaps; the window (`capture.window`) is a ruler above the rows with
+  hairlines at its edges. Arrows go from the lane of the node that logs a mention to
+  the lane of the node it names: one per event with `subject_node`, plus fainter ones
+  per bucket for `interactions.mentions` groups (from their `hourly` on the reporting
+  node) where no event arrow exists; "Arrows" hides them. y-scale: shared, per node,
+  or % of node (counts over the node's entries in the range). A selected group is drawn
+  as a line on every band, on the same axis over faded columns; "Fit y to group" (on by
+  default) scales the axis to the group and drops the columns. Hover shows the bucket's
+  levels for that node and every node's total; hovering a lane lists its events (text,
+  node, named node, time); clicking one opens the merged log at that moment. Dragging
+  on any band sets the window of every view; a click clears it.
+- Tabs in the sticky bar:
+  - *Groups by node*: level, template, total, one count-and-bar column per node in node
+    colours (log scale; past 8 nodes a heat strip of one cell per node), `spread` chip
+    (`all`, `only N1`, `×35 N1` for the highest volume-normalised rate) and `lead` chip
+    (`N2 first, +3 h`). Filters: search (`sig:` prefix), levels, spread, node; sort by
+    count, skew, lead, level, template or the count on one node (click a node header).
+    100 rows per page. The drawer has per-node counts, rates and first/last seen,
+    per-node lines over the timeline buckets (no line where a node has no logs), example
+    entries per node in tabs (collapsible stack traces, "±30 s on all nodes"), the
+    co-bursts, mentions and events involving the group, and CLI commands
+    (`atlas-log matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
+    `show SET SIG` per node).
+  - *Interactions*: the N×N mention matrix (a cell lists that edge's entries in the
+    merged log) with the groups behind each edge, event pairs and co-bursts as
+    sentences ("When … burst on N1, … burst on N2 within 5 min, 7 of 8 times (median
+    +40 s, lift ×12)") with "show me" links, concurrent jobs, sessions across nodes, and
+    an events table (the table view of the lanes, filtered by the window).
+  - *Merged log*: entries of all nodes interleaved by time; node badge, level chip,
+    logger, message; a click expands the entry (raw, trace, "±30 s on all nodes", open
+    group, copy raw). Filters: minimum level, nodes, search, and groups (set from the
+    matrix or "show me"). 200 rows at a time. Static file: the payload's example
+    entries, with the equivalent `atlas-log entries CAPTURE --since … --until …`. Web
+    (`urls.entries` set): pages fetched from that URL with `since`, `until` (the window,
+    or from 60 s before a clicked event), `min_level`, `limit=200` and `offset` (the
+    `next_offset` of the `entries.v1` answer); node, search and group filters apply to
+    the loaded rows. "±30 s" fetches `urls.context` with `{set}` and `{id}` filled in;
+    without it the page uses the entries it has.
+
+**State** in `location.hash`: `tab` (`g`, `i`, `l`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
+`sig`, `ex` (example tab), `t` (bucket range), `y`, `fit=0`, `arrows=0`, `ml`, `mn`,
+`mq`, `ms` (signatures), `ctx`/`cts` (context anchor), `at` (log moment), `theme`.
+Keyboard as in the report, plus `1`/`2`/`3` for the tabs; in the merged log `j`/`k` move
+and `Enter` expands. Theme: the report's bootstrap and `localStorage` key. Print: light
+colours, controls and drawer hidden, charts scaled to the page.
+
+**Node colours** (`--n1` … `--n8`; fixed order = `payload.nodes`; never a level colour;
+always with the `N1` label; nodes past 8 are neutral grey with their label):
+
+| Slot | Light | Dark |
+|---|---|---|
+| N1 blue | `#2a78d6` | `#3987e5` |
+| N2 green | `#008300` | `#008300` |
+| N3 magenta | `#e87ba4` | `#d55181` |
+| N4 violet | `#6250d6` | `#9085e9` |
+| N5 aqua | `#1baf7a` | `#199e70` |
+| N6 orange | `#eb6834` | `#d95926` |
+| N7 teal | `#0f8ea6` | `#1a9cb3` |
+| N8 brown | `#a3601c` | `#b5772e` |
+
+Red and yellow are left out (ERROR and WARN). Validated with the dataviz method
+(`validate_palette.js`): adjacent pairs CVD ΔE ≥ 9.2 and normal-vision ΔE ≥ 19.5 in
+both modes; the first three slots also pass all-pairs (CVD 13.0, normal 26.5). Light
+N3 and N5 are below 3:1 on the surface, so the label is always printed.
+
+**Payload tolerances** (beyond §11.3): any key may be missing, null or empty (no
+events, interactions, gaps, verdict or urls; one node; no groups). A node's `events` is
+a count or `{kind: count}`; `baseline` an object `{id, name}` or a string; `gaps` items
+`[since, until]` or `{since, until}`; timeline level keys are the report's buckets
+(`ERROR`, `WARN`, `INFO`, `DEBUG`, `OTHER`) or level names (mapped, `FATAL` → ERROR).
+Entries show `source_path` (the cluster payload has no `sources` list) and get their
+group from `signature` or the groups' `examples`. `interactions.delta_s` (default 300)
+phrases co-bursts. `spread` is derived when missing. Payload text is escaped everywhere.
