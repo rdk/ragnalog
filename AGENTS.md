@@ -85,7 +85,10 @@ ubuntu-latest and windows-latest.
   (a format's own rules: its `version`); all are part of `Recipe.key`, which the
   manifest stores as `recipe_key` and which decides comparability (`diff`, triage
   baselines, `stale` in `sets`, `atlas-log upgrade`). Build maskers, signers and
-  groupers through `core.pipeline.Recipe`, not by hand.
+  groupers through `core.pipeline.Recipe`, not by hand. A change to the entries a
+  format assembles (its opt-ins `banner_window_ms`, `titles_from_body`) also bumps
+  its `version`; `upgrade` must then rebuild old sets from their stored entries
+  alone (`store/regroup.py`, `reassemble`), equal to a fresh ingest (test it).
 - CLI commands are thin adapters over `service`: a new command goes in
   `cli/commands/*.py` and is registered by import path in `cli/app.py` `COMMANDS`
   (keep the module free of heavy imports at the top). Errors are `OpError` built

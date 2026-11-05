@@ -10,6 +10,7 @@ from types import MappingProxyType
 
 import xxhash
 
+from atlas_log_analyzer.core.formats.jira import JiraFormat
 from atlas_log_analyzer.core.grouping import Group, SignedEntry
 from atlas_log_analyzer.core.masking import MaskRule
 from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
@@ -250,6 +251,7 @@ def generate(
 
 class FakeFormat:
     name = "jira"
+    version = JiraFormat.version  # sets of the current recipe, not stale ones
     description = "fake"
     mask_rules: Sequence[MaskRule] = ()
     signature_spec = SignatureSpec()

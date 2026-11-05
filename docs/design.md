@@ -167,6 +167,28 @@ group `atlas_log_analyzer.formats` so external packages can add formats.
   that the format does not recognise in its first 200 lines (`NotInFormat`,
   overridable with `force`): such a file would become one giant entry.
 - `parse_many(sources, fmt)` chains sources in rotation order.
+- **Decorated entries** (format opt-ins, `core/decoration.py`; Jira since format
+  version 2). *Banners*: ScriptRunner's `GroovyCustomField` logs a row of
+  asterisks as an ERROR entry of its own right before each "Script field
+  failed" entry of the same thread, which doubled the error count and formed a
+  group of its own. An entry whose message, stripped, is ten or more
+  characters without a letter or digit (`[\W_]+`) and that has no body is a
+  banner; when the *next entry of the same file* has the same thread and logger
+  and its timestamp is 0–5 ms after the banner's (`banner_window_ms`), the
+  banner is dropped and that entry gets the banner's `raw` as
+  `context["preamble"]` (a run of such banners, each followed by the next:
+  joined with `\n`, at most 16). The entry keeps its id, `raw` (which still
+  starts with its own header line), header and source; every other banner stays
+  an entry. `attach_banners` runs per file after the ids are made unique, with
+  a lookahead of one entry. On the sample store the immediate-next rule caught
+  122,538 of 122,587 banners; "the next entry of the same thread and logger
+  within 5 ms", with any number of entries between, would have caught 6 more,
+  so the simpler streaming rule was kept. *Titles from the body*
+  (`titles_from_body`): an entry whose header message is blank (Jira's startup
+  logger writes `Jira starting...` and the startup report below an empty
+  message, Rich Filters its time-slice dumps) is masked and signed by its first
+  body line that is neither blank nor decoration, stripped (`lead_line`); the
+  `message` column stays the header remainder.
 
 Throughput target: ≥ 50 MB/s for parsing alone on the sample data; ingest to
 Parquet ≥ 15 MB/s.
@@ -187,7 +209,7 @@ kept per entry (`variables` column) for later queries ("which issues failed?").
 | format name | yes | |
 | level | yes | |
 | logger | yes | |
-| masked message | yes | first line only |
+| masked message | yes | first line only; a blank one: the body's lead line (§4, `titles_from_body`) |
 | exception chain | types + masked messages | not frames |
 | top app frames | 0 | configurable `frames=N` for a finer signature |
 
@@ -198,7 +220,7 @@ rule set is unchanged.
 
 Everything that decides a signature is one `Recipe(fmt, spec, extra_rules)`
 (`core/pipeline.py`), which builds the masker, signer and grouper and names
-them in a key such as `jira@1|L+G+E+F0|sig1|mask1`: format name and version
+them in a key such as `jira@2|L+G+E+F0|sig1|mask1`: format name and version
 (a format's optional integer `version`, default 1, read with `getattr` so the
 registry's `isinstance` check still accepts formats without it), spec,
 `SIGNATURE_VERSION`, `MASK_RULES_VERSION`, plus `|rules:<xxh3>` of extra
@@ -469,6 +491,19 @@ Struct fails it.
   come from `groups_from_entries`, which reproduces the `Grouper` exactly
   (`most_common` tie order, empty users/threads not counted, first `N-1` plus
   last examples). Same tables as the object-based path; 5.2 s in all.
+  The signer's key also holds the body's lead line of entries whose message is
+  blank (found among the rows without an ASCII letter or digit, then decided by
+  the same Python rules as at ingest). A set built by an older version of its
+  format is re-assembled while it is re-signed (`resign_entries(reassemble=True)`):
+  banner rows are found with polars in file order (`source_path`, then
+  `source_line`), segments of linked rows end on the entry they announce, those
+  rows are dropped and their targets get `context["preamble"]` while the row
+  groups are rewritten; entry count, per-source counts and time ranges and the
+  groups are recomputed. The result equals ingesting the same files with the
+  current format (tested on fixtures, and on the four sample sets: 2.1M entries,
+  2–6 s per set), except where deduplication across overlapping files removed a
+  banner or its entry from one of the files. A set already at the current
+  format version is not re-assembled again.
   The ingest pipeline drops repeated entry ids before the grouper
   (`unique_entries`) and writes with `dedupe=False`, so one id set is held and
   group counts always match; `Store.ingest` still recomputes groups from the

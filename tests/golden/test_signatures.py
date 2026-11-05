@@ -2,10 +2,11 @@
 
 ``signatures.json`` holds, per fixture file of every registered format, an xxh3
 digest of its sorted ``(signature, coarse_signature)`` pairs and the entry count,
-under a key naming ``SIGNATURE_VERSION``, ``MASK_RULES_VERSION`` and the format's
-default spec. A change of the masking rules or of the signature algorithm that
-moves any signature fails here; stored sets made by older versions would no
-longer diff cleanly against new ones, which is what the versions record.
+under the recipe key of the format's default spec (format version, spec,
+``SIGNATURE_VERSION``, ``MASK_RULES_VERSION``). A change of the masking rules, of
+the signature algorithm or of the entries a format builds that moves any signature
+fails here; stored sets made by older versions would no longer diff cleanly against
+new ones, which is what the versions record.
 """
 
 from __future__ import annotations
@@ -18,16 +19,14 @@ import pytest
 import xxhash
 
 from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.grouping import Grouper
-from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker
 from atlas_log_analyzer.core.parser import parse_file
-from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, Signer
+from atlas_log_analyzer.core.pipeline import Recipe
 
 GOLDEN = Path(__file__).with_name("signatures.json")
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 MESSAGE = (
-    "signatures changed: bump SIGNATURE_VERSION or MASK_RULES_VERSION if intended, "
-    "then run `uv run pytest --update-golden`"
+    "signatures changed: bump SIGNATURE_VERSION, MASK_RULES_VERSION or the format's version "
+    "if intended, then run `uv run pytest --update-golden`"
 )
 
 
@@ -37,14 +36,18 @@ def _fixture_files() -> list[tuple[str, Path]]:
     ]
 
 
+def _recipe(format_name: str) -> Recipe:
+    fmt = formats.get(format_name)
+    return Recipe(fmt, fmt.signature_spec)
+
+
 def _key(format_name: str) -> str:
-    spec = formats.get(format_name).signature_spec
-    return f"signature_v{SIGNATURE_VERSION}+mask_rules_v{MASK_RULES_VERSION}+{spec.key}"
+    return _recipe(format_name).key
 
 
 def _digest(format_name: str, path: Path) -> dict[str, Any]:
     fmt = formats.get(format_name)
-    grouper = Grouper(Signer(Masker([*fmt.mask_rules, *GENERIC_RULES]), fmt.signature_spec))
+    grouper = _recipe(format_name).grouper()
     pairs = sorted((s.signature.hash, s.coarse.hash) for s in grouper.sign(parse_file(path, fmt)))
     text = "\n".join(f"{sig} {coarse}" for sig, coarse in pairs) + f"\ncount {len(pairs)}"
     return {"count": len(pairs), "xxh3": xxhash.xxh3_64_hexdigest(text.encode())}

@@ -300,8 +300,11 @@ def upgrade(*logsets: str, all: bool = False) -> None:
     the recipe this version signs its format and spec with; stale sets are not
     comparable with new ones, and triage skips them as baselines. upgrade
     re-signs the stored entries as `regroup` does, keeping each set's
-    signature spec. Sets that are current, or whose format is not
-    registered, are skipped with a reason.
+    signature spec. A set built by an older version of its format is also
+    re-assembled from its stored entries (Jira sets of format version 1:
+    banner lines join the entry they announce); the log files are not read.
+    Sets that are current, or whose format is not registered, are skipped
+    with a reason.
 
     Output (json):
       {"schema": "upgrade.v1", "count": int, "upgraded": int,

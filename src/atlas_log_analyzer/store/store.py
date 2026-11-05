@@ -23,7 +23,7 @@ from atlas_log_analyzer.core import formats
 from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.grouping import Group, SignedEntry
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
-from atlas_log_analyzer.core.pipeline import Recipe
+from atlas_log_analyzer.core.pipeline import Recipe, format_version, key_format_version
 from atlas_log_analyzer.core.reader import SourceFile
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec
 from atlas_log_analyzer.store.locks import FileLock
@@ -122,6 +122,20 @@ def _source_infos(
                 entries=st.entries,
             )
         )
+    return tuple(out)
+
+
+def _restat(
+    sources: tuple[SourceInfo, ...], stats: dict[str, SourceStats]
+) -> tuple[SourceInfo, ...]:
+    """Return the manifest's sources with entry counts and time ranges from ``stats``."""
+    from atlas_log_analyzer.store.writer import SourceStats
+
+    normalised = {_norm(k): v for k, v in stats.items()}
+    out = []
+    for info in sources:
+        st = stats.get(info.path) or normalised.get(_norm(info.path)) or SourceStats()
+        out.append(replace(info, entries=st.entries, first_ts=st.first_ts, last_ts=st.last_ts))
     return tuple(out)
 
 
@@ -506,19 +520,24 @@ class Store:
 
         Entries are re-signed from their stored columns with the current recipe of
         the set's format (:class:`~atlas_log_analyzer.core.pipeline.Recipe`), each
-        distinct (level, logger, message, exception chain) once, so
-        ``entries.parquet`` is rewritten too (``signature``, ``coarse_signature``,
-        ``template``, ``variables`` change; every other column is kept) and the
-        manifest records the new spec, recipe key and current signature/mask-rule
-        versions. Any ``merges.parquet`` is dropped because it refers to the old
-        signatures.
+        distinct (level, logger, message, exception chain, body lead line of a blank
+        message) once, so ``entries.parquet`` is rewritten too (``signature``,
+        ``coarse_signature``, ``template``, ``variables`` change; every other column is
+        kept) and the manifest records the new spec, recipe key and current
+        signature/mask-rule versions. Any ``merges.parquet`` is dropped because it
+        refers to the old signatures.
+
+        A set built by an older version of its format is also re-assembled from the
+        stored entries (the log files are not read): banners are attached to the entry
+        they announce (``resign_entries(reassemble=True)``), and the entry count, the
+        per-source counts and time ranges follow.
 
         Raises:
             StoreError: The set does not exist or its format is unknown.
 
         """
         from atlas_log_analyzer.store.regroup import resign_entries
-        from atlas_log_analyzer.store.writer import groups_from_entries
+        from atlas_log_analyzer.store.writer import groups_from_entries, source_stats
 
         ls = self.open(ref)
         m = ls.manifest
@@ -527,12 +546,27 @@ class Store:
         except LookupError as exc:
             raise StoreError(f"unknown format {m.format!r} of log set {m.id}") from exc
         recipe = Recipe(fmt, spec)
+        built_with = key_format_version(m.recipe_key) or 1
         tmp = self._tmp_dir(m.id)
         try:
-            count = resign_entries(ls.entries_path, tmp / ENTRIES_FILE, recipe, m.format)
+            count = resign_entries(
+                ls.entries_path,
+                tmp / ENTRIES_FILE,
+                recipe,
+                m.format,
+                reassemble=built_with < format_version(fmt),
+            )
             group_count = groups_from_entries(tmp / ENTRIES_FILE, tmp / GROUPS_FILE)
+            sources, first_ts, last_ts = m.sources, m.first_ts, m.last_ts
+            if count != m.entry_count:
+                stats = source_stats(tmp / ENTRIES_FILE)
+                sources = _restat(m.sources, stats)
+                first_ts, last_ts = _time_range(stats.values())
             manifest = replace(
                 m,
+                sources=sources,
+                first_ts=first_ts,
+                last_ts=last_ts,
                 entry_count=count,
                 group_count=group_count,
                 tool_version=__version__,

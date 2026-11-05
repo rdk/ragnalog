@@ -9,7 +9,9 @@ Canonical parts, in order:
 1. format name;
 2. level name (``include_level``);
 3. logger (``include_logger``);
-4. masked first line of the message;
+4. masked first line of the message (the *title*; with ``titles_from_body``, an entry
+   whose header message is blank uses the first body line that is neither blank nor
+   decoration, :func:`~atlas_log_analyzer.core.decoration.lead_line`);
 5. per exception of the chain (``include_exceptions``): type, masked message key;
 6. per exception: locations of its top ``frames`` frames (``frames > 0``).
 
@@ -25,6 +27,7 @@ from dataclasses import dataclass
 
 import xxhash
 
+from atlas_log_analyzer.core.decoration import lead_line
 from atlas_log_analyzer.core.masking import Masker
 from atlas_log_analyzer.core.models import ExceptionInfo, LogEntry
 
@@ -120,11 +123,20 @@ def exception_message_key(exc: ExceptionInfo) -> str:
 
 
 class Signer:
-    """Computes :class:`Signature` for entries with a given masker and spec."""
+    """Computes :class:`Signature` for entries with a given masker and spec.
 
-    def __init__(self, masker: Masker, spec: SignatureSpec = DEFAULT_SPEC) -> None:
+    With ``titles_from_body`` (a format's opt-in, passed by
+    :meth:`~atlas_log_analyzer.core.pipeline.Recipe.signer`) an entry whose message is
+    blank is masked and signed by its body's
+    :func:`~atlas_log_analyzer.core.decoration.lead_line` instead (:meth:`title`).
+    """
+
+    def __init__(
+        self, masker: Masker, spec: SignatureSpec = DEFAULT_SPEC, *, titles_from_body: bool = False
+    ) -> None:
         self.masker = masker
         self.spec = spec
+        self.titles_from_body = titles_from_body
         # Without exceptions an entry's parts under ``spec`` and COARSE_SPEC are equal
         # when both treat level and logger alike (exceptions and frames add nothing).
         self._coarse_if_no_exceptions = (
@@ -132,9 +144,20 @@ class Signer:
             and spec.include_logger == COARSE_SPEC.include_logger
         )
 
+    def title(self, entry: LogEntry) -> str:
+        """Return the text masked into the template: the message, or the body's lead line.
+
+        The lead line stands in only with ``titles_from_body`` and a message that is
+        empty or white space; the entry's ``message`` itself is never changed.
+        """
+        message = entry.message
+        if self.titles_from_body and (not message or message.isspace()):
+            return lead_line(entry.body)
+        return message
+
     def sign(self, entry: LogEntry) -> Signature:
         """Compute the signature of ``entry``."""
-        template, variables = self.masker.apply(entry.message)
+        template, variables = self.masker.apply(self.title(entry))
         return self._make(entry, self.spec, template, variables, self._exception_parts(entry))
 
     def sign_both(self, entry: LogEntry) -> tuple[Signature, Signature]:
@@ -143,7 +166,7 @@ class Signer:
         For an entry without exceptions both are the same object when the spec
         and :data:`COARSE_SPEC` agree on level and logger (the default).
         """
-        template, variables = self.masker.apply(entry.message)
+        template, variables = self.masker.apply(self.title(entry))
         exc_parts = self._exception_parts(entry)
         full = self._make(entry, self.spec, template, variables, exc_parts)
         if not entry.exceptions and self._coarse_if_no_exceptions:

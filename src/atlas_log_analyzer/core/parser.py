@@ -3,23 +3,28 @@
 from __future__ import annotations
 
 import dataclasses
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from collections.abc import Iterable, Iterator
-from datetime import datetime
+from datetime import datetime, timedelta
 from itertools import islice
 from pathlib import Path
+from types import MappingProxyType
 
 import xxhash
 
-from atlas_log_analyzer.core.formats.base import LogFormat
+from atlas_log_analyzer.core.decoration import is_banner_text
+from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, LogFormat, banner_window_ms
 from atlas_log_analyzer.core.models import LogEntry, SourceRef
 from atlas_log_analyzer.core.reader import Line, SourceFile, discover_sources, iter_raw_lines
 
 __all__ = [
+    "MAX_BANNERS",
     "MAX_ENTRY_CHARS",
     "MAX_ENTRY_LINES",
     "ORPHAN_ERROR",
     "TRUNCATED_ERROR",
+    "attach_banners",
+    "is_banner",
     "parse",
     "parse_file",
     "parse_lines",
@@ -42,6 +47,8 @@ IDS_PER_MILLISECOND = 128
 
 DETECT_LINES = 200
 """Number of leading lines handed to :func:`formats.detect`."""
+MAX_BANNERS = 16
+"""Most banners attached to one entry; earlier ones of a longer run stay entries."""
 
 
 def _utf8_len(text: str) -> int:
@@ -196,6 +203,73 @@ def _distinct_ids(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
         yield entry if eid is entry.id else _with_id(entry, eid)
 
 
+def is_banner(entry: LogEntry) -> bool:
+    """Whether ``entry`` is a banner: a decoration-only header message and no body.
+
+    The message must be :func:`~atlas_log_analyzer.core.decoration.is_banner_text`
+    (ten or more characters without a letter or digit, such as a row of asterisks),
+    and the header must have been recognised.
+    """
+    return entry.parse_error is None and not entry.body and is_banner_text(entry.message)
+
+
+def _follows(banner: LogEntry, entry: LogEntry, window: timedelta) -> bool:
+    """Whether ``entry`` continues ``banner``: same thread and logger, at most ``window`` later."""
+    if entry.thread != banner.thread or entry.logger != banner.logger:
+        return False
+    gap = entry.timestamp - banner.timestamp
+    return timedelta(0) <= gap <= window
+
+
+def _with_preamble(entry: LogEntry, banners: Iterable[LogEntry]) -> LogEntry:
+    context = dict(entry.context)
+    context[CTX_PREAMBLE] = "\n".join(b.raw for b in banners)
+    return dataclasses.replace(entry, context=MappingProxyType(context))
+
+
+def attach_banners(
+    entries: Iterable[LogEntry], window_ms: int, *, max_banners: int = MAX_BANNERS
+) -> Iterator[LogEntry]:
+    r"""Attach banner entries to the entry they announce (the entries of one file, in order).
+
+    A banner (:func:`is_banner`) is followed by the next entry of the file when that
+    entry has the same thread and logger and its timestamp is ``0..window_ms``
+    milliseconds after the banner's. A run of banners, each followed by the next,
+    that ends at an entry which is no banner is dropped, and that entry gets their
+    ``raw`` texts, joined with ``\n``, as ``context["preamble"]``
+    (:data:`~atlas_log_analyzer.core.formats.base.CTX_PREAMBLE`); its id, ``raw``,
+    header and source stay as they are. Of a longer run only the last ``max_banners``
+    are attached. Every other banner stays an entry. ``window_ms <= 0`` (or
+    ``max_banners <= 0``) passes the entries through.
+
+    Streaming with a lookahead of one entry (plus the pending run of banners).
+    ``store.regroup.resign_entries`` applies the same rule to stored entries.
+    """
+    if window_ms <= 0 or max_banners <= 0:
+        yield from entries
+        return
+    window = timedelta(milliseconds=window_ms)
+    pending: deque[LogEntry] = deque()
+    for entry in entries:
+        if pending:
+            if _follows(pending[-1], entry, window):
+                if is_banner(entry):
+                    pending.append(entry)
+                    if len(pending) > max_banners:
+                        yield pending.popleft()
+                    continue
+                yield _with_preamble(entry, pending)
+                pending.clear()
+                continue
+            yield from pending
+            pending.clear()
+        if is_banner(entry):
+            pending.append(entry)
+        else:
+            yield entry
+    yield from pending
+
+
 def parse_lines(
     lines: Iterable[Line],
     fmt: LogFormat,
@@ -210,7 +284,9 @@ def parse_lines(
     A line for which ``fmt.is_header`` is true but ``fmt.parse_header`` returns
     ``None`` becomes an entry with ``parse_error`` and is *not* merged into the
     previous entry. Entries after the first in a millisecond get ids re-hashed
-    with their ordinal (see :func:`_distinct_ids`).
+    with their ordinal (see :func:`_distinct_ids`). When the format opts in
+    (``banner_window_ms``), banners are then attached to the entry they announce
+    (:func:`attach_banners`).
 
     An entry keeps at most ``max_entry_lines`` lines and ``max_entry_chars``
     characters (header included, whole lines only); the lines after the cap are
@@ -219,8 +295,11 @@ def parse_lines(
     and M, so it stays deterministic.
     """
     rows = ((ln.number, ln.offset, ln.text) for ln in lines)
-    return _distinct_ids(
-        _assemble(rows, fmt, path, max_chars=max_entry_chars, max_lines=max_entry_lines)
+    return attach_banners(
+        _distinct_ids(
+            _assemble(rows, fmt, path, max_chars=max_entry_chars, max_lines=max_entry_lines)
+        ),
+        banner_window_ms(fmt),
     )
 
 
@@ -231,15 +310,22 @@ def parse_file(
     max_entry_chars: int = MAX_ENTRY_CHARS,
     max_entry_lines: int = MAX_ENTRY_LINES,
 ) -> Iterator[LogEntry]:
-    """Stream entries from one file (lines over 1 MiB are cut, see :func:`iter_raw_lines`)."""
-    return _distinct_ids(
-        _assemble(
-            iter_raw_lines(path),
-            fmt,
-            str(path),
-            max_chars=max_entry_chars,
-            max_lines=max_entry_lines,
-        )
+    """Stream entries from one file (lines over 1 MiB are cut, see :func:`iter_raw_lines`).
+
+    As :func:`parse_lines`: ids made unique, then banners attached when the format
+    opts in.
+    """
+    return attach_banners(
+        _distinct_ids(
+            _assemble(
+                iter_raw_lines(path),
+                fmt,
+                str(path),
+                max_chars=max_entry_chars,
+                max_lines=max_entry_lines,
+            )
+        ),
+        banner_window_ms(fmt),
     )
 
 

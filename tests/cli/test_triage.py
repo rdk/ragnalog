@@ -222,7 +222,7 @@ def night_log(path: Path, day: str, entries: int = 5000) -> Path:
 
 @pytest.fixture
 def snapshots(jcli: Invoke, tmp_path: Path) -> dict[str, str]:
-    """``night`` (one file), ``week`` (that file and two older ones) and the 47-entry
+    """``night`` (one file), ``week`` (that file and two older ones) and the 45-entry
     ``fixture`` (sample.log, 2026-10-24..29), all ingested."""
     from .conftest import SAMPLE_LOG
 
@@ -247,7 +247,7 @@ def test_field_note_superset_and_tiny_sets_are_rejected(
     assert doc["verdict"] == "no_baseline" and doc["baseline"] is None
     [warning] = doc["warnings"]
     assert "week (superset: its sources include all 1 source file(s)" in warning
-    assert "fixture (tiny: 47 entries, under 1% of this set's 5,000)" in warning
+    assert "fixture (tiny: 45 entries, under 1% of this set's 5,000)" in warning
     # the old rule picked the fixture (it ends before night starts): 18 false new errors
     old = jcli("triage", "night", "--baseline", "fixture").json()
     assert old["verdict"] == "new_errors" and old["summary"]["new_by_level"]["ERROR"] == 18

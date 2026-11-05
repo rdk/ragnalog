@@ -14,6 +14,7 @@ from atlas_log_analyzer.core.signature import SignatureSpec
 
 __all__ = [
     "CTX_IP",
+    "CTX_PREAMBLE",
     "CTX_REQUEST_ID",
     "CTX_REQUEST_URL",
     "CTX_SESSION",
@@ -22,7 +23,9 @@ __all__ = [
     "WELL_KNOWN_CONTEXT_KEYS",
     "HeaderMatch",
     "LogFormat",
+    "banner_window_ms",
     "node_hints",
+    "titles_from_body",
 ]
 
 # Well-known ``LogEntry.context`` keys. Each of these gets its own column in the
@@ -35,6 +38,10 @@ CTX_URL = "url"
 """URL(s) from the thread segment (``url: /a, /b``)."""
 CTX_REQUEST_URL = "request_url"
 """URL from the request-context segment."""
+
+CTX_PREAMBLE = "preamble"
+"""Raw text of the banner entries attached before an entry, joined with ``\\n``
+(:func:`~atlas_log_analyzer.core.parser.attach_banners`); lands in the ``context`` map column."""
 
 WELL_KNOWN_CONTEXT_KEYS: tuple[str, ...] = (
     CTX_USER,
@@ -69,6 +76,14 @@ class LogFormat(Protocol):
     rules or entries change signatures; it is part of the recipe key that decides
     which log sets are comparable (:class:`~atlas_log_analyzer.core.pipeline.Recipe`).
     It is not a protocol member, so formats without it still pass ``isinstance``.
+
+    Two optional attributes change how entries are assembled and signed (both are
+    off by default; changing them changes entries, so bump ``version`` with them):
+    ``banner_window_ms`` (int) attaches banner entries to the next entry of their
+    file (:func:`~atlas_log_analyzer.core.parser.attach_banners`, read with
+    :func:`banner_window_ms`), and ``titles_from_body`` (bool) signs an entry whose
+    header message is blank by the first body line that is not decoration (read with
+    :func:`titles_from_body`).
 
     Likewise optional: ``node_hints(lines) -> collections.Counter[str]``, the cluster
     node ids that ``lines`` name as their own node (Jira: ``nodeId: NODE1``), with how
@@ -118,3 +133,16 @@ def node_hints(fmt: LogFormat, lines: Iterable[str]) -> Counter[str]:
         return Counter()
     found: Counter[str] = hook(lines)
     return found
+
+
+def banner_window_ms(fmt: object) -> int:
+    """Milliseconds within which a banner joins the next entry (``fmt.banner_window_ms``).
+
+    ``0`` (the default for formats without the attribute) turns banners off.
+    """
+    return max(0, int(getattr(fmt, "banner_window_ms", 0) or 0))
+
+
+def titles_from_body(fmt: object) -> bool:
+    """Whether entries with a blank header message take their title from the body."""
+    return bool(getattr(fmt, "titles_from_body", False))

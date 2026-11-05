@@ -5,7 +5,7 @@ A :class:`Recipe` names everything that decides an entry's signature: the format
 comparable exactly when their :attr:`Recipe.key` is equal::
 
     recipe = Recipe(JiraFormat(), DEFAULT_SPEC)
-    recipe.key                 # "jira@1|L+G+E+F0|sig1|mask1"
+    recipe.key                 # "jira@2|L+G+E+F0|sig1|mask1"
     grouper = recipe.grouper()
     signed = grouper.sign(unique_entries(parse_sources(sources, recipe.fmt)))
 """
@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 
 import xxhash
 
-from atlas_log_analyzer.core.formats.base import LogFormat
+from atlas_log_analyzer.core.formats.base import LogFormat, titles_from_body
 from atlas_log_analyzer.core.grouping import Grouper
 from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker, MaskRule
 from atlas_log_analyzer.core.models import LogEntry
@@ -27,6 +27,7 @@ __all__ = [
     "RECIPE_PARTS",
     "Recipe",
     "format_version",
+    "key_format_version",
     "recipe_differences",
     "recipe_key",
     "rules_digest",
@@ -47,6 +48,15 @@ def format_version(fmt: LogFormat) -> int:
     return int(getattr(fmt, "version", 1))
 
 
+def key_format_version(key: str) -> int | None:
+    """Format version a recipe key names (``2`` for ``"jira@2|L+G+E+F0|sig1|mask1"``).
+
+    ``None`` when the key's first part has no ``@<int>``.
+    """
+    _, sep, version = key.partition("|")[0].rpartition("@")
+    return int(version) if sep and version.isdigit() else None
+
+
 def rules_digest(rules: Sequence[MaskRule]) -> str:
     """xxh3-64 hex of the rules' names, patterns, flags and placeholders, in order."""
     text = "\n".join(
@@ -64,7 +74,7 @@ def recipe_key(
     mask_rules_version: int = MASK_RULES_VERSION,
     rules: str | None = None,
 ) -> str:
-    """Build a recipe key such as ``"jira@1|L+G+E+F0|sig1|mask1"``.
+    """Build a recipe key such as ``"jira@2|L+G+E+F0|sig1|mask1"``.
 
     Args:
         format_name: Format registry key.
@@ -125,7 +135,7 @@ class Recipe:
 
     @property
     def key(self) -> str:
-        """Comparability key, e.g. ``"jira@1|L+G+E+F0|sig1|mask1"`` (see :func:`recipe_key`)."""
+        """Comparability key, e.g. ``"jira@2|L+G+E+F0|sig1|mask1"`` (see :func:`recipe_key`)."""
         return recipe_key(
             self.fmt.name,
             format_version(self.fmt),
@@ -138,8 +148,12 @@ class Recipe:
         return Masker(self.rules)
 
     def signer(self) -> Signer:
-        """Build a :class:`Signer` with :meth:`masker` and :attr:`spec`."""
-        return Signer(self.masker(), self.spec)
+        """Build a :class:`Signer` with :meth:`masker`, :attr:`spec` and the format's titles.
+
+        ``titles_from_body`` comes from the format
+        (:func:`~atlas_log_analyzer.core.formats.base.titles_from_body`).
+        """
+        return Signer(self.masker(), self.spec, titles_from_body=titles_from_body(self.fmt))
 
     def grouper(self, *, max_examples: int = 3) -> Grouper:
         """Build a :class:`Grouper` over :meth:`signer`."""

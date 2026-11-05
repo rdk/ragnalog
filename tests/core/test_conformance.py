@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 
 from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats.base import LogFormat
+from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, LogFormat
 from atlas_log_analyzer.core.models import LogEntry
 from atlas_log_analyzer.core.parser import DETECT_LINES, parse_file
 from atlas_log_analyzer.core.reader import iter_raw_lines
@@ -80,11 +80,31 @@ def test_every_format_has_fixtures() -> None:
 
 @pytest.mark.parametrize(("name", "path"), OWN, ids=_id)
 def test_raw_is_lossless(name: str, path: Path) -> None:
-    """Joined ``raw`` texts give back the file: the reader drops a CR before each LF
-    and the final newline; nothing else is lost or reordered."""
+    """Joined ``raw`` texts, each after its ``preamble`` (attached banners), give back the
+    file: the reader drops a CR before each LF and the final newline; nothing else is lost
+    or reordered."""
     text = path.read_bytes().decode("utf-8").replace("\r\n", "\n")
     text = text.removesuffix("\n")
-    assert "\n".join(e.raw for e in _entries(name, path)) == text
+    parts = [
+        f"{e.context[CTX_PREAMBLE]}\n{e.raw}" if CTX_PREAMBLE in e.context else e.raw
+        for e in _entries(name, path)
+    ]
+    assert "\n".join(parts) == text
+
+
+@pytest.mark.parametrize(("name", "path"), OWN, ids=_id)
+def test_preamble_lines_are_banner_headers(name: str, path: Path) -> None:
+    """A preamble is whole header lines of the file, just above the entry's header."""
+    fmt = _fresh(name)
+    lines = path.read_bytes().decode("utf-8").split("\n")
+    for e in _entries(name, path):
+        pre = e.context.get(CTX_PREAMBLE)
+        if pre is None:
+            continue
+        banner_lines = pre.split("\n")
+        start = e.source.line - 1 - len(banner_lines)
+        assert [ln.removesuffix("\r") for ln in lines[start : e.source.line - 1]] == banner_lines
+        assert all(fmt.is_header(ln) for ln in banner_lines), e.source
 
 
 @pytest.mark.parametrize(("name", "path"), OWN, ids=_id)

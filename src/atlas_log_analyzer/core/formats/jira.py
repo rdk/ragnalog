@@ -260,8 +260,21 @@ class JiraFormat:
 
     name = "jira"
     description = "Jira Data Center atlassian-jira.log"
-    version = 1
-    """Bump when :data:`JIRA_RULES` or the entries this format builds change signatures."""
+    version = 2
+    """Bump when :data:`JIRA_RULES` or the entries this format builds change signatures.
+
+    2: banners attached to the next entry, titles from the body of entries whose
+    header message is blank (``banner_window_ms``, ``titles_from_body``).
+    """
+    banner_window_ms = 5
+    """ScriptRunner's ``GroovyCustomField`` logs a row of asterisks as an entry of its
+    own, on the same thread and logger, right before each "Script field failed" entry;
+    such a banner becomes ``context["preamble"]`` of that entry
+    (:func:`~atlas_log_analyzer.core.parser.attach_banners`)."""
+    titles_from_body = True
+    """``JiraStartupLogger`` and plugins log an empty header message with the text on
+    the following lines (``Jira starting...`` between rows of asterisks); such entries
+    are signed by their first body line that is not decoration."""
     mask_rules: Sequence[MaskRule] = JIRA_RULES
     signature_spec: SignatureSpec = DEFAULT_SPEC
     event_rules: tuple[EventRule, ...] = JIRA_EVENT_RULES

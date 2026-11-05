@@ -1,12 +1,16 @@
 {
-  "signature_v1+mask_rules_v1+L+G+E+F0": {
+  "jira@2|L+G+E+F0|sig1|mask1": {
+    "jira/banners.log": {
+      "count": 16,
+      "xxh3": "f13e0f77f31c4058"
+    },
     "jira/edge_cases.log": {
       "count": 15,
-      "xxh3": "b9146de0978e3491"
+      "xxh3": "008c9f961af9da0c"
     },
     "jira/sample.log": {
-      "count": 47,
-      "xxh3": "47d34a397fa71f2e"
+      "count": 45,
+      "xxh3": "278a9cae8f7d1185"
     }
   }
 }

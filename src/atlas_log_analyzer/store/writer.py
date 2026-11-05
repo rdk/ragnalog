@@ -53,6 +53,7 @@ __all__ = [
     "SourceStats",
     "groups_from_entries",
     "iter_entries",
+    "source_stats",
     "unique_entries",
     "write_groups",
     "write_merges",
@@ -518,6 +519,26 @@ def iter_entries(path: Path, fmt: str, *, batch_size: int = 8192) -> Iterator[Lo
             batch = batch.set_column(ts_idx, "ts", batch.column(ts_idx).cast(pa.int64()))
             for row in batch.to_pylist():
                 yield _row_to_entry(row, fmt)
+
+
+def source_stats(entries_path: Path) -> dict[str, SourceStats]:
+    """Per-source statistics of a stored ``entries.parquet``, as :class:`EntriesWriter` keeps them.
+
+    Keyed by ``source_path``; parse errors without a timestamp (at the epoch) count but
+    do not widen the time range.
+    """
+    unknown = pl.col("parse_error").is_not_null() & (pl.col("ts").dt.epoch("ms") == 0)
+    known = pl.when(unknown).then(None).otherwise(pl.col("ts").dt.epoch("ms"))
+    df = (
+        pl.scan_parquet(entries_path)
+        .group_by(pl.col("source_path").cast(pl.String).fill_null(""))
+        .agg(pl.len().alias("n"), known.min().alias("lo"), known.max().alias("hi"))
+        .collect()
+    )
+    return {
+        path: SourceStats(int(n), _ms(lo), _ms(hi))
+        for path, n, lo, hi in df.select("source_path", "n", "lo", "hi").iter_rows()
+    }
 
 
 def groups_from_entries(entries_path: Path, out_path: Path, *, max_examples: int = 3) -> int:

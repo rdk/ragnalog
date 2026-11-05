@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.base import CTX_USER
+from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, CTX_USER
 from atlas_log_analyzer.core.formats.jira import JiraFormat
 from atlas_log_analyzer.core.models import LogEntry, LogLevel
 from atlas_log_analyzer.core.parser import (
@@ -25,12 +25,12 @@ HEADER = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] m
 
 def test_sample_counts(jira: JiraFormat) -> None:
     entries = list(parse_file(SAMPLE, jira))
-    assert len(entries) == 47
+    assert len(entries) == 45  # 47 lines start an entry; two banners joined the next entry
     assert [e for e in entries if e.parse_error] == []
     assert Counter(e.level for e in entries) == {
         LogLevel.WARN: 18,
         LogLevel.INFO: 15,
-        LogLevel.ERROR: 13,
+        LogLevel.ERROR: 11,
         LogLevel.DEBUG: 1,
     }
     types = Counter(e.exception_type for e in entries if e.exceptions)
@@ -44,9 +44,12 @@ def test_sample_counts(jira: JiraFormat) -> None:
         "NullPointerException",
     ]
     assert [x.omitted_frames for x in dispatch.exceptions][1:] == [9, 20, 23]
-    # every line of the file is accounted for exactly once
+    # every line of the file is accounted for exactly once (a preamble is header lines)
     total_lines = sum(1 for _ in iter_lines(SAMPLE))
-    assert sum(1 + (e.body.count("\n") + 1 if e.body else 0) for e in entries) == total_lines
+    preambles = [e.context[CTX_PREAMBLE] for e in entries if CTX_PREAMBLE in e.context]
+    assert len(preambles) == 2 and not any("\n" in p for p in preambles)
+    lines = sum(1 + (e.body.count("\n") + 1 if e.body else 0) for e in entries)
+    assert lines + len(preambles) == total_lines
     assert entries[0].message == ""
     assert entries[0].body.splitlines()[2] == "    ROLLOVER"
     assert entries[0].context[CTX_USER] == "user1"
@@ -261,12 +264,20 @@ def _ids(texts: list[str]) -> list[str]:
     ],
 )
 def test_fixture_ids_are_stable(fixture: Path, count: int, digest: str, jira: JiraFormat) -> None:
-    """Ids of existing stores stay valid: these digests were computed before the ordinal LRU."""
+    """Ids of existing stores stay valid: these digests were computed before the ordinal LRU.
+
+    Banners are attached after the ids are made unique, so the other entries keep theirs.
+    """
     import hashlib
 
-    ids = [e.id for e in parse_file(fixture, jira)]
+    class NoBanners(JiraFormat):
+        banner_window_ms = 0
+
+    ids = [e.id for e in parse_file(fixture, NoBanners())]
     assert len(ids) == len(set(ids)) == count
     assert hashlib.sha256("\n".join(ids).encode()).hexdigest()[:16] == digest
+    kept = [e.id for e in parse_file(fixture, jira)]
+    assert set(kept) <= set(ids) and sorted(kept, key=ids.index) == kept
 
 
 def test_run_ordinal_ids_are_stable() -> None:

@@ -260,7 +260,7 @@ entries count in `ingest.parse_errors`.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@1|L+G+E+F0|sig1|mask1", "node": "NODE1", "cluster": "jira-test",
+ "recipe_key": "jira@2|L+G+E+F0|sig1|mask1", "node": "NODE1", "cluster": "jira-test",
  "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
@@ -275,6 +275,15 @@ Manifests written before `recipe_key` existed get it derived from their version
 fields (format version 1). Lines before a file's first header become one
 parse-error entry at the epoch; it is stored but does not count for
 `first_ts`/`last_ts` (of the set or of its `sources`).
+
+Jira entries are assembled with two rules (format version 2, `docs/design.md`
+§4): a *banner*, an entry whose message is only decoration (ten or more
+characters without a letter or digit, such as ScriptRunner's row of asterisks)
+and that has no body, is dropped when the next entry of its file has the same
+thread and logger and comes at most 5 ms later; that entry keeps its own id,
+`raw` and header and gets the banner's raw line as `context.preamble`. An entry
+whose header message is blank is grouped by its first body line that is not
+blank or decoration (`Jira starting...`); its `message` stays empty.
 
 `ingest.warnings` lists requests that were not honoured, also printed on stderr:
 re-ingesting existing files with another `--name` keeps the set's name and
@@ -897,9 +906,11 @@ Files are selected and bounded as by `ingest` (`--force` likewise).
 {"id", "format", "timestamp": "2026-10-29T02:19:41.415+01:00", "level": "ERROR", "thread",
  "logger", "message", "body", "exception_type",
  "exceptions": [{"type", "message", "frames": [{"location", "file", "line", "module"}], "omitted_frames"}],
- "context": {"user", "request_id", "session", "ip", "url", "request_url"},
+ "context": {"user", "request_id", "session", "ip", "url", "request_url", "preamble"},
  "source": {"path", "line", "offset"}, "raw", "parse_error"}
 ```
+
+`context.preamble` only on entries a banner was attached to (see `ingest`).
 
 Exit: 0; 1 unknown format; 2 no files / not detected / `not_in_format` / no entries.
 
@@ -907,9 +918,11 @@ Exit: 0; 1 unknown format; 2 no files / not detected / `not_in_format` / no entr
 
 Re-signs the stored entries with another signature spec and rewrites the
 groups (any `merges.parquet` is dropped). Each distinct (level, logger,
-message, exception chain) is signed once and only the `signature`,
-`coarse_signature`, `template` and `variables` columns of `entries.parquet`
-are replaced (712k entries: about 5 s). Prints the manifest (`logset.v1`, new
+message, exception chain, and the body's lead line of a blank message) is
+signed once and only the `signature`, `coarse_signature`, `template` and
+`variables` columns of `entries.parquet` are replaced (712k entries: about 6 s).
+A set built by an older version of its format is also re-assembled from its
+stored entries, as `upgrade` describes. Prints the manifest (`logset.v1`, new
 `signature_spec` and `recipe_key`). Diffs against sets with a different spec
 then need `--force`. Exit: 0; 1; 3.
 
@@ -919,6 +932,15 @@ Rebuilds stale sets (see `sets`) at the current recipe, each with its own
 signature spec, by re-signing their entries as `regroup` does. Sets that are
 current, or whose format is not registered, are skipped with a reason (an
 unknown format is also printed on stderr).
+
+Jira sets built before format version 2 (`recipe_key` `jira@1|…`) are stale:
+run `atlas-log upgrade --all` once. Their entries are re-assembled from the
+stored rows alone (the log files are not needed): banners are attached to the
+entry they announce (`context.preamble`, see `ingest`), entries with a blank
+message get their title from the body, and `entry_count`, the per-source counts
+and time ranges and the groups follow. The result equals ingesting the same
+files again. On the sample store (four sets, 2.1M entries) 122,538 banner
+entries were attached and 49 stayed; each set took 2–6 s.
 
 ```json
 {"schema": "upgrade.v1", "count": 1, "upgraded": 1,

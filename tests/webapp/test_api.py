@@ -256,7 +256,7 @@ def test_token_required(store_dir: Path) -> None:
 
 
 def test_triage_auto_baseline_ranks_like_the_cli(client: TestClient, store_dir: Path) -> None:
-    """sample (47 entries over 4.8 days) spans 17x mini's 6.9 h; mini ends after sample."""
+    """sample (45 entries over 4.8 days) spans 17x mini's 6.9 h; mini ends after sample."""
     mini = _json(client, "/api/sets/mini/triage")
     assert (
         mini["verdict"] == "no_baseline" and "sample (span: covers 4.8 days" in mini["warnings"][0]
@@ -267,7 +267,7 @@ def test_triage_auto_baseline_ranks_like_the_cli(client: TestClient, store_dir: 
         cli = _cli_json(store_dir, "triage", name)
         assert cli["warnings"] == _json(client, f"/api/sets/{name}/triage")["warnings"]
     given = _json(client, "/api/sets/mini/triage?baseline=sample")
-    assert given["baseline"]["resolved_by"] == "param" and given["baseline"]["entries"] == 47
+    assert given["baseline"]["resolved_by"] == "param" and given["baseline"]["entries"] == 45
     assert given["baseline"]["candidates"] == [] and given["baseline"]["reason"]
 
 

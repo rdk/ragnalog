@@ -17,6 +17,7 @@ from atlas_log_analyzer.core.parser import parse_file
 from atlas_log_analyzer.core.pipeline import (
     Recipe,
     format_version,
+    key_format_version,
     recipe_differences,
     recipe_key,
     unique_entries,
@@ -56,8 +57,8 @@ class Versionless:
 
 
 def test_key_of_the_default_recipe() -> None:
-    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@1|L+G+E+F0|sig1|mask1"
-    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@1|L+G+E+F2|sig1|mask1"
+    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@2|L+G+E+F0|sig1|mask1"
+    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@2|L+G+E+F2|sig1|mask1"
 
 
 def test_extra_rules_add_a_digest() -> None:
@@ -76,7 +77,7 @@ def test_format_version_is_optional() -> None:
     assert format_version(fmt) == 1 and Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@1|")
     fmt.version = 3  # type: ignore[attr-defined]
     assert Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@3|")
-    assert format_version(JiraFormat()) == JiraFormat.version == 1
+    assert format_version(JiraFormat()) == JiraFormat.version == 2
     registry.register(Versionless())
     try:
         assert registry.get("versionless").name == "versionless"
@@ -88,7 +89,7 @@ def test_format_version_is_optional() -> None:
 def test_stages_equal_the_hand_built_chain(spec: SignatureSpec) -> None:
     jira = JiraFormat()
     entries = [*parse_file(SAMPLE, jira), *parse_file(EDGE_CASES, jira)]
-    old = Grouper(Signer(Masker([*jira.mask_rules, *GENERIC_RULES]), spec))
+    old = Grouper(Signer(Masker([*jira.mask_rules, *GENERIC_RULES]), spec, titles_from_body=True))
     new = Recipe(jira, spec).grouper()
     assert [(s.signature, s.coarse) for s in old.sign(entries)] == [
         (s.signature, s.coarse) for s in new.sign(entries)
@@ -108,6 +109,13 @@ def test_recipe_key_parts_and_differences() -> None:
     assert diffs == ["signature_spec: L+G+E+F0 != L+G+E+F2", "mask_rules_version: mask1 != mask2"]
     assert recipe_differences(key, key + "|rules:ab") == ["rules: none != ab"]
     assert recipe_differences(key, "jira@2|L+G+E+F0|sig1|mask1") == ["format: jira@1 != jira@2"]
+
+
+def test_key_format_version() -> None:
+    assert key_format_version("jira@2|L+G+E+F0|sig1|mask1") == 2
+    assert key_format_version("acme.v2@13|L+G+E+F0|sig1|mask1|rules:ab") == 13
+    assert key_format_version("jira|L+G+E+F0") is None
+    assert key_format_version("") is None
 
 
 @pytest.mark.parametrize(
