@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import Counter
 from collections.abc import Iterable, Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import datetime
 
 from atlas_log_analyzer.core.formats.base import CTX_USER
@@ -100,6 +100,56 @@ class Grouper:
             examples.append(entry.id)
         else:
             examples[-1] = entry.id
+
+    def merge(self, other: Grouper) -> None:
+        """Add the groups of ``other``, which saw the entries that follow this grouper's.
+
+        The result equals one grouper that saw this grouper's entries and then
+        ``other``'s: counts and counters add up (counter keys keep their order of
+        first appearance, so ``most_common`` breaks ties alike), first/last seen
+        widen, and the examples are the first ``max_examples - 1`` entries of both
+        in order plus ``other``'s latest one. A group new to this grouper is copied.
+        Both groupers must use the same recipe; ``other`` is left unchanged.
+
+        Raises:
+            ValueError: The groupers keep different numbers of examples.
+
+        """
+        if other.max_examples != self.max_examples:
+            raise ValueError(
+                f"cannot merge groupers with max_examples {self.max_examples} "
+                f"and {other.max_examples}"
+            )
+        head = self.max_examples - 1
+        for key, theirs in other.groups.items():
+            mine = self.groups.get(key)
+            if mine is None:
+                self.groups[key] = replace(
+                    theirs,
+                    users=Counter(theirs.users),
+                    threads=Counter(theirs.threads),
+                    sources=Counter(theirs.sources),
+                    examples=list(theirs.examples),
+                )
+                continue
+            total = mine.count + theirs.count
+            if total <= self.max_examples:
+                mine.examples = mine.examples + theirs.examples
+            else:
+                first = (mine.examples[:head] + theirs.examples[:head])[:head]
+                mine.examples = [*first, theirs.examples[-1]]
+            mine.count = total
+            if theirs.first_seen is not None and (
+                mine.first_seen is None or theirs.first_seen < mine.first_seen
+            ):
+                mine.first_seen = theirs.first_seen
+            if theirs.last_seen is not None and (
+                mine.last_seen is None or theirs.last_seen > mine.last_seen
+            ):
+                mine.last_seen = theirs.last_seen
+            mine.users.update(theirs.users)
+            mine.threads.update(theirs.threads)
+            mine.sources.update(theirs.sources)
 
     def sorted_groups(self, key: str = "count") -> list[Group]:
         """Return groups sorted by ``count`` (desc), ``first_seen`` (asc) or ``last_seen`` (desc).

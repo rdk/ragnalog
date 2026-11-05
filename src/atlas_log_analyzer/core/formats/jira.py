@@ -253,6 +253,8 @@ class JiraFormat:
 
     name = "jira"
     description = "Jira Data Center atlassian-jira.log"
+    version = 1
+    """Bump when :data:`JIRA_RULES` or the entries this format builds change signatures."""
     mask_rules: Sequence[MaskRule] = JIRA_RULES
     signature_spec: SignatureSpec = DEFAULT_SPEC
 

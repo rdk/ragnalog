@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import itertools
 from datetime import datetime
 
 import pytest
@@ -64,3 +65,65 @@ def test_group_sample(jira: JiraFormat, masker: Masker) -> None:
         "org.codehaus.groovy.control.MultipleCompilationErrorsException"
     )
     assert all(isinstance(g.first_seen, datetime) for g in grouper.groups.values())
+
+
+def _state(grouper: Grouper) -> dict[str, tuple[object, ...]]:
+    """Everything a grouper writes, counters in insertion order (``most_common`` ties)."""
+    return {
+        key: (
+            g.coarse_signature,
+            g.template,
+            g.level,
+            g.logger,
+            g.exception_type,
+            g.count,
+            g.first_seen,
+            g.last_seen,
+            list(g.users.items()),
+            list(g.threads.items()),
+            list(g.sources.items()),
+            g.users.most_common(10),
+            g.examples,
+        )
+        for key, g in grouper.groups.items()
+    }
+
+
+@pytest.mark.parametrize("max_examples", [1, 2, 3, 5])
+def test_merge_per_file_groupers_equals_one_run(
+    jira: JiraFormat, masker: Masker, max_examples: int
+) -> None:
+    from .conftest import EDGE_CASES
+
+    entries = [*parse_file(SAMPLE, jira), *parse_file(EDGE_CASES, jira)]
+    whole = Grouper(Signer(masker), max_examples=max_examples)
+    for _ in whole.sign(entries):
+        pass
+    # files, and also arbitrary cuts of the stream (a group spread over several parts)
+    n = len(entries)
+    for cuts in ([len(list(parse_file(SAMPLE, jira)))], [1, 2, n // 3, n // 2, n - 1]):
+        bounds = [0, *cuts, n]
+        merged = Grouper(Signer(masker), max_examples=max_examples)
+        for lo, hi in itertools.pairwise(bounds):
+            part = Grouper(Signer(masker), max_examples=max_examples)
+            for _ in part.sign(entries[lo:hi]):
+                pass
+            merged.merge(part)
+        assert _state(merged) == _state(whole)
+        assert [g.signature for g in merged.sorted_groups()] == [
+            g.signature for g in whole.sorted_groups()
+        ]
+
+
+def test_merge_copies_and_checks(jira: JiraFormat, masker: Masker) -> None:
+    entries = list(parse_file(SAMPLE, jira))
+    a, b = Grouper(Signer(masker)), Grouper(Signer(masker))
+    for _ in b.sign(entries):
+        pass
+    before = _state(b)
+    a.merge(b)
+    a.merge(b)  # the second merge must not touch b's groups through shared objects
+    assert _state(b) == before
+    assert all(a.groups[k].count == 2 * g.count for k, g in b.groups.items())
+    with pytest.raises(ValueError, match="max_examples"):
+        a.merge(Grouper(Signer(masker), max_examples=2))

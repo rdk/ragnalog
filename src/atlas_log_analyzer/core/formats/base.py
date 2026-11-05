@@ -62,6 +62,11 @@ class LogFormat(Protocol):
 
     Implementations are stateless and cheap to instantiate. ``is_header`` must
     be very fast (it runs on every line); ``parse_header`` does the real work.
+
+    A format may also define an integer ``version`` (default ``1``), bumped when its
+    rules or entries change signatures; it is part of the recipe key that decides
+    which log sets are comparable (:class:`~atlas_log_analyzer.core.pipeline.Recipe`).
+    It is not a protocol member, so formats without it still pass ``isinstance``.
     """
 
     name: str

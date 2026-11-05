@@ -66,6 +66,27 @@ class SignatureSpec:
         parts.append(f"F{self.frames}")
         return "+".join(parts)
 
+    @classmethod
+    def from_key(cls, key: str) -> SignatureSpec:
+        """Inverse of :attr:`key`; ``ValueError`` when ``key`` is not one.
+
+        Example: ``SignatureSpec.from_key("L+G+E+F2") == SignatureSpec(frames=2)``.
+        """
+        parts = key.split("+")
+        last = parts[-1]
+        flags = set(parts[:-1])
+        if not last.startswith("F") or not last[1:].isdigit() or not flags <= {"L", "G", "E"}:
+            raise ValueError(f"not a signature spec key: {key!r}")
+        spec = cls(
+            include_level="L" in flags,
+            include_logger="G" in flags,
+            include_exceptions="E" in flags,
+            frames=int(last[1:]),
+        )
+        if spec.key != key:
+            raise ValueError(f"not a signature spec key: {key!r}")
+        return spec
+
 
 DEFAULT_SPEC = SignatureSpec()
 COARSE_SPEC = SignatureSpec(include_exceptions=False)
