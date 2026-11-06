@@ -352,12 +352,26 @@ def group_examples(
     signature: str,
     state: StateDep,
     max_raw: Annotated[int, Query(ge=0)] = 4000,
+    since: str | None = None,
+    until: str | None = None,
+    limit: Annotated[int, Query(ge=1, le=50)] = 3,
 ) -> dict[str, Any]:
     """Return the example entries of a group in the ``report.v1`` entry shape, keyed by id.
 
-    The report page loads these lazily when its payload was built without examples.
+    The report page loads these lazily when its payload was built without examples. With
+    ``since``/``until`` (forms as ``entries``) the items are the group's first ``limit``
+    entries in that time window instead: the examples the page shows for a time window.
     """
-    return queries.group_examples(state, ref, signature, max_raw=max_raw, front="api")
+    return queries.group_examples(
+        state,
+        ref,
+        signature,
+        max_raw=max_raw,
+        front="api",
+        since=since,
+        until=until,
+        limit=limit,
+    )
 
 
 @router.get("/sets/{ref}/entries")

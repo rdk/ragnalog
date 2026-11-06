@@ -278,17 +278,19 @@
   const SPREADS = ["any", "all", "only", "skewed"];
   const TABS = ["g", "i", "l"];
   const LOG_LEVELS = ["", "DEBUG", "INFO", "WARN", "ERROR"];
+  // sorts read the numbers through V(): the window's when one is set
+  const byTotal = (a, b) => V(b).total - V(a).total || cmpStr(a.id, b.id);
   const SORTS = {
-    count: ["Count", (a, b) => b.total - a.total || cmpStr(a.id, b.id)],
-    skew: ["Skew", (a, b) => skewKey(b) - skewKey(a) || b.total - a.total || cmpStr(a.id, b.id)],
-    lead: ["Lead", (a, b) => (b.lead ?? -1) - (a.lead ?? -1) || b.total - a.total || cmpStr(a.id, b.id)],
-    level: ["Level", (a, b) => b.level - a.level || b.total - a.total || cmpStr(a.id, b.id)],
-    template: ["Template", (a, b) => cmpStr(a.tpl, b.tpl) || b.total - a.total],
+    count: ["Count", byTotal],
+    skew: ["Skew", (a, b) => skewKey(V(b)) - skewKey(V(a)) || byTotal(a, b)],
+    lead: ["Lead", (a, b) => (b.lead ?? -1) - (a.lead ?? -1) || byTotal(a, b)],
+    level: ["Level", (a, b) => b.level - a.level || byTotal(a, b)],
+    template: ["Template", (a, b) => cmpStr(a.tpl, b.tpl) || byTotal(a, b)],
   };
   const skewKey = (r) => (r.spread === "only" ? Infinity : r.skew ?? -1);
   for (const n of NODES) {
     const i = NIDX.get(n);
-    SORTS["node:" + n] = [`Count on ${NLABEL(n)}`, (a, b) => b.counts[i] - a.counts[i] || b.total - a.total || cmpStr(a.id, b.id)];
+    SORTS["node:" + n] = [`Count on ${NLABEL(n)}`, (a, b) => V(b).counts[i] - V(a).counts[i] || byTotal(a, b)];
   }
   function parseWindow(s) {
     const m = /^(\d+)-(\d+)$/.exec(s || "");
@@ -397,31 +399,83 @@
     const m = /^sig:\s*(\S*)/i.exec(q);
     return m ? { text: "", sig: m[1].toLowerCase() } : { text: q.toLowerCase(), sig: "" };
   }
-  function inWindow(r) {
+  // ---------------------------------------------------------------- time window
+  // A window S.t = [a, b] (bucket indices) narrows the groups table to it: per-node counts,
+  // totals, sorting, count bars, the summary, and spread/skew, recomputed with each node's
+  // volume inside the window (the rule of service/cluster.py, skew_min as in the payload).
+  // Lead stays the capture's: the buckets are too coarse to time a lead inside a window.
+  const SKEW_MIN = isNum(OPTS.skew_min) ? OPTS.skew_min : 4;
+  let WKEY = "";
+  let NWT = {}; // node -> entries in the window
+  /** The row as seen in the window: counts, total, present, spread, skew, top; cached per window. */
+  function winOf(r) {
+    if (r.wKey === WKEY && r.w) return r.w;
     const [a, b] = S.t;
-    for (const n of S.nd ? [S.nd] : NODES) {
-      for (const [i] of r.hourly[n]) {
+    const counts = NODES.map((n) => {
+      let c = 0;
+      for (const [i, v] of r.hourly[n]) {
+        if (i < a) continue;
         if (i > b) break;
-        if (i >= a) return true;
+        c += num(v);
       }
+      return c;
+    });
+    const present = NODES.filter((n, i) => counts[i] > 0);
+    let top = null, topV = -1;
+    const rates = [];
+    for (const n of present) {
+      const c = counts[NIDX.get(n)], vol = NWT[n];
+      const v = vol ? c / vol : c;
+      if (vol) rates.push(v);
+      if (v > topV) { topV = v; top = n; }
     }
-    return false;
+    let spread = "only", skew = null;
+    if (present.length > 1) {
+      const lo = Math.min(...rates);
+      skew = rates.length && lo > 0 ? Math.max(...rates) / lo : null;
+      const missing = NODES.some((n, i) => NWT[n] > 0 && !(counts[i] > 0));
+      spread = missing || (skew != null && skew >= SKEW_MIN) ? "skewed" : "all";
+    }
+    r.wKey = WKEY;
+    r.w = Object.assign(Object.create(r), { counts, total: counts.reduce((x, y) => x + y, 0), present, spread, skew, top, whole: r });
+    return r.w;
   }
+  /** The row with its numbers in the window when one is set (same id, template, …). */
+  const V = (r) => (S.t ? winOf(r) : r);
+  let SC = { max: 1, min: 1 }; // count bars: the capture's range, or the window's
   function match(r, skip) {
     if (skip !== "lv" && !S.lv.has(r.bucket)) return false;
     if (Q.sig) {
       if (!r.id.toLowerCase().startsWith(Q.sig)) return false;
     } else if (Q.text && !r.key.includes(Q.text)) return false;
-    if (skip !== "sp" && S.sp !== "any" && r.spread !== S.sp) return false;
-    if (skip !== "nd" && S.nd && !(r.counts[NIDX.get(S.nd)] > 0)) return false;
-    if (S.t && skip !== "t" && !inWindow(r)) return false;
+    const v = V(r);
+    if (skip !== "sp" && S.sp !== "any" && v.spread !== S.sp) return false;
+    if (skip !== "nd" && S.nd && !(v.counts[NIDX.get(S.nd)] > 0)) return false;
+    if (S.t && skip !== "t" && !(v.total > 0)) return false;
     return true;
   }
   let LIST = [];
   function compute() {
     Q = parseQ(S.q);
+    WKEY = S.t ? S.t.join("-") : "";
+    if (S.t) {
+      NWT = {};
+      for (const n of NODES) {
+        let t = 0;
+        for (let i = S.t[0]; i <= S.t[1]; i++) t += NTOT[n][i] || 0;
+        NWT[n] = t;
+      }
+    }
     LIST = ROWS.filter((r) => match(r, ""));
     LIST.sort(SORTS[S.sort][1]);
+    if (S.t) {
+      let max = 1, min = Infinity;
+      for (const r of ROWS) for (const c of winOf(r).counts) {
+        if (c > max) max = c;
+        if (c > 0 && c < min) min = c;
+      }
+      SC = { max, min: min < Infinity ? min : 1 };
+    } else SC = { max: CMAX, min: CMIN };
   }
 
   // ---------------------------------------------------------------- charts
@@ -870,6 +924,16 @@
     svg.addEventListener("pointerup", end);
     svg.addEventListener("pointercancel", end);
   }
+  /** Quick windows ending at the last bucket: [buckets, label], those shorter than the capture. */
+  const PRESETS = [[3.6e6, "1 h"], [6 * 3.6e6, "6 h"], [864e5, "24 h"], [7 * 864e5, "7 d"]]
+    .map(([ms, label]) => [Math.round(ms / BMS), label]).filter(([nb]) => nb >= 1 && nb < NB);
+  /** Move the window by its own width (dir -1 / +1), clamped to the capture. */
+  function shiftWindow(dir) {
+    if (!S.t) return;
+    const [a, b] = S.t, w = b - a + 1;
+    const na = Math.max(0, Math.min(NB - w, a + dir * w));
+    if (na !== a) commit({ t: [na, na + w - 1] });
+  }
   function renderTimelineControls() {
     const modes = [["shared", "Shared", "One y-scale for every node: compare volumes"], ["node", "Per node", "Each band scaled to its own maximum: compare shapes"],
       ["pct", "% of node", "Each node's counts as a percentage of its entries in the range: compare distributions across nodes of different volume"]];
@@ -882,12 +946,27 @@
     jb.setAttribute("aria-pressed", String(S.jobs));
     jb.hidden = !EVENTS.some((e) => e.kind === "job_run");
     const w = $("tl-window");
-    if (!S.t) {
-      w.innerHTML = NB ? `<span class="muted">Drag across any band to set the time window of every view</span>` : "";
+    const presets = PRESETS.map(([nb, label]) => {
+      const on = S.t && S.t[0] === NB - nb && S.t[1] === NB - 1;
+      return `<button type="button" data-win="${nb}" aria-pressed="${!!on}" title="The last ${label} of the capture">${label}</button>`;
+    }).join("");
+    const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
+    if (!NB) {
+      w.innerHTML = "";
+    } else if (!S.t) {
+      w.innerHTML = `<span class="muted">Drag across any band to narrow every view to a time window</span>${seg}`;
     } else {
       const rg = tRange();
-      w.innerHTML = `<span>Window <b>${esc(ts16(isoOf(rg[0])))} → ${esc(tsShort(isoOf(rg[1])))}</b> UTC (${esc(spanText(rg[1] - rg[0]))})</span>` +
-        `<button type="button" class="btn small" data-clear-t>Clear</button>`;
+      let entries = 0, errors = 0;
+      for (const n of NODES) {
+        entries += NWT[n] || 0;
+        for (let i = S.t[0]; i <= S.t[1]; i++) errors += LEV[n].ERROR[i] || 0;
+      }
+      w.innerHTML = `<span class="win-what">Window <b>${esc(ts16(isoOf(rg[0])))} → ${esc(tsShort(isoOf(rg[1])))}</b> UTC (${esc(spanText(rg[1] - rg[0]))})` +
+        ` · ${fmt(entries)} entries` + (errors ? ` · <span class="w-err">${fmt(errors)} errors</span>` : "") + `</span>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${S.t[0] <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
+        `<button type="button" class="btn small" data-shift="1" ${S.t[1] >= NB - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
+        seg + `<button type="button" class="btn small" data-clear-t title="Show the whole capture">Clear</button>`;
     }
     const sel = S.sig ? GBY.get(S.sig) : null;
     $("tl-sel").innerHTML = sel
@@ -1021,7 +1100,7 @@
   }
   function cellBar(c) {
     if (!(c > 0)) return 0;
-    const lmin = Math.log10(CMIN), span = Math.log10(CMAX) - lmin;
+    const lmin = Math.log10(SC.min), span = Math.log10(SC.max) - lmin;
     return Math.max(2, span > 0 ? ((Math.log10(c) - lmin) / span) * 100 : 100);
   }
   function renderHead() {
@@ -1029,17 +1108,21 @@
       const sorted = key && S.sort === key ? ` aria-sort="${key === "template" ? "ascending" : "descending"}"` : "";
       return `<th class="${cls}${key ? " sortable" : ""}"${key ? ` data-sort="${esc(key)}"` : ""}${sorted} title="${esc(title || "")}">${label}</th>`;
     };
-    let cells = th("c-lv", "Level", "level", "Level") + th("c-tpl", "Template", "template", "Template") + th("c-total", "Total", "count", "Entries on all nodes");
+    let cells = th("c-lv", "Level", "level", "Level") + th("c-tpl", "Template", "template", "Template") +
+      (S.t ? th("c-total", "In window", "count", "Entries on all nodes in the time window; below: the capture's total")
+        : th("c-total", "Total", "count", "Entries on all nodes"));
     if (HEAT) {
       cells += `<th class="c-heat" style="--hn:${NODES.length}" title="Count per node (darker = more, log scale)"><div class="heat-head">${NODES.map((n, i) => `<span title="${esc(n)}">${i + 1}</span>`).join("")}</div></th>`;
     } else {
       for (const n of NODES) cells += th(`c-n ${ncls(n)}`, `${nodeBadge(n)}<span class="nid">${esc(trunc(n, 12))}</span>`, "node:" + n, `Count on ${n}; click to sort`);
     }
-    cells += th("c-spread", "Spread", "skew", "all = on every node at similar rates; only = on one node; ×N = rate N times higher on that node (normalised by node volume)");
+    cells += th("c-spread", "Spread", "skew", "all = on every node at similar rates; only = on one node; ×N = rate N times higher on that node (normalised by node volume)" +
+      (S.t ? "; computed inside the time window" : ""));
     cells += th("c-lead", "Lead", "lead", "Which node saw the group first, and how much later the next node did (within the window)");
     $("t-head").innerHTML = `<tr>${cells}</tr>`;
   }
-  function rowHtml(r) {
+  function rowHtml(row) {
+    const r = V(row);
     const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur" : "");
     let nodes = "";
     if (HEAT) {
@@ -1052,7 +1135,8 @@
     } else {
       nodes = NODES.map((n, i) => {
         const c = r.counts[i];
-        return `<td class="c-n ${ncls(n)}" title="${esc(NLABEL(n))} ${esc(n)}: ${fmt(c)}${isNum(obj(r.pn[n]).rate_per_hour) ? ` (${r1(r.pn[n].rate_per_hour)}/h)` : ""}">` +
+        const tip = S.t ? `${fmt(c)} in the window of ${fmt(row.counts[i])}` : fmt(c) + (isNum(obj(r.pn[n]).rate_per_hour) ? ` (${r1(r.pn[n].rate_per_hour)}/h)` : "");
+        return `<td class="c-n ${ncls(n)}" title="${esc(NLABEL(n))} ${esc(n)}: ${esc(tip)}">` +
           `<div class="cnt"><span class="num${c > 0 ? "" : " zero"}">${c > 0 ? fmt(c) : "·"}</span>` +
           (CMAX >= 100 ? `<span class="track"><i style="width:${r1(cellBar(c))}%"></i></span>` : "") + `</div></td>`;
       }).join("");
@@ -1060,8 +1144,10 @@
     return `<tr data-id="${esc(r.id)}" class="${cls}">` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
-      `<td class="c-total">${fmt(r.total)}</td>` + nodes +
-      `<td class="c-spread">${spreadChip(r)}</td><td class="c-lead">${leadChip(r)}</td></tr>`;
+      (S.t ? `<td class="c-total" title="${fmt(r.total)} in the window of ${fmt(row.total)} in total">${fmt(r.total)}<small class="of">of ${esc(compact(row.total))}</small></td>`
+        : `<td class="c-total">${fmt(r.total)}</td>`) + nodes +
+      `<td class="c-spread">${spreadChip(r)}</td>` +
+      (S.t ? `<td class="c-lead is-whole" title="Lead over the whole capture, not the time window">${leadChip(row)}</td>` : `<td class="c-lead">${leadChip(r)}</td>`) + `</tr>`;
   }
   function pagerHtml(pages) {
     if (pages <= 1) return "";
@@ -1098,10 +1184,10 @@
       }
     }
     let entries = 0;
-    for (const r of LIST) entries += r.total;
+    for (const r of LIST) entries += V(r).total;
     const shown = LIST.length ? `${fmt(start + 1)}–${fmt(start + page.length)} of ` : "";
-    $("t-summary").textContent = `${shown}${fmt(LIST.length)} groups · ${fmt(entries)} entries` +
-      (LIST.length < ROWS.length ? ` (${fmt(ROWS.length)} in this report)` : "") +
+    $("t-summary").textContent = `${shown}${fmt(LIST.length)} groups` + (LIST.length < ROWS.length ? ` (of ${fmt(ROWS.length)} in this report)` : "") +
+      ` · ${fmt(entries)} entries` + (S.t ? " in the window" : "") +
       (num(OPTS.truncated_groups) > 0 ? ` · ${fmt(OPTS.truncated_groups)} smaller groups not in the report` : "");
     const pg = pagerHtml(pages);
     $("pager-top").innerHTML = pg;
@@ -1118,13 +1204,13 @@
     for (const r of ROWS) {
       if (!match(r, "sp")) continue;
       spCounts.any++;
-      spCounts[r.spread]++;
+      spCounts[V(r).spread]++;
     }
     const spLabel = { any: "Any", all: "All", only: "Only one", skewed: "Skewed" };
     const spTitle = { any: "Any spread", all: "On every node at similar rates", only: "Seen on one node only", skewed: "Much more often on one node (normalised by node volume)" };
     $("f-spread").innerHTML = `<span class="lbl">Spread</span>` + SPREADS.map((k) =>
       `<button type="button" data-sp="${k}" aria-pressed="${S.sp === k}" title="${esc(spTitle[k])}">${spLabel[k]}<span class="n">${fmt(spCounts[k])}</span></button>`).join("");
-    const ndCounts = NODES.map((n, i) => ROWS.filter((r) => r.counts[i] > 0 && match(r, "nd")).length);
+    const ndCounts = NODES.map((n, i) => ROWS.filter((r) => V(r).counts[i] > 0 && match(r, "nd")).length);
     $("f-node").innerHTML = `<option value="">All nodes</option>` + NODES.map((n, i) =>
       `<option value="${esc(n)}">${esc(NLABEL(n))} · ${esc(n)} (${fmt(ndCounts[i])})</option>`).join("");
     $("f-node").value = S.nd;
@@ -1274,14 +1360,17 @@
   }
   // @entry-card-end
   function nodeTable(r) {
+    const w = S.t ? winOf(r) : null;
     const rows = NODES.map((n, i) => {
       const p = obj(r.pn[n]);
       const c = r.counts[i];
-      return `<tr><td>${nodeBadge(n)} ${esc(n)}</td><td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
+      const wc = w ? `<td class="r"><b>${w.counts[i] > 0 ? fmt(w.counts[i]) : "·"}</b></td>` : "";
+      return `<tr><td>${nodeBadge(n)} ${esc(n)}</td>${wc}<td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
         `<td class="r">${isNum(p.rate_per_hour) && c > 0 ? esc(r1(p.rate_per_hour)) : ""}</td>` +
         `<td>${esc(ts16(p.first_seen))}</td><td>${esc(ts16(p.last_seen))}</td></tr>`;
     }).join("");
-    return `<table class="d-nodes"><thead><tr><th>Node</th><th class="r">Count</th><th class="r">Per hour</th><th>First seen (UTC)</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
+      `<th class="r">Per hour</th><th>First seen (UTC)</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table>`;
   }
   function relatedHtml(r) {
     const out = [];
@@ -1311,18 +1400,34 @@
   function drawerHtml(r, inList) {
     const out = [];
     if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
-    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${spreadChip(r)}${leadChip(r)}</div>`);
+    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${spreadChip(V(r))}${leadChip(r)}</div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
     if (r.logger) out.push(`<div class="d-sub mono">${esc(r.logger)}</div>`);
     if (r.exc) out.push(`<div class="d-sub mono">${esc(r.exc)}</div>`);
-    out.push(`<div class="d-ids mono"><span><span class="k">sig</span> ${esc(r.sig)}${iconCopy(r.sig, "signature")}</span><span><span class="k">total</span> ${fmt(r.total)}</span></div>`);
+    out.push(`<div class="d-ids mono"><span><span class="k">sig</span> ${esc(r.sig)}${iconCopy(r.sig, "signature")}</span><span><span class="k">total</span> ${fmt(r.total)}</span>` +
+      (S.t ? `<span><span class="k">in window</span> ${fmt(winOf(r).total)}</span>` : "") + `</div>`);
     out.push(secId("d-s-nodes", "Per node", nodeTable(r)));
     out.push(secId("d-s-hourly", `Per ${esc(binLabel(1))} and node` + (S.t ? " (window shaded)" : ""),
       `<div class="d-legend">${NODES.filter((n, i) => r.counts[i] > 0 || NODES.length <= 8).map((n) => `<span class="${ncls(n)}"><i class="lkey"></i>${esc(NLABEL(n))} ${esc(n)}</span>`).join("")}</div><div class="d-chart" id="d-hourly"></div>`));
     const exNodes = NODES.filter((n) => arr(r.examples[n]).length);
     for (const n of Object.keys(r.examples)) if (!NIDX.has(n) && arr(r.examples[n]).length) exNodes.push(n);
-    let exBody;
-    if (!exNodes.length) exBody = `<div class="muted">No example entries in this report.</div>`;
+    let exBody, exTitle = "Example entries per node";
+    if (S.t && URLS && URLS.examples) {
+      // web app with a time window: each node's first entries of the group inside the window
+      exTitle = "Examples in the window, per node";
+      const w = winOf(r);
+      const nodes = NODES.filter((n, i) => w.counts[i] > 0 && setOf(n).id);
+      if (!nodes.length) exBody = `<div class="muted">No entries of this group in the window.</div>`;
+      else {
+        const cur = nodes.includes(S.ex) ? S.ex : nodes[0];
+        const ids = WIN_EXN.get(winExKey(r, cur));
+        if (!ids) loadWindowExamples(r, cur);
+        exBody = `<div class="ex-tabs" role="tablist">${nodes.map((n) =>
+          `<button type="button" role="tab" data-ex="${esc(n)}" aria-selected="${n === cur}" title="${esc(fmt(w.counts[NIDX.get(n)]))} entries in the window">${nodeBadge(n)}<span class="n">${fmt(w.counts[NIDX.get(n)])}</span></button>`).join("")}</div>` +
+          (!ids ? `<div class="muted">Loading the examples of ${esc(cur)} in the window…</div>`
+            : ids.length ? ids.map((id) => entryHtml(id, ENTRIES[id])).join("") : `<div class="muted">No entries of ${esc(cur)} in the window.</div>`);
+      }
+    } else if (!exNodes.length) exBody = `<div class="muted">No example entries in this report.</div>`;
     else {
       const cur = exNodes.includes(S.ex) ? S.ex : exNodes[0];
       const ids = arr(r.examples[cur]).map(String);
@@ -1332,7 +1437,7 @@
         `<button type="button" role="tab" data-ex="${esc(n)}" aria-selected="${n === cur}">${nodeBadge(n)}<span class="n">${fmt(arr(r.examples[n]).length)}</span></button>`).join("")}</div>` +
         (have.length ? have.map((id) => entryHtml(id, ENTRIES[id])).join("") : `<div class="muted">The examples of ${esc(cur)} are not in this report.</div>`);
     }
-    out.push(secId("d-s-examples", "Example entries per node", exBody));
+    out.push(secId("d-s-examples", exTitle, exBody));
     out.push(secId("d-s-links", "Co-bursts, mentions and events", relatedHtml(r)));
     const cmds = [
       `atlas-log matrix ${CAPREF} --signature ${r.sig}`,
@@ -1417,6 +1522,34 @@
         renderDrawer();
       })
       .catch(() => null);
+  }
+  /** Web app, time window: a node's first entries of a group inside the window (examples URL with since/until). */
+  const WIN_EXN = new Map(); // "set|sig|a-b" -> entry ids in time order
+  const WIN_EXN_PENDING = new Set();
+  const winExKey = (r, node) => setOf(node).id + "|" + r.sig + "|" + WKEY;
+  function loadWindowExamples(r, node) {
+    const set = setOf(node).id;
+    const key = winExKey(r, node);
+    if (!set || WIN_EXN.has(key) || WIN_EXN_PENDING.has(key)) return;
+    WIN_EXN_PENDING.add(key);
+    const rg = tRange();
+    const u = new URL(urlFill(URLS.examples, { set, sig: r.sig }), location.href);
+    u.searchParams.set("max_raw", "0");
+    u.searchParams.set("limit", "3");
+    u.searchParams.set("since", isoOf(rg[0]));
+    u.searchParams.set("until", isoOf(rg[1]));
+    fetchJson(u.toString())
+      .then((doc) => {
+        const items = obj(doc && doc.items);
+        for (const [id, e] of Object.entries(items)) ENTRIES[id] = Object.assign({}, ENTRIES[id] || {}, e, { node, set });
+        WIN_EXN.set(key, Object.keys(items).sort((x, y) => cmpStr(str(items[x].ts), str(items[y].ts)) || cmpStr(x, y)));
+      })
+      .catch(() => WIN_EXN.set(key, []))
+      .finally(() => {
+        WIN_EXN_PENDING.delete(key);
+        drawnKey = null;
+        renderDrawer();
+      });
   }
   const renderDrawer = guard(function renderDrawer() {
     const dr = $("drawer");
@@ -1976,7 +2109,13 @@
           if (e.target.closest("[data-fit]")) return commit({ fit: !S.fit }, { keepPage: true, replace: true });
           if (e.target.closest("[data-unsel]")) return commit({ sig: "" }, { keepPage: true });
         }
-        if (id === "tl-window" && e.target.closest("[data-clear-t]")) return commit({ t: null });
+        if (id === "tl-window") {
+          if (e.target.closest("[data-clear-t]")) return commit({ t: null });
+          const sh = e.target.closest("[data-shift]");
+          if (sh && !sh.disabled) return shiftWindow(Number(sh.dataset.shift));
+          const pw = e.target.closest("[data-win]");
+          if (pw) return commit({ t: [NB - Number(pw.dataset.win), NB - 1] });
+        }
         if (id === "p-log") {
           if (e.target.closest("[data-more]")) { LOG.shown += CHUNK; return renderLog(); }
           if (e.target.closest("[data-load]")) return fetchLogPage();
@@ -2061,6 +2200,8 @@
         }
         case "n": if (S.tab === "g" && (S.p + 1) * PAGE < LIST.length) commit({ p: S.p + 1 }, { keepPage: true }); break;
         case "p": if (S.tab === "g" && S.p > 0) commit({ p: S.p - 1 }, { keepPage: true }); break;
+        case "[": shiftWindow(-1); break;
+        case "]": shiftWindow(1); break;
         case "1": commit({ tab: "g" }, { keepPage: true }); break;
         case "2": commit({ tab: "i" }, { keepPage: true }); break;
         case "3": commit({ tab: "l" }, { keepPage: true }); break;

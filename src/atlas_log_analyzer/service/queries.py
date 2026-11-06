@@ -17,7 +17,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from atlas_log_analyzer.service.errors import Front, OpError, flag, hint
-from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page, Select, TextCap
+from atlas_log_analyzer.service.params import (
+    EntryQuery,
+    GroupQuery,
+    Page,
+    Select,
+    TextCap,
+    parse_time,
+)
 from atlas_log_analyzer.service.sets import Sets, open_set
 from atlas_log_analyzer.service.views import (
     DETAIL_BRIEF,
@@ -400,8 +407,28 @@ def entry_raw(sets: Sets, ref: str, entry_id: str, *, front: Front) -> str:
     return f"{preamble}\n{raw}" if preamble else raw
 
 
-def group_examples(sets: Sets, ref: str, signature: str, *, max_raw: int, front: Front) -> Doc:
-    """``report-entries.v1``: a group's example entries in the report's entry shape."""
+def group_examples(
+    sets: Sets,
+    ref: str,
+    signature: str,
+    *,
+    max_raw: int,
+    front: Front,
+    since: str | None = None,
+    until: str | None = None,
+    limit: int = 3,
+) -> Doc:
+    """``report-entries.v1``: a group's example entries in the report's entry shape.
+
+    Without ``since``/``until`` the items are the group's stored examples. With either,
+    they are the group's first ``limit`` entries in ``[since, until)`` (forms as
+    ``--since``; relative times count back from the set's end): the report page's
+    examples of a time window.
+
+    Raises:
+        OpError: ``group_not_found``, ``invalid_value``.
+
+    """
     from atlas_log_analyzer.report import example_entries
 
     ls = open_set(sets, ref, front=front)
@@ -410,7 +437,17 @@ def group_examples(sets: Sets, ref: str, signature: str, *, max_raw: int, front:
         raise OpError.because(
             "group_not_found", front, f"no group {signature!r} in log set {ls.manifest.id}"
         )
-    ids = [str(i) for i in row.get("examples") or []]
+    if since is None and until is None:
+        ids = [str(i) for i in row.get("examples") or []]
+    else:
+        last = ls.manifest.last_ts
+        where = EntryFilter(
+            signature=signature,
+            since=parse_time(since, "since", last, front=front),
+            until=parse_time(until, "until", last, front=front),
+        )
+        found = ls.entries(where=where, limit=limit, columns=["id"])
+        ids = [str(i) for i in found.get_column("id").to_list()]
     return {
         "schema": "report-entries.v1",
         "logset": ls.manifest.id,

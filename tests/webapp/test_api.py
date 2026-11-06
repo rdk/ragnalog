@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -129,6 +130,23 @@ def test_group_examples_in_report_shape(client: TestClient) -> None:
     assert doc["items"]
     entry = next(iter(doc["items"].values()))
     assert isinstance(entry["source"], int) and "raw" in entry and "source_path" not in entry
+
+
+def test_group_examples_of_a_time_window(client: TestClient) -> None:
+    """With since/until the examples are the group's first entries in the window (report page)."""
+    groups = _json(client, "/api/sets/sample/groups?limit=0")["items"]
+    sig = next(g["signature"] for g in groups if g["count"] >= 3)
+    rows = _json(client, f"/api/sets/sample/entries?signature={sig}&limit=100")["items"]
+    times = [r["ts"] for r in rows]
+    url = f"/api/sets/sample/groups/{sig}/examples?max_raw=0"
+    doc = _json(client, f"{url}&since={quote(times[1])}&limit=50")
+    assert doc["schema"] == "report-entries.v1"
+    assert sorted(e["ts"] for e in doc["items"].values()) == times[1:]
+    doc = _json(client, f"{url}&since={quote(times[0])}&until={quote(times[1])}")
+    assert [e["ts"] for e in doc["items"].values()] == [times[0]]
+    doc = _json(client, f"{url}&since={quote(times[0])}&limit=2")
+    assert len(doc["items"]) == 2
+    assert _json(client, f"{url}&since=nonsense", 400)["error"]["code"] == "invalid_value"
 
 
 def test_entries_paging(client: TestClient) -> None:

@@ -861,7 +861,8 @@ unknown set.
 
 Writes a single self-contained HTML file (CSS, JS and data inlined; no network
 requests, works from `file://`, light and dark theme): overview tiles, a
-per-hour timeline by level (drag to filter groups to a time window), the
+per-hour timeline by level (drag or pick "last 1 h / 6 h / 24 h / 7 d" to count
+the table within a time window), the
 filterable group table (search incl. `sig:` prefix, level chips, logger
 prefix tree, exception type, coarse / Drain3-merged views) and a detail drawer
 per group with example entries and the equivalent `show`/`entries` commands.

@@ -151,19 +151,26 @@
     return s.size ? s : new Set(PRESENT);
   })();
 
+  /** Whole-set order (members of merged/coarse rows); the table sorts with SORTS. */
   const byCount = (a, b) =>
     b.count - a.count || (b.cmp ? b.cmp.a : 0) - (a.cmp ? a.cmp.a : 0) || cmpStr(a.id, b.id);
+  /** Count in the window (when one is set), then as byCount. */
+  const byShown = (a, b) => (S.t ? cnt(b) - cnt(a) : 0) || byCount(a, b);
   const deltaAbs = (r) => (r.cmp ? Math.abs(r.cmp.b - r.cmp.a) : 0);
-  const SORTS = {
-    count: ["Count", byCount],
-    last_seen: ["Last seen", (a, b) => cmpStr(b.last || "", a.last || "") || byCount(a, b)],
-    first_seen: ["First seen", (a, b) => cmpStr(a.first || "￿", b.first || "￿") || byCount(a, b)],
-    level: ["Level", (a, b) => b.level - a.level || byCount(a, b)],
-    template: ["Template", (a, b) => cmpStr(a.tpl, b.tpl) || byCount(a, b)],
-    logger: ["Logger", (a, b) => cmpStr(a.logger, b.logger) || byCount(a, b)],
-    users: ["Users", (a, b) => b.users - a.users || byCount(a, b)],
+  const seenMs = (r, k) => {
+    const x = winOf(r)[k];
+    return x ? x.ms : NaN;
   };
-  if (CMP) SORTS.delta = ["Change (|B − A|)", (a, b) => deltaAbs(b) - deltaAbs(a) || byCount(a, b)];
+  const SORTS = {
+    count: ["Count", byShown],
+    last_seen: ["Last seen", (a, b) => (S.t ? (seenMs(b, "last") || -1) - (seenMs(a, "last") || -1) : cmpStr(b.last || "", a.last || "")) || byShown(a, b)],
+    first_seen: ["First seen", (a, b) => (S.t ? (seenMs(a, "first") || Infinity) - (seenMs(b, "first") || Infinity) : cmpStr(a.first || "￿", b.first || "￿")) || byShown(a, b)],
+    level: ["Level", (a, b) => b.level - a.level || byShown(a, b)],
+    template: ["Template", (a, b) => cmpStr(a.tpl, b.tpl) || byShown(a, b)],
+    logger: ["Logger", (a, b) => cmpStr(a.logger, b.logger) || byShown(a, b)],
+    users: ["Users", (a, b) => b.users - a.users || byShown(a, b)],
+  };
+  if (CMP) SORTS.delta = ["Change (|B − A|)", (a, b) => deltaAbs(b) - deltaAbs(a) || byShown(a, b)];
 
   function aggregate(id, members, tpl, kind) {
     members.sort(byCount);
@@ -312,13 +319,51 @@
     const m = /^sig:\s*(\S*)/i.exec(q);
     return m ? { text: "", sig: m[1].toLowerCase() } : { text: q.toLowerCase(), sig: "" };
   }
-  function inWindow(r) {
+  // ---------------------------------------------------------------- time window
+  // A window S.t = [a, b] (hour indices) narrows the table's numbers to it: counts, first and
+  // last seen, sorting, count bars, summary and drawer. The per-group hourly counts cover every
+  // entry with a timestamp, so window counts are exact. First/last seen in the window are exact
+  // when the group's own first/last entry falls in it, otherwise known to the hour ("14:xx").
+  const T0MS = NH ? parseTs(HOURS[0]) : 0;
+  const hourOf = (iso) => (iso ? Math.floor((parseTs(iso) - T0MS) / 3.6e6) : -1);
+  let WKEY = "";
+  /** Window stats of a row: n entries, first/last as {iso, ms, approx}; cached per window. */
+  function winOf(r) {
+    if (r.wKey === WKEY && r.w) return r.w;
     const [a, b] = S.t;
-    for (const [i] of r.hourly) {
-      if (i > b) return false;
-      if (i >= a) return true;
+    let n = 0, f = -1, l = -1;
+    for (const [i, c] of r.hourly) {
+      if (i < a) continue;
+      if (i > b) break;
+      n += c;
+      if (f < 0) f = i;
+      l = i;
     }
-    return false;
+    const at = (iso, h, end) => {
+      if (h < 0) return null;
+      if (iso && hourOf(iso) === h) return { iso, ms: parseTs(iso), approx: false };
+      const ms = T0MS + h * 3.6e6;
+      return { iso: HOURS[h], ms: end ? ms + 3.6e6 - 1 : ms, approx: true };
+    };
+    r.wKey = WKEY;
+    return (r.w = { n, first: at(r.first, f, false), last: at(r.last, l, true) });
+  }
+  /** Entries of a row in the window, else in the whole set. */
+  const cnt = (r) => (S.t ? winOf(r).n : r.count);
+  const inWindow = (r) => winOf(r).n > 0;
+  /** "11-03 14:05", or "11-03 14:xx" when only the hour is known. */
+  const seenText = (x, long) => (!x ? "" : x.approx ? (long ? ts16(x.iso) : tsShort(x.iso)).slice(0, -2) + "xx" : long ? ts16(x.iso) : tsShort(x.iso));
+  const seenTitle = (x) => (x && x.approx ? "Within this hour: the exact time of the group's entries inside the window is not in the report" : "");
+  /** Level totals of the timeline over hours [a, b]. */
+  function levelsIn(a, b) {
+    const out = {};
+    for (const k of BUCKETS) {
+      const arr = ((D.timeline || {}).levels || {})[k] || [];
+      let t = 0;
+      for (let i = a; i <= b && i < arr.length; i++) t += arr[i] || 0;
+      out[k] = t;
+    }
+    return out;
   }
   function match(r, skip) {
     if (skip !== "lv" && !S.lv.has(r.bucket)) return false;
@@ -334,11 +379,22 @@
   }
 
   let LIST = [];
+  let SCALE = { max: 1, min: 1 }; // count bars: the view's range, or the window's
   function compute() {
     const v = view(S.view);
     Q = parseQ(S.q);
+    WKEY = S.t ? S.t.join("-") : "";
     LIST = v.rows.filter((r) => match(r, ""));
     LIST.sort(SORTS[S.sort][1]);
+    if (S.t) {
+      let max = 1, min = Infinity;
+      for (const r of v.rows) {
+        const n = winOf(r).n;
+        if (n > max) max = n;
+        if (n > 0 && n < min) min = n;
+      }
+      SCALE = { max, min: min < Infinity ? min : 1 };
+    } else SCALE = { max: v.max, min: v.min };
     return v;
   }
 
@@ -584,17 +640,43 @@
     hit.addEventListener("pointerup", end);
     hit.addEventListener("pointercancel", end);
   }
+  /** Quick windows ending at the last hour of the set: those shorter than the set. */
+  const PRESETS = [[1, "1 h"], [6, "6 h"], [24, "24 h"], [168, "7 d"]].filter(([h]) => h < NH);
+  const hoursText = (h) => (h < 48 ? h + " h" : (h / 24).toFixed(1).replace(/\.0$/, "") + " d");
+  /** Move the window by its own width (dir -1 / +1), clamped to the set. */
+  function shiftWindow(dir) {
+    if (!S.t) return;
+    const [a, b] = S.t, w = b - a + 1;
+    const na = Math.max(0, Math.min(NH - w, a + dir * w));
+    if (na !== a) commit({ t: [na, na + w - 1] }, { keepPage: false });
+  }
   function renderWindowLabel() {
     const el = $("tl-window");
+    if (!NH) {
+      el.innerHTML = "";
+      return;
+    }
+    const presets = PRESETS.map(([h, label]) => {
+      const on = S.t && S.t[0] === NH - h && S.t[1] === NH - 1;
+      return `<button type="button" data-win="${h}" aria-pressed="${!!on}" title="The last ${label} of the set">${label}</button>`;
+    }).join("");
+    const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
     if (!S.t) {
-      el.innerHTML = NH ? `<span class="muted">Drag across the chart to filter groups to a time window</span>` : "";
+      el.innerHTML = `<span class="muted">Drag across the chart to narrow the table to a time window</span>${seg}`;
       return;
     }
     const [a, b] = S.t;
     const end = new Date(parseTs(HOURS[b]) + 3.6e6).toISOString();
-    el.innerHTML = `<span>Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> UTC (${b - a + 1} h)</span>` +
-      `<button type="button" class="btn small" id="tl-clear">Clear</button>`;
-    $("tl-clear").onclick = () => commit({ t: null });
+    const lv = levelsIn(a, b);
+    let total = 0;
+    for (const k of BUCKETS) total += lv[k];
+    const what = [`${fmt(total)} entries`];
+    if (lv.ERROR) what.push(`<span class="w-err">${fmt(lv.ERROR)} errors</span>`);
+    if (lv.WARN) what.push(`${fmt(lv.WARN)} warnings`);
+    el.innerHTML = `<span class="win-what">Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> UTC (${hoursText(b - a + 1)}) · ${what.join(" · ")}</span>` +
+      `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
+      `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
+      seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
   }
 
   function spark(r) {
@@ -607,19 +689,21 @@
       bins[b] += n;
       if (bins[b] > max) max = bins[b];
     }
-    let d = "";
+    // with a window: its bins drawn in full, the rest muted
+    const wb = S.t ? [Math.floor((S.t[0] * nb) / NH), Math.floor((S.t[1] * nb) / NH)] : null;
+    let d = "", o = "";
     const w = bw >= 3 ? bw - 1 : bw;
     for (let b = 0; b < nb; b++) {
       if (!bins[b]) continue;
       const h = Math.max(1.5, ((H - 2) * bins[b]) / max);
-      d += `M${r1(b * bw)} ${H}v-${r1(h)}h${r1(w)}v${r1(h)}Z`;
+      const p = `M${r1(b * bw)} ${H}v-${r1(h)}h${r1(w)}v${r1(h)}Z`;
+      if (wb && (b < wb[0] || b > wb[1])) o += p;
+      else d += p;
     }
     let win = "";
-    if (S.t) {
-      const x0 = Math.floor((S.t[0] * nb) / NH) * bw, x1 = (Math.floor((S.t[1] * nb) / NH) + 1) * bw;
-      win = `<rect class="spark-win" x="${r1(x0)}" y="0" width="${r1(x1 - x0)}" height="${H}"/>`;
-    }
-    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${win}<path d="${d}"/></svg>`;
+    if (wb) win = `<rect class="spark-win" x="${r1(wb[0] * bw)}" y="0" width="${r1((wb[1] + 1 - wb[0]) * bw)}" height="${H}"/>`;
+    return `<svg class="spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${win}` +
+      (o ? `<path class="out" d="${o}"/>` : "") + `<path d="${d}"/></svg>`;
   }
 
   // ---------------------------------------------------------------- table
@@ -655,26 +739,38 @@
   ];
   if (CMP) COLS.push(["c-delta", "vs " + OTHERNAME, "delta"]);
 
+  const WIN_COLS = {
+    "c-count": ["In window", "Entries in the time window; below: the group's total"],
+    "c-last": ["Last seen", "Last entry in the time window (\"xx\": within that hour)"],
+    "c-delta": [null, "Whole sets, not the time window"],
+  };
   function renderHead() {
-    $("t-head").innerHTML = "<tr>" + COLS.map(([c, label, key, tip]) => {
+    $("t-head").innerHTML = "<tr>" + COLS.map(([c, label0, key, tip0]) => {
+      const wc = S.t ? WIN_COLS[c] : null;
+      const label = (wc && wc[0]) || label0;
+      const tip = wc ? (c === "c-delta" ? `vs ${OTHERNAME}: ${wc[1]}` : wc[1]) : tip0;
       const sorted = key && S.sort === key ? ` aria-sort="${key === "template" || key === "logger" || key === "first_seen" ? "ascending" : "descending"}"` : "";
       return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted} title="${esc(tip || label)}">${esc(label)}</th>`;
     }).join("") + "</tr>";
   }
   function rowHtml(r, v) {
-    const lmin = Math.log10(v.min), span = Math.log10(v.max) - lmin;
-    const w = r.count > 0 ? Math.max(2, span > 0 ? ((Math.log10(r.count) - lmin) / span) * 100 : 100) : 0;
+    const n = cnt(r);
+    const lmin = Math.log10(SCALE.min), span = Math.log10(SCALE.max) - lmin;
+    const w = n > 0 ? Math.max(2, span > 0 ? ((Math.log10(n) - lmin) / span) * 100 : 100) : 0;
     const track = v.max >= 1000 ? `<span class="track"><i style="width:${r1(w)}%"></i></span>` : "";
     const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone" : "");
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
+    const of = S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
+    const last = S.t ? winOf(r).last : r.last ? { iso: r.last } : null;
+    const cTitle = S.t ? ` title="${fmt(n)} in the window of ${fmt(r.count)} in total"` : "";
     return `<tr data-id="${esc(r.id)}" class="${cls}">` +
-      `<td class="c-count"><div class="cnt"><span class="num">${fmt(r.count)}</span>${track}</div></td>` +
+      `<td class="c-count"${cTitle}><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-logger" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</td>` +
       `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
       `<td class="c-exc" title="${esc(r.exc)}">${r.exc ? `<span class="xc"><span class="xp">${esc(r.exc.slice(0, r.exc.lastIndexOf(".") + 1))}</span><span class="xs">${esc(shortExc(r.exc))}</span></span>` : ""}</td>` +
       `<td class="c-spark">${spark(r)}</td>` +
-      `<td class="c-last">${esc(tsShort(r.last))}</td>` +
+      `<td class="c-last" title="${esc(seenTitle(last))}">${esc(seenText(last))}</td>` +
       `<td class="c-ut">${r.gone ? "" : fmt(r.users) + " / " + fmt(r.threads)}</td>` +
       (CMP ? `<td class="c-delta"><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</td>` : "") +
       `</tr>`;
@@ -706,10 +802,11 @@
       }
     }
     let entries = 0;
-    for (const r of LIST) entries += r.count;
+    for (const r of LIST) entries += cnt(r);
     const shown = LIST.length ? `${fmt(start + 1)}–${fmt(start + page.length)} of ` : "";
-    $("t-summary").textContent = `${shown}${fmt(LIST.length)} ${S.view === "sig" ? "groups" : "rows"} · ${fmt(entries)} entries` +
-      (LIST.length < v.rows.length ? ` (${fmt(v.rows.length)} in total)` : "");
+    const noun = S.view === "sig" ? "groups" : "rows";
+    $("t-summary").textContent = `${shown}${fmt(LIST.length)} ${noun}` + (LIST.length < v.rows.length ? ` (of ${fmt(v.rows.length)})` : "") +
+      ` · ${fmt(entries)} entries` + (S.t ? " in the window" : "");
     const pg = pagerHtml(pages);
     $("pager-top").innerHTML = pg;
     $("pager-bottom").innerHTML = pg;
@@ -1058,12 +1155,54 @@
   const levelNum = (name) => LEVEL_NUM[name] || 0;
 
   const LAZY = new Set();
+  // Web app with a time window: the drawer's examples are the group's first entries inside it,
+  // fetched per signature and window (examples URL with since/until); null while loading.
+  const WIN_EX = new Map(); // "sig|a-b" -> entry ids, in time order
+  const WIN_PENDING = new Set();
+  const winEx = () => !!(S.t && ENTRIES_URL);
+  const winExKey = (sig) => sig + "|" + WKEY;
+  function windowExampleIds(r) {
+    const got = (r.members || [r]).map((m) => WIN_EX.get(winExKey(m.sig)));
+    if (!got.every(Boolean)) return null;
+    return r.members ? got.flatMap((ids) => ids.slice(0, 1)).slice(0, 5) : got[0];
+  }
   function exampleIds(r) {
+    if (winEx()) return windowExampleIds(r) || [];
     return r.g ? r.g.examples || [] : (r.members || []).flatMap((m) => (m.g && m.g.examples ? m.g.examples.slice(0, 1) : [])).slice(0, 5);
+  }
+  /** Fetch the window examples of a row's signatures not loaded yet, then redraw the drawer once. */
+  function loadWindowExamples(r) {
+    const [a, b] = S.t;
+    const since = HOURS[a], until = new Date(parseTs(HOURS[b]) + 3.6e6).toISOString();
+    const todo = [];
+    for (const m of r.members || [r]) {
+      const key = winExKey(m.sig);
+      if (WIN_EX.has(key) || WIN_PENDING.has(key)) continue;
+      if (m.gone || !winOf(m).n) WIN_EX.set(key, []);
+      else todo.push([m.sig, key]);
+    }
+    if (!todo.length) return;
+    for (const [, key] of todo) WIN_PENDING.add(key);
+    const q = `max_raw=0&limit=3&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`;
+    Promise.all(todo.map(([sig, key]) =>
+      fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(sig)) + (ENTRIES_URL.includes("?") ? "&" : "?") + q, { headers: { Accept: "application/json" } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((doc) => {
+          const items = (doc && doc.items) || {};
+          Object.assign(ENTRIES, items);
+          WIN_EX.set(key, Object.keys(items).sort((x, y) => cmpStr(items[x].ts || "", items[y].ts || "") || cmpStr(x, y)));
+        })
+        .catch(() => WIN_EX.set(key, []))
+        .finally(() => WIN_PENDING.delete(key))))
+      .then(() => {
+        drawnKey = null;
+        renderDrawer();
+      });
   }
   /** Webapp: fetch examples missing from the payload (entries.v1), then redraw the drawer once. */
   function loadExamples(r) {
     if (!ENTRIES_URL) return;
+    if (winEx()) return loadWindowExamples(r);
     const sigs = (r.members || [r]).filter((m) => m.g && (m.g.examples || []).some((id) => !ENTRIES[id] || ENTRIES[id].raw_truncated)).map((m) => m.sig);
     const todo = sigs.filter((s) => !LAZY.has(s));
     if (!todo.length) return;
@@ -1098,9 +1237,15 @@
     }
     let stats = "";
     if (!r.gone) {
-      const st = [["Entries", fmt(r.count)], ["First seen", ts16(r.first)], ["Last seen", ts16(r.last)],
-        [r.members ? "Users (≥)" : "Users", fmt(r.users)], [r.members ? "Threads (≥)" : "Threads", fmt(r.threads)], ["Sources", fmt(r.nsrc)]];
-      stats += `<dl class="stats">` + st.map(([k, v]) => `<div><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl>`;
+      let st;
+      if (S.t) {
+        const w = winOf(r);
+        st = [["In window", fmt(w.n), `${fmt(w.n)} of ${fmt(r.count)} entries`],
+          ["First in window", seenText(w.first, true) || "—", seenTitle(w.first)], ["Last in window", seenText(w.last, true) || "—", seenTitle(w.last)]];
+      } else st = [["Entries", fmt(r.count)], ["First seen", ts16(r.first)], ["Last seen", ts16(r.last)]];
+      st.push([r.members ? "Users (≥)" : "Users", fmt(r.users)], [r.members ? "Threads (≥)" : "Threads", fmt(r.threads)], ["Sources", fmt(r.nsrc)]);
+      stats += `<dl class="stats">` + st.map(([k, v, t]) => `<div${t ? ` title="${esc(t)}"` : ""}><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl>`;
+      if (S.t) stats += `<div class="muted small">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} UTC. Users, threads and sources cover the whole set.</div>`;
     }
     if (r.cmp) {
       const d = r.cmp.d;
@@ -1110,10 +1255,25 @@
     }
     out.push(`<section class="d-sec" id="d-s-stats">${stats}</section>`);
     const exIds = exampleIds(r);
-    const ex = exIds.filter((id) => ENTRIES[id]);
-    const pending = ENTRIES_URL && ex.length < exIds.length;
-    if (ex.length) out.push(secId("d-s-examples", `Example entries (${ex.length})`, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
-    else if (!r.gone) out.push(secId("d-s-examples", "Example entries", `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
+    let ex = exIds.filter((id) => ENTRIES[id]);
+    let pending = ENTRIES_URL && ex.length < exIds.length;
+    let exTitle = `Example entries (${ex.length})`;
+    if (winEx()) {
+      pending = windowExampleIds(r) === null;
+      exTitle = pending ? "Examples in the window" : `Examples in the window (${ex.length})`;
+      if (!ex.length && !pending && !r.gone) out.push(secId("d-s-examples", exTitle, `<div class="muted">No entries of this group in the window.</div>`));
+    } else if (S.t && ex.length) {
+      // examples inside the window first; the rest stay for context
+      const inWin = (id) => {
+        const h = hourOf(ENTRIES[id].ts);
+        return h >= S.t[0] && h <= S.t[1];
+      };
+      const n = ex.filter(inWin).length;
+      ex = [...ex.filter(inWin), ...ex.filter((id) => !inWin(id))];
+      exTitle = `Example entries (${ex.length}, ${n ? n + " in the window" : "none in the window"})`;
+    }
+    if (ex.length) out.push(secId("d-s-examples", exTitle, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
+    else if (!r.gone && (pending || !winEx())) out.push(secId("d-s-examples", exTitle.replace(/ \(\d+\)$/, ""), `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
     if (!r.gone) {
       out.push(secId("d-s-hourly", "Entries per hour" + (S.t ? " (window shaded)" : ""), `<div class="d-chart" id="d-hourly"></div>`));
       const src = r.members || [r];
@@ -1193,26 +1353,7 @@
       st.parse_errors ? "" : "0 unparsed",
       opts.truncated_groups > 0 ? `showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups` : "",
     ].filter(Boolean).join(" · ");
-    const groupsNote = BASE.length !== total
-      ? `${fmt(BASE.length)} in this report` + (opts.min_level ? ` (${opts.min_level}+)` : "")
-      : "";
-    const tiles = [
-      ["Entries", fmt(st.entry_count ?? LS.entry_count ?? 0), ""],
-      ["Groups", fmt(total), groupsNote],
-      ["Errors", fmt((lv.ERROR || 0) + (lv.FATAL || 0)), lv.FATAL ? `incl. ${fmt(lv.FATAL)} FATAL` : ""],
-      ["Warnings", fmt(lv.WARN || 0), ""],
-    ];
-    if (st.parse_errors) tiles.push(["Unparsed", fmt(st.parse_errors), ""]);
-    let html = tiles.map(([l, v, n]) => `<div class="tile"><div class="label">${l}</div><div class="value">${esc(v)}</div>${n ? `<div class="note">${esc(n)}</div>` : ""}</div>`).join("");
-    if (CMPD) {
-      const mini = [["new", CMPN.new, (CMPD.new || []).length], ["changed", CMPN.changed, (CMPD.changed || []).length],
-        ["vanished", CMPN.vanished, (CMPD.vanished || []).length]];
-      const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k}: shown ${fmt(shown)} of ${fmt(n)}`);
-      html += `<div class="tile wide cmp-tile"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</div>` +
-        `<div class="minis">` + mini.map(([k, n]) => `<div><div class="value">${fmt(n)}</div><div class="note">${k}</div></div>`).join("") + `</div>` +
-        `<div class="note">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
-    }
-    $("tiles").innerHTML = html;
+    renderTiles();
     for (const b of BUCKETS) {
       const arr = ((D.timeline || {}).levels || {})[b] || [];
       let t = 0;
@@ -1226,10 +1367,52 @@
     $("f-merged").hidden = !MERGES.length;
     if (MERGES.length) $("f-merged").title = `Apply ${MERGES.length} Drain3 merge proposals`;
   }
+  let tilesKey = null;
+  /** Overview tiles; with a time window each also tells how much of it falls in the window. */
+  function renderTiles() {
+    WKEY = S.t ? S.t.join("-") : "";
+    if (tilesKey === WKEY) return;
+    tilesKey = WKEY;
+    const st = D.stats || {};
+    const lv = st.levels || {};
+    const opts = D.options || {};
+    const total = st.group_count ?? BASE.length;
+    const groupsNote = BASE.length !== total
+      ? `${fmt(BASE.length)} in this report` + (opts.min_level ? ` (${opts.min_level}+)` : "")
+      : "";
+    const tiles = [
+      ["Entries", fmt(st.entry_count ?? LS.entry_count ?? 0), ""],
+      ["Groups", fmt(total), groupsNote],
+      ["Errors", fmt((lv.ERROR || 0) + (lv.FATAL || 0)), lv.FATAL ? `incl. ${fmt(lv.FATAL)} FATAL` : ""],
+      ["Warnings", fmt(lv.WARN || 0), ""],
+    ];
+    if (S.t) {
+      const wl = levelsIn(S.t[0], S.t[1]);
+      let we = 0;
+      for (const k of BUCKETS) we += wl[k];
+      let wg = 0;
+      for (const r of BASE) if (winOf(r).n > 0) wg++;
+      const win = [we, wg, wl.ERROR, wl.WARN];
+      for (let i = 0; i < 4; i++) tiles[i][3] = `${fmt(win[i])} in the window`;
+    }
+    if (st.parse_errors) tiles.push(["Unparsed", fmt(st.parse_errors), ""]);
+    let html = tiles.map(([l, v, n, w]) => `<div class="tile"><div class="label">${l}</div><div class="value">${esc(v)}</div>` +
+      (w ? `<div class="note win-note">${esc(w)}</div>` : "") + (n ? `<div class="note">${esc(n)}</div>` : "") + `</div>`).join("");
+    if (CMPD) {
+      const mini = [["new", CMPN.new, (CMPD.new || []).length], ["changed", CMPN.changed, (CMPD.changed || []).length],
+        ["vanished", CMPN.vanished, (CMPD.vanished || []).length]];
+      const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k}: shown ${fmt(shown)} of ${fmt(n)}`);
+      html += `<div class="tile wide cmp-tile"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</div>` +
+        `<div class="minis">` + mini.map(([k, n]) => `<div><div class="value">${fmt(n)}</div><div class="note">${k}</div></div>`).join("") + `</div>` +
+        `<div class="note">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
+    }
+    $("tiles").innerHTML = html;
+  }
 
   // ---------------------------------------------------------------- update
   function update() {
     const v = compute();
+    renderTiles();
     renderControls(v);
     renderTable(v);
     renderWindowLabel();
@@ -1318,6 +1501,15 @@
   }
 
   function bind() {
+    $("tl-window").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled) return;
+      if (b.dataset.shift) shiftWindow(Number(b.dataset.shift));
+      else if (b.dataset.win != null) {
+        const h = Number(b.dataset.win);
+        commit({ t: h > 0 ? [NH - h, NH - 1] : null });
+      }
+    });
     $("f-search").addEventListener("input", (e) => {
       clearTimeout(qTimer);
       const value = e.target.value;
@@ -1458,6 +1650,8 @@
         }
         case "n": if ((S.p + 1) * PAGE < LIST.length) commit({ p: S.p + 1 }, { keepPage: true }); break;
         case "p": if (S.p > 0) commit({ p: S.p - 1 }, { keepPage: true }); break;
+        case "[": shiftWindow(-1); break;
+        case "]": shiftWindow(1); break;
         case "?": help.showModal(); break;
         default:
       }

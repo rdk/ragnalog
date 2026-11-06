@@ -104,7 +104,8 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 ├ overview ─────────────────────────────────────────────────────────────────┤
 │ [712,674 entries] [2,953 groups] [146,548 errors] [507,600 warns] [0 unparsed]│
 │ timeline: stacked bars per hour by level (status colors), hover tooltip,  │
-│           drag to select a time window (filters groups to that window)    │
+│           drag or "Last 1h/6h/24h/7d" for a time window: the table counts │
+│           only that window                                                │
 ├ filters (one row) ────────────────────────────────────────────────────────┤
 │ [search template/logger/exception] [ERROR ✓][WARN ✓][INFO][DEBUG]          │
 │ [logger ▾] [exception ▾] [has exception] [sort: count ▾] [coarse] [merged] │
@@ -128,8 +129,24 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 - "merged" view applies Drain merge proposals: groups in one cluster are shown
   as one row (sum of counts, cluster template) with members listed in the
   drawer. "coarse" groups by `coarse_signature` the same way.
-- Timeline brush filters to groups with at least one hourly bucket in the
-  window; the group sparkline shades the window.
+- Time window: drag across the timeline, or pick "Last 1 h / 6 h / 24 h / 7 d"
+  (those shorter than the set). `‹`/`›` and the keys `[`/`]` move the window by
+  its own length; a click on the chart or "Clear" removes it. With a window the
+  page answers "what happened in it":
+  - the window bar states its range and its entries, errors and warnings; the
+    tiles add "N in the window";
+  - the table keeps the groups with entries in the window, and its count column
+    becomes *In window* (the whole-set total under it, "of 68.2K"). Count bars,
+    sorting (count, first/last seen), level chip counts and the summary use the
+    window counts. *Last seen* is the last entry in the window: exact when the
+    group's own last entry is in it, else the hour (`10-29 01:xx`). The hourly
+    counts cover every entry, so window counts are exact;
+  - sparklines draw the window's bars in full and the rest muted;
+  - the drawer shows *In window*, *First/Last in window* and a whole-set line.
+    In the web app its examples are the group's first entries inside the window
+    (the examples URL with `since`/`until`). The static file has only the
+    stored examples, so it lists the ones inside the window first.
+  - The compare column stays whole-set (its tooltip says so).
 - Compare mode (payload has `compare`): every row shows `count_a → count_b` and
   a delta chip (new / vanished / ×ratio); the compare filter narrows to one
   class. Colors: increase = status critical, decrease = series blue, neutral
@@ -137,7 +154,7 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 - State (filters, sort, selected group, page) lives in `location.hash` so a
   view can be bookmarked or pasted; back/forward work.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
-  `Esc` closes the drawer, `c` copies the signature.
+  `Esc` closes the drawer, `c` copies the signature, `[`/`]` move the time window.
 - Every drawer shows the equivalent CLI commands
   (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) so a
   human can hand a finding to an agent verbatim.
@@ -261,7 +278,15 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   default) scales the axis to the group and drops the columns. Hover shows the bucket's
   levels for that node and every node's total; hovering a lane lists its events (text,
   node, named node, time); clicking one opens the merged log at that moment. Dragging
-  on any band sets the window of every view; a click clears it.
+  on any band sets the window of every view; a click clears it. The window bar has the
+  report's presets, `‹`/`›` (`[`/`]`) and the window's entries and errors. With a window,
+  the groups table counts only the window. Total becomes *In window* (capture total
+  under it), the node columns, bars, sorting, spread filter and node filter use window
+  counts, and `spread`/`skew` are recomputed from the window's per-node counts and
+  volumes (the rule of `matrix`). `lead` stays the capture's and is dimmed, because
+  buckets are too coarse to time a lead inside a window. The drawer adds an *In window*
+  column per node, and in the web app its examples are each node's first entries in
+  the window.
 - Tabs in the sticky bar:
   - *Groups by node*: level, template, total, one count-and-bar column per node in node
     colours (log scale; past 8 nodes a heat strip of one cell per node), `spread` chip
