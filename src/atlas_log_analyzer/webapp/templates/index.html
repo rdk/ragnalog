@@ -5,9 +5,9 @@
       <td>
         {% if capture %}<span class="node-chip" title="Cluster node">{{ s.node or "?" }}</span>{% endif %}
         <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
-        <div class="muted mono small">{{ s.id }} · {{ s.format }} · {{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }} · {{ s.bytes|size }}{% if s.node and not capture %} · node {{ s.node }}{% endif %}</div>
+        <div class="set-meta muted small"><span class="mono">{{ s.id }}</span><span>{{ s.format }}</span><span>{{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }}</span><span>{{ s.bytes|size }}</span>{% if s.node and not capture %}<span>node {{ s.node }}</span>{% endif %}</div>
       </td>
-      <td class="nowrap">{{ s.first_ts|ts }} <span class="muted">→</span> {{ s.last_ts|ts }}</td>
+      <td class="nowrap">{{ s.first_ts|range(s.last_ts) }}</td>
       <td class="num">{{ s.entry_count|num }}</td>
       <td class="num">{{ s.group_count|num }}</td>
       <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
@@ -50,9 +50,9 @@
       <td>
         <a class="set-name" href="/captures/capture:{{ c.id|urlencode }}">{{ c.cluster or "Capture" }}</a>
         <span class="muted small">{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span>
-        <div class="muted mono small">capture {{ c.id }} · {{ c.bytes|size }}</div>
+        <div class="set-meta muted small"><span>capture <span class="mono">{{ c.id }}</span></span><span>{{ c.bytes|size }}</span></div>
       </td>
-      <td class="nowrap">{{ c.first_ts|ts }} <span class="muted">→</span> {{ c.last_ts|ts }}</td>
+      <td class="nowrap">{{ c.first_ts|range(c.last_ts) }}</td>
       <td class="num">{{ c.entry_count|num }}</td>
       <td class="num"><span class="muted">–</span></td>
       <td class="num">{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}–{% endif %}</td>

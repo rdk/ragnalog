@@ -6,12 +6,12 @@
 <tr>
   <td><span class="lv lv-{{ 'ERROR' if r.level_name in ('ERROR', 'FATAL') else r.level_name if r.level_name in ('WARN', 'INFO', 'DEBUG') else 'OTHER' }}">{{ r.level_name }}</span></td>
   <td class="tpl">
-    <a href="{{ r.report_url or ('/sets/' ~ me.id ~ '#sig=' ~ r.signature) }}">{{ r.template or '(empty message)' }}</a>
+    <a class="clamp" href="{{ r.report_url or ('/sets/' ~ me.id ~ '#sig=' ~ r.signature) }}" title="{{ r.template }}">{% if r.template %}{{ r.template|tpl }}{% else %}(empty message){% endif %}</a>
     <div class="muted small mono">{{ r.logger }}{% if r.exception_type %} · {{ r.exception_type }}{% endif %}</div>
   </td>
   {% if kind == 'new' %}
   <td class="num">{{ r.count_b|num }}</td>
-  <td class="num muted">{{ '%.1f'|format(r.rate_per_hour) if r.rate_per_hour is not none else '–' }}</td>
+  <td class="num muted">{% if r.rate_per_hour is none %}–{% elif r.rate_per_hour and r.rate_per_hour < 0.1 %}&lt;0.1{% else %}{{ '%.1f'|format(r.rate_per_hour) }}{% endif %}</td>
   <td class="nowrap">{{ r.first_seen_b|ts }}</td>
   {% elif kind == 'grew' %}
   <td class="num">{{ r.count_a|num }} → {{ r.count_b|num }}</td>
@@ -28,7 +28,7 @@
 <header class="page-head">
   <div>
     <h1>Triage · {{ me.name or me.id }}</h1>
-    <p class="muted">{{ me.first_ts|ts }} → {{ me.last_ts|ts }} · {{ me.entries|num }} entries · level ≥ {{ t.min_level or 'any' }}</p>
+    <p class="muted">{{ me.first_ts|range(me.last_ts) }} · {{ me.entries|num }} entries · level ≥ {{ t.min_level or 'any' }}</p>
   </div>
   <form class="page-tools" method="get">
     <label class="sel">Baseline
@@ -62,7 +62,7 @@
     {% elif t.verdict == 'new_exceptions' %}<span class="verdict-badge warn">New exceptions below level {{ t.min_level }}</span>
     {% else %}<span class="verdict-badge ok">No new types</span>{% endif %}
     <span>compared with <a href="/sets/{{ t.baseline.id }}">{{ t.baseline.name or t.baseline.id }}</a>
-    <span class="muted">({{ t.baseline.first_ts|ts }} → {{ t.baseline.last_ts|ts }}, {{ t.baseline.resolved_by }})</span></span>
+    <span class="muted">({{ t.baseline.first_ts|range(t.baseline.last_ts) }}, {{ t.baseline.resolved_by }})</span></span>
     <span class="grow"></span>
     <a class="btn small" href="/sets/{{ me.id }}?compare={{ t.baseline.id }}">Open comparison report</a>
   </div>

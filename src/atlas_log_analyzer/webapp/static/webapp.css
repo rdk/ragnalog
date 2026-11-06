@@ -29,15 +29,15 @@ body.app { min-height: 100vh; display: flex; flex-direction: column; }
 .nowrap { white-space: nowrap; }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 
-.card {
+.page .card {
   background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
   padding: 16px 18px; margin-bottom: 16px;
 }
-.card h2 { font-size: 15px; margin-bottom: 10px; }
-.card.table-wrap { padding: 0; }
-.table-wrap { overflow-x: auto; }
-.empty { text-align: center; padding: 36px 18px; }
-.empty h2 { font-size: 18px; }
+.page .card h2 { font-size: 15px; margin-bottom: 10px; }
+.page .card.table-wrap { padding: 0; }
+.page .table-wrap { overflow-x: auto; }
+.page .empty { text-align: center; padding: 36px 18px; }
+.page .empty h2 { font-size: 18px; }
 pre.cmd {
   display: inline-block; margin: 8px 0 0; padding: 8px 12px; border-radius: 6px;
   background: var(--code-bg); font: 12px/1.5 var(--mono); text-align: left; white-space: pre-wrap;
@@ -54,7 +54,17 @@ table.sets tbody tr:hover { background: var(--hover); }
 table.sets .num { text-align: right; white-space: nowrap; }
 table.sets .actions { text-align: right; white-space: nowrap; }
 table.sets .actions .btn { margin-left: 4px; }
-.set-name { font-weight: 600; font-size: 15px; color: var(--ink) !important; text-decoration: none; }
+.set-name { font-weight: 600; font-size: 15px; color: var(--ink) !important; text-decoration: none; overflow-wrap: anywhere; }
+table.sets:not(.triage-table) td:first-child { min-width: 280px; }
+.triage-table th:first-child { width: 72px; }
+.set-meta { display: flex; flex-wrap: wrap; gap: 0 10px; margin-top: 2px; }
+.set-meta > span { white-space: nowrap; }
+.set-meta .mono { font-size: 11.5px; }
+.clamp {
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  overflow-wrap: anywhere;
+}
+table.sets tbody tr { transition: background-color 0.12s ease; }
 .set-name:hover { text-decoration: underline; }
 table.sets tr.capture-row td { border-top: 2px solid var(--grid); }
 table.sets tr.capture-member td:first-child { padding-left: 28px; }

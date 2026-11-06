@@ -1332,6 +1332,11 @@
     const top = body.scrollTop;
     body.innerHTML = r ? drawerHtml(r, idx >= 0) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
     body.scrollTop = sameGroup ? top : 0;
+    if (!sameGroup) {
+      body.classList.remove("fresh");
+      void body.offsetWidth;
+      body.classList.add("fresh");
+    }
     if (r && !r.gone) drawHourly(r);
     if (r) loadExamples(r);
   }

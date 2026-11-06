@@ -12,6 +12,7 @@ from urllib.parse import quote, urlencode
 from fastapi import APIRouter, Depends, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.templating import Jinja2Templates
+from markupsafe import Markup
 from starlette.responses import HTMLResponse, Response
 
 from atlas_log_analyzer import __version__
@@ -55,7 +56,28 @@ def _fmt_bytes(value: Any) -> str:
     return f"{size:.1f} GB"
 
 
-templates.env.filters.update(num=_fmt_int, ts=_fmt_ts, size=_fmt_bytes)
+def _fmt_range(first: Any, last: Any) -> str:
+    """``first → last`` to the minute; the end drops the year (and date) it shares."""
+    a, b = _fmt_ts(first), _fmt_ts(last)
+    if a == "-" or b == "-":
+        return f"{a} → {b}"
+    if a[:10] == b[:10]:
+        return f"{a} → {b[11:]}"
+    return f"{a} → {b[5:]}" if a[:4] == b[:4] else f"{a} → {b}"
+
+
+_PLACEHOLDER = re.compile(r"&lt;([A-Z][A-Z0-9_]*|\*)&gt;")
+
+
+def _fmt_template(value: Any) -> Markup:
+    """Render a template as HTML, its ``<NUM>`` placeholders as chips (as in the report)."""
+    text = html.escape(str(value or ""), quote=False)
+    return Markup(_PLACEHOLDER.sub(lambda m: f'<span class="ph">{m[1].lower()}</span>', text))
+
+
+templates.env.filters.update(
+    num=_fmt_int, ts=_fmt_ts, size=_fmt_bytes, tpl=_fmt_template, range=_fmt_range
+)
 
 
 def index_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
