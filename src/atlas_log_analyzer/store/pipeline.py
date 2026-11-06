@@ -118,6 +118,18 @@ def _name_warning(name: str | None, logset: LogSet) -> tuple[str, ...]:
     return (f"--name {name} ignored: set exists as {shown}",)
 
 
+def _recipe_warning(recipe: Recipe, logset: LogSet, existing: bool) -> tuple[str, ...]:
+    """Warn when an existing set was returned although this ingest asked for another recipe."""
+    have = logset.manifest.recipe_key
+    if not existing or have is None or have == recipe.key:
+        return ()
+    return (
+        f"set {logset.manifest.name or logset.manifest.id} exists with another signature recipe "
+        f"({have}, asked for {recipe.key}): kept as it is; rebuild it with --overwrite, or "
+        "`atlas-log regroup` for another spec",
+    )
+
+
 def _head(source: SourceFile) -> list[str]:
     """Return the first :data:`SNIFF_LINES` lines of a source."""
     lines = iter_raw_lines(source.path)
@@ -334,14 +346,15 @@ def ingest_sources(
     )
     elapsed = time.perf_counter() - started
     merges = _mine(logset) if mine else None
+    existing = counter.entries == 0 and logset.manifest.entry_count > 0
     return IngestResult(
         logset=logset,
         parsed_entries=counter.entries,
         parse_errors=counter.parse_errors,
         elapsed_s=elapsed,
-        existing=counter.entries == 0 and logset.manifest.entry_count > 0,
+        existing=existing,
         merges=merges,
-        warnings=_name_warning(name, logset),
+        warnings=_name_warning(name, logset) + _recipe_warning(recipe, logset, existing),
     )
 
 

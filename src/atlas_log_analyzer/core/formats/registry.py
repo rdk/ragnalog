@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 import warnings
 from collections.abc import Sequence
 
@@ -13,6 +14,7 @@ ENTRY_POINT_GROUP = "atlas_log_analyzer.formats"
 
 _formats: dict[str, LogFormat] = {}
 _loaded = False
+_load_lock = threading.Lock()
 
 
 class UnknownFormatError(LookupError):
@@ -27,10 +29,15 @@ def _builtin_formats() -> list[LogFormat]:
 
 def _load() -> None:
     """Load built-ins and entry points once; failing entry points are skipped with a warning."""
-    global _loaded
     if _loaded:
         return
-    _loaded = True
+    with _load_lock:  # concurrent first lookups (web app threads) must not see it half-filled
+        if not _loaded:
+            _load_formats()
+
+
+def _load_formats() -> None:
+    global _loaded
     import importlib.metadata  # ~70 ms; only commands that look up a format pay it
 
     found: dict[str, LogFormat] = {fmt.name: fmt for fmt in _builtin_formats()}
@@ -59,6 +66,7 @@ def _load() -> None:
     found.update(_formats)
     _formats.clear()
     _formats.update(found)
+    _loaded = True
 
 
 def register(fmt: LogFormat) -> None:

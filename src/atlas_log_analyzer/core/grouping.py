@@ -5,13 +5,17 @@ from __future__ import annotations
 from collections import Counter
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import UTC, datetime
 
 from atlas_log_analyzer.core.formats.base import CTX_USER
 from atlas_log_analyzer.core.models import LogEntry, LogLevel
 from atlas_log_analyzer.core.signature import Signature, Signer
 
 __all__ = ["Group", "Grouper", "SignedEntry"]
+
+
+_NO_TIME = datetime(1970, 1, 1, tzinfo=UTC)
+"""Timestamp of entries without one (``parse_error`` set); see ``formats.jira``."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -85,10 +89,13 @@ class Grouper:
             self.groups[key] = group
         group.count += 1
         ts = entry.timestamp
-        if group.first_seen is None or ts < group.first_seen:
-            group.first_seen = ts
-        if group.last_seen is None or ts > group.last_seen:
-            group.last_seen = ts
+        # a line before a file's first header has no time (stored at the epoch): it counts,
+        # but does not move first/last seen back to 1970 (as the writer's time range)
+        if entry.parse_error is None or ts != _NO_TIME:
+            if group.first_seen is None or ts < group.first_seen:
+                group.first_seen = ts
+            if group.last_seen is None or ts > group.last_seen:
+                group.last_seen = ts
         user = entry.context.get(CTX_USER)
         if user:
             group.users[user] += 1

@@ -687,3 +687,20 @@ def test_monotonic_columns_are_delta_encoded(built: Built) -> None:
         f"select epoch_ms(ts), source_line, source_offset from read_parquet('{path.as_posix()}')"
     ).fetchall()
     assert [list(col) for col in zip(*rows, strict=True)] == want
+
+
+def test_old_leftover_write_directories_are_swept(tmp_path: Path) -> None:
+    import os
+    import time
+
+    from atlas_log_analyzer.store.store import LEFTOVER_AGE_S, Store
+
+    store = Store(tmp_path)
+    old, fresh = tmp_path / ".tmp-abc-12345678", tmp_path / ".trash-abc-87654321"
+    for d in (old, fresh):
+        d.mkdir(parents=True)
+        (d / "x").write_text("x")
+    past = time.time() - LEFTOVER_AGE_S - 60
+    os.utime(old, (past, past))
+    store._tmp_dir("new")
+    assert not old.exists() and fresh.exists()

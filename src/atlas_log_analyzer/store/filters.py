@@ -36,6 +36,7 @@ __all__ = [
     "LevelSpec",
     "entry_filter",
     "group_filter",
+    "has_time",
 ]
 
 type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
@@ -43,6 +44,18 @@ type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
 
 Names as in :mod:`atlas_log_analyzer.store.levels` (``UNKNOWN`` included, ``WARNING``
 = ``WARN``); a blank string means no filter."""
+
+
+def has_time() -> pl.Expr:
+    """Select the entries that have a timestamp (a boolean expression).
+
+    A parse error without one (a line before a file's first header, an unreadable time)
+    is stored at the epoch; it counts as an entry but stays out of time ranges,
+    histograms and first/last seen.
+    """
+    import polars as pl
+
+    return ~(pl.col("parse_error").is_not_null() & (pl.col("ts").dt.epoch("ms") == 0))
 
 
 def _utc(ts: datetime) -> datetime:

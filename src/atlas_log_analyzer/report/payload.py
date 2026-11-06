@@ -14,7 +14,7 @@ import polars as pl
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE
-from atlas_log_analyzer.store.filters import GroupFilter
+from atlas_log_analyzer.store.filters import GroupFilter, has_time
 from atlas_log_analyzer.store.logset import LogSet, to_records
 from atlas_log_analyzer.store.query import diff
 
@@ -78,7 +78,7 @@ def _timeline_and_hourly(
     indices count from the first hour of the set. ``filtered`` restricts the per-signature
     scan to ``signatures`` (skipped when every group of the set is present).
     """
-    lf = logset.entries_lazy()
+    lf = logset.entries_lazy().filter(has_time())  # no 1970 hours
     queries = [
         lf.select(_hour_expr(), _bucket_expr()).group_by("hour", "bucket").agg(pl.len().alias("n"))
     ]

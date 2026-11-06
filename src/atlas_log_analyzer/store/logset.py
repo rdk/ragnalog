@@ -26,6 +26,7 @@ from atlas_log_analyzer.store.filters import (
     LevelSpec,
     entry_filter,
     group_filter,
+    has_time,
 )
 from atlas_log_analyzer.store.manifest import (
     ENTRIES_FILE,
@@ -375,7 +376,7 @@ class LogSet:
         """
         size = _bucket_ms(bucket)
         cond = entry_filter(where, filters).predicate()
-        lf = self.entries_lazy().filter(pl.col("ts").is_not_null())
+        lf = self.entries_lazy().filter(pl.col("ts").is_not_null() & has_time())
         if cond is not None:
             lf = lf.filter(cond)
         df = (
@@ -467,15 +468,16 @@ class LogSet:
                 lf.select(
                     pl.len().alias("n"),
                     pl.col("parse_error").is_not_null().sum().alias("parse_errors"),
-                    pl.col("ts").min().alias("first"),
-                    pl.col("ts").max().alias("last"),
+                    pl.col("ts").filter(has_time()).min().alias("first"),
+                    pl.col("ts").filter(has_time()).max().alias("last"),
                 ),
                 lf.group_by("level", "level_name").agg(pl.len().alias("count")).sort("level"),
                 lf.group_by(pl.col("logger").cast(pl.String))
                 .agg(pl.len().alias("count"))
                 .sort(["count", "logger"], descending=[True, False])
                 .head(TOP_LOGGERS),
-                lf.group_by(pl.col("ts").dt.truncate("1h").alias("hour"))
+                lf.filter(has_time())
+                .group_by(pl.col("ts").dt.truncate("1h").alias("hour"))
                 .agg(pl.len().alias("count"))
                 .sort("hour"),
             ]

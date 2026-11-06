@@ -230,3 +230,25 @@ def test_library_packages_and_app_frames() -> None:
     assert is_app_frame("com.atlassian.jira.Foo.bar", ["com.atlassian.jira."])
     assert not is_app_frame("com.qoti.rf.Foo.bar", ["org.acme."])
     assert not is_app_frame("com.qoti.rf.Foo.bar", ("org.acme.", "com.google."))
+
+
+def test_suppressed_exceptions_cause_stays_out_of_the_chain() -> None:
+    text = (
+        "java.lang.IllegalStateException: top\n"
+        "\tat a.B.c(B.java:1)\n"
+        "\tSuppressed: java.io.IOException: close\n"
+        "\t\tat a.C.d(C.java:2)\n"
+        "\tCaused by: java.net.SocketException: reset\n"
+        "\t\tat a.D.e(D.java:3)\n"
+        "\t\t... 3 more\n"
+        "Caused by: java.sql.SQLException: db\n"
+        "\tat a.E.f(E.java:4)\n"
+    )
+    chain = parse_exceptions(text)
+    assert [e.type for e in chain] == ["java.lang.IllegalStateException", "java.sql.SQLException"]
+
+
+def test_line_numbers_past_int32_are_dropped() -> None:
+    frame = parse_frame("\tat a.B.c(B.java:99999999999)")
+    assert frame == Frame("a.B.c", "B.java", None, None)
+    assert parse_frame("\tat a.B.c(B.java:²)") == Frame("a.B.c", "B.java:²", None, None)

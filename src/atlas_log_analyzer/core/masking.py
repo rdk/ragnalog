@@ -20,6 +20,8 @@ from dataclasses import dataclass
 __all__ = ["GENERIC_RULES", "MASK_RULES_VERSION", "MaskRule", "Masker"]
 
 MASK_RULES_VERSION = 1
+_CACHE_TEXT_MAX = 4096
+"""Longest text the masker caches (65,536 texts of this size stay under 300 MB)."""
 """Bump whenever a change to built-in rules alters templates; recorded in manifests."""
 
 
@@ -122,9 +124,10 @@ class Masker:
             else:
                 out.append(text[pos:])
                 result = ("".join(out), tuple(variables))
-        if len(self._cache) >= self._cache_size:
-            self._cache.clear()
-        self._cache[text] = result
+        if len(text) <= _CACHE_TEXT_MAX:  # long payloads repeat rarely and would pin memory
+            if len(self._cache) >= self._cache_size:
+                self._cache.clear()
+            self._cache[text] = result
         return result
 
     def template(self, text: str) -> str:
@@ -138,9 +141,10 @@ class Masker:
         result = self._template_cache.get(text)
         if result is None:
             result = regex.sub(self._sub, text)
-            if len(self._template_cache) >= self._cache_size:
-                self._template_cache.clear()
-            self._template_cache[text] = result
+            if len(text) <= _CACHE_TEXT_MAX:
+                if len(self._template_cache) >= self._cache_size:
+                    self._template_cache.clear()
+                self._template_cache[text] = result
         return result
 
     def _sub(self, m: re.Match[str]) -> str:

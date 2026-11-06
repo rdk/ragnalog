@@ -130,6 +130,9 @@ def iter_raw_lines(
 ) -> Generator[tuple[int, int, str]]:
     r"""Like :func:`iter_lines` but yields plain ``(number, offset, text)`` tuples (faster).
 
+    A UTF-8 byte order mark is dropped from the first line's text (offsets still count
+    it), so a file saved with one parses like any other.
+
     The file is read and decoded in blocks; a block that is not valid in
     ``encoding`` falls back to per-line decoding with ``errors="replace"`` so that
     byte offsets stay exact. ``encoding`` must be ASCII-compatible (``\n`` is
@@ -146,6 +149,19 @@ def iter_raw_lines(
     """
     if max_line_bytes <= 0:
         raise ValueError("max_line_bytes must be > 0")
+    lines = _raw_lines(path, encoding, max_line_bytes)
+    first = next(lines, None)
+    if first is None:
+        return
+    if first[2].startswith("﻿"):
+        first = (first[0], first[1], first[2][1:])
+    yield first
+    yield from lines
+
+
+def _raw_lines(
+    path: Path | str, encoding: str, max_line_bytes: int
+) -> Generator[tuple[int, int, str]]:
     limit = max_line_bytes
     over = limit + 1  # size of a line with its "\n" above which the line is cut
     number = 0

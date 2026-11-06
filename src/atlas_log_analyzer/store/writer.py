@@ -34,6 +34,7 @@ from atlas_log_analyzer.core.models import (
     SourceRef,
 )
 from atlas_log_analyzer.core.pipeline import unique_entries  # re-exported: moved to core
+from atlas_log_analyzer.store.filters import has_time
 from atlas_log_analyzer.store.schema import (
     DICT_STRING,
     ENTRIES_SCHEMA,
@@ -560,8 +561,8 @@ def groups_from_entries(entries_path: Path, out_path: Path, *, max_examples: int
         pl.col("logger").cast(pl.String).fill_null("").first(),
         pl.col("exception_type").first(),
         pl.len().cast(pl.Int64).alias("count"),
-        pl.col("ts").min().alias("first_seen"),
-        pl.col("ts").max().alias("last_seen"),
+        pl.col("ts").filter(has_time()).min().alias("first_seen"),
+        pl.col("ts").filter(has_time()).max().alias("last_seen"),
         # first max_examples - 1 ids plus the last one, as Grouper does
         pl.col("id")
         .head(max_examples - 1)

@@ -139,6 +139,10 @@ def _restat(
     return tuple(out)
 
 
+LEFTOVER_AGE_S = 24 * 3600
+"""Age after which a ``.tmp-*``/``.trash-*`` directory counts as left over (see ``_sweep``)."""
+
+
 def _retry[T](action: Callable[[], T]) -> T:
     """Run ``action``, retrying after :data:`RETRY_DELAYS_S` while it raises ``PermissionError``."""
     for delay in RETRY_DELAYS_S:
@@ -358,9 +362,26 @@ class Store:
 
     def _tmp_dir(self, set_id: str) -> Path:
         self.root.mkdir(parents=True, exist_ok=True)
+        self._sweep()
         tmp = self.root / f".tmp-{set_id}-{uuid.uuid4().hex[:8]}"
         tmp.mkdir()
         return tmp
+
+    def _sweep(self) -> None:
+        """Delete ``.tmp-*``/``.trash-*`` directories left by a killed write a day ago or more.
+
+        A running write touches its own directory far more often than that; readers
+        already skip these directories, this only gives the disk space back.
+        """
+        cutoff = time.time() - LEFTOVER_AGE_S
+        for d in self.root.iterdir():
+            if not d.name.startswith((".tmp-", ".trash-")):
+                continue
+            try:
+                if d.is_dir() and d.stat().st_mtime < cutoff:
+                    shutil.rmtree(d, ignore_errors=True)
+            except OSError:
+                continue
 
     @contextmanager
     def _writing(self) -> Iterator[None]:

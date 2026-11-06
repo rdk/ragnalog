@@ -110,6 +110,8 @@ windows drop characters at wrap points (``    ai.rf.web.Foo.bar(Foo.java:64)``,
 ``    at a.B.doFiervletContainer.java:430)``)."""
 _EXC_SUFFIXES = ("Exception", "Error", "Throwable", "Failure", "Fault")
 _MAX_SCAN_LINES = 2000
+_INT32 = 2**31 - 1
+"""Largest line number or omitted-frame count stored (the columns are int32)."""
 _WS = (" ", "\t")
 
 
@@ -123,8 +125,9 @@ def parse_frame(line: str) -> Frame | None:
     lineno: int | None = None
     if src not in ("Native Method", "Unknown Source", ""):
         name, sep, num = src.rpartition(":")
-        if sep and num.isdigit():
-            file, lineno = name, int(num)
+        if sep and num.isascii() and num.isdigit():
+            # a line number past int32 is garbage: keep the file, drop the number
+            file, lineno = name, (int(num) if int(num) <= _INT32 else None)
         else:
             file = src
     return Frame(m.group("loc"), file, lineno, m.group("module"))
@@ -198,7 +201,11 @@ def _parse(lines: Sequence[str]) -> tuple[ExceptionInfo, ...]:
         line = lines[i]
         c = line[:1]
         if skip_indent >= 0:
-            if c in _WS and len(line) - len(line.lstrip()) > skip_indent:
+            indent = len(line) - len(line.lstrip()) if c in _WS else 0
+            if indent > skip_indent:
+                continue
+            # a suppressed exception's own cause is printed at the indent of "Suppressed:"
+            if indent == skip_indent and line.lstrip().startswith("Caused by: "):
                 continue
             skip_indent = -1
         if c in _WS:
@@ -212,7 +219,8 @@ def _parse(lines: Sequence[str]) -> tuple[ExceptionInfo, ...]:
             elif stripped.startswith("... "):
                 more = _MORE_RE.match(line)
                 if more is not None:
-                    omitted = int(more.group("n"))
+                    n = more.group("n")
+                    omitted = min(int(n), _INT32) if n.isascii() else 0
                     in_frames = True
                     continue
             elif stripped.startswith("Suppressed: "):

@@ -143,3 +143,10 @@ def test_default_line_cap(tmp_path: Path) -> None:
     ]
     with pytest.raises(ValueError, match="max_line_bytes"):
         list(iter_raw_lines(path, max_line_bytes=0))
+
+
+def test_byte_order_mark_is_dropped_from_the_first_line(tmp_path: Path) -> None:
+    path = tmp_path / "bom.log"
+    path.write_bytes(b"\xef\xbb\xbf2026-10-29 first\r\nsecond\n")
+    lines = list(iter_raw_lines(path))
+    assert lines == [(1, 0, "2026-10-29 first"), (2, 21, "second")]
