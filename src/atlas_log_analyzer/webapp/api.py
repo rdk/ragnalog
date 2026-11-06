@@ -33,21 +33,36 @@ from atlas_log_analyzer.webapp.state import AppState, get_state
 __all__ = ["manifest_item", "router"]
 
 
-def _auth(request: Request) -> None:
-    token = request.app.state.atlas.settings.token
+TOKEN_COOKIE = "atlas_log_token"
+
+
+def token_ok(request: Request) -> bool:
+    """Whether ``request`` carries the server's token (or the server has none).
+
+    Accepted: ``Authorization: Bearer``, ``X-Atlas-Token``, or the cookie a browser gets
+    from opening any page with ``?token=`` once.
+    """
+    token: str | None = request.app.state.atlas.settings.token
     if not token:
-        return
+        return True
     header = request.headers.get("authorization", "")
     given = (
         header[7:]
         if header.lower().startswith("bearer ")
-        else request.headers.get("x-atlas-token", "")
+        else request.headers.get("x-atlas-token") or request.cookies.get(TOKEN_COOKIE, "")
     )
     import hmac
 
-    if not hmac.compare_digest(given.encode(), token.encode()):
+    return hmac.compare_digest(given.encode(), token.encode())
+
+
+def _auth(request: Request) -> None:
+    if not token_ok(request):
         raise OpError("unauthorized", "missing or wrong API token")
 
+
+BIG = 2**31 - 1
+"""Upper bound of the count, offset and length parameters (larger ones overflow the store)."""
 
 router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=[Depends(_auth)])
 StateDep = Annotated[AppState, Depends(get_state)]
@@ -189,7 +204,7 @@ def capture_matrix(
     skew_min: Annotated[float, Query(ge=1)] = 4.0,
     signature: str | None = None,
     limit: Annotated[int, Query(ge=0, le=100_000)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
 ) -> dict[str, Any]:
     """One row per group with a count per node (``matrix.v1``), as ``atlas-log matrix``.
 
@@ -248,8 +263,8 @@ def capture_entries(
     sel: Annotated[Select, Depends(query_model(Select))],
     window: WindowMode = "overlap",
     limit: Annotated[int, Query(ge=1, le=10_000)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
     """Entries of all nodes interleaved by time (``entries.v1``), as ``entries CAPTURE``.
 
@@ -268,8 +283,8 @@ async def capture_report(
     state: StateDep,
     w: CaptureWindowDep,
     examples: Annotated[int, Query(ge=0, le=50)] = 3,
-    max_raw: Annotated[int, Query(ge=0)] = 4000,
-    max_groups: Annotated[int, Query(ge=0)] = 500,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = 4000,
+    max_groups: Annotated[int, Query(ge=0, le=BIG)] = 500,
     triage: bool = True,
 ) -> Response:
     """Return the payload of the cluster page (``cluster-report.v1``) with ``urls`` set.
@@ -305,7 +320,7 @@ def groups(
     sel: Annotated[Select, Depends(query_model(Select))],
     sort: Literal["count", "last_seen", "first_seen", "signature", "template"] = "count",
     limit: Annotated[int, Query(ge=0, le=100_000)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
     coarse: bool = False,
 ) -> dict[str, Any]:
     """List the groups of a set (``groups.v1``), as ``atlas-log groups``.
@@ -328,7 +343,7 @@ def group(
     sel: Annotated[Select, Depends(query_model(Select))],
     limit: Annotated[int, Query(ge=0, le=10_000)] = 20,
     coarse: bool = False,
-    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
     """One group with its hourly histogram and first entries (``group.v1``).
 
@@ -351,7 +366,7 @@ def group_examples(
     ref: str,
     signature: str,
     state: StateDep,
-    max_raw: Annotated[int, Query(ge=0)] = 4000,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = 4000,
     since: str | None = None,
     until: str | None = None,
     limit: Annotated[int, Query(ge=1, le=50)] = 3,
@@ -381,8 +396,8 @@ def entries(
     q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
     sel: Annotated[Select, Depends(query_model(Select))],
     limit: Annotated[int, Query(ge=1, le=10_000)] = 100,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
     """Entries of a set (``entries.v1``), paged with ``offset``/``next_offset``.
 
@@ -423,7 +438,7 @@ def context(
     before: Annotated[int, Query(ge=0, le=10_000)] = 5,
     after: Annotated[int, Query(ge=0, le=10_000)] = 5,
     any_thread: bool = False,
-    max_raw: Annotated[int, Query(ge=0)] = DEFAULT_MAX_RAW,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = DEFAULT_MAX_RAW,
     all_nodes: bool = False,
     window: Annotated[float, Query(ge=0, le=3_600)] = 30,
 ) -> dict[str, Any]:
@@ -461,7 +476,7 @@ def frames(
     ref: str,
     item: str,
     state: StateDep,
-    limit: Annotated[int, Query(ge=0)] = 10,
+    limit: Annotated[int, Query(ge=0, le=BIG)] = 10,
     all: bool = False,
 ) -> dict[str, Any]:
     """Return an entry's or group's exception chain, application frames first (``frames.v1``).
@@ -505,8 +520,8 @@ async def report(
     compare: str | None = None,
     min_level: str | None = None,
     examples: Annotated[int, Query(ge=0, le=50)] = 3,
-    max_raw: Annotated[int, Query(ge=0)] = 4000,
-    max_groups: Annotated[int, Query(ge=0)] = 0,
+    max_raw: Annotated[int, Query(ge=0, le=BIG)] = 4000,
+    max_groups: Annotated[int, Query(ge=0, le=BIG)] = 0,
 ) -> Response:
     """Return the ``report.v1`` payload that drives the report page.
 
@@ -543,7 +558,7 @@ def diff(
     min_level: str | None = None,
     coarse: bool = False,
     force: bool = False,
-    limit: Annotated[int, Query(ge=0)] = 50,
+    limit: Annotated[int, Query(ge=0, le=BIG)] = 50,
     rate: bool = False,
 ) -> dict[str, Any]:
     """Compare baseline ``a`` with ``b`` (``diff.v1``, as ``atlas-log diff A B``).
@@ -575,7 +590,7 @@ def triage(
     baseline: str = "auto",
     min_level: str = "WARN",
     grow: Annotated[float, Query(gt=1)] = 2.0,
-    limit: Annotated[int, Query(ge=0)] = 50,
+    limit: Annotated[int, Query(ge=0, le=BIG)] = 50,
 ) -> dict[str, Any]:
     """Answer "are there new kinds of errors since the baseline?" in one call (``triage.v1``).
 
@@ -611,7 +626,7 @@ async def ingest(
     state: StateDep,
     name: Annotated[str | None, Query(max_length=128)] = None,
     format: str | None = None,
-    frames: Annotated[int | None, Query(ge=0)] = None,
+    frames: Annotated[int | None, Query(ge=0, le=BIG)] = None,
     mine: bool = False,
     overwrite: bool = False,
     force: bool = False,

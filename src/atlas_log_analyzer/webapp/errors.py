@@ -46,6 +46,11 @@ def install_handlers(app: FastAPI) -> None:
         err = from_exception(exc, "api")
         return error_response(err if err is not None else OpError("internal_error", str(exc)))
 
+    @app.exception_handler(Exception)
+    async def _unexpected(_: Request, exc: Exception) -> Response:
+        # still logged by the server; the client gets error.v1 like the CLI's internal_error
+        return error_response(OpError("internal_error", f"{type(exc).__name__}: {exc}"))
+
     @app.exception_handler(RequestValidationError)
     async def _validation(_: Request, exc: RequestValidationError) -> Response:
         first = exc.errors()[0] if exc.errors() else {}

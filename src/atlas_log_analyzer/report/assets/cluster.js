@@ -292,12 +292,29 @@
     const i = NIDX.get(n);
     SORTS["node:" + n] = [`Count on ${NLABEL(n)}`, (a, b) => V(b).counts[i] - V(a).counts[i] || byTotal(a, b)];
   }
-  function parseWindow(s) {
-    const m = /^(\d+)-(\d+)$/.exec(s || "");
-    if (!m || !NB) return null;
-    const a = Math.min(+m[1], NB - 1), b = Math.min(+m[2], NB - 1);
-    return a <= b ? [a, b] : [b, a];
+  // the window in the hash is a UTC time range (t=20261028T0200-20261029T0200, end exclusive) so a
+  // link or a switch to another set keeps the same hours; plain bucket indices (t=3-7) still parse
+  const stamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace(/[-:]/g, "");
+  function unstamp(s) {
+    const m = /^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)$/.exec(s);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : NaN;
   }
+  function windowOf(s, t0, unit, n) {
+    if (!s || !n) return null;
+    let a, b, m;
+    if ((m = /^(\d+)-(\d+)$/.exec(s))) { a = +m[1]; b = +m[2]; }
+    else if ((m = /^(\d{8}T\d{4})-(\d{8}T\d{4})$/.exec(s))) {
+      a = Math.floor((unstamp(m[1]) - t0) / unit);
+      b = Math.ceil((unstamp(m[2]) - t0) / unit) - 1;
+      if (!(a === a && b === b)) return null;
+    } else return null;
+    if (a > b) [a, b] = [b, a];
+    if (b < 0 || a > n - 1) return null;
+    return [Math.max(0, a), Math.min(b, n - 1)];
+  }
+  const windowText = (t, t0, unit) =>
+    unit < 6e4 ? t[0] + "-" + t[1] : stamp(t0 + t[0] * unit) + "-" + stamp(t0 + (t[1] + 1) * unit);
+  const parseWindow = (s) => windowOf(s, TA, BMS, NB);
   const nodeList = (s) => (s ? s.split(",").filter((n) => NIDX.has(n)) : []);
   function parseHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
@@ -340,7 +357,7 @@
     if (s.sp !== "any") p.set("sp", s.sp);
     if (s.nd) p.set("nd", s.nd);
     if (s.sort !== "count") p.set("sort", s.sort);
-    if (s.t) p.set("t", s.t[0] + "-" + s.t[1]);
+    if (s.t) p.set("t", windowText(s.t, TA, BMS));
     if (s.y !== "shared") p.set("y", s.y);
     if (!s.fit) p.set("fit", "0");
     if (!s.arrows) p.set("arrows", "0");
@@ -1019,7 +1036,10 @@
     for (const e of own) m.set(e.kind, (m.get(e.kind) || 0) + 1);
     return { total: own.length, kinds: [...m].sort((a, b) => b[1] - a[1]) };
   }
+  let cardsKey = null;
   const renderCards = guard(function renderCards() {
+    if (cardsKey === WKEY) return;
+    cardsKey = WKEY;
     const rg = tRange();
     $("c-cards").innerHTML = NODES.map((n) => {
       const c = obj(CN.get(n));
@@ -1424,7 +1444,9 @@
         if (!ids) loadWindowExamples(r, cur);
         exBody = `<div class="ex-tabs" role="tablist">${nodes.map((n) =>
           `<button type="button" role="tab" data-ex="${esc(n)}" aria-selected="${n === cur}" title="${esc(fmt(w.counts[NIDX.get(n)]))} entries in the window">${nodeBadge(n)}<span class="n">${fmt(w.counts[NIDX.get(n)])}</span></button>`).join("")}</div>` +
-          (!ids ? `<div class="muted">Loading the examples of ${esc(cur)} in the window…</div>`
+          (!ids && EXN_ERR.has(winExKey(r, cur))
+            ? `<div class="ex-err">Could not load the examples of ${esc(cur)} (${esc(EXN_ERR.get(winExKey(r, cur)))}). <button type="button" class="btn small" data-retry-ex>Retry</button></div>`
+            : !ids ? `<div class="muted">Loading the examples of ${esc(cur)} in the window…</div>`
             : ids.length ? ids.map((id) => entryHtml(id, ENTRIES[id])).join("") : `<div class="muted">No entries of ${esc(cur)} in the window.</div>`);
       }
     } else if (!exNodes.length) exBody = `<div class="muted">No example entries in this report.</div>`;
@@ -1521,16 +1543,17 @@
         drawnKey = null;
         renderDrawer();
       })
-      .catch(() => null);
+      .catch(() => FULL.delete(key)); // asked again the next time the drawer shows it
   }
   /** Web app, time window: a node's first entries of a group inside the window (examples URL with since/until). */
   const WIN_EXN = new Map(); // "set|sig|a-b" -> entry ids in time order
   const WIN_EXN_PENDING = new Set();
+  const EXN_ERR = new Map(); // failed keys -> message; not asked again until "Retry"
   const winExKey = (r, node) => setOf(node).id + "|" + r.sig + "|" + WKEY;
   function loadWindowExamples(r, node) {
     const set = setOf(node).id;
     const key = winExKey(r, node);
-    if (!set || WIN_EXN.has(key) || WIN_EXN_PENDING.has(key)) return;
+    if (!set || WIN_EXN.has(key) || WIN_EXN_PENDING.has(key) || EXN_ERR.has(key)) return;
     WIN_EXN_PENDING.add(key);
     const rg = tRange();
     const u = new URL(urlFill(URLS.examples, { set, sig: r.sig }), location.href);
@@ -1544,7 +1567,7 @@
         for (const [id, e] of Object.entries(items)) ENTRIES[id] = Object.assign({}, ENTRIES[id] || {}, e, { node, set });
         WIN_EXN.set(key, Object.keys(items).sort((x, y) => cmpStr(str(items[x].ts), str(items[y].ts)) || cmpStr(x, y)));
       })
-      .catch(() => WIN_EXN.set(key, []))
+      .catch((err) => EXN_ERR.set(key, String(err && err.message ? err.message : err)))
       .finally(() => {
         WIN_EXN_PENDING.delete(key);
         drawnKey = null;
@@ -1606,7 +1629,13 @@
       (inWin.length ? inWin.slice(0, 3).map((x) => `<button type="button" class="linkbtn act" data-at="${esc(x[0])}" title="${esc(tsMs(x[0]))} → ${esc(tsMs(x[1]))}">${esc(tsSec(x[0]))}</button>`).join("")
         : ex.length && rg ? ` <span class="muted">(no example in the window)</span>` : "");
   }
+  // the panel depends on the window only: rebuilt when that changes and the tab is shown
+  let interKey = null;
   const renderInteractions = guard(function renderInteractions() {
+    $("tab-i-n").textContent = fmt(MENT.length + PAIRS.length + COB.length + JOBS.length + SESS.length);
+    const key = S.tab === "i" ? WKEY : null;
+    if (key === null || key === interKey) return;
+    interKey = key;
     const el = $("p-inter");
     const rg = tRange();
     const cards = [];
@@ -1668,16 +1697,16 @@
         `</tbody></table>` + (evs.length > LIMIT ? `<p class="note">First ${fmt(LIMIT)} of ${fmt(evs.length)}; narrow the window to see the rest.</p>` : "")
         : `<div class="muted">No cluster events${rg ? " in the window" : ""}.</div>`) + `</div>`);
     el.innerHTML = cards.join("");
-    $("tab-i-n").textContent = fmt(MENT.length + PAIRS.length + COB.length + JOBS.length + SESS.length);
   });
 
   // ---------------------------------------------------------------- merged log
   const CHUNK = 200;
-  const LOG = { key: "", rows: [], next: null, total: null, loading: false, error: "", shown: CHUNK, cur: -1, open: new Set(), atDone: "", ctxRows: null, ctxKey: "" };
+  const LOG = { req: 0, key: "", rows: [], next: null, total: null, loading: false, error: "", shown: CHUNK, cur: -1, curId: "", open: new Set(), atDone: "", ctxRows: null, ctxKey: "" };
   function logRange() {
     if (S.at) {
       const at = parseTs(S.at);
-      if (isNum(at)) return [at - 60000, tRange() ? tRange()[1] : WIN ? Math.max(WIN[1], at + 60000) : at + 3.6e6];
+      const tr = tRange();
+      if (isNum(at)) return [at - 60000, tr && at < tr[1] ? tr[1] : WIN ? Math.max(WIN[1], at + 60000) : at + 3.6e6];
     }
     return tRange() || (WIN ? [WIN[0], WIN[1] + 1] : null);
   }
@@ -1691,6 +1720,8 @@
   }
   function fetchLogPage() {
     if (!WEB_LOG || LOG.loading) return;
+    // a request number, not the key: A -> B -> A must not let the first A response land
+    const req = ++LOG.req;
     const key = LOG.key;
     const u = new URL(URLS.entries, location.href);
     const rg = logRange();
@@ -1705,7 +1736,7 @@
     LOG.error = "";
     renderLog();
     fetchJson(u.toString()).then((doc) => {
-      if (key !== LOG.key) return;
+      if (req !== LOG.req || key !== LOG.key) return;
       doc = obj(doc);
       const items = arr(doc.items).map((e) => normEntry(obj(e).id, e)).filter((r) => isNum(r.ms));
       const off = LOG.next || 0;
@@ -1713,9 +1744,9 @@
       LOG.total = isNum(doc.total) ? doc.total : LOG.total;
       LOG.next = doc.next_offset != null ? doc.next_offset : doc.truncated ? off + items.length : null;
     }).catch((err) => {
-      if (key === LOG.key) LOG.error = String(err && err.message ? err.message : err);
+      if (req === LOG.req && key === LOG.key) LOG.error = String(err && err.message ? err.message : err);
     }).finally(() => {
-      if (key !== LOG.key) return;
+      if (req !== LOG.req || key !== LOG.key) return;
       LOG.loading = false;
       renderLog();
     });
@@ -1780,6 +1811,7 @@
         LOG.loading = false;
         LOG.shown = CHUNK;
         LOG.cur = -1;
+        LOG.curId = "";
         fetchLogPage();
         return;
       }
@@ -1789,6 +1821,8 @@
       return;
     }
     VIEW = logRows();
+    // the cursor follows its entry when the filters rebuild the view
+    LOG.cur = LOG.curId ? VIEW.findIndex((r) => r.id === LOG.curId) : -1;
     // jump to a moment (event click)
     LOG.atId = "";
     if (S.at && !S.ctx) {
@@ -1845,7 +1879,10 @@
   }
   function openLogAt(ts) {
     if (!ts) return;
-    commit({ tab: "l", at: str(ts), ctx: "", cts: "", ms: [], mn: null, mq: "" }, { keepPage: true });
+    // a time outside the window would give an empty (or inverted) log range: drop the window
+    const at = parseTs(str(ts)), tr = tRange();
+    const out = tr && isNum(at) && (at < tr[0] || at >= tr[1]);
+    commit({ tab: "l", at: str(ts), ctx: "", cts: "", ms: [], mn: null, mq: "", ...(out ? { t: null } : {}) }, { keepPage: true });
     scrollToTabs();
   }
   function scrollToTabs() {
@@ -1871,11 +1908,27 @@
     $("f-print").textContent = af.length ? "Filters: " + af.map((x) => x[1]).join(" · ") : "";
   }
   let lastTl = "";
+  // re-renders replace the chips, pagers and window buttons: put the focus back on the
+  // control that had it (same id, or same tag and data-* attributes)
+  function focusKey(el) {
+    if (!(el instanceof HTMLElement) || el === document.body) return "";
+    if (el.id) return "#" + CSS.escape(el.id);
+    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-"))
+      .map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("");
+    return attrs ? el.tagName.toLowerCase() + attrs : "";
+  }
+  function restoreFocus(key) {
+    const a = document.activeElement;
+    if (!key || (a && a !== document.body && a.isConnected)) return;
+    const el = document.querySelector(key);
+    if (el && el.offsetParent !== null) el.focus({ preventScroll: true });
+  }
   function update(forceTl) {
+    const fk = focusKey(document.activeElement);
     compute();
     renderTabs();
     renderTimelineControls();
-    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs].join("|");
+    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs, S.t ? S.t.join("-") : ""].join("|");
     if (forceTl || tlKey !== lastTl) {
       lastTl = tlKey;
       renderTimeline();
@@ -1891,6 +1944,7 @@
     guard(renderLogControls)();
     renderLog();
     updateSticky();
+    restoreFocus(fk);
   }
   function updateSticky() {
     const f = $("filters");
@@ -1975,6 +2029,7 @@
     if (!VIEW.length) return;
     LOG.cur = LOG.cur < 0 ? (d > 0 ? 0 : Math.min(VIEW.length, LOG.shown) - 1) : Math.max(0, Math.min(VIEW.length - 1, LOG.cur + d));
     if (LOG.cur >= LOG.shown) LOG.shown = LOG.cur + CHUNK;
+    LOG.curId = VIEW[LOG.cur].id;
     renderLog();
     const row = $("ml").querySelector(".is-cur");
     if (row) row.scrollIntoView({ block: "nearest" });
@@ -1984,6 +2039,7 @@
     if (!r) return;
     if (LOG.open.has(r.id)) LOG.open.delete(r.id); else LOG.open.add(r.id);
     LOG.cur = i;
+    LOG.curId = r.id;
     renderLog();
   }
   function resetAll() {
@@ -2002,10 +2058,14 @@
   /** Clicks shared by every panel: open a group, jump to the log, show a context, copy, unfold,
       show every line of an entry. */
   function onCommonClick(e) {
-    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-all-lines],[data-raw-view],[data-ex],[data-node-filter]");
+    const t = e.target.closest("[data-open],[data-at],[data-ctx],[data-show],[data-mx],[data-copy],[data-copy-raw],[data-unfold],[data-all-lines],[data-raw-view],[data-ex],[data-node-filter],[data-retry-ex]");
     if (!t) return false;
     const d = t.dataset;
-    if (d.rawView != null) toggleRaw(t);
+    if (d.retryEx != null) {
+      EXN_ERR.clear();
+      drawnKey = null;
+      renderDrawer();
+    } else if (d.rawView != null) toggleRaw(t);
     else if (d.allLines != null) showAllLines(t);
     else if (d.unfold != null) {
       const f = t.closest(".fold");
@@ -2175,6 +2235,8 @@
     document.addEventListener("keydown", (e) => {
       const t = e.target;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+      // Enter on a focused button or link is that control's, not the page shortcut's
+      if (e.key === "Enter" && t instanceof Element && t.closest("button, a, summary, [role=tab], [contenteditable]")) return;
       if (e.key === "Escape") {
         if (help.open) return;
         if (typing) { t.blur(); return; }

@@ -26,7 +26,7 @@ from atlas_log_analyzer.webapp.state import AppState, get_state
 if TYPE_CHECKING:
     from atlas_log_analyzer.service.cluster import Capture
 
-__all__ = ["index_rows", "not_found_page", "router", "templates"]
+__all__ = ["index_rows", "not_found_page", "router", "templates", "unauthorized_page"]
 
 router = APIRouter(default_response_class=HTMLResponse)
 StateDep = Annotated[AppState, Depends(get_state)]
@@ -252,6 +252,7 @@ async def report_page(
     The page fetches its payload from ``/api/sets/{id}/report``.
     """
     ls = await run_in_threadpool(state.open, ref)
+    examples = max(0, min(examples, 50))  # the report API's own bounds
     query = {"compare": compare, "min_level": min_level, "examples": examples}
     data_url = f"/api/sets/{ls.manifest.id}/report?" + urlencode(
         {k: v for k, v in query.items() if v not in (None, "")}
@@ -296,15 +297,30 @@ async def triage_page(
     ref: str, request: Request, state: StateDep, baseline: str = "auto", min_level: str = "WARN"
 ) -> Response:
     """Triage view: new error types first, then growth and vanished groups."""
-    doc = await run_in_threadpool(
-        lambda: api.triage(ref, state, baseline=baseline, min_level=min_level, limit=0)
-    )
+    try:
+        doc = await run_in_threadpool(
+            lambda: api.triage(ref, state, baseline=baseline, min_level=min_level, limit=0)
+        )
+    except OpError as exc:  # an HTML page, not the API's error.v1
+        if exc.status == 404:
+            return not_found_page(request, exc.message)
+        return templates.TemplateResponse(
+            request,
+            "404.html",
+            {"title": "Cannot triage", "message": exc.message, "back": f"/sets/{ref}/triage"},
+            status_code=exc.status,
+        )
     sets = [m for m in state.manifests() if m.id != doc["set"]["id"]]
     return templates.TemplateResponse(
         request,
         "triage.html",
         {"t": doc, "sets": sets, "baseline_param": baseline, "min_level": min_level},
     )
+
+
+def unauthorized_page(request: Request) -> Response:
+    """Render the HTML 401 page of a server started with ``--token``."""
+    return templates.TemplateResponse(request, "401.html", {}, status_code=401)
 
 
 def not_found_page(request: Request, message: str) -> Response:

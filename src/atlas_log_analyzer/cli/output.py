@@ -273,8 +273,8 @@ def rows_table(
     Numeric columns are right-aligned; ids, levels, counts and timestamps are
     never wrapped. With ``color`` the ``level_name`` cells are coloured.
     """
-    from rich.markup import escape
     from rich.table import Table
+    from rich.text import Text
 
     if columns is None:
         seen: dict[str, None] = {}
@@ -300,9 +300,9 @@ def rows_table(
     for row in rows:
         cells = []
         for col in columns:
-            text = escape(_cell(row.get(col), max_len))
+            text = _cell(row.get(col), max_len)
             style = LEVEL_STYLES.get(text) if color and col == "level_name" else None
-            cells.append(f"[{style}]{text}[/]" if style else text)
+            cells.append(Text(text, style=style) if style else text)
         table.add_row(*cells)
     return table
 
@@ -488,6 +488,7 @@ class Output:
             force_terminal=color,
             no_color=not color,
             highlight=False,
+            markup=False,  # names and templates hold "[...]": all text is literal
             soft_wrap=False,
             width=self.table_width(),
         )

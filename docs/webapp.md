@@ -28,6 +28,13 @@ process that sees only the environment, so `serve` exports every setting
 (`ATLAS_LOG_STORE`, `ATLAS_LOG_TOKEN`, `ATLAS_LOG_MAX_UPLOAD_MB`,
 `ATLAS_LOG_REPORT_CACHE`) before it starts: a reloading server keeps its token.
 
+With `--token` every page and `/api` route needs it, checked before an upload body is
+read (and an upload whose `Content-Length` is over `--max-upload-mb` is refused at
+once). Clients send `Authorization: Bearer TOKEN` or `X-Atlas-Token: TOKEN`; a browser
+opens any page once with `?token=TOKEN`, which sets an HttpOnly, SameSite=Strict
+cookie and redirects to the address without it. Pages without the token show a 401
+page; `/static` and `/assets` (CSS, JS) need none.
+
 ## Pages
 
 | Path | Page |
@@ -111,7 +118,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `atlas-log events`) |
 | `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `atlas-log interactions`) |
 | `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
-| `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`); cached per member set versions and options, dropped when any set changes |
+| `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
 | `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
@@ -263,7 +270,7 @@ run next to the server.
 - **Encoding:** large documents are encoded with msgspec. The report payload is
   cached as encoded bytes, so a repeat request for the 712k-entry sample set
   takes about 20 ms instead of about 200 ms.
-- **Security:** binds to loopback by default; `--token` guards `/api`. Uploaded
+- **Security:** binds to loopback by default; `--token` guards the pages and `/api`. Uploaded
   file names are reduced to a safe basename. Error messages do not include
   server paths. Arbitrary SQL (`atlas-log query`) is not exposed over HTTP.
 

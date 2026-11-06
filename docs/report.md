@@ -152,7 +152,10 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   class. Colors: increase = status critical, decrease = series blue, neutral
   gray — never hue alone, the chip carries text.
 - State (filters, sort, selected group, page) lives in `location.hash` so a
-  view can be bookmarked or pasted; back/forward work.
+  view can be bookmarked or pasted; back/forward work. The time window is kept as
+  UTC times, `t=20261028T0200-20261029T0200` (end exclusive), so a link or a switch
+  to another set or node keeps the same hours; a window outside a set's range is
+  dropped. Older links with bucket indices (`t=95-118`) still open.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
   `Esc` closes the drawer, `c` copies the signature, `[`/`]` move the time window.
 - Every drawer shows the equivalent CLI commands
@@ -316,7 +319,7 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     without it the page uses the entries it has.
 
 **State** in `location.hash`: `tab` (`g`, `i`, `l`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
-`sig`, `ex` (example tab), `t` (bucket range), `y`, `fit=0`, `arrows=0`, `ml`, `mn`,
+`sig`, `ex` (example tab), `t` (the time window, as on the set report), `y`, `fit=0`, `arrows=0`, `ml`, `mn`,
 `mq`, `ms` (signatures), `ctx`/`cts` (context anchor), `at` (log moment), `theme`.
 Keyboard as in the report, plus `1`/`2`/`3` for the tabs; in the merged log `j`/`k` move
 and `Enter` expands. Theme: the report's bootstrap and `localStorage` key. Print: light

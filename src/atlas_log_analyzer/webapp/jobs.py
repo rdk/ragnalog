@@ -211,6 +211,8 @@ class JobManager:
                 raise JobCancelled
             job.entries = p.entries
             job.bytes_read = p.bytes_read
+            if p.bytes_total:  # extracted size once a ZIP is unpacked, not the upload's
+                job.bytes_total = p.bytes_total
             job.current_file = Path(p.current_file).name
 
         try:
@@ -220,6 +222,11 @@ class JobManager:
             return
         except (OpError, StoreError, OSError, ValueError, LookupError) as exc:
             err = from_exception(exc, "api") or OpError("store_error", str(exc))
+            job.error = err.envelope()["error"]
+            self._finish(job, "failed")
+            return
+        except Exception as exc:  # anything else must still end the job, not leave it running
+            err = OpError("internal_error", f"{type(exc).__name__}: {exc}")
             job.error = err.envelope()["error"]
             self._finish(job, "failed")
             return

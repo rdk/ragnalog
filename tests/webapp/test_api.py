@@ -540,3 +540,50 @@ def test_entry_raw_is_the_exact_text_with_its_banner(client: TestClient, store_d
     missing = client.get("/api/sets/sample/entries/0123456789abcdef/raw")
     assert missing.status_code == 404
     assert missing.json()["error"]["reason"] == "entry_not_found"
+
+
+def test_token_guards_the_pages_and_a_link_sets_a_cookie(store_dir: Path) -> None:
+    html = {"Accept": "text/html"}
+    with TestClient(create_app(Settings(store=store_dir, token="s3cret"))) as c:
+        for path in ("/", "/sets/mini", "/sets/mini/triage"):
+            r = c.get(path, headers=html)
+            assert r.status_code == 401 and "token" in r.text, path
+        assert c.get("/static/webapp.css").status_code == 200
+        r = c.get("/sets/mini?token=s3cret", headers=html, follow_redirects=False)
+        assert r.status_code == 303 and r.headers["location"].endswith("/sets/mini")
+        assert "atlas_log_token=s3cret" in r.headers["set-cookie"]
+        assert "httponly" in r.headers["set-cookie"].lower()
+        c.cookies.set("atlas_log_token", "s3cret")
+        assert c.get("/", headers=html).status_code == 200
+        assert c.get("/api/sets").status_code == 200
+
+
+def test_upload_with_a_wrong_token_is_refused_before_the_body(store_dir: Path) -> None:
+    settings = Settings(store=store_dir, token="s3cret", max_upload_mb=1)
+    with TestClient(create_app(settings)) as c:
+        r = c.post("/api/ingest", files={"files": ("a.log", b"x" * 10)})
+        assert r.status_code == 401 and r.json()["error"]["code"] == "unauthorized"
+        big = b"x" * (3 << 20)
+        auth = {"Authorization": "Bearer s3cret"}
+        r = c.post("/api/ingest", files={"files": ("a.log", big)}, headers=auth)
+        assert r.status_code == 413 and r.json()["error"]["code"] == "payload_too_large"
+
+
+def test_triage_page_errors_are_html(client: TestClient) -> None:
+    html = {"Accept": "text/html"}
+    r = client.get("/sets/nope-nope/triage", headers=html)
+    assert r.status_code == 404 and r.headers["content-type"].startswith("text/html")
+    r = client.get("/sets/mini/triage?min_level=BOGUS", headers=html)
+    assert r.status_code == 400 and r.headers["content-type"].startswith("text/html")
+    assert "Cannot triage" in r.text
+
+
+def test_out_of_range_parameters_are_errors_not_500(client: TestClient) -> None:
+    r = client.get("/api/sets/mini/entries?since=800000d")
+    assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_value"
+    for path in (
+        "/api/sets/mini/entries?offset=9223372036854775808",
+        "/api/sets/mini/report?max_raw=100000000000000000000",
+    ):
+        r = client.get(path)
+        assert r.status_code == 400 and r.json()["error"]["code"] == "usage", path

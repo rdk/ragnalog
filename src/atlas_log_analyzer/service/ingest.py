@@ -19,7 +19,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from atlas_log_analyzer.service.errors import Front, OpError, flag
-from atlas_log_analyzer.service.params import IngestTarget, check_label, parse_level
+from atlas_log_analyzer.service.params import _LABEL, IngestTarget, check_label, parse_level
 from atlas_log_analyzer.service.sets import Sets, open_set, resolving
 
 if TYPE_CHECKING:
@@ -314,6 +314,10 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
         raise NoSourcesFound(f"no {fmt.name} log files of any node in the input")
     ids = {node: logset_id(s.xxh3 for s in found) for node, found in members}
     job_id = split.job.id if split.job is not None else None
+    if job_id is not None and _LABEL.match(job_id) is None:
+        # the export's own id becomes a URL path segment: only label characters are kept
+        warnings.append(f"the export's job id {job_id!r} is not a valid capture id: not used")
+        job_id = None
     capture = target.capture or job_id or capture_id(ids.values())
     manifests = store.list()
     cluster = target.cluster or _capture_cluster([n for n, _ in members], manifests, warnings)

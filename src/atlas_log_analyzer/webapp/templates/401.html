@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block title %}Token needed · atlas-log{% endblock %}
+{% block main %}
+<section class="card empty">
+  <h2>This server needs its token</h2>
+  <p class="muted">It was started with <span class="mono">--token</span>. Open any page once with
+  <span class="mono">?token=…</span> added to the address; the browser then keeps it in a cookie.</p>
+</section>
+{% endblock %}

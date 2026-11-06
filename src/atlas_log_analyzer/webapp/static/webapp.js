@@ -58,8 +58,13 @@
     document.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", () => {
       const id = b.getAttribute("data-delete");
       if (!confirm("Delete log set " + b.getAttribute("data-label") + "? This removes its Parquet files from the store.")) return;
+      b.disabled = true;
       fetch("/api/sets/" + encodeURIComponent(id), { method: "DELETE" })
-        .then((r) => (r.ok ? location.reload() : r.json().then((d) => alert(d.error ? d.error.message : "Delete failed"))));
+        .then((r) => (r.ok ? location.reload() : r.json().catch(() => ({})).then((d) => {
+          alert(d.error ? d.error.message : "Delete failed (HTTP " + r.status + ")");
+          b.disabled = false;
+        })))
+        .catch(() => { alert("Delete failed: the server did not answer"); b.disabled = false; });
     }));
 
     setupUpload();
@@ -149,7 +154,15 @@
     const cancel = $("job-cancel");
     cancel.hidden = false;
     cancel.onclick = () => fetch("/api/jobs/" + encodeURIComponent(id) + "/cancel", { method: "POST" });
-    const tick = () => fetch("/api/jobs/" + encodeURIComponent(id)).then((r) => r.json()).then((j) => {
+    let misses = 0;
+    const stop = (doc) => { fail(doc); submit.disabled = false; cancel.hidden = true; };
+    const tick = () => fetch("/api/jobs/" + encodeURIComponent(id)).then((r) => {
+      // jobs live in the server's memory: a 404 means it restarted and the job is gone
+      if (r.status === 404) return Promise.reject(new Error("the job is gone (the server restarted?)"));
+      if (!r.ok) return Promise.reject(new Error("HTTP " + r.status));
+      return r.json();
+    }).then((j) => {
+      misses = 0;
       const p = j.progress || {};
       $("job-state").textContent = j.state;
       $("job-detail").textContent = fmt(p.entries) + " entries" + (p.current_file ? " · " + p.current_file : "");
@@ -157,15 +170,28 @@
       if (j.state === "succeeded") {
         bar(1);
         // a split upload (one set per node) opens the cluster page of its capture
-        location.href = j.capture
+        const href = j.capture
           ? "/captures/capture:" + encodeURIComponent(j.capture.capture.capture)
           : "/sets/" + encodeURIComponent(j.result.id) + "?compare=auto";
+        // files that are not logs of the format are left out: say so instead of moving on
+        const skipped = j.capture ? [] : ((j.result.ingest || {}).skipped || []);
+        if (!skipped.length) { location.href = href; return; }
+        cancel.hidden = true;
+        $("job-state").textContent = "done";
+        const names = skipped.map((p) => esc(String(p).split(/[\/]/).pop()));
+        $("job-detail").innerHTML = fmt(j.entries) + " entries · skipped " + names.length + " file(s) that are not " +
+          esc(j.result.format || "in the format") + ": " + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "") +
+          ' · <a href="' + href + '">Open the report</a>';
       } else if (j.state === "failed" || j.state === "cancelled") {
-        fail(j.error ? j : { error: { message: j.state } });
-        submit.disabled = false; cancel.hidden = true;
+        stop(j.error ? j : { error: { message: j.state } });
       } else {
         setTimeout(tick, 700);
       }
+    }).catch((err) => {
+      // a hiccup is retried with back-off; a gone job or five misses in a row end the wait
+      misses += 1;
+      if (/gone/.test(err.message) || misses >= 5) stop({ error: { message: err.message } });
+      else setTimeout(tick, 700 * 2 ** misses);
     });
     tick();
   }

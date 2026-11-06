@@ -264,6 +264,14 @@ def open_capture(
         ("set", [m.logset.id for m in members]),
     ):
         twice = sorted({v for v in values if values.count(v) > 1})
+        if twice and kind == "node":
+            sets = [m.logset.manifest.name or m.logset.id for m in members if m.node in twice]
+            raise OpError(
+                "invalid_value",
+                f"node {', '.join(twice)} given twice in the capture (sets {', '.join(sets)})",
+                hint="give one of the sets its own node with `atlas-log label SET --node NODE`, "
+                "or move it to another capture with `--capture`",
+            )
         if twice:
             raise OpError("invalid_value", f"{kind} {', '.join(twice)} given twice in the capture")
     first = members[0]
@@ -698,7 +706,7 @@ def events(
         if unknown:
             raise OpError(
                 "invalid_value",
-                f"{flag('kinds', front)}: unknown kind {', '.join(unknown)}",
+                f"{flag('kind', front)}: unknown kind {', '.join(unknown)}",
                 hint=f"kinds: {', '.join(EVENT_KINDS)}",
             )
     with _Db(capture) as db:

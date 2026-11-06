@@ -83,7 +83,12 @@ def parse_time(
     if m := _RELATIVE.match(text.lower()):
         base = anchor if anchor is not None else datetime.now(UTC)
         base = base if base.tzinfo is not None else base.replace(tzinfo=UTC)
-        return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
+        try:
+            return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
+        except OverflowError:
+            raise OpError(
+                "invalid_value", f"{flag(name, front)} {value!r} reaches before year 1"
+            ) from None
     try:
         parsed = datetime.fromisoformat(text)
     except ValueError:

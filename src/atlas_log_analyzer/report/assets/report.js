@@ -77,6 +77,7 @@
   if (!D || D.schema !== "report.v1") throw new Error("unsupported payload schema: " + (D && D.schema));
   const HOURS = (D.timeline && D.timeline.hours) || [];
   const NH = HOURS.length;
+  const T0MS = NH ? parseTs(HOURS[0]) : 0;
   const H0 = NH ? Number(HOURS[0].slice(11, 13)) : 0;
   const ENTRIES = D.entries || (D.entries = {});
   const ENTRIES_URL = D.entries_url || "";
@@ -193,7 +194,7 @@
       : null;
     return finish({
       ...top, id, tpl: tpl == null ? top.tpl : tpl, count, first, last, users, threads, nsrc,
-      hourly, members, kind, cmp, gone: count === 0, g: null,
+      hourly, members, kind, cmp, gone: count === 0, g: null, w: null, wKey: "",
     });
   }
 
@@ -239,12 +240,29 @@
   // ---------------------------------------------------------------- state <-> hash
   const VIEW_NAMES = ["sig", "coarse", "merged"];
   const CMP_NAMES = ["all", "new", "vanished", "changed"];
-  function parseWindow(s) {
-    const m = /^(\d+)-(\d+)$/.exec(s || "");
-    if (!m || !NH) return null;
-    const a = Math.min(+m[1], NH - 1), b = Math.min(+m[2], NH - 1);
-    return a <= b ? [a, b] : [b, a];
+  // the window in the hash is a UTC time range (t=20261028T0200-20261029T0200, end exclusive) so a
+  // link or a switch to another set keeps the same hours; plain bucket indices (t=3-7) still parse
+  const stamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace(/[-:]/g, "");
+  function unstamp(s) {
+    const m = /^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)$/.exec(s);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5]) : NaN;
   }
+  function windowOf(s, t0, unit, n) {
+    if (!s || !n) return null;
+    let a, b, m;
+    if ((m = /^(\d+)-(\d+)$/.exec(s))) { a = +m[1]; b = +m[2]; }
+    else if ((m = /^(\d{8}T\d{4})-(\d{8}T\d{4})$/.exec(s))) {
+      a = Math.floor((unstamp(m[1]) - t0) / unit);
+      b = Math.ceil((unstamp(m[2]) - t0) / unit) - 1;
+      if (!(a === a && b === b)) return null;
+    } else return null;
+    if (a > b) [a, b] = [b, a];
+    if (b < 0 || a > n - 1) return null;
+    return [Math.max(0, a), Math.min(b, n - 1)];
+  }
+  const windowText = (t, t0, unit) =>
+    unit < 6e4 ? t[0] + "-" + t[1] : stamp(t0 + t[0] * unit) + "-" + stamp(t0 + (t[1] + 1) * unit);
+  const parseWindow = (s) => windowOf(s, T0MS, 3.6e6, NH);
   function parseHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
     const v = p.get("view");
@@ -277,7 +295,7 @@
     if (s.sort !== "count") p.set("sort", s.sort);
     if (s.view !== "sig") p.set("view", s.view);
     if (s.cmp !== "all") p.set("cmp", s.cmp);
-    if (s.t) p.set("t", s.t[0] + "-" + s.t[1]);
+    if (s.t) p.set("t", windowText(s.t, T0MS, 3.6e6));
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.theme) p.set("theme", s.theme);
@@ -324,7 +342,6 @@
   // last seen, sorting, count bars, summary and drawer. The per-group hourly counts cover every
   // entry with a timestamp, so window counts are exact. First/last seen in the window are exact
   // when the group's own first/last entry falls in it, otherwise known to the hour ("14:xx").
-  const T0MS = NH ? parseTs(HOURS[0]) : 0;
   const hourOf = (iso) => (iso ? Math.floor((parseTs(iso) - T0MS) / 3.6e6) : -1);
   let WKEY = "";
   /** Window stats of a row: n entries, first/last as {iso, ms, approx}; cached per window. */
@@ -1161,10 +1178,20 @@
   const WIN_PENDING = new Set();
   const winEx = () => !!(S.t && ENTRIES_URL);
   const winExKey = (sig) => sig + "|" + WKEY;
+  // a failed fetch is not cached: its key waits in EX_FAILED until "Retry" (no retry loop)
+  const EX_FAILED = new Set();
+  let EX_ERR = "";
+  // an aggregate shows one example per member: only its 5 biggest members in the window are asked
+  const winExMembers = (r) => (r.members
+    ? r.members.filter((m) => !m.gone && winOf(m).n > 0).sort((a, b) => winOf(b).n - winOf(a).n).slice(0, 5)
+    : [r]);
   function windowExampleIds(r) {
-    const got = (r.members || [r]).map((m) => WIN_EX.get(winExKey(m.sig)));
+    const got = winExMembers(r).map((m) => WIN_EX.get(winExKey(m.sig)));
     if (!got.every(Boolean)) return null;
-    return r.members ? got.flatMap((ids) => ids.slice(0, 1)).slice(0, 5) : got[0];
+    return r.members ? got.flatMap((ids) => ids.slice(0, 1)) : got[0];
+  }
+  function fetchFail(res) {
+    return Promise.reject(new Error(res ? `HTTP ${res.status}` : "no answer"));
   }
   function exampleIds(r) {
     if (winEx()) return windowExampleIds(r) || [];
@@ -1175,9 +1202,9 @@
     const [a, b] = S.t;
     const since = HOURS[a], until = new Date(parseTs(HOURS[b]) + 3.6e6).toISOString();
     const todo = [];
-    for (const m of r.members || [r]) {
+    for (const m of winExMembers(r)) {
       const key = winExKey(m.sig);
-      if (WIN_EX.has(key) || WIN_PENDING.has(key)) continue;
+      if (WIN_EX.has(key) || WIN_PENDING.has(key) || EX_FAILED.has(key)) continue;
       if (m.gone || !winOf(m).n) WIN_EX.set(key, []);
       else todo.push([m.sig, key]);
     }
@@ -1186,13 +1213,13 @@
     const q = `max_raw=0&limit=3&since=${encodeURIComponent(since)}&until=${encodeURIComponent(until)}`;
     Promise.all(todo.map(([sig, key]) =>
       fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(sig)) + (ENTRIES_URL.includes("?") ? "&" : "?") + q, { headers: { Accept: "application/json" } })
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => (res.ok ? res.json() : fetchFail(res)))
         .then((doc) => {
           const items = (doc && doc.items) || {};
           Object.assign(ENTRIES, items);
           WIN_EX.set(key, Object.keys(items).sort((x, y) => cmpStr(items[x].ts || "", items[y].ts || "") || cmpStr(x, y)));
         })
-        .catch(() => WIN_EX.set(key, []))
+        .catch((err) => { EX_FAILED.add(key); EX_ERR = String(err.message || err); })
         .finally(() => WIN_PENDING.delete(key))))
       .then(() => {
         drawnKey = null;
@@ -1204,14 +1231,14 @@
     if (!ENTRIES_URL) return;
     if (winEx()) return loadWindowExamples(r);
     const sigs = (r.members || [r]).filter((m) => m.g && (m.g.examples || []).some((id) => !ENTRIES[id] || ENTRIES[id].raw_truncated)).map((m) => m.sig);
-    const todo = sigs.filter((s) => !LAZY.has(s));
+    const todo = sigs.filter((s) => !LAZY.has(s) && !EX_FAILED.has(s));
     if (!todo.length) return;
     for (const s of todo) LAZY.add(s);
     Promise.all(todo.map((s) =>
       fetch(ENTRIES_URL.replace("{sig}", encodeURIComponent(s)) + (ENTRIES_URL.includes("?") ? "&" : "?") + "max_raw=0", { headers: { Accept: "application/json" } })
-        .then((res) => (res.ok ? res.json() : null))
+        .then((res) => (res.ok ? res.json() : fetchFail(res)))
         .then((doc) => { if (doc && doc.items) Object.assign(ENTRIES, doc.items); })
-        .catch(() => null)))
+        .catch((err) => { LAZY.delete(s); EX_FAILED.add(s); EX_ERR = String(err.message || err); })))
       .then(() => {
         drawnKey = null;
         renderDrawer();
@@ -1272,7 +1299,11 @@
       ex = [...ex.filter(inWin), ...ex.filter((id) => !inWin(id))];
       exTitle = `Example entries (${ex.length}, ${n ? n + " in the window" : "none in the window"})`;
     }
-    if (ex.length) out.push(secId("d-s-examples", exTitle, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
+    const failed = winEx() ? winExMembers(r).some((m) => EX_FAILED.has(winExKey(m.sig))) : (r.members || [r]).some((m) => EX_FAILED.has(m.sig));
+    const exErr = failed
+      ? `<div class="ex-err">Could not load the examples (${esc(EX_ERR)}). <button type="button" class="btn small" data-retry-ex>Retry</button></div>` : "";
+    if (exErr) { out.push(secId("d-s-examples", exTitle.replace(/ \(\d+\)$/, ""), exErr + ex.map((id) => entryHtml(id, ENTRIES[id])).join(""))); }
+    else if (ex.length) out.push(secId("d-s-examples", exTitle, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
     else if (!r.gone && (pending || !winEx())) out.push(secId("d-s-examples", exTitle.replace(/ \(\d+\)$/, ""), `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
     if (!r.gone) {
       out.push(secId("d-s-hourly", "Entries per hour" + (S.t ? " (window shaded)" : ""), `<div class="d-chart" id="d-hourly"></div>`));
@@ -1415,7 +1446,23 @@
   }
 
   // ---------------------------------------------------------------- update
+  // re-renders replace the chips, pagers and window buttons: put the focus back on the
+  // control that had it (same id, or same tag and data-* attributes)
+  function focusKey(el) {
+    if (!(el instanceof HTMLElement) || el === document.body) return "";
+    if (el.id) return "#" + CSS.escape(el.id);
+    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-"))
+      .map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("");
+    return attrs ? el.tagName.toLowerCase() + attrs : "";
+  }
+  function restoreFocus(key) {
+    const a = document.activeElement;
+    if (!key || (a && a !== document.body && a.isConnected)) return;
+    const el = document.querySelector(key);
+    if (el && el.offsetParent !== null) el.focus({ preventScroll: true });
+  }
   function update() {
+    const fk = focusKey(document.activeElement);
     const v = compute();
     renderTiles();
     renderControls(v);
@@ -1424,6 +1471,7 @@
     if (TL) showWindow(TL);
     renderDrawer();
     updateSticky();
+    restoreFocus(fk);
   }
   function updateSticky() {
     const f = $("filters");
@@ -1598,8 +1646,15 @@
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex]");
       if (!t) return;
+      if (t.dataset.retryEx != null) {
+        EX_FAILED.clear();
+        EX_ERR = "";
+        drawnKey = null;
+        renderDrawer();
+        return;
+      }
       if (t.dataset.rawView != null) toggleRaw(t);
       else if (t.dataset.allLines != null) showAllLines(t);
       else if (t.dataset.unfold != null) {
@@ -1635,6 +1690,8 @@
     document.addEventListener("keydown", (e) => {
       const t = e.target;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
+      // Enter on a focused button or link is that control's, not the page shortcut's
+      if (e.key === "Enter" && t instanceof Element && t.closest("button, a, summary, [role=tab], [contenteditable]")) return;
       if (e.key === "Escape") {
         if (help.open) return;
         if (closePops()) return;

@@ -15,7 +15,7 @@ from fastapi import Request
 from atlas_log_analyzer.report import build_payload
 from atlas_log_analyzer.service.views import set_summary
 from atlas_log_analyzer.store.locks import FileLock
-from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
+from atlas_log_analyzer.store.logset import MANIFEST_FILE, LogSet, LogSetManifest
 from atlas_log_analyzer.store.store import UNSET, Label, Store, StoreError
 from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
 from atlas_log_analyzer.webapp.settings import Settings
@@ -188,7 +188,7 @@ class AppState:
 
     def summary(self, ls: LogSet) -> dict[str, int]:
         """:func:`~atlas_log_analyzer.service.views.set_summary`, cached per set version."""
-        key = (ls.manifest.id, str(ls.manifest.created_at))
+        key = (ls.manifest.id, _version(ls))
         with self._cache_lock:
             hit = self._summaries.get(key)
         if hit is not None:
@@ -212,9 +212,9 @@ class AppState:
         """Return the encoded ``report.v1`` payload, built once per set version and options."""
         key = (
             ls.manifest.id,
-            str(ls.manifest.created_at),
+            _version(ls),
             compare.manifest.id if compare else None,
-            str(compare.manifest.created_at) if compare else None,
+            _version(compare) if compare else None,
             min_level,
             examples,
             max_raw,
@@ -261,7 +261,7 @@ class AppState:
 
         capture = capture_queries.capture_from_ref(self, ref, front="api")
         key = (
-            tuple((m.node, m.logset.id, str(m.logset.manifest.created_at)) for m in capture.nodes),
+            tuple((m.node, m.logset.id, _version(m.logset)) for m in capture.nodes),
             capture.id,
             capture.cluster,
             w,
@@ -299,6 +299,19 @@ class AppState:
             while len(self._clusters) > max(1, self.settings.report_cache):
                 self._clusters.popitem(last=False)
         return data
+
+
+def _version(ls: LogSet) -> str:
+    """Return a set's version for the caches.
+
+    ``regroup``, ``upgrade`` and ``label`` (also when run from the CLI next to the server)
+    keep ``created_at`` but rewrite the manifest, so its mtime is part of the version.
+    """
+    try:
+        mtime = (ls.path / MANIFEST_FILE).stat().st_mtime_ns
+    except OSError:
+        mtime = 0
+    return f"{ls.manifest.created_at}|{mtime}"
 
 
 def get_state(request: Request) -> AppState:
