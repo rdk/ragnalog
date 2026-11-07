@@ -185,6 +185,31 @@ HEADERS = [
         "from the invoker [Y]",
         {},
     ),
+    (
+        "2026-10-29 03:06:01,002+0100 http-nio-8080-exec-3 url: /rest/api/2/issue WARN "
+        "Automation Robot 186x77x1 1q2w3e 10.0.0.9 /rest/api/2/issue [c.c.Y] Rejected",
+        "http-nio-8080-exec-3",
+        LogLevel.WARN,
+        "c.c.Y",
+        "Rejected",
+        {
+            CTX_URL: "/rest/api/2/issue",
+            CTX_USER: "Automation Robot",
+            CTX_REQUEST_ID: "186x77x1",
+            CTX_SESSION: "1q2w3e",
+            CTX_IP: "10.0.0.9",
+            CTX_REQUEST_URL: "/rest/api/2/issue",
+        },
+    ),
+    (
+        "2026-10-29 03:06:01,003+0100 http-nio-8080-exec-4 url: /x WARN "
+        "jdoe - - 10.0.0.8 /x [c.c.Y] Anonymous request",
+        "http-nio-8080-exec-4",
+        LogLevel.WARN,
+        "c.c.Y",
+        "Anonymous request",
+        {CTX_URL: "/x", CTX_USER: "jdoe", CTX_IP: "10.0.0.8", CTX_REQUEST_URL: "/x"},
+    ),
 ]
 
 

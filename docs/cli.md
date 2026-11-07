@@ -255,12 +255,16 @@ entry's `parse_error` is `entry truncated: N lines, M bytes`, where N and M
 describe the whole entry (M: UTF-8 bytes of its lines joined with `\n`). Such
 entries count in `ingest.parse_errors`.
 
+A file is read up to the size it had when it was hashed: lines a running
+application appends meanwhile (a live `atlassian-jira.log`) are left for the
+next ingest, so a set holds exactly the bytes its `sources` digests name.
+
 ```json
 {"schema": "logset.v1", "id": "99ee29398877dcd3", "name": "prod", "format": "jira",
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@2|L+G+E+F0|sig1|mask1", "node": "NODE1", "cluster": "jira-test",
+ "recipe_key": "jira@3|L+G+E+F0|sig1|mask2", "node": "NODE1", "cluster": "jira-test",
  "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
@@ -331,6 +335,9 @@ not in the format gets no set. Rotated files are ordered per node.
   because`). A set labelled with another node gets a warning; a single set
   without a node only gets a warning that suggests `--node X` (labels stay
   explicit).
+- **All or nothing**: a split that fails or is cancelled (Ctrl+C, a cancelled
+  web app job) removes the sets it had added, so no capture is left with only
+  some of its nodes; sets that existed before (the same files) stay.
 - **Again**: re-ingesting the same files reuses the sets (`ingest.existing`)
   and gives them the node, cluster and capture they lack; a label they have
   with another value is kept, with a warning (change it with `label`).
@@ -943,6 +950,15 @@ and time ranges and the groups follow. The result equals ingesting the same
 files again. On the sample store (four sets, 2.1M entries) 122,538 banner
 entries were attached and 49 stayed; each set took 2–6 s.
 
+Sets built before Jira format version 3 (`jira@2|…`) are stale too. Version 3
+splits the request context of a user whose name has a space (`Automation
+Robot 1x2x3 <session> <ip> <url>`: before, the whole context was the user) and
+keeps a suppressed exception's own `Caused by:` out of the main chain. `upgrade`
+builds those entries again from their stored `raw` text (only rows with a
+`Suppressed:` body or a user with a space and no request id are looked at).
+Masking rules version 2 (`…|mask2`) masks an IP address that ends a sentence
+(`from 10.0.0.1.`) whole; `upgrade` re-signs for it.
+
 ```json
 {"schema": "upgrade.v1", "count": 1, "upgraded": 1,
  "items": [<manifest without "schema"> + "status": "upgraded|skipped",
@@ -1035,7 +1051,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.1.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 1, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.1.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 2, "python": "3.14.2"}
 ```
 
 ### `batch`

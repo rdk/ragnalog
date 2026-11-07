@@ -8,7 +8,8 @@ Header layout::
 
 * empty or ``-`` (no user),
 * ``<user>`` (may contain one space: ``Anonymous user``, ``Automation Robot``),
-* ``<user> <reqid> <session> <ip>[,<ip>…] <url>`` on HTTP threads,
+* ``<user> <reqid> <session> <ip>[,<ip>…] <url>`` on HTTP threads (the user may
+  contain one space here too),
 * ``<user>  <service name>`` (two or more spaces) on scheduled services, e.g.
   ``anonymous    Mail Queue Service``; the service lands in ``context["service"]``.
   ``ServiceRunner`` in the user slot is Jira's scheduler, not a user: it is
@@ -155,8 +156,10 @@ def match_header(line: str) -> HeaderGroups | None:
 
 
 _REQUEST_CTX_RE = re.compile(
-    r"(?P<user>\S+) (?P<reqid>\d+x\d+x\d+|-) (?P<session>\S+) (?P<ip>\S+) (?P<url>\S.*)"
+    r"(?P<user>\S+(?: \S+)??) (?P<reqid>\d+x\d+x\d+|-) "
+    r"(?P<session>\S+) (?P<ip>\S+) (?P<url>\S.*)"
 )
+"""A one-word user is tried first; ``Automation Robot 1x2x3 …`` then takes two words."""
 _TS_PREFIX_RE = re.compile(r"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}[+-]\d{4}")
 _SERVICE_SPLIT_RE = re.compile(r"\s{2,}")
 _NODE_HINT_RE = re.compile(r"nodeId: (\S+)|on node (\S+) because")
@@ -260,11 +263,14 @@ class JiraFormat:
 
     name = "jira"
     description = "Jira Data Center atlassian-jira.log"
-    version = 2
-    """Bump when :data:`JIRA_RULES` or the entries this format builds change signatures.
+    version = 3
+    """Bump when :data:`JIRA_RULES` or the entries this format builds change.
 
     2: banners attached to the next entry, titles from the body of entries whose
     header message is blank (``banner_window_ms``, ``titles_from_body``).
+    3: the request context of a user whose name has a space (``Automation Robot
+    1x2x3 …``) is split into its fields; a suppressed exception's own causes stay
+    out of the main chain. ``upgrade`` re-builds such entries from their raw text.
     """
     banner_window_ms = 5
     """ScriptRunner's ``GroovyCustomField`` logs a row of asterisks as an entry of its

@@ -237,7 +237,8 @@ A ZIP upload is extracted as by `atlas-log ingest` (only `job.json` and
 into one set per node (a cluster log export; `split` as in `ingest`), the job
 also carries `capture`, the `ingest-capture.v1` document, and `result` is its
 first set; `progress` counts all nodes. The upload form then returns to the sets
-page, which shows the new capture row.
+page, which shows the new capture row. A split job that fails or is cancelled
+removes the sets it had added (as `ingest` does), so no half capture remains.
 
 One server per store: the server holds an OS lock on `<store>/.server.lock`
 (released when the process ends, also after a crash), and a second

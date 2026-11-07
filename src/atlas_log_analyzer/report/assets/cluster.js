@@ -397,6 +397,11 @@
     clearTimeout(qTimer);
     const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t;
     S = parseHash();
+    if (S.theme === "dark" || S.theme === "light") {
+      // back/forward to a link that names a theme shows it, as opening that link does
+      document.documentElement.setAttribute("data-theme", S.theme);
+      renderThemeBtn();
+    }
     $("f-search").value = S.q;
     $("l-search").value = S.mq;
     update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t);

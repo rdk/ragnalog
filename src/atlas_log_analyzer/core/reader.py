@@ -126,7 +126,11 @@ def _decode_line(raw: bytes, encoding: str) -> str:
 
 
 def iter_raw_lines(
-    path: Path | str, *, encoding: str = "utf-8", max_line_bytes: int = MAX_LINE_BYTES
+    path: Path | str,
+    *,
+    encoding: str = "utf-8",
+    max_line_bytes: int = MAX_LINE_BYTES,
+    max_bytes: int | None = None,
 ) -> Generator[tuple[int, int, str]]:
     r"""Like :func:`iter_lines` but yields plain ``(number, offset, text)`` tuples (faster).
 
@@ -143,13 +147,17 @@ def iter_raw_lines(
     bounded and time linear on files without line breaks (minified JSON, binary
     dumps). Line numbers and offsets stay exact.
 
+    With ``max_bytes`` only the file's first ``max_bytes`` bytes are read, so a log
+    that is still being written parses exactly as far as it was hashed
+    (:attr:`SourceFile.size`); a line cut by that limit ends there.
+
     Raises:
         ValueError: ``max_line_bytes`` is not positive.
 
     """
     if max_line_bytes <= 0:
         raise ValueError("max_line_bytes must be > 0")
-    lines = _raw_lines(path, encoding, max_line_bytes)
+    lines = _raw_lines(path, encoding, max_line_bytes, max_bytes)
     first = next(lines, None)
     if first is None:
         return
@@ -160,7 +168,7 @@ def iter_raw_lines(
 
 
 def _raw_lines(
-    path: Path | str, encoding: str, max_line_bytes: int
+    path: Path | str, encoding: str, max_line_bytes: int, max_bytes: int | None
 ) -> Generator[tuple[int, int, str]]:
     limit = max_line_bytes
     over = limit + 1  # size of a line with its "\n" above which the line is cut
@@ -171,8 +179,11 @@ def _raw_lines(
     head: list[bytes] = []
     kept = 0
     skipped = 0
+    left = -1 if max_bytes is None else max(0, max_bytes)
     with open(path, "rb") as f:
-        while block := f.read(_CHUNK):
+        while left and (block := f.read(_CHUNK if left < 0 else min(_CHUNK, left))):
+            if left > 0:
+                left -= len(block)
             cut = block.rfind(b"\n") + 1
             if cut == 0:
                 room = max(0, limit - kept)

@@ -30,7 +30,7 @@ def mini(jcli: Invoke) -> str:
 
 def test_sets_flags_stale_sets(jcli: Invoke, store_dir: Path, mini: str) -> None:
     item = jcli("sets").json()["items"][0]
-    assert item["stale"] is False and item["recipe_key"] == "jira@2|L+G+E+F0|sig1|mask1"
+    assert item["stale"] is False and item["recipe_key"] == "jira@3|L+G+E+F0|sig1|mask2"
     _age(store_dir, mini)
     assert jcli("sets").json()["items"][0]["stale"] is True
     brief = jcli("sets", "--brief").json()["items"][0]
@@ -60,7 +60,7 @@ def test_upgrade_rebuilds_stale_sets(jcli: Invoke, store_dir: Path, mini: str) -
     item = doc["items"][0]
     assert item["id"] == mini and item["status"] == "upgraded" and item["reason"] is None
     assert item["previous_recipe_key"] == OLD_KEY
-    assert item["recipe_key"] == "jira@2|L+G+E+F0|sig1|mask1" and item["mask_rules_version"] == 1
+    assert item["recipe_key"] == "jira@3|L+G+E+F0|sig1|mask2" and item["mask_rules_version"] == 2
     assert jcli("sets").json()["items"][0]["stale"] is False
     again = jcli("upgrade", "--all").json()
     assert again["upgraded"] == 0 and again["items"][0]["reason"] == "current"
@@ -75,7 +75,7 @@ def test_upgrade_keeps_the_spec(jcli: Invoke, store_dir: Path, mini: str) -> Non
     path.write_text(json.dumps(data), encoding="utf-8")
     item = jcli("upgrade", mini[:6]).json()["items"][0]
     assert item["status"] == "upgraded" and item["signature_spec"] == "L+G+E+F2"
-    assert item["recipe_key"] == "jira@2|L+G+E+F2|sig1|mask1"
+    assert item["recipe_key"] == "jira@3|L+G+E+F2|sig1|mask2"
 
 
 def test_upgrade_usage_errors(jcli: Invoke, mini: str) -> None:

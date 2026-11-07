@@ -57,8 +57,8 @@ class Versionless:
 
 
 def test_key_of_the_default_recipe() -> None:
-    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@2|L+G+E+F0|sig1|mask1"
-    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@2|L+G+E+F2|sig1|mask1"
+    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@3|L+G+E+F0|sig1|mask2"
+    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@3|L+G+E+F2|sig1|mask2"
 
 
 def test_extra_rules_add_a_digest() -> None:
@@ -77,7 +77,7 @@ def test_format_version_is_optional() -> None:
     assert format_version(fmt) == 1 and Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@1|")
     fmt.version = 3  # type: ignore[attr-defined]
     assert Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@3|")
-    assert format_version(JiraFormat()) == JiraFormat.version == 2
+    assert format_version(JiraFormat()) == JiraFormat.version == 3
     registry.register(Versionless())
     try:
         assert registry.get("versionless").name == "versionless"
@@ -99,7 +99,7 @@ def test_stages_equal_the_hand_built_chain(spec: SignatureSpec) -> None:
 
 
 def test_recipe_key_parts_and_differences() -> None:
-    key = recipe_key("jira", 1, "L+G+E+F0")
+    key = recipe_key("jira", 1, "L+G+E+F0", mask_rules_version=1)
     assert key == "jira@1|L+G+E+F0|sig1|mask1"
     assert recipe_key("jira", 2, "L+G+E+F0", mask_rules_version=3, rules="ab") == (
         "jira@2|L+G+E+F0|sig1|mask3|rules:ab"

@@ -597,13 +597,38 @@ class Store:
                 signature_spec=spec.key,
                 recipe_key=recipe.key,
             )
-            manifest.write(tmp)
             with self._writing():
+                manifest = self._still_current(ls.path, m, manifest)
+                manifest.write(tmp)
                 final = self._install(tmp, m.id)
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
+        with self._index_lock:
+            self._index.pop(final, None)
         return _logset(final, manifest)
+
+    def _still_current(
+        self, path: Path, read: LogSetManifest, rebuilt: LogSetManifest
+    ) -> LogSetManifest:
+        """``rebuilt`` with the labels the set has now; hold :meth:`_writing`.
+
+        A rebuild reads the set, works without the lock, then installs: meanwhile
+        ``label`` may have changed the identity fields (kept), and ``remove``, an
+        ingest with ``--overwrite`` or another rebuild may have replaced the data
+        (refused, so nothing is lost or brought back).
+
+        Raises:
+            LogSetNotFound: The set was removed meanwhile.
+            StoreError: Its data changed meanwhile.
+
+        """
+        if not (path / MANIFEST_FILE).is_file():
+            raise LogSetNotFound(f"log set {read.id} was removed while it was rebuilt")
+        now = self._read(path)
+        if replace(now, node=read.node, cluster=read.cluster, capture=read.capture) != read:
+            raise StoreError(f"log set {read.id} changed while it was rebuilt; run it again")
+        return replace(rebuilt, node=now.node, cluster=now.cluster, capture=now.capture)
 
     def upgrade(self, ref: str) -> UpgradeResult:
         """Rebuild a set at the current recipe of its format, keeping its signature spec.

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -254,3 +255,46 @@ def test_capture_tables(cli: Invoke, archive: Path, store_dir: Path) -> None:
         window = () if command in ("matrix", "entries") else ("--window", "union")
         result = cli(*base, command, ref, *window)
         assert result.code == 0 and text in result.stdout, (command, result.stderr)
+
+
+def test_a_split_that_fails_halfway_removes_the_sets_it_added(
+    jcli: Invoke, archive: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas_log_analyzer.store import pipeline
+    from atlas_log_analyzer.store.store import StoreError
+
+    real = pipeline.ingest_sources
+    calls: list[str | None] = []
+
+    def second_node_fails(*args: object, **kwargs: Any) -> object:
+        calls.append(kwargs.get("node"))
+        if len(calls) == 2:
+            raise StoreError("disk full")
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pipeline, "ingest_sources", second_node_fails)
+    result = jcli("ingest", archive, "--cluster", "jira-test")
+    assert result.code == 3 and calls == ["NODE1", "NODE2"]
+    assert jcli("sets").json()["items"] == []  # NODE1's set is gone again
+    monkeypatch.undo()
+    assert len(jcli("ingest", archive, "--cluster", "jira-test").json()["sets"]) == 2
+
+
+def test_a_failed_split_keeps_sets_that_existed(
+    jcli: Invoke, archive: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas_log_analyzer.store import pipeline
+    from atlas_log_analyzer.store.store import StoreError
+
+    before = jcli("ingest", archive, "--cluster", "jira-test").json()["sets"]
+    real = pipeline.ingest_sources
+
+    def second_node_fails(*args: object, **kwargs: Any) -> object:
+        if kwargs.get("node") == "NODE2":
+            raise StoreError("disk full")
+        return real(*args, **kwargs)  # type: ignore[arg-type]
+
+    monkeypatch.setattr(pipeline, "ingest_sources", second_node_fails)
+    assert jcli("ingest", archive, "--overwrite").code == 3
+    kept = {s["id"] for s in jcli("sets").json()["items"]}
+    assert kept == {s["id"] for s in before}

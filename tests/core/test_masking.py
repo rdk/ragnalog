@@ -116,4 +116,20 @@ def test_empty_rules_and_cache() -> None:
 
 
 def test_version() -> None:
-    assert MASK_RULES_VERSION == 1
+    assert MASK_RULES_VERSION == 2
+
+
+@pytest.mark.parametrize(
+    ("text", "template"),
+    [
+        ("connected from 10.0.0.1.", "connected from <IP>."),
+        ("proxy 10.0.0.1:8080. Retrying", "proxy <IP>. Retrying"),
+        ("hosts 10.0.0.1, 10.0.0.2", "hosts <IP>, <IP>"),
+    ],
+)
+def test_ip_before_punctuation_is_masked_whole(text: str, template: str) -> None:
+    assert Masker(GENERIC_RULES).template(text) == template
+
+
+def test_dotted_runs_longer_than_an_ip_are_no_ip() -> None:
+    assert "<IP>" not in Masker(GENERIC_RULES).template("version 10.0.0.1.4 and 10.0.0.1.x")

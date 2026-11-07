@@ -10,6 +10,7 @@ per node (docs/cluster.md, §3).
 
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import re
 from collections.abc import Callable, Iterable, Sequence
@@ -185,8 +186,9 @@ def ingest_paths(
     ``name``, else the cluster, else the first 8 characters of the capture id) and
     labelled with the node, the cluster and the capture id (``target.capture``, else
     the export's ``jobId``, else a hash of the set ids). Existing sets are reused
-    (``ingest.existing``) and get the labels they lack. ``announce`` receives one-line
-    notes for people (the CLI prints them on stderr).
+    (``ingest.existing``) and get the labels they lack. A split that fails or is
+    cancelled removes the sets it added, so no capture is left with some nodes only.
+    ``announce`` receives one-line notes for people (the CLI prints them on stderr).
 
     Raises:
         OpError: ``usage`` without paths; ``invalid_value`` for a bad option, a bad ZIP
@@ -329,35 +331,44 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
     total = sum(s.size for _, found in members for s in found)
     done_bytes = done_entries = 0
     docs: list[Doc] = []
-    for node, found in members:
-        old = _by_id(manifests, ids[node])
-        set_name = None
-        if old is None or o.overwrite:
-            set_name = _free_name(f"{prefix}_{node.lower()}", ids[node], manifests, warnings)
-        o.say(f"  {node}: {_size(found)}" + (f" -> {set_name}" if set_name else ""))
-        result = ingest_sources(
-            store,
-            found,
-            fmt,
-            name=set_name,
-            frames=o.frames,
-            overwrite=o.overwrite,
-            mine=o.mine,
-            progress=_offset(o.progress, done_bytes, done_entries, total),
-            progress_every=o.progress_every,
-            node=node,
-            cluster=cluster or (old.cluster if old is not None and o.overwrite else None),
-            capture=capture,
-        )
-        m, notes = _apply_identity(store, result.logset.manifest, node, cluster, capture, o.front)
-        notes += _hint_warnings(fmt, found, m, o.front, split=True)
-        result = dataclasses.replace(
-            result, skipped=tuple(skipped[node]), warnings=(*result.warnings, *notes)
-        )
-        warnings.extend(f"{node}: {w}" for w in result.warnings)
-        docs.append(_document(result, m))
-        done_bytes += sum(s.size for s in found)
-        done_entries += result.parsed_entries
+    created: list[str] = []  # sets this run added: removed again if it does not finish
+    try:
+        for node, found in members:
+            old = _by_id(manifests, ids[node])
+            set_name = None
+            if old is None or o.overwrite:
+                set_name = _free_name(f"{prefix}_{node.lower()}", ids[node], manifests, warnings)
+            o.say(f"  {node}: {_size(found)}" + (f" -> {set_name}" if set_name else ""))
+            result = ingest_sources(
+                store,
+                found,
+                fmt,
+                name=set_name,
+                frames=o.frames,
+                overwrite=o.overwrite,
+                mine=o.mine,
+                progress=_offset(o.progress, done_bytes, done_entries, total),
+                progress_every=o.progress_every,
+                node=node,
+                cluster=cluster or (old.cluster if old is not None and o.overwrite else None),
+                capture=capture,
+            )
+            if old is None:
+                created.append(result.logset.manifest.id)
+            m, notes = _apply_identity(
+                store, result.logset.manifest, node, cluster, capture, o.front
+            )
+            notes += _hint_warnings(fmt, found, m, o.front, split=True)
+            result = dataclasses.replace(
+                result, skipped=tuple(skipped[node]), warnings=(*result.warnings, *notes)
+            )
+            warnings.extend(f"{node}: {w}" for w in result.warnings)
+            docs.append(_document(result, m))
+            done_bytes += sum(s.size for s in found)
+            done_entries += result.parsed_entries
+    except BaseException:
+        _roll_back(store, created)
+        raise
     info = get_capture(store, capture)
     return {
         "schema": "ingest-capture.v1",
@@ -365,6 +376,20 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
         "sets": docs,
         "warnings": warnings,
     }
+
+
+def _roll_back(store: Store, created: Sequence[str]) -> None:
+    """Remove the sets a split that failed or was cancelled had added (best effort).
+
+    A split stores one set per node; stopped halfway it would leave a capture with
+    some nodes only, which nothing reports. Sets that existed before the run (same
+    files, so the same data) stay.
+    """
+    from atlas_log_analyzer.store.store import StoreError
+
+    for set_id in created:
+        with contextlib.suppress(StoreError):
+            store.remove(set_id)
 
 
 def _by_id(manifests: Sequence[LogSetManifest], set_id: str) -> LogSetManifest | None:

@@ -322,6 +322,11 @@
   function onNav() {
     clearTimeout(qTimer);
     S = parseHash();
+    if (S.theme === "dark" || S.theme === "light") {
+      // back/forward to a link that names a theme shows it, as opening that link does
+      document.documentElement.setAttribute("data-theme", S.theme);
+      renderThemeBtn();
+    }
     $("f-search").value = S.q;
     update();
   }
@@ -471,7 +476,7 @@
     const nz = [...totals].filter((x) => x > 0).sort((x, y) => x - y);
     const p95 = nz.length ? nz[Math.floor(0.95 * (nz.length - 1))] : 0;
     const spiky = p95 > 0 && maxT > 4 * p95;
-    const clip = spiky && CLIP !== false;
+    const clip = spiky && CLIP[opts.clipKey || "tl"] !== false;
     const padT = clip ? 18 : 8;
     const plotH = H - padT - padB;
     const ticks = niceTicks(clip ? p95 : maxT);
@@ -606,7 +611,8 @@
   }
 
   let TL = null;
-  let CLIP = null; // null: automatic (clip when max > 4 × p95)
+  // per chart (timeline, drawer): null is automatic (clip when max > 4 × p95)
+  const CLIP = { tl: null, d: null };
   const clipBtn = (geo) =>
     geo && geo.spiky
       ? `<button type="button" class="btn small toggle" data-clip aria-pressed="${geo.clip}" title="Clip the y-axis to the 95th percentile so spikes do not flatten the rest; clipped bars are labelled with their value">Clip spikes</button>`
@@ -1336,7 +1342,7 @@
     if (!el || !NH) return;
     const dense = new Float64Array(NH);
     for (const [i, n] of r.hourly) dense[i] = n;
-    DCHART = drawColumns(el, [{ key: "blue", name: "entries", cls: "s-blue", data: dense }], { height: 150, label: "Entries per hour" });
+    DCHART = drawColumns(el, [{ key: "blue", name: "entries", cls: "s-blue", data: dense }], { height: 150, label: "Entries per hour", clipKey: "d" });
     const h3 = el.parentElement && el.parentElement.querySelector("h3");
     const k = DCHART.k;
     if (h3) h3.innerHTML = esc("Entries per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours") + (S.t ? " (window shaded)" : "")) + clipBtn(DCHART);
@@ -1526,8 +1532,8 @@
     renderThemeBtn();
     if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
   }
-  function toggleClip(geo) {
-    CLIP = !(geo && geo.clip);
+  function toggleClip(geo, key) {
+    CLIP[key] = !(geo && geo.clip);
     renderTimeline();
     const r = S.sig && lookup(S.sig);
     if (r && !r.gone) drawHourly(r);
@@ -1662,13 +1668,13 @@
         const opened = f.classList.toggle("open");
         const n = +t.dataset.unfold;
         t.textContent = opened ? "hide frames" : `show ${fmt(n)} more frame${n === 1 ? "" : "s"}`;
-      } else if (t.dataset.clip != null) toggleClip(DCHART);
+      } else if (t.dataset.clip != null) toggleClip(DCHART, "d");
       else if (t.dataset.copy != null) copy(t.dataset.copy);
       else if (t.dataset.copyRaw != null) copy(fullText(ENTRIES[t.dataset.copyRaw] || {}));
       else if (t.dataset.open != null) open(t.dataset.open);
     });
     $("btn-theme").onclick = toggleTheme;
-    $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL); });
+    $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
     window.atlasTheme = toggleTheme;
     renderThemeBtn();
     $("d-nav").addEventListener("click", (e) => {

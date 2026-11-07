@@ -220,7 +220,7 @@ rule set is unchanged.
 
 Everything that decides a signature is one `Recipe(fmt, spec, extra_rules)`
 (`core/pipeline.py`), which builds the masker, signer and grouper and names
-them in a key such as `jira@2|L+G+E+F0|sig1|mask1`: format name and version
+them in a key such as `jira@3|L+G+E+F0|sig1|mask2`: format name and version
 (a format's optional integer `version`, default 1, read with `getattr` so the
 registry's `isinstance` check still accepts formats without it), spec,
 `SIGNATURE_VERSION`, `MASK_RULES_VERSION`, plus `|rules:<xxh3>` of extra
@@ -503,7 +503,12 @@ Struct fails it.
   current format (tested on fixtures, and on the four sample sets: 2.1M entries,
   2–6 s per set), except where deduplication across overlapping files removed a
   banner or its entry from one of the files. A set already at the current
-  format version is not re-assembled again.
+  format version is not re-assembled again. Before that, rows an older version
+  may have built differently from the same text (`_REBUILD_HINT`: a body with
+  `Suppressed: `, a user with a space and no request id) are built again from
+  their `raw` text by the format (`parse_header` + `build`); their context
+  columns, exception columns and chain are replaced, an attached `preamble`
+  stays. Any other row would come back unchanged, so only these are parsed.
   The ingest pipeline drops repeated entry ids before the grouper
   (`unique_entries`) and writes with `dedupe=False`, so one id set is held and
   group counts always match; `Store.ingest` still recomputes groups from the

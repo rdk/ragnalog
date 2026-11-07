@@ -19,10 +19,13 @@ from dataclasses import dataclass
 
 __all__ = ["GENERIC_RULES", "MASK_RULES_VERSION", "MaskRule", "Masker"]
 
-MASK_RULES_VERSION = 1
+MASK_RULES_VERSION = 2
+"""Bump whenever a change to built-in rules alters templates; recorded in manifests.
+
+2: an IP address that ends a sentence (``from 10.0.0.1.``) is masked whole.
+"""
 _CACHE_TEXT_MAX = 4096
 """Longest text the masker caches (65,536 texts of this size stay under 300 MB)."""
-"""Bump whenever a change to built-in rules alters templates; recorded in manifests."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +53,7 @@ GENERIC_RULES: Sequence[MaskRule] = (
     ),
     MaskRule.make("url", r"(?<![\w.+-])[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]*[^\s'\"<>.,;:)\]]"),
     MaskRule.make("email", r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b"),
-    MaskRule.make("ip", r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?![\w.])"),
+    MaskRule.make("ip", r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?!\w|\.\w)"),
     MaskRule.make("hex", r"\b(?:0x[0-9a-fA-F]+|(?=[0-9a-fA-F]*\d)[0-9a-fA-F]{8,})\b"),
     MaskRule.make(
         "user",

@@ -150,3 +150,33 @@ def test_byte_order_mark_is_dropped_from_the_first_line(tmp_path: Path) -> None:
     path.write_bytes(b"\xef\xbb\xbf2026-10-29 first\r\nsecond\n")
     lines = list(iter_raw_lines(path))
     assert lines == [(1, 0, "2026-10-29 first"), (2, 21, "second")]
+
+
+@pytest.mark.parametrize("limit", [0, 5, 6, 11, 12, 100])
+def test_max_bytes_stops_reading(
+    tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from atlas_log_analyzer.core import reader
+
+    monkeypatch.setattr(reader, "_CHUNK", 4)  # limits that fall inside and across blocks
+    path = tmp_path / "live.log"
+    path.write_bytes(b"first\nsecond\nthird\n")
+    data = path.read_bytes()[:limit]
+    want = [line for line in data.decode().split("\n") if line] if data else []
+    assert [text for _, _, text in iter_raw_lines(path, max_bytes=limit)] == want
+
+
+def test_a_growing_file_is_parsed_up_to_its_hashed_size(tmp_path: Path) -> None:
+    from atlas_log_analyzer.core.formats.jira import JiraFormat
+    from atlas_log_analyzer.core.parser import parse_sources
+    from atlas_log_analyzer.core.reader import discover_sources
+
+    path = tmp_path / "atlassian-jira.log"
+    line = "2026-10-29 10:00:0{},000+0100 exec-1 ERROR      [org.acme.A] boom {}\n"
+    path.write_text(line.format(0, 1) + line.format(1, 2), encoding="utf-8")
+    sources = discover_sources([path])
+    with path.open("a", encoding="utf-8") as f:  # the application keeps logging
+        f.write(line.format(2, 3) + "\tat org.acme.A.run(A.java:1)\n")
+    entries = list(parse_sources(sources, JiraFormat()))
+    assert [e.message for e in entries] == ["boom 1", "boom 2"]
+    assert entries[-1].body == ""

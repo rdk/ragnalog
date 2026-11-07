@@ -309,16 +309,17 @@ def parse_file(
     *,
     max_entry_chars: int = MAX_ENTRY_CHARS,
     max_entry_lines: int = MAX_ENTRY_LINES,
+    max_bytes: int | None = None,
 ) -> Iterator[LogEntry]:
     """Stream entries from one file (lines over 1 MiB are cut, see :func:`iter_raw_lines`).
 
     As :func:`parse_lines`: ids made unique, then banners attached when the format
-    opts in.
+    opts in. ``max_bytes`` stops reading after that many bytes.
     """
     return attach_banners(
         _distinct_ids(
             _assemble(
-                iter_raw_lines(path),
+                iter_raw_lines(path, max_bytes=max_bytes),
                 fmt,
                 str(path),
                 max_chars=max_entry_chars,
@@ -330,9 +331,14 @@ def parse_file(
 
 
 def parse_sources(sources: Iterable[SourceFile], fmt: LogFormat) -> Iterator[LogEntry]:
-    """Stream entries from several sources in the given order (default caps)."""
+    """Stream entries from several sources in the given order (default caps).
+
+    Each file is read up to the size it had when it was discovered and hashed
+    (:attr:`~atlas_log_analyzer.core.reader.SourceFile.size`): lines appended to a live
+    log meanwhile are not part of the set its digest names.
+    """
     for source in sources:
-        yield from parse_file(source.path, fmt)
+        yield from parse_file(source.path, fmt, max_bytes=source.size)
 
 
 def parse(paths: Iterable[Path | str], fmt: LogFormat | None = None) -> Iterator[LogEntry]:

@@ -15,7 +15,9 @@ alone (the log files may be gone): banners are attached to the entry they
 announce, by the rule of :func:`~atlas_log_analyzer.core.parser.attach_banners`
 applied in file order (``source_path``, then ``source_line``). Their rows are
 dropped and the entry they announce gets ``context["preamble"]``, which equals
-ingesting the same files with the current format.
+ingesting the same files with the current format. Entries an older version built
+differently from the same text (:data:`_REBUILD_HINT`) are first built again from
+their stored ``raw`` text by the format itself.
 """
 
 from __future__ import annotations
@@ -31,8 +33,20 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 
 from atlas_log_analyzer.core.decoration import is_banner_text, lead_line
-from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, banner_window_ms, titles_from_body
-from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel
+from atlas_log_analyzer.core.formats.base import (
+    CTX_IP,
+    CTX_PREAMBLE,
+    CTX_REQUEST_ID,
+    CTX_REQUEST_URL,
+    CTX_SESSION,
+    CTX_URL,
+    CTX_USER,
+    WELL_KNOWN_CONTEXT_KEYS,
+    LogFormat,
+    banner_window_ms,
+    titles_from_body,
+)
+from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
 from atlas_log_analyzer.core.parser import MAX_BANNERS
 from atlas_log_analyzer.core.pipeline import Recipe
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA
@@ -44,6 +58,23 @@ DERIVED_COLUMNS = ("signature", "coarse_signature", "template", "variables")
 """Entry columns computed by the signer; :func:`resign_entries` replaces exactly these."""
 
 _KEY_COLUMNS = ("level", "logger", "message", "chain", "lead")
+_REBUILT_COLUMNS = {
+    "user": CTX_USER,
+    "request_id": CTX_REQUEST_ID,
+    "session": CTX_SESSION,
+    "ip": CTX_IP,
+    "url": CTX_URL,
+    "request_url": CTX_REQUEST_URL,
+}
+"""Context columns of a re-built entry (the writer's well-known context keys)."""
+_WELL_KNOWN = frozenset(WELL_KNOWN_CONTEXT_KEYS)
+_REBUILD_HINT = pl.col("body").fill_null("").str.contains("Suppressed: ", literal=True) | (
+    pl.col("user").fill_null("").str.contains(" ", literal=True) & pl.col("request_id").is_null()
+)
+"""Rows an older format version may have built differently from the same text: a
+suppressed exception (before jira@3 its own ``Caused by:`` joined the main chain) and
+a user with a space, request context unsplit (``Automation Robot 1x2x3 …`` was the
+user). Re-building any other row would give it back unchanged."""
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _ALNUM = "[0-9A-Za-z]"
 """Blank and banner messages hold no ASCII letter or digit: the polars pre-filter of
@@ -237,6 +268,85 @@ def _with_preambles(column: Any, lo: int, preambles: dict[int, str]) -> pa.Array
     return pa.array(values, ENTRIES_SCHEMA.field("context").type)
 
 
+def _rebuilt_entries(entries_path: Path, fmt: LogFormat) -> dict[int, LogEntry]:
+    """Entries of the :data:`_REBUILD_HINT` rows built again from ``raw``, by row index."""
+    df = (
+        pl.scan_parquet(entries_path)
+        .with_row_index("_row")
+        .filter(pl.col("parse_error").is_null() & _REBUILD_HINT)
+        .select("_row", pl.col("raw").fill_null(""))
+        .collect()
+    )
+    out: dict[int, LogEntry] = {}
+    nowhere = SourceRef("", 0, 0)
+    for row, raw in df.iter_rows():
+        header_line, *continuation = raw.split("\n")
+        header = fmt.parse_header(header_line)
+        if header is not None:
+            out[row] = fmt.build(header, header_line, continuation, nowhere)
+    return out
+
+
+def _rebuilt_columns(table: pa.Table, lo: int, entries: dict[int, LogEntry]) -> dict[str, Any]:
+    """Columns of one row group with the parsed fields of re-built entries replaced."""
+    names = (*_REBUILT_COLUMNS, "context", "exception_type", "exception_message")
+    values = {name: table.column(name).to_pylist() for name in names}
+    chains = table.column("exception_chain").to_pylist()
+    for row, e in entries.items():
+        i = row - lo
+        ctx = e.context
+        for name, key in _REBUILT_COLUMNS.items():
+            values[name][i] = ctx.get(key)
+        kept = [kv for kv in values["context"][i] or () if kv[0] == CTX_PREAMBLE]
+        values["context"][i] = [(k, v) for k, v in ctx.items() if k not in _WELL_KNOWN] + kept
+        chain = e.exceptions
+        values["exception_type"][i] = chain[0].type if chain else None
+        values["exception_message"][i] = chain[0].message if chain else None
+        chains[i] = [
+            {
+                "type": ex.type,
+                "message": ex.message,
+                "frames": [
+                    {"location": f.location, "file": f.file, "line": f.line, "module": f.module}
+                    for f in ex.frames
+                ],
+                "omitted_frames": ex.omitted_frames,
+            }
+            for ex in chain
+        ]
+    values["exception_chain"] = chains
+    return {name: pa.array(v, ENTRIES_SCHEMA.field(name).type) for name, v in values.items()}
+
+
+def _rebuild_file(src: Path, dst: Path, fmt: LogFormat) -> bool:
+    """Write ``dst``: ``src`` with the :data:`_REBUILD_HINT` rows built again (``False``: none)."""
+    entries = _rebuilt_entries(src, fmt)
+    if not entries:
+        return False
+    rows = sorted(entries)
+    read = 0
+    with (
+        pq.ParquetFile(str(src)) as pf,
+        pq.ParquetWriter(
+            str(dst),
+            ENTRIES_SCHEMA,
+            compression=COMPRESSION,
+            write_statistics=True,
+            **_entries_encodings(),
+        ) as writer,
+    ):
+        for i in range(pf.num_row_groups):
+            table = pf.read_row_group(i)
+            lo, hi = read, read + table.num_rows
+            read = hi
+            here = {r: entries[r] for r in rows[bisect_left(rows, lo) : bisect_left(rows, hi)]}
+            if here:
+                for name, column in _rebuilt_columns(table, lo, here).items():
+                    table = table.set_column(ENTRIES_SCHEMA.get_field_index(name), name, column)
+            writer.write_table(table, row_group_size=max(table.num_rows, 1))
+    return True
+
+
 def resign_entries(
     src: Path,
     dst: Path,
@@ -251,7 +361,8 @@ def resign_entries(
     Rows, row groups and every other column are kept as stored, except with
     ``reassemble`` and a format that attaches banners
     (:func:`~atlas_log_analyzer.core.formats.base.banner_window_ms`): attached banner
-    rows are dropped and the rows they announce get ``context["preamble"]``.
+    rows are dropped and the rows they announce get ``context["preamble"]``, and the
+    :data:`_REBUILD_HINT` rows are first built again from their ``raw`` text.
 
     Args:
         src: ``entries.parquet`` of the set.
@@ -266,6 +377,18 @@ def resign_entries(
         The number of rows written.
 
     """
+    rebuilt = dst.with_name(f"{dst.stem}.rebuilt{dst.suffix}")
+    if reassemble and _rebuild_file(src, rebuilt, recipe.fmt):
+        try:
+            return _resign(rebuilt, dst, recipe, format_name, True, max_banners)
+        finally:
+            rebuilt.unlink(missing_ok=True)
+    return _resign(src, dst, recipe, format_name, reassemble, max_banners)
+
+
+def _resign(
+    src: Path, dst: Path, recipe: Recipe, format_name: str, reassemble: bool, max_banners: int
+) -> int:
     import pyarrow.compute as pc
 
     window = banner_window_ms(recipe.fmt) if reassemble else 0

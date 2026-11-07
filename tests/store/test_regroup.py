@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 import polars as pl
 import pyarrow as pa
@@ -17,6 +19,7 @@ from atlas_log_analyzer.store import LogSet, Store, diff
 from atlas_log_analyzer.store.logset import MANIFEST_FILE
 from atlas_log_analyzer.store.manifest import LogSetManifest, current_recipe_key
 from atlas_log_analyzer.store.pipeline import ingest_paths
+from atlas_log_analyzer.store.store import LogSetNotFound, StoreError
 from atlas_log_analyzer.store.writer import EntriesWriter, iter_entries, write_groups
 
 from ..cli.synth import PLUGIN_TRACE
@@ -116,11 +119,11 @@ def _rewrite_manifest(ls: LogSet, **changes: object) -> None:
 
 def test_manifest_recipe_key_written_and_derived(fixture_set: tuple[Store, LogSet]) -> None:
     _, ls = fixture_set
-    assert ls.manifest.recipe_key == "jira@2|L+G+E+F0|sig1|mask1"
+    assert ls.manifest.recipe_key == "jira@3|L+G+E+F0|sig1|mask2"
     assert ls.manifest.to_dict()["recipe_key"] == ls.manifest.recipe_key
     _rewrite_manifest(ls, recipe_key=None, signature_spec="L+G+E+F3")
     old = LogSetManifest.read(ls.path)
-    assert old.recipe_key == "jira@1|L+G+E+F3|sig1|mask1"  # derived, format version 1
+    assert old.recipe_key == "jira@1|L+G+E+F3|sig1|mask2"  # derived, format version 1
 
 
 def test_diff_compares_recipe_keys(fixture_set: tuple[Store, LogSet], tmp_path: Path) -> None:
@@ -146,8 +149,8 @@ def test_upgrade_rebuilds_stale_sets(fixture_set: tuple[Store, LogSet]) -> None:
     result = store.upgrade("fx")
     assert result.upgraded and result.reason is None
     assert result.previous_recipe_key == "jira@1|L+G+E+F0|sig1|mask0"
-    assert result.manifest.recipe_key == "jira@2|L+G+E+F0|sig1|mask1"
-    assert result.manifest.mask_rules_version == 1
+    assert result.manifest.recipe_key == "jira@3|L+G+E+F0|sig1|mask2"
+    assert result.manifest.mask_rules_version == 2
     assert pq.read_table(store.open("fx").groups_path).equals(groups_before)
     again = store.upgrade("fx")
     assert not again.upgraded and again.reason == "current"
@@ -161,7 +164,7 @@ def test_upgrade_keeps_the_spec_and_skips_unknown_formats(
     _rewrite_manifest(store.open("fx"), recipe_key="jira@0|L+G+E+F2|sig1|mask1")
     result = store.upgrade("fx")
     assert result.upgraded and result.manifest.signature_spec == "L+G+E+F2"
-    assert result.manifest.recipe_key == "jira@2|L+G+E+F2|sig1|mask1"
+    assert result.manifest.recipe_key == "jira@3|L+G+E+F2|sig1|mask2"
     _rewrite_manifest(store.open("fx"), format="nope", recipe_key=None)
     skipped = store.upgrade("fx")
     assert not skipped.upgraded and skipped.reason is not None and "unknown" in skipped.reason
@@ -179,3 +182,49 @@ def test_headerless_start_does_not_reach_back_to_1970(tmp_path: Path) -> None:
     assert m.sources[0].first_ts == m.first_ts and m.sources[0].entries == 11
     plain = ingest_paths(Store(tmp_path / "plain"), [MINI]).logset.manifest
     assert (m.first_ts, m.last_ts) == (plain.first_ts, plain.last_ts)
+
+
+def _during_rebuild(monkeypatch: pytest.MonkeyPatch, action: Callable[[], object]) -> None:
+    """Run ``action`` while a regroup re-signs (after it read the set, before it installs)."""
+    from atlas_log_analyzer.store import regroup
+
+    real = regroup.resign_entries
+
+    def resign(*args: Any, **kwargs: Any) -> int:
+        count = real(*args, **kwargs)
+        action()
+        return count
+
+    monkeypatch.setattr(regroup, "resign_entries", resign)
+
+
+def test_regroup_keeps_labels_set_meanwhile(
+    fixture_set: tuple[Store, LogSet], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _ = fixture_set
+    _during_rebuild(monkeypatch, lambda: store.label("fx", node="NODE2", cluster="c1"))
+    rebuilt = store.regroup("fx", SignatureSpec(frames=2))
+    assert (rebuilt.manifest.node, rebuilt.manifest.cluster) == ("NODE2", "c1")
+    stored = store.open("fx").manifest
+    assert (stored.node, stored.signature_spec) == ("NODE2", "L+G+E+F2")
+
+
+def test_regroup_does_not_bring_back_a_removed_set(
+    fixture_set: tuple[Store, LogSet], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, _ = fixture_set
+    _during_rebuild(monkeypatch, lambda: store.remove("fx"))
+    with pytest.raises(LogSetNotFound, match="removed"):
+        store.regroup("fx", SignatureSpec(frames=2))
+    assert store.list() == []
+    assert not [p for p in store.root.iterdir() if p.name.startswith(".tmp-")]
+
+
+def test_regroup_refuses_when_the_data_changed_meanwhile(
+    fixture_set: tuple[Store, LogSet], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store, ls = fixture_set
+    _during_rebuild(monkeypatch, lambda: _rewrite_manifest(ls, entry_count=1))
+    with pytest.raises(StoreError, match="changed while"):
+        store.regroup("fx", SignatureSpec(frames=2))
+    assert store.open("fx").manifest.signature_spec == "L+G+E+F0"
