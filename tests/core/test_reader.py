@@ -6,7 +6,13 @@ from pathlib import Path
 import pytest
 import xxhash
 
-from atlas_log_analyzer.core.reader import Line, iter_lines, iter_raw_lines, iter_sources
+from atlas_log_analyzer.core.reader import (
+    Line,
+    iter_lines,
+    iter_raw_lines,
+    iter_sources,
+    side_logs,
+)
 
 
 def _touch(path: Path, content: bytes, mtime: float) -> None:
@@ -180,3 +186,28 @@ def test_a_growing_file_is_parsed_up_to_its_hashed_size(tmp_path: Path) -> None:
     entries = list(parse_sources(sources, JiraFormat()))
     assert [e.message for e in entries] == ["boom 1", "boom 2"]
     assert entries[-1].body == ""
+
+
+def test_side_logs_extend_a_main_stem_in_the_same_directory(tmp_path: Path) -> None:
+    home, node = tmp_path / "log", tmp_path / "node"
+    names = [
+        "atlassian-jira.log",
+        "atlassian-jira.log.1",
+        "atlassian-jira-security.log",
+        "atlassian-jira-security.log.2",
+        "atlassian-jira-outgoing-mail.log",
+        "Atlassian-Jira-Slow-Queries.log",
+        "atlassian-jira-2026-11-01.log",  # a dated rotation, not a side log
+        "catalina.log",
+    ]
+    paths = [home / n for n in names]
+    paths += [node / "NODE1_atlassian-jira.log", node / "NODE1_atlassian-jira-security.log"]
+    paths += [node / "NODE2_atlassian-jira-security.log"]  # no NODE2 main log beside it
+    paths += [tmp_path / "other" / "atlassian-jira-security.log"]  # main log elsewhere
+    assert {p.relative_to(tmp_path).as_posix() for p in side_logs(paths)} == {
+        "log/atlassian-jira-security.log",
+        "log/atlassian-jira-security.log.2",
+        "log/atlassian-jira-outgoing-mail.log",
+        "log/Atlassian-Jira-Slow-Queries.log",
+        "node/NODE1_atlassian-jira-security.log",
+    }

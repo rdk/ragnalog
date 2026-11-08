@@ -7,7 +7,8 @@ Python. See ``docs/formats/report.v1.md``.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import polars as pl
@@ -18,13 +19,24 @@ from atlas_log_analyzer.store.filters import GroupFilter, has_time
 from atlas_log_analyzer.store.logset import LogSet, to_records
 from atlas_log_analyzer.store.query import diff
 
-__all__ = ["LEVEL_BUCKETS", "REPORT_SCHEMA", "build_payload", "example_entries"]
+__all__ = [
+    "LEVEL_BUCKETS",
+    "MAX_TIMELINE_HOURS",
+    "REPORT_SCHEMA",
+    "build_payload",
+    "densest_hours",
+    "example_entries",
+]
 
 REPORT_SCHEMA = "report.v1"
 LEVEL_BUCKETS = ("ERROR", "WARN", "INFO", "DEBUG", "OTHER")
 """Timeline series: FATAL folds into ERROR, TRACE into DEBUG, UNKNOWN into OTHER."""
 
 HOUR_MS = 3_600_000
+MAX_TIMELINE_HOURS = 400 * 24
+"""Longest report timeline: a few entries stamped years off (a bad clock, year 1) would
+otherwise make it hundreds of thousands of hours; the densest span is kept instead."""
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 
 ENTRY_COLUMNS = (
     "ts",
@@ -66,7 +78,28 @@ def _bucket_expr() -> pl.Expr:
 
 
 def _hour_iso(hour: int) -> str:
-    return datetime.fromtimestamp(hour * 3600, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # not fromtimestamp: it raises OSError on Windows before 1970 and after 3000
+    return (_EPOCH + timedelta(hours=hour)).isoformat().replace("+00:00", "Z")
+
+
+def densest_hours(counts: Mapping[int, int], width: int) -> tuple[int, int]:
+    """Return the first and last hour of the ``width``-hour span holding most of ``counts``.
+
+    ``counts`` maps an hour (epoch hours) to its entries. With all hours inside ``width``
+    that is simply the first and last hour.
+    """
+    hours = sorted(counts)
+    if hours[-1] - hours[0] < width:
+        return hours[0], hours[-1]
+    best, best_at, total, lo = -1, (hours[0], hours[0]), 0, 0
+    for h in hours:
+        total += counts[h]
+        while h - hours[lo] >= width:
+            total -= counts[hours[lo]]
+            lo += 1
+        if total > best:
+            best, best_at = total, (hours[lo], h)
+    return best_at
 
 
 def _timeline_and_hourly(
@@ -95,18 +128,28 @@ def _timeline_and_hourly(
     df = frames[0]
     if df.height == 0:
         return {"hours": [], "levels": {b: [] for b in LEVEL_BUCKETS}}, {}
-    hours_col = df.get_column("hour")
-    first, last = int(hours_col.min()), int(hours_col.max())  # type: ignore[arg-type]
+    per_hour: dict[int, int] = {}
+    for hour, _, n in df.iter_rows():
+        per_hour[int(hour)] = per_hour.get(int(hour), 0) + int(n)
+    first, last = densest_hours(per_hour, MAX_TIMELINE_HOURS)
     size = last - first + 1
     levels = {b: [0] * size for b in LEVEL_BUCKETS}
+    clipped = 0
     for hour, bucket, n in df.iter_rows():
-        levels[bucket][int(hour) - first] += int(n)
+        if first <= hour <= last:
+            levels[bucket][int(hour) - first] += int(n)
+        else:
+            clipped += int(n)
     hours = [_hour_iso(h) for h in range(first, last + 1)]
     hourly: dict[str, list[list[int]]] = {}
     if len(frames) > 1:
         for sig, hour, n in frames[1].iter_rows():
-            hourly.setdefault(sig, []).append([int(hour) - first, int(n)])
-    return {"hours": hours, "levels": levels}, hourly
+            if first <= hour <= last:
+                hourly.setdefault(sig, []).append([int(hour) - first, int(n)])
+    timeline: dict[str, Any] = {"hours": hours, "levels": levels}
+    if clipped:
+        timeline["clipped"] = clipped  # entries outside the kept span
+    return timeline, hourly
 
 
 def _entries(

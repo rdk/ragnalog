@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 from importlib import resources
+from urllib.parse import urlsplit
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
@@ -22,16 +23,48 @@ from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.settings import Settings
 from atlas_log_analyzer.webapp.state import AppState
 
-__all__ = ["create_app"]
+__all__ = ["LOOPBACK_HOSTS", "create_app"]
+
+LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+"""Host names a server bound to loopback answers (anything else: a DNS rebinding page)."""
+_SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 
 
-def create_app(settings: Settings | None = None, *, warm: bool = False) -> FastAPI:
+def _host_name(header: str) -> str:
+    """Return the host of a ``Host`` header without its port (``[::1]:8321`` -> ``::1``)."""
+    if header.startswith("["):
+        return header[1 : header.find("]")].lower()
+    return header.rsplit(":", 1)[0].lower() if header.count(":") == 1 else header.lower()
+
+
+def _cross_site(request: Request) -> bool:
+    """Tell whether a page of another site sent this request (a form post needs no preflight)."""
+    if request.headers.get("sec-fetch-site") == "cross-site":
+        return True
+    origin = request.headers.get("origin")
+    if origin is None:
+        return False  # not a browser (curl, scripts): the token, if any, guards those
+    return (
+        origin == "null"
+        or urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower()
+    )
+
+
+def create_app(
+    settings: Settings | None = None,
+    *,
+    warm: bool = False,
+    hosts: frozenset[str] | None = None,
+) -> FastAPI:
     """Build the web app over the store in ``settings`` (default: from the environment).
 
     Routes: ``/`` sets index, ``/sets/{ref}`` interactive report, ``/sets/{ref}/triage``,
     ``/api/...`` JSON (OpenAPI at ``/docs``, with the document schemas). Errors are
     ``error.v1`` documents on ``/api`` and HTML pages elsewhere. With ``warm`` (``serve``)
     the newest capture's cluster page payload is built in the background at startup.
+    ``hosts`` (``serve`` on a loopback address: :data:`LOOPBACK_HOSTS`) refuses requests
+    whose ``Host`` is another name. Requests that change something (not GET/HEAD) from a
+    page of another site (``Origin``/``Sec-Fetch-Site``) are refused either way.
     """
     settings = settings or Settings.from_env()
     state = AppState(settings)
@@ -63,6 +96,10 @@ def create_app(settings: Settings | None = None, *, warm: bool = False) -> FastA
     ) -> Response:
         # before any route runs, so an upload body is not read when the token is wrong
         path = request.url.path
+        if hosts is not None and _host_name(request.headers.get("host", "")) not in hosts:
+            return error_response(OpError("http", "unexpected Host header"), 400)
+        if request.method not in _SAFE_METHODS and _cross_site(request):
+            return error_response(OpError("http", "cross-site request refused"), 403)
         if settings.token and not path.startswith(("/static/", "/assets/")):
             given = request.query_params.get("token")
             if given is not None and request.method == "GET" and not path.startswith("/api"):
@@ -78,7 +115,11 @@ def create_app(settings: Settings | None = None, *, warm: bool = False) -> FastA
                 return error_response(OpError("unauthorized", "missing or wrong API token"))
         if request.method == "POST" and path == "/api/ingest":
             length = request.headers.get("content-length", "")
-            if length.isdigit() and int(length) > upload_limit + (1 << 20):
+            if not length.isdigit():
+                # a chunked body would be read (and spooled) whole before any size check;
+                # browsers always send the length of a form upload
+                return error_response(OpError("http", "an upload needs Content-Length"), 411)
+            if int(length) > upload_limit + (1 << 20):
                 message = f"upload exceeds {settings.max_upload_mb} MiB"
                 return error_response(OpError("payload_too_large", message))
         return await call_next(request)

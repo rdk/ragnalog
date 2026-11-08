@@ -303,6 +303,7 @@
     "output": "formats.v1",
     "exit": [
      0,
+     1,
      2
     ]
    },
@@ -509,7 +510,7 @@
    "command": "ingest",
    "version": "",
    "usage": "PATHS... [--format str] [--name str] [--frames int] [--overwrite] [--mine] [--force] [--node str] [--cluster str] [--capture str] [--split auto|prefix|dir|none=auto]",
-   "description": "Parse log files into a stored log set (one per cluster node) and print its manifest.\n\nPATHs are files, directories or ZIP files (directories are scanned\nnon-recursively for *.log*; rotated files x.log.N are read oldest first; a\nZIP is extracted into the store, job.json and *.log* files only, at most\n32 GiB, and removed afterwards). Files found in a directory that the format\ndoes not recognise in their first 200 lines (access, GC or JSON logs next\nto atlassian-jira.log) are skipped and listed in \"ingest.skipped\"; files\nnamed explicitly are read, except one over 64 MiB that the format does not\nrecognise at all (error \"not_in_format\"; --force reads it). Lines over 1 MiB\nare cut, and an entry keeps at most 4 Mi characters and 100,000 lines\n(\"parse_error\": \"entry truncated: N lines, M bytes\"). The log-set id is\nderived from the file digests, so ingesting the same files again is a no-op\nthat prints the existing manifest (use --overwrite to rebuild it). Progress\ngoes to stderr.\n\nCluster logs become one set per node (--split auto): a cluster log export\n(a ZIP or folder with job.json and NODE_atlassian-jira.log* files), files\nnamed NODE_atlassian-jira.log* of two or more nodes, or one directory whose\nsub-directories (two or more) hold one node's logs each. --split prefix|dir\nforces a kind, --split none keeps one set. Each node's set is named\nPREFIX_node (PREFIX: --name, else --cluster, else the first 8 characters of\nthe capture id) and labelled with its node, the cluster (--cluster, else\nthat of the node's newest earlier set) and the capture id (--capture, else\nthe export's jobId, else a hash of the set ids). A single set gets --node,\n--cluster (default: the node's earlier cluster) and --capture; when its log\nnames its node, a warning suggests --node.\n\nOutput (json): one set: the manifest, schema \"logset.v1\":\n  {\"schema\": \"logset.v1\", \"id\", \"name\", \"format\",\n   \"sources\": [{\"path\", \"size\", \"xxh3\", \"first_ts\", \"last_ts\", \"entries\"}],\n   \"first_ts\", \"last_ts\", \"entry_count\", \"group_count\", \"created_at\",\n   \"tool_version\", \"schema_version\", \"signature_version\",\n   \"mask_rules_version\", \"signature_spec\", \"recipe_key\",\n   \"node\", \"cluster\", \"capture\",\n   \"ingest\": {\"parsed_entries\", \"parse_errors\", \"elapsed_s\", \"existing\",\n              \"skipped\": [path, ...], \"warnings\": [str, ...]},\n   \"merges\": [{\"cluster_id\", \"signatures\": [str], \"drain_template\"}]}\nA split: {\"schema\": \"ingest-capture.v1\",\n  \"capture\": {\"capture\", \"cluster\", \"first_ts\", \"last_ts\", \"entry_count\",\n              \"nodes\": [{\"node\", \"id\", \"name\", \"first_ts\", \"last_ts\",\n                         \"entry_count\"}]},\n  \"sets\": [<logset.v1 with \"ingest\" as above>, ...], \"warnings\": [str]}\n\"merges\" is present only with --mine; the proposals are also stored in\nmerges.parquet (the \"merges\" view of `query`).\n\"ingest.existing\" is true when the set already existed and was reused (it\ngets the node, cluster and capture it lacks); \"ingest.warnings\" then says\nwhen --name was ignored (also on stderr).\n\nWithout --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git\nwork tree it is not created (error \"store_error\": real logs could be\ncommitted), but an existing ./.atlas-log is used.\n\nExit codes: 0 ok; 1 unknown --format, bad option, bad ZIP, a --split that\ndoes not fit the input, or --node with a split; 2 no files found, format\nnot detected, a large named file not in the format, or no entries parsed\n(manifest still printed); 3 store error (including a refused default store\ninside a git work tree).",
+   "description": "Parse log files into a stored log set (one per cluster node) and print its manifest.\n\nPATHs are files, directories or ZIP files (directories are scanned\nnon-recursively for *.log*; rotated files x.log.N are read oldest first; a\nZIP is extracted into the store, job.json and *.log* files only, at most\n32 GiB, and removed afterwards). Files found in a directory that the format\ndoes not recognise in their first 200 lines (access, GC or JSON logs next\nto atlassian-jira.log) are skipped and listed in \"ingest.skipped\", and so\nare side logs next to their main log (atlassian-jira-security.log,\n-outgoing-mail.log, -slow-queries.log beside atlassian-jira.log); files\nnamed explicitly are read, except one over 64 MiB that the format does not\nrecognise at all (error \"not_in_format\"; --force reads it). Lines over 1 MiB\nare cut, and an entry keeps at most 4 Mi characters and 100,000 lines\n(\"parse_error\": \"entry truncated: N lines, M bytes\"). The log-set id is\nderived from the file digests, so ingesting the same files again is a no-op\nthat prints the existing manifest (use --overwrite to rebuild it). Progress\ngoes to stderr.\n\nCluster logs become one set per node (--split auto): a cluster log export\n(a ZIP or folder with job.json and NODE_atlassian-jira.log* files), files\nnamed NODE_atlassian-jira.log* of two or more nodes, or one directory whose\nsub-directories (two or more) hold one node's logs each. --split prefix|dir\nforces a kind, --split none keeps one set. Each node's set is named\nPREFIX_node (PREFIX: --name, else --cluster, else the first 8 characters of\nthe capture id) and labelled with its node, the cluster (--cluster, else\nthat of the node's newest earlier set) and the capture id (--capture, else\nthe export's jobId, else a hash of the set ids). A single set gets --node,\n--cluster (default: the node's earlier cluster) and --capture; when its log\nnames its node, a warning suggests --node.\n\nOutput (json): one set: the manifest, schema \"logset.v1\":\n  {\"schema\": \"logset.v1\", \"id\", \"name\", \"format\",\n   \"sources\": [{\"path\", \"size\", \"xxh3\", \"first_ts\", \"last_ts\", \"entries\"}],\n   \"first_ts\", \"last_ts\", \"entry_count\", \"group_count\", \"created_at\",\n   \"tool_version\", \"schema_version\", \"signature_version\",\n   \"mask_rules_version\", \"signature_spec\", \"recipe_key\",\n   \"node\", \"cluster\", \"capture\",\n   \"ingest\": {\"parsed_entries\", \"parse_errors\", \"elapsed_s\", \"existing\",\n              \"skipped\": [path, ...], \"warnings\": [str, ...]},\n   \"merges\": [{\"cluster_id\", \"signatures\": [str], \"drain_template\"}]}\nA split: {\"schema\": \"ingest-capture.v1\",\n  \"capture\": {\"capture\", \"cluster\", \"first_ts\", \"last_ts\", \"entry_count\",\n              \"nodes\": [{\"node\", \"id\", \"name\", \"first_ts\", \"last_ts\",\n                         \"entry_count\"}]},\n  \"sets\": [<logset.v1 with \"ingest\" as above>, ...], \"warnings\": [str]}\n\"merges\" is present only with --mine; the proposals are also stored in\nmerges.parquet (the \"merges\" view of `query`).\n\"ingest.existing\" is true when the set already existed and was reused (it\ngets the node, cluster and capture it lacks); \"ingest.warnings\" then says\nwhen --name was ignored (also on stderr).\n\nWithout --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git\nwork tree it is not created (error \"store_error\": real logs could be\ncommitted), but an existing ./.atlas-log is used.\n\nExit codes: 0 ok; 1 unknown --format, bad option, bad ZIP, a --split that\ndoes not fit the input, or --node with a split; 2 no files found, format\nnot detected, a large named file not in the format, or no entries parsed\n(manifest still printed); 3 store error (including a refused default store\ninside a git work tree).",
    "output": "logset.v1",
    "exit": [
     0,
@@ -666,7 +667,7 @@
     {
      "name": "--until",
      "type": "str",
-     "help": "Up to this time (same forms as --since)."
+     "help": "Up to this time (same forms as --since; given alone, either one leaves the other end at the capture's first or last entry)."
     },
     {
      "name": "--triage",
@@ -995,7 +996,7 @@
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name; with --all-nodes also a capture (capture:ID, cluster:NAME[@YYYY-MM-DD]): the node that has the entry."
     },
     {
      "name": "ENTRY_ID",
@@ -1329,7 +1330,7 @@
     {
      "name": "--until",
      "type": "str",
-     "help": "Up to this time (same forms as --since)."
+     "help": "Up to this time (same forms as --since; given alone, either one leaves the other end at the capture's first or last entry)."
     },
     {
      "name": "--kind",
@@ -1371,7 +1372,7 @@
     {
      "name": "--until",
      "type": "str",
-     "help": "Up to this time (same forms as --since)."
+     "help": "Up to this time (same forms as --since; given alone, either one leaves the other end at the capture's first or last entry)."
     },
     {
      "name": "--delta",
@@ -1481,7 +1482,7 @@
    "command": "report",
    "version": "",
    "usage": "LOGSET [--out path] [--compare str] [--min-level str] [--examples int=3] [--max-raw int=4000] [--max-groups int] [--window overlap|union] [--open]",
-   "description": "Write a self-contained HTML report of a set or capture (the cluster page).\n\nThe page needs no network access (CSS, JS and data are inlined) and works\nfrom a file share or an e-mail attachment: overview tiles, a per-hour\ntimeline by level (drag to select a time window), the filterable group\ntable and a detail drawer per group with example entries and the\nequivalent CLI commands. The embedded data is the \"report.v1\" payload\n(docs/formats/report.v1.md). With --compare SET_B the report shows the\ngroups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the cluster page\n(the \"cluster-report.v1\" payload, docs/cluster.md): node cards with each\nnode's triage verdict, a timeline band per node with its events, the\ngroups by node, interactions and the example entries of all nodes, within\n--window (overlap by default, or union). The default file is\n<cluster>_<capture id>.html; --compare and --min-level apply to sets only.\n\nOutput (json):\n  {\"schema\": \"report-file.v1\", \"path\": str, \"bytes\": int, \"groups\": int,\n   \"entries\": int, \"compare\": bool, \"capture\"?: str | null, \"nodes\"?: int}\n\"groups\" is the number of groups in the report, \"entries\" the number of\nembedded example entries; a capture adds \"capture\" (its id) and \"nodes\".\nTable mode prints one line.\n\nExit codes: 0 ok; 1 bad option, invalid level, or the sets were built with\ndifferent signature/mask-rule versions or specs; 2 the output directory\ndoes not exist or unknown capture; 3 unknown set or store error.",
+   "description": "Write a self-contained HTML report of a set or capture (the cluster page).\n\nThe page needs no network access (CSS, JS and data are inlined) and works\nfrom a file share or an e-mail attachment: overview tiles, a per-hour\ntimeline by level (drag to select a time window), the filterable group\ntable and a detail drawer per group with example entries and the\nequivalent CLI commands. The embedded data is the \"report.v1\" payload\n(docs/formats/report.v1.md). With --compare SET_B the report shows the\ngroups of SET relative to SET_B (SET_B = baseline, as `diff SET_B SET`).\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the cluster page\n(the \"cluster-report.v1\" payload, docs/cluster.md): node cards with each\nnode's triage verdict, a timeline band per node with its events, the\ngroups by node, interactions and the example entries of all nodes, within\n--window (overlap by default, or union). The default file is\n<cluster>_<capture id>.html; --compare and --min-level apply to sets only.\n\nOutput (json):\n  {\"schema\": \"report-file.v1\", \"path\": str, \"bytes\": int, \"groups\": int,\n   \"entries\": int, \"compare\": bool, \"capture\"?: str | null, \"nodes\"?: int}\n\"groups\" is the number of groups in the report, \"entries\" the number of\nembedded example entries; a capture adds \"capture\" (its id) and \"nodes\".\nTable mode prints one line.\n\nExit codes: 0 ok; 1 bad option, invalid level, --out is a directory, or the\nsets were built with different signature/mask-rule versions or specs; 2 the\noutput directory does not exist or unknown capture; 3 unknown set or store\nerror.",
    "output": "report-file.v1",
    "exit": [
     0,
@@ -1635,10 +1636,11 @@
    "command": "formats",
    "version": "",
    "usage": "[--sample path]",
-   "description": "List the supported log formats.\n\nOutput (json):\n  {\"schema\": \"formats.v1\", \"count\": int,\n   \"items\": [{\"name\", \"description\", \"signature_spec\", \"mask_rules\": [str]}]}\nWith --sample FILE each item also has \"confidence\" (0..1) from sniffing the\nfirst 200 lines of FILE, and items are sorted by it.\n\nExit codes: 0 ok; 2 sample file not found.",
+   "description": "List the supported log formats.\n\nOutput (json):\n  {\"schema\": \"formats.v1\", \"count\": int,\n   \"items\": [{\"name\", \"description\", \"signature_spec\", \"mask_rules\": [str]}]}\nWith --sample FILE each item also has \"confidence\" (0..1) from sniffing the\nfirst 200 lines of FILE, and items are sorted by it.\n\nExit codes: 0 ok; 1 --sample is a directory; 2 sample file not found.",
    "output": "formats.v1",
    "exit": [
     0,
+    1,
     2
    ],
    "params": [

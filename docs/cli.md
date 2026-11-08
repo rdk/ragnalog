@@ -104,7 +104,11 @@ then an application frame only when it starts with one of them.
 Values: timestamps are ISO 8601 strings; stored timestamps are UTC
 (`…+00:00`), `parse` keeps the original offset. `level` is numeric in stored
 tables (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60 UNKNOWN=0) with the
-name in `level_name`; `parse` emits the name in `level`.
+name in `level_name`; `parse` emits the name in `level`. Counts, offsets and
+lengths (`--limit`, `--offset`, `--max-raw`, `--before`, `--examples`, …) and
+seconds (`--delta`, `context --window`) are at most 2147483647, the API's bound;
+a larger or negative value is `invalid_value`. Signatures and their prefixes may
+be typed in upper case.
 
 ### Errors and exit codes
 
@@ -153,7 +157,7 @@ Error codes, with the CLI's exit code and the web API's HTTP status (one table i
 | `not_in_format` | 2 | 422 | A named file over 64 MiB is not in the format (force reads it). |
 | `no_entries` | 2 | 422 | No entries could be parsed. |
 | `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
-| `store_error` | 3 | 500 | Store failure: corrupt manifest, newer schema, store refused or in use; in the CLI also an unknown or ambiguous set. |
+| `store_error` | 3 | 500 | Store failure: corrupt manifest or damaged set, newer schema, store refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
 | `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
 | `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
 
@@ -191,18 +195,21 @@ id (as `captures` prints it) also names its capture where a set is accepted,
 when no set has that id or name. No match is
 reason `capture_not_found` (`not_found`, exit 2), several are
 `ambiguous_capture` (`ambiguous`, exit 1). `capture`, `timeline`, `matrix`,
-`events`, `interactions`, `entries` and `report` take a capture reference
-(`cluster.md` §6); the first five also take a set: the capture it belongs to,
-else that set as a capture of one node.
+`events`, `interactions`, `entries`, `context --all-nodes` and `report` take a
+capture reference (`cluster.md` §6), a bare capture id included; the first five
+also take a set: the capture it belongs to, else that set as a capture of one
+node.
 
 Every capture view counts within one **window**: `--window overlap` (default:
 from the latest first entry of the nodes to the earliest last entry, the time
 all nodes have logs for, so a group is not "only on NODE2" because NODE1's
 files start later), `--window union` (earliest first to latest last), or
 `--since`/`--until` (an explicit window; relative times count back from the
-capture's last entry). Both ends are inclusive. An explicit window is clamped to
-the logs (`--until 9999-12-31` ends at the last entry); one that misses them
-entirely is `invalid_value`.
+capture's last entry). Both ends are inclusive. With only one of them the other
+end is the union's (`--until T` alone runs from the capture's first entry, not
+from the overlap's start); `--window` does not apply. An explicit window is
+clamped to the logs (`--until 9999-12-31` ends at the last entry); one that
+misses them entirely is `invalid_value`.
 
 ### Signature prefixes
 
@@ -239,13 +246,21 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 ### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine] [--force] [--node N] [--cluster C] [--capture ID] [--split auto|prefix|dir|none]`
 
 Parse files/directories/ZIP files (directories: non-recursive `*.log*`; rotated
-`x.log.N` read oldest first) into a log set, or one set per cluster node. The id is derived from the file digests:
+`x.log.N` read oldest first) into a log set, or one set per cluster node. A
+directory (or ZIP) with no log file of its own that a format recognises is
+searched two levels down for directories that hold some: a support ZIP's
+`application-logs/` (not `tomcat-logs/`), `node1/application-logs/`, an
+export's `logs/` beside `job.json`. The id is derived from the file digests:
 re-ingesting the same files prints the existing manifest
 (`ingest.existing: true`) unless `--overwrite`. Format detection sniffs the
 first 200 lines of each file (named files first) until a format recognises
 one. Files found in a directory whose first 200 lines contain no line of that
 format (the access, GC and JSON logs next to `atlassian-jira.log`) are skipped
-and listed in `ingest.skipped` (and on stderr); files named explicitly are
+and listed in `ingest.skipped` (and on stderr), as are side logs: a file
+`<stem>-<name>.log*` next to a `<stem>.log*` that is read
+(`atlassian-jira-security.log`, `-outgoing-mail.log`, `-slow-queries.log` beside
+`atlassian-jira.log`; a part starting with a digit is a dated rotation, not a
+side log). Files named explicitly are
 read, except a file over 64 MiB none of whose first 200 lines is in the format
 (a wrong file or `--format`): that fails with `not_in_format` (exit 2) unless
 `--force`. `--frames N` adds the top N stack frames to signatures. `--mine`
@@ -304,7 +319,9 @@ not detected, a large named file not in the format (`not_in_format`), or zero
 entries (manifest still printed); 3.
 
 **ZIP files** are extracted into the store (`<store>/.spool/`) and removed
-afterwards, also after an error. Only `job.json` and `*.log*` members are
+afterwards, also after an error or a cancel (what a killed ingest left is
+deleted by the next write a day later); error messages name the ZIP, not the
+spool. Only `job.json` and `*.log*` members are
 extracted, directories inside the archive are kept, links and other special
 entries are skipped. A member with an absolute path, a drive or `..` makes the
 whole archive fail (`invalid_value`), as do encrypted members and more than
@@ -315,7 +332,7 @@ per node:
 
 | `--split` | One set per node when |
 |---|---|
-| `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files (one node each). Otherwise: one set, as before. |
+| `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files a format recognises, in them or one level down (one node each: `node1/`, `node1/application-logs/`; `tomcat-logs/` is no node). Otherwise: one set, as before (a single such sub-directory is that set: a support ZIP). |
 | `prefix` | Files named `<NODE>_<log name>` (one node is enough). |
 | `dir` | Each directory given is a node, or the sub-directories of the one directory given (the node id is the `<NODE>_` prefix all its files share, else the directory name). |
 | `none` | Never: one set (`job.json` is not read). |
@@ -574,6 +591,9 @@ and after the anchor, all threads, in time then node order; the twin of
 do not apply. Rows add `node` and `set`, `any_thread` is `true`; at most 2000
 rows (the nearest to the anchor), `total` and `truncated` say when there were
 more. A set in no capture is `invalid_value` whose hint says how to label one.
+With `--all-nodes`, `SET` may also be a capture (`capture:ID`, a bare capture
+id, `cluster:NAME[@YYYY-MM-DD]`): the anchor's set is the node that has the
+entry. `--window` is at most 2147483647 seconds (`invalid_value`).
 
 Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`,
 `--all-nodes` for a set in no capture; 2 no entry with this id (`not_found`,
@@ -616,7 +636,9 @@ DuckDB SQL over the views `entries`, `groups` and (when present) `merges`.
 `atlas-log query --help` lists the same columns; `atlas-log schema NAME` adds
 types and descriptions. The session time zone is UTC whatever the machine's
 zone: timestamps in the result are UTC, as in `entries`, and
-`date_trunc('day', ts)` buckets at UTC midnight.
+`date_trunc('day', ts)` buckets at UTC midnight. An `INTERVAL` result
+(`max(ts) - min(ts)`) comes back as text, e.g. `"4 days 20:15:28.033"`
+(`epoch(max(ts) - min(ts))` gives seconds).
 
 <!-- generated:view-columns by docs/formats/generate.py from store/schema.py -->
 Columns of the views:
@@ -906,8 +928,9 @@ nodes, within `--window` (overlap by default). `--out` defaults to
 `--compare` and `--min-level` apply to sets only. The document adds
 `"capture": "<id>"` and `"nodes": 2`.
 
-Exit: 0; 1 bad option, invalid level, or the sets were signed differently; 2
-output directory does not exist, unknown capture; 3.
+Exit: 0; 1 bad option, invalid level, `--out` is a directory (`usage`), or the
+sets were signed differently; 2 output directory does not exist, unknown
+capture; 3.
 
 ### `parse PATH... [--format F] [--limit 0] [--force]`
 
@@ -979,7 +1002,8 @@ all are skipped); 1 neither SET nor `--all`, or both; 3 unknown set.
 {"schema": "formats.v1", "count": 1, "items": [{"name": "jira", "description", "signature_spec", "mask_rules": [], "confidence"}]}
 ```
 
-`confidence` (0–1) only with `--sample`; items are then sorted by it. Exit: 0; 2.
+`confidence` (0–1) only with `--sample`; items are then sorted by it. Exit: 0; 1
+`--sample` is a directory (`usage`); 2 sample file not found.
 
 ### `schema [entries|groups|merges|logset|NAME.v1]`
 
@@ -1045,8 +1069,11 @@ Runs the web app over the store until interrupted (needs the `web` extra). Pages
 OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
 `Authorization: Bearer T` on `/api`; `--max-upload-mb` defaults to env
 `ATLAS_LOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
-reloading process through these environment variables. Nothing is printed to
-stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
+reloading process through these environment variables. At startup the newest
+capture's cluster page payload is built in the background (its first open is a
+cache hit). On a loopback `--host` only loopback `Host` names are answered, and
+requests that change something from a page of another site are refused (see
+`docs/webapp.md`, Security). Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
 second `serve` on a store that is being served fails with `store_error`.
 
 Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3

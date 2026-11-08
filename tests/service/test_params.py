@@ -11,12 +11,16 @@ import pytest
 from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
+    MAX_COUNT,
     EntryQuery,
     GroupQuery,
     Page,
     Select,
     TextCap,
     blank,
+    check_count,
+    check_out,
+    hex_ref,
     parse_columns,
     parse_level,
     parse_time,
@@ -105,6 +109,37 @@ def test_page() -> None:
     assert _error(lambda: Page.parse(1, -1, front="api")).message == "offset must be >= 0"
     assert Page(None, 0).complete(7) and Page(10, 0).complete(9)
     assert not Page(10, 0).complete(10) and not Page(None, 5).complete(1)
+
+
+@pytest.mark.parametrize("big", [MAX_COUNT + 1, 2**63, 10**20])
+def test_counts_past_the_store_are_invalid_values(big: int) -> None:
+    """Values past int32 (the API's bound) used to overflow the store: internal_error."""
+    assert Page.parse(MAX_COUNT, MAX_COUNT, front="cli") == Page(MAX_COUNT, MAX_COUNT)
+    for call in (
+        lambda: Page.parse(big, front="cli"),
+        lambda: Page.parse(1, big, front="api"),
+        lambda: TextCap.parse(big, default=None, front="cli"),
+        lambda: check_count(big, "before", front="cli"),
+    ):
+        err = _error(call)
+        assert err.code == "invalid_value" and err.message.endswith(f"must be <= {MAX_COUNT}")
+    assert check_count(0, "after", front="cli") == 0
+    assert _error(lambda: check_count(-1, "after", front="api")).message == "after must be >= 0"
+
+
+def test_check_out_refuses_a_directory(tmp_path: Any) -> None:
+    check_out(None, front="cli")
+    check_out(tmp_path / "r.html", front="cli")
+    err = _error(lambda: check_out(tmp_path, front="cli"))
+    assert err.code == "usage" and err.message.startswith("--out ") and "directory" in err.message
+
+
+def test_hex_refs_are_lowercased() -> None:
+    assert hex_ref("83D1828C6AFB2EAD") == "83d1828c6afb2ead" and hex_ref(" ABCD ") == "abcd"
+    assert hex_ref("ABC") == "ABC" and hex_ref("NODE1") == "NODE1"  # not a signature
+    q = EntryQuery(signature="83D1", coarse_signature="76AC9B8F87C9F7B3")
+    where = q.resolve(MANIFEST, front="cli")
+    assert (where.signature, where.coarse_signature) == ("83d1", "76ac9b8f87c9f7b3")
 
 
 def test_text_cap() -> None:

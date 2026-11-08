@@ -108,6 +108,12 @@ def store(*, create: bool = False) -> Store:
                 "real logs",
                 hint=f"pass --store DIR outside the repository or set {STORE_ENV}",
             )
+    if ctx.store.exists() and not ctx.store.is_dir():
+        raise OpError(
+            "store_error",
+            f"the store {ctx.store.as_posix()} is a file, not a directory",
+            hint=f"pass --store DIR (a directory) or set {STORE_ENV}",
+        )
     from atlas_log_analyzer.store.store import Store
 
     return Store(ctx.store)

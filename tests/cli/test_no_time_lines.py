@@ -19,3 +19,15 @@ def test_headless_lines_stay_out_of_time_ranges(jcli: Invoke, tmp_path: Path) ->
     assert stats["entry_count"] == 11
     groups = jcli("groups", "headless", "--limit", "0").json()["items"]
     assert all(not (g.get("first_seen") or "").startswith("1970") for g in groups)
+
+
+def test_time_filters_leave_untimed_entries_out(jcli: Invoke, tmp_path: Path) -> None:
+    """``entries --until`` kept an untimed (epoch) row whose group ``groups --until`` dropped."""
+    log = tmp_path / "atlassian-jira.log"
+    log.write_bytes(b"garbage line one\n" + MINI_LOG.read_bytes())
+    assert jcli("ingest", log, "--name", "orphan").code == 0
+    assert jcli("entries", "orphan", "--level", "UNKNOWN").json()["total"] == 1
+    for option, value in (("--until", "2026-10-29"), ("--since", "1960-01-01")):
+        entries = jcli("entries", "orphan", option, value, "--level", "UNKNOWN").json()
+        groups = jcli("groups", "orphan", option, value, "--level", "UNKNOWN").json()
+        assert (entries["total"], groups["total"]) == (0, 0), option

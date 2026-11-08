@@ -36,6 +36,7 @@
       if (Math.abs(+t) < 1000 || i === UNITS.length - 1) return t + UNITS[i][1];
     }
   }
+  // @zone: parseTs … tsFull (tests/report/test_report_zone.py runs this part with node)
   const parseTs = (iso) => Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1"));
   // times show in UTC or, toggled, in the browser's time zone: a viewer preference kept like the
   // theme (tz=local|utc in a link wins); windows in the hash stay UTC either way
@@ -57,6 +58,7 @@
   const ts16 = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 16)) : "");
   const tsShort = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(5, 10) + " " + iso.slice(11, 16)) : "");
   const tsFull = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 23)) : "");
+  // @zone-end
   function duration(a, b) {
     const ms = parseTs(b) - parseTs(a);
     if (!(ms >= 0)) return "";
@@ -97,7 +99,12 @@
   const HOURS = (D.timeline && D.timeline.hours) || [];
   const NH = HOURS.length;
   const T0MS = NH ? parseTs(HOURS[0]) : 0;
-  const setZone = (local) => { TZL = local; TZ = local ? zoneName(NH ? parseTs(HOURS[NH - 1]) : Date.now()) : "UTC"; };
+  const setZone = (local) => {
+    TZL = local;
+    if (!local) { TZ = "UTC"; return; }
+    const a = zoneName(NH ? parseTs(HOURS[0]) : Date.now()), b = zoneName(NH ? parseTs(HOURS[NH - 1]) : Date.now());
+    TZ = a === b ? a : a + "/" + b;  // the set spans a DST change
+  };
   const ENTRIES = D.entries || (D.entries = {});
   const ENTRIES_URL = D.entries_url || "";
   const MERGES = D.merges || [];
@@ -182,7 +189,7 @@
     return x ? x.ms : NaN;
   };
   /** How much a group stands out: with a window its rate there over its rate outside (+1
-   *  smoothing), else its busiest hour over its average active hour. Cached per window. */
+   *  smoothing), else its busiest hour over its average hour. Cached per window. */
   function spikeOf(r) {
     if (r.spKey === WKEY) return r.sp;
     let v = 0;
@@ -191,18 +198,21 @@
       const hin = S.t[1] - S.t[0] + 1, hout = Math.max(1, NH - hin);
       v = n ? n / hin / ((r.count - n + 1) / hout) : 0;
     } else if (r.hourly.length) {
+      // over every hour of the set, so a group seen in one hour only is a spike, not x1
       let peak = 0;
       for (const [, c] of r.hourly) if (c > peak) peak = c;
-      v = peak / (r.count / r.hourly.length);
+      v = peak / (r.count / NH);
     }
     r.spKey = WKEY;
     return (r.sp = v);
   }
+  /** 1 when the group's first entry of the whole set falls in the window: it started there. */
+  const newIn = (r) => (S.t && r.first && parseTs(r.first) >= T0MS + S.t[0] * 3.6e6 ? 1 : 0);
   const SORTS = {
     count: ["Count", byShown],
     spike: ["Spike (window vs rest)", (a, b) => spikeOf(b) - spikeOf(a) || byShown(a, b)],
     last_seen: ["Last seen", (a, b) => (S.t ? (seenMs(b, "last") || -1) - (seenMs(a, "last") || -1) : cmpStr(b.last || "", a.last || "")) || byShown(a, b)],
-    first_seen: ["First seen", (a, b) => (S.t ? (seenMs(a, "first") || Infinity) - (seenMs(b, "first") || Infinity) : cmpStr(a.first || "￿", b.first || "￿")) || byShown(a, b)],
+    first_seen: ["First seen", (a, b) => (S.t ? newIn(b) - newIn(a) || (seenMs(a, "first") || Infinity) - (seenMs(b, "first") || Infinity) : cmpStr(a.first || "￿", b.first || "￿")) || byShown(a, b)],
     level: ["Level", (a, b) => b.level - a.level || byShown(a, b)],
     template: ["Template", (a, b) => cmpStr(a.tpl, b.tpl) || byShown(a, b)],
     logger: ["Logger", (a, b) => cmpStr(a.logger, b.logger) || byShown(a, b)],
@@ -231,7 +241,7 @@
       : null;
     return finish({
       ...top, id, tpl: tpl == null ? top.tpl : tpl, count, first, last, users, threads, nsrc,
-      hourly, members, kind, cmp, gone: count === 0, g: null, w: null, wKey: "",
+      hourly, members, kind, cmp, gone: count === 0, g: null, w: null, wKey: "", spKey: null, sp: 0,
     });
   }
 
@@ -521,20 +531,27 @@
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
     return out;
   }
+  // @hours: hodOf … binRange (tests/report/test_report_zone.py)
   /** Hour of day and day number of hour i in the shown zone (a half-hour zone's hours start at :30). */
   const hodOf = (i) => Number(zoned(HOURS[i]).slice(11, 13));
   const dayOf = (i) => Math.floor(parseTs(zoned(HOURS[i]).slice(0, 10)) / 864e5);
+  const newDay = (i) => i === 0 || dayOf(i) !== dayOf(i - 1);
   function hourLabel(i) {
     const z = zoned(HOURS[i]);
-    return z.slice(11, 16) === "00:00" ? z.slice(5, 10) : z.slice(11, 16);
+    return newDay(i) && hodOf(i) === 0 ? z.slice(5, 10) : z.slice(11, 16);
   }
-  function binRange(b, k) {
-    const a = b * k, e = Math.min(NH, a + k);
+  /** Bins of k hours start on the shown zone's clock (3-hour bins at 00, 03, ...), not at the
+   *  set's first hour: the bins of hours [0, off) are partial. */
+  const binOff = (k) => (k > 1 && 24 % k === 0 && NH ? hodOf(0) % k : 0);
+  const binHours = (b, k, off) => [Math.max(0, b * k - off), Math.min(NH, (b + 1) * k - off)];
+  function binRange(b, k, off = 0) {
+    const [a, e] = binHours(b, k, off);
     const start = zoned(HOURS[a]);
     const end = zoned(new Date(parseTs(HOURS[e - 1]) + 3.6e6).toISOString());
     return start.slice(0, 10) + " " + start.slice(11, 16) + " – " +
       (end.slice(0, 10) === start.slice(0, 10) ? "" : end.slice(5, 10) + " ") + end.slice(11, 16) + " " + TZ;
   }
+  // @hours-end
   const rectPath = (x, top, w, bottom) => `M${r1(x)} ${r1(bottom)}V${r1(top)}H${r1(x + w)}V${r1(bottom)}Z`;
   function roundTopPath(x, top, w, bottom) {
     const r = Math.min(4, w / 2, bottom - top);
@@ -550,14 +567,17 @@
     // with an overlay, a lane under the axis shows it on its own scale (a small group's line would
     // hug the baseline); the line over the bars is drawn only when it rises above it
     const born = opts.births ? 10 : 0;
-    const lane = born + (opts.overlay ? 9 : 0);
+    // the lane's room is kept when no group is open, so opening one does not rescale the bars
+    const lane = born + (opts.overlay || opts.ovLane ? 9 : 0);
     const padL = 42, padR = 6, padB = 22 + lane;
     const plotW = W - padL - padR;
     const k = chooseBin(NH, plotW);
-    const nb = Math.ceil(NH / k);
+    const off = binOff(k);
+    const nb = Math.ceil((NH + off) / k);
+    const binOf = (i) => Math.floor((i + off) / k);
     const binned = series.map((s) => {
       const out = new Float64Array(nb);
-      for (let i = 0; i < NH; i++) if (s.data[i]) out[Math.floor(i / k)] += s.data[i];
+      for (let i = 0; i < NH; i++) if (s.data[i]) out[binOf(i)] += s.data[i];
       return out;
     });
     const totals = new Float64Array(nb);
@@ -596,7 +616,8 @@
       }
     }
     const parts = [];
-    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}"${opts.overlay ? ` class="has-ov"` : ""}>`);
+    const svgAt = parts.length;
+    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">`);
     if (series.some((s) => s.key === "OTHER")) {
       parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
     }
@@ -611,9 +632,10 @@
     const step = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720].find((h) => h * pxPerHour >= 56) || 720;
     for (let i = 0; i < NH; i++) {
       const hod = hodOf(i);
-      const ok = step < 24 ? hod % step === 0 : hod === 0 && dayOf(i) % (step / 24) === 0;
+      // a repeated hour (DST fall-back) gets no second tick
+      const ok = step < 24 ? hod % step === 0 && (i === 0 || hodOf(i - 1) !== hod) : newDay(i) && dayOf(i) % (step / 24) === 0;
       if (!ok) continue;
-      const x = r1(padL + (i / k) * slot) + 0.5;
+      const x = r1(padL + ((i + off) / k) * slot) + 0.5;
       if (x > W - padR - 16) continue;
       parts.push(`<line class="base" x1="${x}" x2="${x}" y1="${bottom0 + lane}" y2="${bottom0 + lane + 4}"/>`);
       parts.push(`<text class="axis" x="${x}" y="${H - 5}" text-anchor="middle">${hourLabel(i)}</text>`);
@@ -645,7 +667,7 @@
       bornLv = new Int32Array(nb);
       for (let i = 0; i < NH; i++) {
         if (!opts.births.n[i]) continue;
-        const b = Math.floor(i / k);
+        const b = binOf(i);
         bornB[b] += opts.births.n[i];
         if (opts.births.lv[i] > bornLv[b]) bornLv[b] = opts.births.lv[i];
       }
@@ -657,13 +679,13 @@
         const rad = Math.min(slot / 2 + 0.5, 1.5 + 2.5 * Math.sqrt(bornB[b] / mx));
         dots.push(`<circle class="s-${bucketOf(Math.max(10, bornLv[b]))}" cx="${r1(padL + (b + 0.5) * slot)}" cy="${cy}" r="${r1(Math.max(1.2, rad))}"/>`);
       }
-      parts.push(`<text class="axis born-lbl" x="${padL - 6}" y="${cy + 3}" text-anchor="end">new</text><g class="born">${dots.join("")}</g>`);
+      parts.push(`<text class="axis born-lbl" x="${padL - 6}" y="${cy + 3}" text-anchor="end">first</text><g class="born">${dots.join("")}</g>`);
     }
     let ovb = null;
     if (opts.overlay) {
       // a stepped line per bin (a run of empty bins sits on the baseline), clamped to a clipped axis
       ovb = new Float64Array(nb);
-      for (let i = 0; i < NH; i++) if (opts.overlay.data[i]) ovb[Math.floor(i / k)] += opts.overlay.data[i];
+      for (let i = 0; i < NH; i++) if (opts.overlay.data[i]) ovb[binOf(i)] += opts.overlay.data[i];
       let ovMax = 0;
       for (let b = 0; b < nb; b++) if (ovb[b] > ovMax) ovMax = ovb[b];
       const cells = [];
@@ -681,6 +703,7 @@
           d += (b ? `L${x0} ${y}` : `M${x0} ${y}`) + `L${x1} ${y}`;
         }
         parts.push(`<path class="ov-halo" d="${d}"/><path class="ov-line" d="${d}"/>`);
+        parts[svgAt] = parts[svgAt].replace("<svg ", `<svg class="has-ov" `);
       }
     }
     parts.push(`<rect class="brush" x="0" y="${padT}" width="0" height="${plotH}" visibility="hidden"/>`);
@@ -688,7 +711,7 @@
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -727,7 +750,8 @@
       if (geo.series.length > 1) rows.push(`<div class="tt-r tt-t"><b>${fmt(geo.totals[b])}</b><i></i><span>total</span></div>`);
       if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>open group</span></div>`);
       if (geo.top) {
-        const top = topIn(b * geo.k, Math.min(NH, (b + 1) * geo.k) - 1, 3);
+        const [ha, he] = binHours(b, geo.k, geo.off);
+        const top = topIn(ha, he - 1, 3);
         if (top.length) {
           rows.push(`<div class="tt-top">` + top.map(([r, c]) =>
             `<div class="tt-g"><b>${fmt(c)}</b><i class="sw-${r.bucket}"></i><span>${esc(r.tpl || r.sig)}</span></div>`).join("") + `</div>`);
@@ -736,7 +760,7 @@
       if (geo.bornB && geo.bornB[b]) {
         rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} (first seen; click the dot to list them)</span></div>`);
       }
-      tip.innerHTML = `<div class="tt-h">${esc(binRange(b, geo.k))}</div>${rows.join("")}`;
+      tip.innerHTML = `<div class="tt-h">${esc(binRange(b, geo.k, geo.off))}</div>${rows.join("")}`;
       tip.hidden = false;
       placeTip(e);
     });
@@ -746,7 +770,7 @@
     });
   }
   function showWindow(geo, range) {
-    const w = range || (S.t ? [S.t[0] / geo.k, S.t[1] / geo.k] : null);
+    const w = range || (S.t ? [(S.t[0] + geo.off) / geo.k, (S.t[1] + geo.off) / geo.k] : null);
     if (!w) {
       geo.brush.setAttribute("visibility", "hidden");
       return;
@@ -801,6 +825,10 @@
       for (const s of S.mute) n += (BASE_BY.get(s) || { count: 0 }).count;
       html += `<span class="tl-muted" title="Muted groups are left out of the chart and the window totals; the table still lists them">${fmt(S.mute.size)} muted (${compact(n)} entries) <button type="button" class="btn small link" data-unmute>Unmute</button></span>`;
     }
+    const clipped = (D.timeline || {}).clipped;
+    if (clipped) {
+      html += `<span class="tl-muted" title="Entries stamped far outside the set's main time span (a wrong clock, a corrupt line) are left out of the chart; the table counts them">${fmt(clipped)} outside the chart</span>`;
+    }
     if (overlayRow()) {
       html += `<span class="lg-sel" title="The open group: its entries per hour as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest hour"><i class="sw-sel"></i>Open group</span>`;
     }
@@ -831,7 +859,7 @@
       for (const [i, n] of ov.hourly) if (i >= 0 && i < NH) data[i] += n;
       overlay = { data, name: "open group" };
     }
-    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS, top: true });
+    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
     $("tl-clip").innerHTML = clipBtn(TL);
@@ -859,14 +887,15 @@
       if (!d.moved) {
         const y = e.clientY - geo.svg.getBoundingClientRect().top;
         if (geo.bornB && geo.bornB[d.b0] && y > geo.bottom0 && y <= geo.bottom0 + geo.born + 2) {
-          commit({ t: [d.b0 * geo.k, Math.min(NH - 1, (d.b0 + 1) * geo.k - 1)], sort: "first_seen" });
+          const [ha, he] = binHours(d.b0, geo.k, geo.off);
+          commit({ t: [ha, he - 1], sort: "first_seen" });
           return;
         }
         if (S.t) commit({ t: null });
         return;
       }
       const a = Math.min(d.b0, d.b1), b = Math.max(d.b0, d.b1);
-      commit({ t: [a * geo.k, Math.min(NH - 1, (b + 1) * geo.k - 1)] });
+      commit({ t: [binHours(a, geo.k, geo.off)[0], binHours(b, geo.k, geo.off)[1] - 1] });
     };
     hit.addEventListener("pointerup", end);
     hit.addEventListener("pointercancel", end);
@@ -904,6 +933,15 @@
     const what = [`${fmt(total)} entries`];
     if (lv.ERROR) what.push(`<span class="w-err">${fmt(lv.ERROR)} errors</span>`);
     if (lv.WARN) what.push(`${fmt(lv.WARN)} warnings`);
+    if (BIRTHS) {
+      let born = 0;
+      for (let h = a; h <= b; h++) born += BIRTHS.n[h];
+      if (born) {
+        what.push(S.sort === "first_seen"
+          ? `${fmt(born)} first seen here (listed first)`
+          : `<button type="button" class="btn small link" data-sort-first title="Sort by first seen: the groups that started in the window come first">${fmt(born)} first seen here</button>`);
+      }
+    }
     el.innerHTML = `<span class="win-what">Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> ${TZ} (${hoursText(b - a + 1)}) · ${what.join(" · ")}</span>` +
       `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
       `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
@@ -1028,7 +1066,10 @@
     $("t-head").hidden = !page.length;
     if (!page.length) {
       if (!v.rows.length) empty.textContent = "This report has no groups.";
-      else {
+      else if (S.cmp === "vanished" && S.t) {
+        empty.innerHTML = `<div>Vanished groups have no entries in this set, so none falls in a time window.</div>` +
+          `<button type="button" class="btn" data-win="0">Show the whole set</button>`;
+      } else {
         const chips = activeFilters().map(([k, label]) =>
           `<button type="button" class="fchip" data-clear="${k}" title="Remove this filter">${esc(label)} <span aria-hidden="true">×</span></button>`).join("");
         empty.innerHTML = `<div>No groups match the filters.</div>` +
@@ -1583,7 +1624,7 @@
     document.body.classList.add("drawer-open");
     const idx = LIST.findIndex((x) => x.id === S.sig);
     $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
-    const key = S.view + "|" + S.sig + "|" + (S.t || "") + "|" + (idx >= 0);
+    const key = S.view + "|" + S.sig + "|" + (S.t || "") + "|" + (idx >= 0) + "|" + TZ + "|" + [...S.mute].sort().join(",");
     if (key === drawnKey) return;
     const sameGroup = drawnKey && drawnKey.split("|")[1] === S.sig;
     drawnKey = key;
@@ -1628,8 +1669,9 @@
   /** Overview tiles; with a time window each also tells how much of it falls in the window. */
   function renderTiles() {
     WKEY = S.t ? S.t.join("-") : "";
-    if (tilesKey === WKEY) return;
-    tilesKey = WKEY;
+    const tk = WKEY + "|" + [...S.mute].sort().join(",");
+    if (tilesKey === tk) return;
+    tilesKey = tk;
     const st = D.stats || {};
     const lv = st.levels || {};
     const opts = D.options || {};
@@ -1789,12 +1831,14 @@
     const sigs = sigsOf(r);
     if (isMuted(r)) for (const s of sigs) mute.delete(s);
     else for (const s of sigs) mute.add(s);
-    commit({ mute }, { keepPage: true });
+    commit({ mute }, { keepPage: true, replace: true });
     toast(isMuted(r) ? "Muted in the chart" : "Back in the chart");
   }
   /** The group as Jira wiki markup for a ticket: what, how often, when, where, one example. */
   function ticketText(r) {
-    const plain = (t) => String(t || "").replace(/<([A-Z][A-Z0-9_]*|\*)>/g, (_, n) => "<" + n.toLowerCase() + ">");
+    // placeholders as <num>, and Jira's markup characters escaped so a template stays text
+    const plain = (t) => String(t || "").replace(/<([A-Z][A-Z0-9_]*|\*)>/g, (_, n) => "<" + n.toLowerCase() + ">")
+      .replace(/[\\{}\[\]*_|^~+!#-]/g, (c) => "\\" + c);
     const lines = [`h3. ${plain(r.tpl) || "(no message)"}`];
     const facts = [`*Level:* ${r.lvl || ""}`, `*Logger:* {{${r.logger || "-"}}}`];
     if (r.exc) facts.push(`*Exception:* {{${r.exc}}}`);
@@ -1808,7 +1852,7 @@
     lines.push(`* *Log set:* ${LS.name || LS.id}${LS.name ? ` ({{${LS.id}}})` : ""} · signature {{${sig}}}`);
     const id = exampleIds(r).find((x) => ENTRIES[x]);
     if (id) {
-      const raw = fullText(ENTRIES[id]).split("\n");
+      const raw = fullText(ENTRIES[id]).replace(/\{noformat\}/gi, "{ noformat}").split("\n");
       lines.push("{noformat}", ...raw.slice(0, 60), ...(raw.length > 60 ? [`… ${raw.length - 60} more lines`] : []), "{noformat}");
     }
     lines.push(`_atlas-log show ${r.gone ? OTHERREF : SETREF} ${sig}_`);
@@ -1841,6 +1885,7 @@
       const b = e.target.closest("button");
       if (!b || b.disabled) return;
       if (b.dataset.shift) shiftWindow(Number(b.dataset.shift));
+      else if (b.dataset.sortFirst != null) commit({ sort: "first_seen" });
       else if (b.dataset.win != null) {
         const h = Number(b.dataset.win);
         commit({ t: h > 0 ? [NH - h, NH - 1] : null });
@@ -1875,6 +1920,7 @@
     $("t-empty").addEventListener("click", (e) => {
       const b = e.target.closest("[data-clear]");
       if (b) clearFilter(b.dataset.clear);
+      else if (e.target.closest("[data-win]")) commit({ t: null });
     });
     $("f-logger").onclick = () => togglePop("f-logger-pop", renderLoggerPop);
     $("f-exc").onclick = () => togglePop("f-exc-pop", renderExcPop);
@@ -1960,7 +2006,7 @@
     if ($("btn-tz")) $("btn-tz").onclick = toggleTz;
     $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
     $("tl-legend").addEventListener("click", (e) => {
-      if (e.target.closest("[data-unmute]")) return commit({ mute: new Set() }, { keepPage: true });
+      if (e.target.closest("[data-unmute]")) return commit({ mute: new Set() }, { keepPage: true, replace: true });
       const b = e.target.closest("[data-hl]");
       if (!b) return;
       const k = b.dataset.hl;
@@ -1970,7 +2016,7 @@
       else if (hl.has(k)) hl.delete(k);
       else hl.add(k);
       if (shown.every((x) => hl.has(x))) hl = new Set();  // never an empty chart
-      commit({ hl }, { keepPage: true });
+      commit({ hl }, { keepPage: true, replace: true });
     });
     window.atlasTheme = toggleTheme;
     renderThemeBtn();

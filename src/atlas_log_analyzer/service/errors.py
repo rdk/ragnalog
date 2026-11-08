@@ -107,8 +107,9 @@ SPEC: Final[Mapping[str, ErrorSpec]] = {
     "store_error": ErrorSpec(
         ExitCode.STORE,
         500,
-        "Store failure: corrupt manifest, newer schema, store refused or "
-        "in use; in the CLI also an unknown or ambiguous set.",
+        "Store failure: corrupt manifest or damaged set, newer schema, store refused or "
+        "in use, a path the system refuses (permission, a file where a directory belongs); "
+        "in the CLI also an unknown or ambiguous set.",
     ),
     "http": ErrorSpec(ExitCode.USAGE, 400, "Another HTTP error (the API sends its own status)."),
     "internal_error": ErrorSpec(
@@ -299,6 +300,11 @@ def _is(exc: BaseException, module: str, name: str) -> bool:
     return cls is not None and isinstance(exc, cls)
 
 
+_ENOENT: Final = "no such file or directory"
+
+_ACCESS_ERRORS: Final = (PermissionError, IsADirectoryError, NotADirectoryError, FileExistsError)
+"""OSErrors of a path the system refuses: ``store_error`` (the store or a file it writes)."""
+
 _PIPELINE_CODES: Final = (
     ("NoSourcesFound", "no_sources"),
     ("FormatNotDetected", "format_not_detected"),
@@ -313,7 +319,9 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
     ``LogSetNotFound``/``AmbiguousLogSet``, the pipeline's ``NoSourcesFound``,
     ``FormatNotDetected`` and ``NotInFormat``, ``AmbiguousSignature``,
     ``IncompatibleSets``, ``InvalidLevel``, ``UnknownFormatError``,
-    ``FileNotFoundError`` and, last, any ``StoreError`` or ``ValueError``.
+    ``FileNotFoundError``, a refused path (``PermissionError``, ``IsADirectoryError``,
+    ``NotADirectoryError``, ``FileExistsError``: ``store_error``) and, last, any
+    ``StoreError`` or ``ValueError``.
     """
     if isinstance(exc, OpError):
         return exc
@@ -346,8 +354,17 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
     if _is(exc, "atlas_log_analyzer.core.formats.registry", "UnknownFormatError"):
         return OpError("unknown_format", _message(exc))
     if isinstance(exc, FileNotFoundError):
-        name = exc.filename if exc.filename is not None else _message(exc)
-        return OpError("file_not_found", f"no such file or directory: {name}")
+        if exc.filename is not None:
+            return OpError("file_not_found", f"no such file or directory: {exc.filename}")
+        text = _message(exc)
+        if not text.startswith(_ENOENT):
+            text = f"{_ENOENT}: {text}"
+        return OpError("file_not_found", text)
+    if isinstance(exc, _ACCESS_ERRORS):
+        # not every OSError: a closed stdout (BrokenPipeError, EINVAL) must reach the CLI
+        what = exc.strerror or _message(exc) or type(exc).__name__
+        where = exc.filename
+        return OpError("store_error", f"{what}: {where}" if where is not None else what)
     if isinstance(exc, ValueError):
         return OpError("invalid_value", str(exc))
     return None

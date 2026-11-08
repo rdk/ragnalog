@@ -98,8 +98,11 @@ def test_groups_level_filter_and_bad_level(client: TestClient) -> None:
 
 
 def test_validation_error_is_usage(client: TestClient) -> None:
-    doc = _json(client, "/api/sets/mini/groups?limit=-1", 400)
+    doc = _json(client, "/api/sets/mini/groups?limit=nope", 400)
     assert doc["schema"] == "error.v1" and doc["error"]["code"] == "usage"
+    # a number below its bound is invalid_value, as in the CLI; a page cap stays usage
+    assert _json(client, "/api/sets/mini/groups?limit=-1", 400)["error"]["code"] == "invalid_value"
+    assert _json(client, "/api/sets/mini/entries?limit=0", 400)["error"]["code"] == "usage"
 
 
 def test_relative_since(client: TestClient) -> None:
@@ -202,6 +205,8 @@ def test_triage_with_explicit_baseline(client: TestClient) -> None:
     s = doc["summary"]
     assert s["new"] == len(doc["new"])
     assert all(r["report_url"].startswith("/sets/") for r in doc["new"])
+    base = doc["baseline"]["id"]
+    assert all(r["report_url"].startswith(f"/sets/{base}#sig=") for r in doc["vanished"])
     keys = [(r["level"], r["count_b"]) for r in doc["new"]]
     assert keys == sorted(keys, reverse=True)
 
@@ -508,7 +513,7 @@ def test_ingest_frames_option(empty_client: TestClient) -> None:
     bad = empty_client.post("/api/ingest", files=upload, data={"frames": "-1"})
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_value"
     bad = empty_client.post("/api/ingest?frames=-1", files=upload)
-    assert bad.status_code == 400 and bad.json()["error"]["code"] == "usage"
+    assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_value"
     assert not any((empty_client.app.state.atlas.store.root / ".uploads").glob("*/*"))
 
 
@@ -595,3 +600,47 @@ def test_upload_of_a_windows_device_name(empty_client: TestClient, name: str) ->
     job = res.json()
     assert job["state"] == "succeeded", job
     assert job["files"] == ["_" + name] and job["result"]["entry_count"] == 10
+
+
+def test_cross_site_writes_are_refused(client: TestClient) -> None:
+    """A page of another site can post a form to the server; such requests change nothing."""
+    evil = {"Origin": "https://evil.example"}
+    res = client.delete("/api/sets/mini", headers=evil)
+    assert res.status_code == 403 and res.json()["error"]["code"] == "http"
+    assert (
+        client.delete("/api/sets/mini", headers={"Sec-Fetch-Site": "cross-site"}).status_code == 403
+    )
+    assert client.post("/api/jobs/x/cancel", headers={"Origin": "null"}).status_code == 403
+    assert client.get("/api/sets/mini", headers=evil).status_code == 200  # reads are not writes
+    same = {"Origin": "http://testserver", "Sec-Fetch-Site": "same-origin"}
+    assert client.post("/api/jobs/x/cancel", headers=same).status_code == 404  # reached the route
+    assert client.get("/api/sets/mini").status_code == 200
+
+
+def test_loopback_server_refuses_other_host_names(store_dir: Path) -> None:
+    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS, _host_name
+
+    assert [_host_name(h) for h in ("[::1]:8321", "LocalHost:80", "127.0.0.1", "")] == [
+        "::1",
+        "localhost",
+        "127.0.0.1",
+        "",
+    ]
+    app = create_app(Settings(store=store_dir), hosts=LOOPBACK_HOSTS)
+    with TestClient(app, base_url="http://127.0.0.1:8321") as c:
+        assert c.get("/api/sets").status_code == 200
+        rebound = c.get("/api/sets", headers={"Host": "attacker.example:8321"})
+        assert rebound.status_code == 400 and rebound.json()["error"]["code"] == "http"
+
+
+def test_upload_without_content_length_is_refused(empty_client: TestClient) -> None:
+    def chunks() -> Any:
+        yield b'--x\r\nContent-Disposition: form-data; name="files"; filename="a.log"\r\n\r\n'
+        yield b"x" * 1024 + b"\r\n--x--\r\n"
+
+    res = empty_client.post(
+        "/api/ingest",
+        content=chunks(),
+        headers={"Content-Type": "multipart/form-data; boundary=x"},
+    )
+    assert res.status_code == 411 and res.json()["error"]["code"] == "http"

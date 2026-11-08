@@ -241,7 +241,7 @@ class AppState:
             return hit
         row = set_summary(ls)
         with self._cache_lock:
-            self._summaries[key] = row
+            _replace_version(self._summaries, key, row)
         return row
 
     def activity(self, ls: LogSet) -> list[tuple[int, int, int]]:
@@ -253,7 +253,7 @@ class AppState:
             return hit
         hours = set_activity(ls)
         with self._cache_lock:
-            self._activity[key] = hours
+            _replace_version(self._activity, key, hours)
         return hours
 
     def _cached(
@@ -348,11 +348,13 @@ class AppState:
         from atlas_log_analyzer.service.documents import ClusterReportUrls
 
         capture = capture_queries.capture_from_ref(self, ref, front="api")
+        window = w.resolve(capture, front="api")  # since=1d and an ISO time can be one window
         key = (
             tuple((m.node, m.logset.id, _version(m.logset)) for m in capture.nodes),
             capture.id,
             capture.cluster,
-            w,
+            window.mode,
+            window.ms,
             examples,
             max_raw,
             max_groups,
@@ -382,6 +384,17 @@ class AppState:
             return _ENCODER.encode(payload)
 
         return self._cached(self._clusters, key, build)
+
+
+def _replace_version[V](cache: dict[tuple[str, str], V], key: tuple[str, str], value: V) -> None:
+    """Store ``value`` under ``(set id, version)``, dropping the set's older versions.
+
+    A relabel by the CLI next to the server gives a set a new version without going
+    through :meth:`AppState.invalidate`; the old entries would stay forever.
+    """
+    for old in [k for k in cache if k[0] == key[0]]:
+        del cache[old]
+    cache[key] = value
 
 
 def _manifest_mtime(path: Path) -> int:

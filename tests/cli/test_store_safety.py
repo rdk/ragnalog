@@ -102,3 +102,11 @@ def test_serve_refuses_default_store_in_repo(cli: Invoke, repo: Path) -> None:
     pytest.importorskip("fastapi")
     res = cli("--output", "json", "serve")
     assert res.code == 3 and res.json()["error"]["code"] == "store_error"
+
+
+def test_overwrite_without_a_name_keeps_the_name(jcli: Invoke) -> None:
+    assert jcli("ingest", MINI_LOG, "--name", "night").code == 0
+    assert jcli("ingest", MINI_LOG, "--overwrite").code == 0
+    assert jcli("groups", "night").code == 0  # still found by its name
+    assert jcli("ingest", MINI_LOG, "--overwrite", "--name", "day").code == 0
+    assert jcli("groups", "day").code == 0 and jcli("groups", "night").code == 3

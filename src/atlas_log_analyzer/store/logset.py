@@ -77,6 +77,11 @@ def _sql_path(path: Path) -> str:
     return path.resolve().as_posix().replace("'", "''")
 
 
+def _ident(name: str) -> str:
+    """Quote a column name for DuckDB SQL."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _tz_columns(df: pl.DataFrame) -> list[str]:
     return [
         name
@@ -520,7 +525,8 @@ class LogSet:
         query cannot read or write other files. The session time zone is UTC
         whatever the machine's zone: timestamps come back in UTC and
         ``date_trunc('day', ts)`` buckets at UTC midnight. Tables created by the
-        query live only for the duration of the call.
+        query live only for the duration of the call. ``INTERVAL`` columns come back
+        as text (``4 days 20:15:28.033``), which polars cannot import otherwise.
 
         Args:
             query: SQL text; the last statement's result is returned.
@@ -549,6 +555,16 @@ class LogSet:
             rel = con.sql(query)
             if rel is None:
                 return pl.DataFrame()
+            if any(str(t) == "INTERVAL" for t in rel.types):
+                # polars cannot import DuckDB intervals: return them as text ('4 days 20:15:28')
+                rel = rel.project(
+                    ", ".join(
+                        f"CAST({_ident(c)} AS VARCHAR) AS {_ident(c)}"
+                        if str(t) == "INTERVAL"
+                        else _ident(c)
+                        for c, t in zip(rel.columns, rel.types, strict=True)
+                    )
+                )
             if max_rows is not None:
                 rel = rel.limit(max_rows)
             result: pl.DataFrame = rel.pl()

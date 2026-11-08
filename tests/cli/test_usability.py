@@ -182,3 +182,33 @@ def test_highlight_caused_by_and_more() -> None:
     assert "yellow" in _styles(
         highlight_entry("2026-" + next(e for e in ENTRIES if " WARN " in e)), "WARN"
     )
+
+
+def test_paths_the_system_refuses_are_errors_not_crashes(
+    cli: Invoke, jcli: Invoke, mini: str, tmp_path: Path
+) -> None:
+    """A directory or file where the other belongs used to be internal_error."""
+    sample = jcli("formats", "--sample", tmp_path)
+    assert (sample.code, sample.json()["error"]["code"]) == (1, "usage")
+    report = jcli("report", mini, "--out", tmp_path)
+    assert (report.code, report.json()["error"]["code"]) == (1, "usage")
+    assert "is a directory" in report.json()["error"]["message"]
+    afile = tmp_path / "afile"
+    afile.write_text("x", encoding="utf-8")
+    ingest = cli("--output", "json", "--store", afile, "ingest", MINI_LOG)
+    assert (ingest.code, ingest.json()["error"]["code"]) == (3, "store_error")
+
+
+def test_missing_input_is_said_once(jcli: Invoke, tmp_path: Path) -> None:
+    error = jcli("ingest", tmp_path / "nothing").json()["error"]
+    assert error["code"] == "file_not_found"
+    assert error["message"].count("no such file or directory") == 1
+
+
+def test_a_damaged_set_is_a_store_error(jcli: Invoke, mini: str, store_dir: Path) -> None:
+    set_id = jcli("set", mini).json()["id"]
+    (store_dir / set_id / "groups.parquet").unlink()
+    result = jcli("set", mini)
+    assert result.code == 3 and result.json()["error"]["code"] == "store_error"
+    assert "groups.parquet is missing" in result.json()["error"]["message"]
+    assert f"atlas-log remove {set_id}" in result.json()["error"]["hint"]

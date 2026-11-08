@@ -18,7 +18,14 @@ from atlas_log_analyzer.store.split import (
     read_job,
     safe_node,
 )
-from tests.cluster import JOB_ID, export_zip, job_json, write_export, write_node_files
+from tests.cluster import (
+    JOB_ID,
+    export_zip,
+    job_json,
+    node_lines,
+    write_export,
+    write_node_files,
+)
 
 # --- ZIP inputs
 
@@ -270,3 +277,86 @@ def test_safe_node() -> None:
     assert safe_node("node 1 (old)") == "node_1_old"
     assert safe_node("NODE1") == "NODE1"
     assert safe_node("...") == "node"
+
+
+# --- layouts one or two levels deep (support ZIPs, nested exports)
+
+CATALINA = "01-Nov-2026 10:00:00.000 INFO [main] org.acme.Startup Server started\n"
+ACCESS = '10.0.0.1 - - [01/Nov/2026:10:00:00 +0000] "GET / HTTP/1.1" 200 5\n'
+
+
+def _support_members(prefix: str = "", node: str = "NODE1") -> dict[str, bytes]:
+    """The members of a single-node support ZIP (invented content)."""
+    return {
+        f"{prefix}application-logs/atlassian-jira.log": node_lines(node, 0).encode(),
+        f"{prefix}application-logs/atlassian-jira.log.1": node_lines(node, 1).encode(),
+        f"{prefix}application-properties/application.xml": b"<x/>",
+        f"{prefix}tomcat-logs/catalina.2026-11-01.log": CATALINA.encode(),
+        f"{prefix}tomcat-logs/localhost_access_log.2026-11-01.txt": ACCESS.encode(),
+    }
+
+
+def test_a_support_zip_is_one_set_of_its_application_logs(tmp_path: Path) -> None:
+    archive = _zip(tmp_path / "Jira_support_2026-11-01.zip", _support_members())
+    with expand_archives([archive], tmp_path / ".spool") as inputs:
+        split = plan_split(inputs)
+        assert split.kind is None and split.nodes == () and split.warnings == ()
+        assert [p.name for p in split.paths] == ["application-logs"]
+        found = [s.path.name for s in discover_sources(split.paths)]
+        assert found == ["atlassian-jira.log.1", "atlassian-jira.log"]
+        assert plan_split(inputs, "none").paths == split.paths
+
+
+def test_zip_with_node_folders_one_level_deeper_splits_by_dir(tmp_path: Path) -> None:
+    members = {**_support_members("node1/", "NODE1"), **_support_members("node2/", "NODE2")}
+    archive = _zip(tmp_path / "both.zip", members)
+    with expand_archives([archive], tmp_path / ".spool") as inputs:
+        split = plan_split(inputs)
+        assert split.kind == "dir" and list(_names(split.nodes)) == ["node1", "node2"]
+        assert [p.relative_to(inputs[0]).as_posix() for p in split.paths] == [
+            "node1/application-logs",
+            "node2/application-logs",
+        ]
+        assert _names(split.nodes)["node2"] == ["atlassian-jira.log", "atlassian-jira.log.1"]
+
+
+def test_zip_with_job_json_and_a_logs_folder_splits_by_job(tmp_path: Path) -> None:
+    members = {"job.json": job_json().encode()}
+    for node in ("NODE1", "NODE2"):
+        members[f"logs/{node}_atlassian-jira.log"] = node_lines(node, 0).encode()
+    archive = _zip(tmp_path / "export.zip", members)
+    with expand_archives([archive], tmp_path / ".spool") as inputs:
+        split = plan_split(inputs)
+        assert split.kind == "job" and split.job is not None and split.job.id == JOB_ID
+        assert list(_names(split.nodes)) == ["NODE1", "NODE2"]
+        assert [p.name for p in split.paths] == ["logs"] and split.warnings == ()
+
+
+def test_zip_errors_name_the_zip_not_the_spool(tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import NoSourcesFound, select_sources
+
+    archive = _zip(tmp_path / "nothing.zip", {"a/b/readme.txt": b"x", "a/c/notes.txt": b"y"})
+    spool = tmp_path / "store" / ".spool"
+    with pytest.raises(NoSourcesFound) as caught, expand_archives([archive], spool) as inputs:
+        select_sources(plan_split(inputs).paths)
+    assert str(caught.value) == f"no log files found in {archive}"
+    assert ".spool" not in str(caught.value) and not spool.exists()
+
+
+def test_a_cancelled_zip_ingest_leaves_nothing_in_the_spool(tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from atlas_log_analyzer.store.store import Store
+
+    class Cancelled(Exception):
+        pass
+
+    def cancel(progress: object) -> None:
+        raise Cancelled
+
+    archive = _zip(tmp_path / "logs.zip", {"atlassian-jira.log": node_lines("NODE1", 0).encode()})
+    store = Store(tmp_path / "store")
+    spool = store.root / ".spool"
+    with pytest.raises(Cancelled), expand_archives([archive], spool) as inputs:
+        ingest_paths(store, inputs, progress=cancel, progress_every=1)
+    # the parser is closed before the spool is removed: on Windows an open file would stay
+    assert not spool.exists()

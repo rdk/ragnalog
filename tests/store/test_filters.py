@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
@@ -95,6 +95,23 @@ def test_filter_selects_expected_rows(built: Built) -> None:
     assert errors.height > 0 and set(errors["level"].to_list()) == {int(LogLevel.ERROR)}
     warn_up = ls.entries(where=EntryFilter(min_level=LogLevel.WARN), columns=["level"])
     assert set(warn_up["level"].to_list()) <= {40, 50, 60}
+
+
+def test_time_bounds_leave_untimed_entries_out() -> None:
+    """An untimed parse error (stored at the epoch) is in no time range, as its group."""
+    import polars as pl
+
+    epoch = datetime(1970, 1, 1, tzinfo=UTC)
+    rows = pl.DataFrame({"ts": [epoch, BASE.astimezone(UTC)], "parse_error": ["no time", None]})
+    cases = (
+        (EntryFilter(until=BASE + timedelta(minutes=1)), [BASE]),
+        (EntryFilter(since=datetime(1960, 1, 1, tzinfo=UTC)), [BASE]),
+        (EntryFilter(), [epoch, BASE]),
+    )
+    for where, expected in cases:
+        predicate = where.predicate()
+        kept = rows if predicate is None else rows.filter(predicate)
+        assert kept["ts"].to_list() == expected, where
 
 
 def test_store_views_shim_reexports_service_views() -> None:

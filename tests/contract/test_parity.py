@@ -295,6 +295,42 @@ CASES: list[Case] = [
         status=404,
         reason="entry_not_found",
     ),
+    # a number below its bound is invalid_value in both (the API mapped it to usage)
+    Case(
+        "error-negative-offset",
+        ["entries", "edge", "--offset", "-1"],
+        "/api/sets/edge/entries?offset=-1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-negative-max-raw",
+        ["entries", "edge", "--max-raw", "-1"],
+        "/api/sets/edge/entries?max_raw=-1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-negative-before",
+        ["context", "edge", "{entry}", "--before", "-1"],
+        "/api/sets/edge/entries/{entry}/context?before=-1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-negative-frames-limit",
+        ["frames", "edge", "{entry}", "--limit", "-1"],
+        "/api/sets/edge/frames/{entry}?limit=-1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-triage-grow",
+        ["triage", "edge", "--grow", "1"],
+        "/api/sets/edge/triage?grow=1",
+        exit=1,
+        status=400,
+    ),
 ]
 
 # The capture views, on a store of their own (cluster_dir): nodes NODE1 and NODE2 of
@@ -315,6 +351,18 @@ CLUSTER_CASES: list[Case] = [
         "/api/captures/cluster:acme@2026-11-02?since=2026-11-02T10:00&until=1h",
     ),
     Case("capture-of-a-member-set", ["capture", "{n1}"], "/api/captures/{n1}"),
+    # a bare capture id names its capture in every capture view of the CLI, as in the API
+    Case("capture-bare-id", ["capture", "cap-acme"], "/api/captures/cap-acme"),
+    Case(
+        "cluster-timeline-bare-id",
+        ["timeline", "cap-acme", "--bucket", "1h"],
+        "/api/captures/cap-acme/timeline?bucket=1h",
+    ),
+    Case(
+        "capture-entries-bare-id",
+        ["entries", "cap-acme", "--brief", "--limit", "5"],
+        "/api/captures/cap-acme/entries?brief=true&limit=5",
+    ),
     Case("capture-of-one-set", ["capture", "acme_node1_prev"], "/api/captures/acme_node1_prev"),
     Case("cluster-timeline", ["timeline", "cluster:acme"], "/api/captures/cluster:acme/timeline"),
     Case(
@@ -499,6 +547,12 @@ HTTP_CAPS: list[Case] = [
     # entries has no "all" page over HTTP: limit=0 is refused (follow next_offset), while
     # `atlas-log entries --limit 0` writes every entry.
     Case("entries-limit-0", ["entries", "edge", "--limit", "0"], "/api/sets/edge/entries?limit=0"),
+    # nor has a group's entries: show --limit 0 writes them all, a response stays bounded
+    Case(
+        "show-limit-0",
+        ["show", "edge", "{sig}", "--limit", "0"],
+        "/api/sets/edge/groups/{sig}?limit=0",
+    ),
     Case(
         "context-before",
         ["context", "edge", "{entry}", "--before", "10001"],

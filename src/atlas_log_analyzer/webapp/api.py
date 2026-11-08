@@ -15,6 +15,7 @@ from atlas_log_analyzer.service.capture_queries import CaptureWindow
 from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
+    MAX_COUNT,
     EntryQuery,
     GroupQuery,
     IngestTarget,
@@ -61,7 +62,7 @@ def _auth(request: Request) -> None:
         raise OpError("unauthorized", "missing or wrong API token")
 
 
-BIG = 2**31 - 1
+BIG = MAX_COUNT
 """Upper bound of the count, offset and length parameters (larger ones overflow the store)."""
 
 router = APIRouter(prefix="/api", default_response_class=JSON, dependencies=[Depends(_auth)])
@@ -342,11 +343,14 @@ def group(
     signature: str,
     state: StateDep,
     sel: Annotated[Select, Depends(query_model(Select))],
-    limit: Annotated[int, Query(ge=0, le=10_000)] = 20,
+    limit: Annotated[int, Query(ge=1, le=10_000)] = 20,
     coarse: bool = False,
     max_raw: Annotated[int, Query(ge=0, le=BIG)] = DEFAULT_MAX_RAW,
 ) -> dict[str, Any]:
     """One group with its hourly histogram and first entries (``group.v1``).
+
+    ``limit`` is 1..10000 entries (``show --limit 0`` writes them all; one response does
+    not: a group can hold 600k entries).
 
     ``signature`` may be a unique prefix of at least 4 hex characters (``ambiguous``,
     409, lists candidates when several groups match).
@@ -358,7 +362,7 @@ def group(
     """
     cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
     return queries.group(
-        state, ref, signature, limit=limit or None, coarse=coarse, sel=sel, cap=cap, front="api"
+        state, ref, signature, limit=limit, coarse=coarse, sel=sel, cap=cap, front="api"
     )
 
 
@@ -618,6 +622,8 @@ def triage(
         for key in ("new", "new_exceptions", "grew"):
             for row in doc[key]:
                 row["report_url"] = f"/sets/{me['id']}?compare={base['id']}#sig={row['signature']}"
+        for row in doc["vanished"]:  # not in this set: the baseline's report has its entries
+            row["report_url"] = f"/sets/{base['id']}#sig={row['signature']}"
     return doc
 
 

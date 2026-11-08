@@ -44,7 +44,9 @@ def ingest(
     ZIP is extracted into the store, job.json and *.log* files only, at most
     32 GiB, and removed afterwards). Files found in a directory that the format
     does not recognise in their first 200 lines (access, GC or JSON logs next
-    to atlassian-jira.log) are skipped and listed in "ingest.skipped"; files
+    to atlassian-jira.log) are skipped and listed in "ingest.skipped", and so
+    are side logs next to their main log (atlassian-jira-security.log,
+    -outgoing-mail.log, -slow-queries.log beside atlassian-jira.log); files
     named explicitly are read, except one over 64 MiB that the format does not
     recognise at all (error "not_in_format"; --force reads it). Lines over 1 MiB
     are cut, and an entry keeps at most 4 Mi characters and 100,000 lines
@@ -335,11 +337,6 @@ def select_sources(
 ) -> SourceSelection:
     """Files and format of `ingest`/`parse`; foreign files found in directories are skipped."""
     selection = service_ingest.select(paths, name, force=force, front="cli")
-    if selection.skipped:
-        names = ", ".join(src.path.name for src in selection.skipped[:5])
-        more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
-        ctx.out().info(
-            f"skipped {len(selection.skipped)} file(s) that are not {selection.fmt.name} "
-            f"logs: {names}{more}"
-        )
+    for note in selection.skipped_notes():  # foreign files, side logs: one line each
+        ctx.out().info(note)
     return selection

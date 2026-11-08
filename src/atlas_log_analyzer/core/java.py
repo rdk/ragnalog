@@ -143,6 +143,7 @@ def _is_marker(line: str) -> bool:
 def _find_start(lines: Sequence[str]) -> tuple[int, re.Match[str]] | None:
     """Index and match of the first line that starts an exception chain."""
     n = min(len(lines), _MAX_SCAN_LINES)
+    nxt: list[int] | None = None  # index of the first marker at or after each line, on demand
     for i in range(n):
         line = lines[i]
         if not line or line[0] in " \t":
@@ -153,12 +154,16 @@ def _find_start(lines: Sequence[str]) -> tuple[int, re.Match[str]] | None:
         simple = m.group("type").rsplit(".", 1)[-1]
         if simple.endswith(_EXC_SUFFIXES):
             return i, m
-        # Accept unusual type names only when frames follow the message.
-        for j in range(i + 1, n):
-            if _is_marker(lines[j]):
-                if lines[j].lstrip().startswith("at "):
-                    return i, m
-                break
+        # Accept unusual type names only when frames follow the message: the first marker
+        # after it is a frame. One pass from the end finds every line's next marker (a body
+        # of many header-like lines and no frames was quadratic).
+        if nxt is None:
+            nxt = [n] * (n + 1)
+            for k in range(n - 1, -1, -1):
+                nxt[k] = k if _is_marker(lines[k]) else nxt[k + 1]
+        j = nxt[i + 1]
+        if j < n and lines[j].lstrip().startswith("at "):
+            return i, m
     return None
 
 

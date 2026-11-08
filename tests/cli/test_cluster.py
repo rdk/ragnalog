@@ -212,6 +212,28 @@ def test_capture_views_from_the_cli(jcli: Invoke, captured: str, tmp_path: Path)
     assert 'id="cluster-data"' in page.read_text(encoding="utf-8")
 
 
+def test_a_bare_capture_id_names_its_capture(jcli: Invoke, captured: str, tmp_path: Path) -> None:
+    timeline = jcli("timeline", JOB_ID, "--bucket", "1d")
+    assert timeline.code == 0 and timeline.json()["schema"] == "cluster-timeline.v1"
+    merged = jcli("entries", JOB_ID, "--window", "union", "--columns", "id,node").json()
+    assert merged["logset"] == f"capture:{JOB_ID}" and merged["total"] > 0
+    written = jcli("report", JOB_ID, "--out", tmp_path / "c.html").json()
+    assert written["capture"] == JOB_ID and written["nodes"] == 2
+    # context --all-nodes: the anchor's set is the node that has the entry
+    row = next(r for r in merged["items"] if r["node"] == "NODE2")
+    around = jcli("context", JOB_ID, row["id"], "--all-nodes", "--columns", "id,node").json()
+    assert {r["node"] for r in around["items"]} >= {"NODE2"}
+    assert any(r["id"] == row["id"] and r["node"] == "NODE2" for r in around["items"])
+    wide = jcli("context", JOB_ID, row["id"], "--all-nodes", "--window", "1e308")
+    assert (wide.code, wide.json()["error"]["code"]) == (1, "invalid_value")  # was an overflow
+    for ref in (JOB_ID, captured):
+        missing = jcli("context", ref, "0" * 16, "--all-nodes")
+        assert (missing.code, missing.json()["error"]["reason"]) == (2, "entry_not_found")
+    # a name that is neither a set nor a capture is still an unknown set
+    unknown = jcli("entries", "nothing-here")
+    assert unknown.code == 3 and unknown.json()["error"]["reason"] == "set_not_found"
+
+
 def test_capture_usage_errors(jcli: Invoke, captured: str) -> None:
     triage = jcli("triage", captured)
     assert triage.code == 1 and triage.json()["error"]["code"] == "usage"

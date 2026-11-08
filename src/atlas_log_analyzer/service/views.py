@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from atlas_log_analyzer.core.java import is_app_frame
-from atlas_log_analyzer.service.params import DEFAULT_MAX_RAW
+from atlas_log_analyzer.service.params import DEFAULT_MAX_RAW, hex_ref
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA
 
 if TYPE_CHECKING:
@@ -254,12 +254,13 @@ def resolve_signature(ls: LogSet, ref: str, *, coarse: bool = False) -> str:
     (``coarse_signature`` with ``coarse``) in the groups table; anything else,
     including a full 16-character signature, is returned unchanged, as is a
     prefix that matches nothing (callers report "not found" as for any unknown
-    signature).
+    signature). Hex in upper case is lowercased first (:func:`hex_ref`).
 
     Raises:
         AmbiguousSignature: The prefix matches several groups.
 
     """
+    ref = hex_ref(ref)
     if not _PREFIX.match(ref):
         return ref
     import polars as pl
@@ -293,6 +294,7 @@ def _frame_entry(ls: LogSet, ref: str) -> dict[str, Any] | None:
         rows = to_records(lf.head(1).collect())
         return rows[0] if rows else None
 
+    ref = hex_ref(ref)
     found = by_id(ref)
     if found is not None:
         return found

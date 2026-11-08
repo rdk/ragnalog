@@ -20,7 +20,14 @@ from typing import TYPE_CHECKING, Any, Final, Protocol
 
 from atlas_log_analyzer.core.paths import safe_name
 from atlas_log_analyzer.service.errors import Front, OpError, flag
-from atlas_log_analyzer.service.params import _LABEL, IngestTarget, check_label, parse_level
+from atlas_log_analyzer.service.params import (
+    _LABEL,
+    IngestTarget,
+    check_count,
+    check_label,
+    check_out,
+    parse_level,
+)
 from atlas_log_analyzer.service.sets import Sets, open_set, resolving
 
 if TYPE_CHECKING:
@@ -239,13 +246,8 @@ def _select(split: Split, o: _Options) -> SourceSelection:
     from atlas_log_analyzer.store.pipeline import select_sources
 
     selection = select_sources(split.paths, o.fmt, force=o.force)
-    if selection.skipped:
-        names = ", ".join(src.path.name for src in selection.skipped[:5])
-        more = f" and {len(selection.skipped) - 5} more" if len(selection.skipped) > 5 else ""
-        o.say(
-            f"skipped {len(selection.skipped)} file(s) that are not {selection.fmt.name} "
-            f"logs: {names}{more}"
-        )
+    for note in selection.skipped_notes():
+        o.say(note)
     return selection
 
 
@@ -269,7 +271,7 @@ def _single(store: Store, split: Split, target: IngestTarget, o: _Options) -> Do
         store,
         selection.sources,
         selection.fmt,
-        name=o.name,
+        name=o.name or (keep.name if keep else None),  # a rebuild keeps its name too
         frames=o.frames,
         overwrite=o.overwrite,
         mine=o.mine,
@@ -652,8 +654,8 @@ def report_file(
 
     lvl = parse_level(min_level, "min_level", front=front)
     for name, value in (("examples", examples), ("max_raw", max_raw), ("max_groups", max_groups)):
-        if value < 0:
-            raise OpError("invalid_value", f"{flag(name, front)} must be >= 0")
+        check_count(value, name, front=front)
+    check_out(out, front=front)
     ls = open_set(sets, ref, front=front)
     baseline = open_set(sets, compare, front=front) if compare is not None else None
     path = out if out is not None else report_filename(ls)

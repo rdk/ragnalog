@@ -95,7 +95,13 @@ from atlas_log_analyzer.service.documents import (
     Verdict,
 )
 from atlas_log_analyzer.service.errors import Front, OpError, flag, hint
-from atlas_log_analyzer.service.params import DEFAULT_MAX_RAW, TextCap, parse_columns, parse_time
+from atlas_log_analyzer.service.params import (
+    DEFAULT_MAX_RAW,
+    TextCap,
+    hex_ref,
+    parse_columns,
+    parse_time,
+)
 
 if TYPE_CHECKING:
     import duckdb
@@ -327,7 +333,8 @@ def resolve_window(
 
     ``overlap`` runs from the latest first entry of the nodes to the earliest last
     entry, ``union`` from the earliest first to the latest last. With ``since`` or
-    ``until`` the mode is ``explicit``; a missing end comes from ``mode``. Times are
+    ``until`` the mode is ``explicit`` and ``mode`` does not apply: a missing end is the
+    union's (the first or the last entry of the capture). Times are
     datetimes (naive = UTC) or the strings of ``--since`` (ISO 8601, a date, or
     ``30m``/``2h``/``1d`` before the capture's last entry). An explicit window is
     clamped to the union of the logs.
@@ -354,12 +361,13 @@ def resolve_window(
     t0 = _time(since, "since", last, front)
     t1 = _time(until, "until", last, front)
     if t0 is not None or t1 is not None:
-        start, end = t0 or start, t1 or end
-        if start > end:
+        if t0 is not None and t1 is not None and t0 > t1:
             raise OpError(
                 "invalid_value",
-                f"{flag('since', front)} {_iso(start)} is after {flag('until', front)} {_iso(end)}",
+                f"{flag('since', front)} {_iso(t0)} is after {flag('until', front)} {_iso(t1)}",
             )
+        start = t0 if t0 is not None else first
+        end = t1 if t1 is not None else last
         if start > last or end < first:
             raise OpError(
                 "invalid_value",
@@ -882,6 +890,7 @@ def _bucket(bucket: str, front: Front) -> int:
 
 
 def _resolve_signature(db: _Db, signature: str, front: Front) -> str:
+    signature = hex_ref(signature)
     sigs = db.attrs()
     if signature in sigs:
         return signature
@@ -1495,7 +1504,7 @@ def interactions(
 
     """
     if delta_s < 0:
-        raise OpError("invalid_value", f"{flag('delta_s', front)} must be >= 0")
+        raise OpError("invalid_value", f"{flag('delta', front)} must be >= 0 (seconds)")
     with _Db(capture) as db:
         body = _interactions(db, window, delta_s)
     return ClusterInteractions(**_fields(body))

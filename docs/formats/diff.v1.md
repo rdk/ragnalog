@@ -43,4 +43,4 @@ One group compared between baseline A and set B (counts are 0 on the missing sid
 | `rate_b` | `number \| null` | --rate, triage grew: count_b per hour. |
 | `rate_ratio` | `number \| null` | rate_b / rate_a. |
 | `rate_per_hour` | `number \| null` | triage new: count_b per hour. |
-| `report_url` | `string` | API triage: report page of the group. |
+| `report_url` | `string` | API triage: report page of the group (vanished: the baseline's report). |

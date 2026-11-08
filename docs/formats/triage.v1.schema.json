@@ -358,7 +358,7 @@
           ]
         },
         "report_url": {
-          "description": "API triage: report page of the group.",
+          "description": "API triage: report page of the group (vanished: the baseline's report).",
           "type": "string"
         }
       }

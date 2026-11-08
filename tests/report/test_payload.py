@@ -257,3 +257,51 @@ def test_compare_respects_versions(store: Store) -> None:
 def test_invalid_options(store: Store, kwargs: dict[str, int]) -> None:
     with pytest.raises(ValueError):
         build_payload(store.open("sample"), **kwargs)  # type: ignore[arg-type]
+
+
+def _stray_log(tmp_path: Any, years: tuple[int, ...]) -> Any:
+    # a stray first line, then the real entries, then another stray year
+    stray = [
+        f"{y:04d}-01-01 00:00:00,000+0000 exec-2 WARN      [org.acme.B] Clock {y}" for y in years
+    ]
+    lines = (
+        stray[:1]
+        + [
+            f"2026-10-29 11:{m:02d}:00,000+0000 exec-1 ERROR      [org.acme.A] Job failed {m}"
+            for m in range(5)
+        ]
+        + stray[1:]
+    )
+    path = tmp_path / "stray.log"
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
+def test_stray_years_do_not_stretch_the_timeline(tmp_path: Any) -> None:
+    """A clock years off (1965, 2006) keeps the timeline to the densest span."""
+    from atlas_log_analyzer.report.payload import densest_hours
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+
+    store = Store(tmp_path / "s")
+    ls = ingest_paths(store, [_stray_log(tmp_path, (1965, 2006))], name="stray").logset
+    doc = build_payload(ls)
+    tl = doc["timeline"]
+    assert len(tl["hours"]) == 1 and tl["hours"][0] == "2026-10-29T11:00:00Z"
+    assert tl["clipped"] == 2 and sum(tl["levels"]["ERROR"]) == 5
+    assert all(i == 0 for g in doc["groups"] for i, _ in g.get("hourly", []) or [])
+    assert densest_hours({5: 1, 6: 9, 100: 2}, 10) == (5, 6)
+    assert densest_hours({-500_000: 1, 10: 3}, 50) == (10, 10)
+
+
+def test_index_with_a_pre_1970_entry(tmp_path: Any) -> None:
+    from fastapi.testclient import TestClient
+
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from atlas_log_analyzer.webapp import Settings, create_app
+
+    store = Store(tmp_path / "s")
+    ingest_paths(store, [_stray_log(tmp_path, (1965,))], name="stray")
+    with TestClient(create_app(Settings(store=store.root))) as client:
+        page = client.get("/")
+        assert page.status_code == 200 and "stray" in page.text
+        assert client.get("/api/sets/stray/report").status_code == 200

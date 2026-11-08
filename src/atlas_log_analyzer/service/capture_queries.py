@@ -33,15 +33,18 @@ from atlas_log_analyzer.service.captures import (
     is_capture_ref,
     resolve_capture,
 )
-from atlas_log_analyzer.service.errors import Front, OpError, flag
+from atlas_log_analyzer.service.errors import Front, OpError, flag, hint
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
+    MAX_COUNT,
     EntryQuery,
     GroupQuery,
     Page,
     Select,
     TextCap,
     blank,
+    check_count,
+    check_out,
 )
 from atlas_log_analyzer.service.sets import Sets, open_set
 
@@ -59,6 +62,7 @@ __all__ = [
     "events",
     "interactions",
     "matrix",
+    "names_capture",
     "raw_entries",
     "report_file",
     "report_filename",
@@ -92,7 +96,8 @@ class CaptureWindow:
             of the nodes, the time all of them have logs for; union: earliest to latest).
         since: From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the
             capture's last entry (an explicit window instead of --window).
-        until: Up to this time (same forms as --since).
+        until: Up to this time (same forms as --since; given alone, either one leaves the
+            other end at the capture's first or last entry).
 
     """
 
@@ -111,6 +116,26 @@ class CaptureWindow:
 
         since, until = blank(self.since), blank(self.until)
         return resolve_window(capture, self.window, since, until, front=front)
+
+
+def names_capture(sets: Sets, ref: str) -> bool:
+    """Whether ``ref`` names a capture rather than a set (commands that take either).
+
+    True for a capture reference (``capture:…``, ``cluster:…``) and for a bare capture
+    id that no set has as id, name or unique id prefix (:func:`capture_from_ref`).
+    An ambiguous set reference is not a capture: opening it reports the ambiguity.
+    """
+    if is_capture_ref(ref):
+        return True
+    from atlas_log_analyzer.store.store import AmbiguousLogSet, LogSetNotFound
+
+    try:
+        sets.open(ref)
+    except LogSetNotFound:
+        return get_capture(sets, ref) is not None
+    except AmbiguousLogSet:
+        return False
+    return False
 
 
 def capture_from_ref(sets: Sets, ref: str, *, front: Front) -> Capture:
@@ -255,6 +280,7 @@ def interactions(sets: Sets, ref: str, w: CaptureWindow, *, delta_s: int, front:
     """``interactions.v1``: mentions, co-bursts, concurrent jobs, sessions, job ownership."""
     from atlas_log_analyzer.service.cluster import interactions as build
 
+    check_count(delta_s, "delta", front=front, zero=" (seconds)")
     cap = capture_from_ref(sets, ref, front=front)
     window = w.resolve(cap, front=front)
     return _doc(build(cap, window=window, delta_s=delta_s, front=front))
@@ -345,37 +371,55 @@ def context(
 ) -> tuple[Doc, int]:
     """``entries.v1`` of every node within ``window_s`` seconds of one entry of set ``ref``.
 
+    ``ref`` may also name a capture (:func:`names_capture`); the anchor's set is then
+    the member that has ``entry_id``.
+
     Returns the document and the anchor's index in ``items`` (``-1`` when cut away).
 
     Raises:
         OpError: ``invalid_value`` when the set belongs to no capture or for a bad
-            window; reasons ``set_not_found``, ``entry_not_found``.
+            window; reasons ``set_not_found``, ``entry_not_found``, ``capture_not_found``.
 
     """
     from atlas_log_analyzer.service.cluster import context_all_nodes, open_capture
     from atlas_log_analyzer.service.views import DETAIL_BRIEF
 
     columns = _columns(sel, DETAIL_BRIEF, front=front)
-    if window_s < 0:
+    if not window_s >= 0:
         raise OpError("invalid_value", f"{flag('window', front)} must be >= 0 (seconds)")
-    ls = open_set(sets, ref, front=front)
-    m = ls.manifest
-    info = get_capture(sets, m.capture) if m.capture is not None else None
-    if info is None:
-        name = m.name or m.id
-        raise OpError(
-            "invalid_value",
-            f"log set {name} belongs to no capture, so there are no other nodes",
-            hint=(
-                f"label the sets of one capture (`atlas-log label {name} --node N "
-                "--capture ID`), or leave out --all-nodes"
-                if front == "cli"
-                else "label the sets of one capture (POST /api/sets/{ref}/label), "
-                "or leave out all_nodes"
-            ),
+    if window_s > MAX_COUNT:
+        raise OpError("invalid_value", f"{flag('window', front)} must be <= {MAX_COUNT} (seconds)")
+    if names_capture(sets, ref):
+        capture_ = capture_from_ref(sets, ref, front=front)
+        member = next(
+            (n.logset for n in capture_.nodes if n.logset.entry(entry_id) is not None), None
         )
-    pairs = [(n.node, open_set(sets, n.id, front=front)) for n in info.nodes]
-    capture_ = open_capture(pairs, capture_id=info.capture, cluster=info.cluster, front=front)
+        if member is None:
+            raise OpError.because(
+                "entry_not_found",
+                front,
+                f"no entry with id {entry_id!r} on any node of {capture_.ref}",
+                hint=hint("entry_not_found", front, set=ref, id=ref),
+            )
+        m = member.manifest
+    else:
+        m = open_set(sets, ref, front=front).manifest
+        info = get_capture(sets, m.capture) if m.capture is not None else None
+        if info is None:
+            name = m.name or m.id
+            raise OpError(
+                "invalid_value",
+                f"log set {name} belongs to no capture, so there are no other nodes",
+                hint=(
+                    f"label the sets of one capture (`atlas-log label {name} --node N "
+                    "--capture ID`), or leave out --all-nodes"
+                    if front == "cli"
+                    else "label the sets of one capture (POST /api/sets/{ref}/label), "
+                    "or leave out all_nodes"
+                ),
+            )
+        pairs = [(n.node, open_set(sets, n.id, front=front)) for n in info.nodes]
+        capture_ = open_capture(pairs, capture_id=info.capture, cluster=info.cluster, front=front)
     keep = None if columns is None else list(dict.fromkeys(["id", *columns]))
     doc = _doc(
         context_all_nodes(
@@ -463,6 +507,7 @@ def report_file(
 
     from atlas_log_analyzer.report import write_cluster_report
 
+    check_out(out, front=front)
     capture_ = capture_from_ref(sets, ref, front=front)
     payload = report_payload(
         sets, capture_, w, examples=examples, max_raw=max_raw, max_groups=max_groups, front=front

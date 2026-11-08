@@ -299,7 +299,7 @@
         cancel.hidden = true;
         $("job-state").textContent = "done";
         const names = skipped.map((p) => esc(String(p).split(/[\/]/).pop()));
-        $("job-detail").innerHTML = fmt(j.entries) + " entries · skipped " + names.length + " file(s) that are not " +
+        $("job-detail").innerHTML = fmt((j.progress || {}).entries ?? j.result.entry_count) + " entries · skipped " + names.length + " file(s) that are not " +
           esc(j.result.format || "in the format") + ": " + names.slice(0, 5).join(", ") + (names.length > 5 ? " …" : "") +
           ' · <a href="' + href + '">Open the report</a>';
       } else if (j.state === "failed" || j.state === "cancelled") {

@@ -124,10 +124,8 @@ def timeline(
         by_node: Per node of the set's capture (a set in no capture: that one node).
 
     """
-    from atlas_log_analyzer.service.captures import is_capture_ref
-
     store, out = ctx.store(), ctx.out()
-    if is_capture_ref(ref) or by_node:
+    if by_node or cq.names_capture(store, ref):
         if blank(level) or blank(min_level):
             raise OpError(
                 "usage",

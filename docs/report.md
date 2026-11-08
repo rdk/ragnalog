@@ -49,8 +49,9 @@ Size-driven conventions (2026-10-29, still `report.v1`):
   "stats": { /* LogSet.stats(): entry_count, group_count, parse_errors, levels, loggers, hours, time_range */ },
   "timeline": {                               // per-hour counts by level for the overview chart
     "hours": ["2026-10-24T03:00:00Z", ...],   // contiguous, first..last hour of the set
-    "levels": { "ERROR": [n, ...], "WARN": [...], "INFO": [...], "DEBUG": [...], "OTHER": [...] }
-  },
+    "levels": { "ERROR": [n, ...], "WARN": [...], "INFO": [...], "DEBUG": [...], "OTHER": [...] },
+    "clipped": 2                              // only when > 0: entries outside the kept span
+  },                                          // (at most 400 days, the densest: a clock years off)
   "groups": [                                 // groups.v1 rows, sorted by count desc, at most max_groups
     {
       "signature": "83d1828c6afb2ead", "coarse_signature": "...",   // only when != signature
@@ -160,18 +161,19 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   its count.
 - The timeline tooltip lists, under the level counts, the three largest groups of
   the hovered bar (muted groups and hidden levels left out): what a spike is made of.
-- *New* lane (under the timeline's axis): a dot per hour in which groups were first
+- *First* lane (under the timeline's axis): a dot per hour in which groups were first
   seen (the set's first hour left out, everything starts there), its area by how
   many, its color the highest level among them. A deploy or an incident shows as a
   cluster of new groups; clicking a dot narrows the table to that hour sorted by
-  first seen.
+  first seen, the groups that started in it listed first. With a window the label
+  says how many groups started in it (a button sorts by first seen).
 - Time zone: the header button switches every printed time, axis label and tooltip
   between UTC and the browser's time zone (shown by its short name, e.g. CET). It
   is a viewer preference like the theme (kept in `localStorage`, shared with the
   cluster page; `tz=local|utc` in a link wins); the window in the hash stays UTC.
 - Sort *Spike*: with a window, the group's rate in it over its rate outside it
   ("what started at 14:00?"); without one, its busiest hour over its average
-  active hour. The ratio shows under the count (`×37`).
+  hour over the whole set (a group seen in one hour only is a spike). The ratio shows under the count (`×37`).
 - *Copy for ticket* (drawer) copies the group as Jira wiki markup: template,
   level, logger, exception, counts, first and last seen (and the window), the set,
   the signature, the first example entry and the CLI command.

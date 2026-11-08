@@ -120,18 +120,21 @@ def test_windows(capture: C.Capture) -> None:
     assert (overlap.mode, overlap.since, overlap.until) == ("overlap", at(9, 0), at(11, 59, 30))
     union = C.resolve_window(capture, "union")
     assert (union.mode, union.since, union.until) == ("union", at(8, 0), at(12, 0))
+    # one end given: the other is the union's (the capture's last or first entry)
     explicit = C.resolve_window(capture, since="2026-11-02T10:00")
-    assert (explicit.mode, explicit.since, explicit.until) == (
-        "explicit",
-        at(10, 0),
-        at(11, 59, 30),
-    )
+    assert (explicit.mode, explicit.since, explicit.until) == ("explicit", at(10, 0), at(12, 0))
+    early = C.resolve_window(capture, until=at(8, 30))  # before the overlap starts (9:00)
+    assert (early.mode, early.since, early.until) == ("explicit", at(8, 0), at(8, 30))
     relative = C.resolve_window(capture, "union", since="30m", until=at(12, 0))
     assert (relative.since, relative.until) == (at(11, 30), at(12, 0))
     assert error(lambda: C.resolve_window(capture, "sideways")).code == "invalid_value"
     assert error(lambda: C.resolve_window(capture, since="yesterday")).code == "invalid_value"
     late = error(lambda: C.resolve_window(capture, since=at(12, 0), until=at(9, 0)))
     assert late.code == "invalid_value" and "after" in late.message
+    # one bound outside the logs: the message names the window, not a bound never given
+    before = error(lambda: C.resolve_window(capture, until=at(7, 0)))
+    assert before.code == "invalid_value" and "holds no entries" in before.message
+    assert "since" not in before.message
 
 
 def test_empty_overlap_suggests_union(store: Store, tmp_path: Path) -> None:
@@ -427,9 +430,11 @@ def test_interactions(capture: C.Capture, window: C.Window) -> None:
     assert owners["CleanupJobRunner"] == {"NODE1": 1, "NODE2": 2}
     narrow = doc(C.interactions(capture, window=window, delta_s=60))
     assert not any(c["a"]["template"].startswith("Deadlock") for c in narrow["co_bursts"])
-    assert error(lambda: C.interactions(capture, window=window, delta_s=-1)).code == (
-        "invalid_value"
-    )
+    negative = error(lambda: C.interactions(capture, window=window, delta_s=-1, front="cli"))
+    # the option is --delta (API delta), not delta_s
+    assert (negative.code, negative.message) == ("invalid_value", "--delta must be >= 0 (seconds)")
+    api = error(lambda: C.interactions(capture, window=window, delta_s=-1, front="api"))
+    assert api.message.startswith("delta must be")
 
 
 def test_bursts_start_after_quiet_minutes() -> None:

@@ -80,6 +80,9 @@ CASES: list[tuple[Exception, str, int, str, int, str | None]] = [
     (StoreError("broken"), "store_error", 3, "store_error", 500, None),
     (UnknownFormatError("unknown format 'x'"), "unknown_format", 1, "unknown_format", 400, None),
     (FileNotFoundError(2, "No such file", "x"), "file_not_found", 2, "file_not_found", 404, None),
+    (PermissionError(13, "Permission denied", "d"), "store_error", 3, "store_error", 500, None),
+    (IsADirectoryError(21, "Is a directory", "d"), "store_error", 3, "store_error", 500, None),
+    (FileExistsError(17, "File exists", "f"), "store_error", 3, "store_error", 500, None),
     (ValueError("bad"), "invalid_value", 1, "invalid_value", 400, None),
 ]
 
@@ -94,8 +97,24 @@ def test_from_exception_per_front_end(
     assert c.reason == a.reason == reason
 
 
+def test_file_not_found_messages_say_it_once() -> None:
+    plain = from_exception(FileNotFoundError("no such file or directory: x.log"), "cli")
+    assert plain is not None and plain.message == "no such file or directory: x.log"
+    named = from_exception(FileNotFoundError(2, "No such file", "x.log"), "cli")
+    assert named is not None and named.message == "no such file or directory: x.log"
+    other = from_exception(FileNotFoundError("Failed to open x.parquet"), "cli")
+    assert (
+        other is not None and other.message == "no such file or directory: Failed to open x.parquet"
+    )
+    refused = from_exception(PermissionError(13, "Permission denied", "d"), "cli")
+    assert refused is not None and refused.message == "Permission denied: d"
+
+
 def test_from_exception_unknown_and_passthrough() -> None:
     assert from_exception(RuntimeError("boom"), "cli") is None
+    # a closed stdout must reach the CLI's quiet exit, not become an error document
+    assert from_exception(BrokenPipeError(32, "Broken pipe"), "cli") is None
+    assert from_exception(OSError(22, "Invalid argument"), "cli") is None
     err = OpError("usage", "x")
     assert from_exception(err, "api") is err
 

@@ -339,12 +339,12 @@ def entries(
         window: overlap or union (a capture only; default overlap, unless --since/--until).
 
     """
-    from atlas_log_analyzer.service.captures import is_capture_ref
+    from atlas_log_analyzer.service.capture_queries import names_capture
 
     page = Page.parse(limit, offset, front="cli")
     sel = Select(columns=columns, brief=brief)
     cap = params.cap(max_raw, text=raw)
-    if is_capture_ref(logset):
+    if names_capture(ctx.store(), logset):
         _capture_entries(logset, q, page, sel, cap, raw=raw, window=window or "overlap")
         return
     shown = sel.resolve(ENTRY_FIELDS, ENTRY_BRIEF, front="cli")
@@ -435,7 +435,8 @@ def context(
     set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name; with --all-nodes also a capture
+            (capture:ID, cluster:NAME[@YYYY-MM-DD]): the node that has the entry.
         entry_id: Id of the anchor entry (16 hex chars, from `entries`/`show`).
         before: Entries to show before the anchor.
         after: Entries to show after the anchor.

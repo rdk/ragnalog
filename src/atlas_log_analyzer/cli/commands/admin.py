@@ -35,7 +35,7 @@ def formats_(*, sample: Path | None = None) -> None:
     With --sample FILE each item also has "confidence" (0..1) from sniffing the
     first 200 lines of FILE, and items are sorted by it.
 
-    Exit codes: 0 ok; 2 sample file not found.
+    Exit codes: 0 ok; 1 --sample is a directory; 2 sample file not found.
 
     Args:
         sample: A log file to test every format against.
@@ -205,7 +205,12 @@ def serve(
             reload=True,
         )
         return
-    uvicorn.run(create_app(settings, warm=True), host=host, port=port, log_level="info")
+    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
+
+    # on loopback only loopback names: a page that rebinds its own name here cannot read it
+    hosts = LOOPBACK_HOSTS if host.strip("[]").lower() in LOOPBACK_HOSTS else None
+    app = create_app(settings, warm=True, hosts=hosts)
+    uvicorn.run(app, host=host, port=port, log_level="info")
 
 
 def version() -> None:

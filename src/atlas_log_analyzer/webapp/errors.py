@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -15,6 +15,23 @@ from atlas_log_analyzer.store.store import AmbiguousLogSet, StoreError
 from atlas_log_analyzer.webapp.responses import JSON
 
 __all__ = ["error_doc", "error_response", "install_handlers"]
+
+_RANGE_ERRORS = frozenset({"greater_than", "greater_than_equal"})
+"""Pydantic error types of a number below its lower bound (``invalid_value``, as in the CLI)."""
+
+
+def _validation_code(error: Mapping[str, Any]) -> str:
+    """``invalid_value`` for a number below its bound, as the CLI reports it; else ``usage``.
+
+    Page caps stay ``usage`` (the CLI has none): an upper bound, and ``limit=0``, which
+    means "all" in the CLI but is below a page's ``limit`` of at least 1 here.
+    """
+    if error.get("type") not in _RANGE_ERRORS:
+        return "usage"
+    loc = tuple(error.get("loc", ()))
+    if loc[-1:] == ("limit",) and str(error.get("input", "")).strip() == "0":
+        return "usage"
+    return "invalid_value"
 
 
 def error_doc(
@@ -66,4 +83,4 @@ def install_handlers(app: FastAPI, page: ErrorPage | None = None) -> None:
         first = exc.errors()[0] if exc.errors() else {}
         where = ".".join(str(p) for p in first.get("loc", ()) if p not in ("query", "body"))
         message = f"{where}: {first.get('msg', 'invalid request')}"
-        return respond(request, OpError("usage", message))
+        return respond(request, OpError(_validation_code(first), message))

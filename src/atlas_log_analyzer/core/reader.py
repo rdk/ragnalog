@@ -19,9 +19,11 @@ __all__ = [
     "iter_lines",
     "iter_raw_lines",
     "iter_sources",
+    "side_logs",
 ]
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
+_STEM_RE = re.compile(r"^(?P<stem>.+?)\.log", re.IGNORECASE)
 LOG_GLOB = "*.log*"
 """Names of the log files :func:`discover_sources` reads from a directory."""
 _CHUNK = 1 << 18
@@ -115,6 +117,45 @@ def discover_sources(paths: Iterable[Path | str], *, glob: str = LOG_GLOB) -> li
 
 iter_sources = discover_sources
 """Former name of :func:`discover_sources` (it returns a list, not an iterator)."""
+
+
+def _stem(path: Path) -> str | None:
+    m = _STEM_RE.match(path.name)
+    return m.group("stem").lower() if m else None
+
+
+def side_logs(paths: Iterable[Path]) -> set[Path]:
+    """Return the side logs among ``paths``: ``<stem>-<name>.log*`` next to ``<stem>.log*``.
+
+    A Jira home's ``log/`` directory holds ``atlassian-jira-security.log``,
+    ``-outgoing-mail.log`` or ``-slow-queries.log`` beside the main
+    ``atlassian-jira.log`` family, in the same header layout. A file is a side log
+    when another file in the same directory has the stem it extends with ``-`` and
+    a part that does not start with a digit (``app-2026-11-01.log`` is a dated
+    rotation, not a side log). The stem is the name up to its first ``.log``,
+    compared case-insensitively; a ``<NODE>_`` prefix is part of it, so each node
+    keeps its own main family.
+    """
+    stems: dict[Path, set[str]] = {}
+    named: list[tuple[Path, str]] = []
+    for path in paths:
+        stem = _stem(path)
+        if stem is not None:
+            stems.setdefault(path.parent, set()).add(stem)
+            named.append((path, stem))
+    side: set[Path] = set()
+    for path, stem in named:
+        mains = stems[path.parent]
+        for i, char in enumerate(stem):
+            if (
+                char == "-"
+                and stem[:i] in mains
+                and i + 1 < len(stem)
+                and not stem[i + 1].isdigit()
+            ):
+                side.add(path)
+                break
+    return side
 
 
 def _decode_line(raw: bytes, encoding: str) -> str:

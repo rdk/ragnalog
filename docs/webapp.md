@@ -88,7 +88,7 @@ CLI's:
 | `not_in_format` | 2 | 422 | A named file over 64 MiB is not in the format (force reads it). |
 | `no_entries` | 2 | 422 | No entries could be parsed. |
 | `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
-| `store_error` | 3 | 500 | Store failure: corrupt manifest, newer schema, store refused or in use; in the CLI also an unknown or ambiguous set. |
+| `store_error` | 3 | 500 | Store failure: corrupt manifest or damaged set, newer schema, store refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
 | `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
 | `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
 
@@ -129,7 +129,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
-| `GET /api/sets/{ref}/groups/{sig}` | `limit` (20), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
+| `GET /api/sets/{ref}/groups/{sig}` | `limit` (20; 1..10000, no `0` for all), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw`; `since`, `until`, `limit` (3, max 50) | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape; with `since`/`until` its first `limit` entries in that window instead (the report's time window) |
 | `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
 | `GET /api/sets/{ref}/entries/{id}/raw` | | `text/plain`: the exact text of the entry as in its log file, banner lines it carries first (the pages' "Open raw" link; not in the OpenAPI schema) |
@@ -164,7 +164,8 @@ Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
 (`triage.v1`, `groups.v1`, … and the rows `EntryRow`, `GroupRow`, `DiffRow`,
 `MergeRow`), each operation's success response refers to its document, and
 every `/api` operation documents its errors as `error.v1` (status 400 for a bad
-parameter, not FastAPI's 422). `webapp/openapi.py` maps the operations to
+parameter, not FastAPI's 422: a number below its bound, such as `offset=-1`, is
+`invalid_value` as in the CLI; a page cap and any other bad parameter are `usage`). `webapp/openapi.py` maps the operations to
 the documents; a new route needs an entry there (a test checks it).
 
 `{ref}` under `/api/captures` is a capture reference (`capture:ID`, a unique
@@ -201,7 +202,7 @@ is built by `store/triage.py` and is the same as `atlas-log triage` prints
  "new":            [<diff row> + rate_per_hour + report_url, ...],   // ERROR first, then by count
  "new_exceptions": [<diff row> + rate_per_hour + report_url, ...],   // any level, not in "new"
  "grew":           [<diff row> + ratio + rate_a + rate_b + rate_ratio + report_url, ...],
- "vanished":       [<diff row>, ...],
+ "vanished":       [<diff row> + report_url, ...],     // report_url: the baseline's report
  "report_url": "/sets/{id}"}
 ```
 
@@ -287,10 +288,17 @@ run next to the server.
 - **Warm start:** `atlas-log serve` builds the newest capture's cluster page payload
   in a background thread at startup (about half a second for two nodes of 700k
   entries each), so its first open is a cache hit.
-- **Security:** binds to loopback by default; `--token` guards the pages and `/api`. Uploaded
-  file names are reduced to a safe basename (a Windows device name such as
-  `nul.log` gets a `_` prefix). Error messages do not include
-  server paths. Arbitrary SQL (`atlas-log query`) is not exposed over HTTP.
+- **Security:** binds to loopback by default; `--token` guards the pages and `/api`.
+  Requests that change something (POST, DELETE) sent by a page of another site
+  (`Origin` of another host, `Sec-Fetch-Site: cross-site`) are refused with 403: a
+  form on any web page could otherwise post to the local server. On a loopback
+  address only loopback `Host` names are answered (400 otherwise), so a page that
+  rebinds its own DNS name to 127.0.0.1 cannot read the API. An upload needs
+  `Content-Length` (411 otherwise; browsers always send it), so its size is checked
+  before the body is read. Uploaded file names are reduced to an ASCII basename (a
+  Windows device name such as `nul.log` or `COM¹.log` gets a `_` prefix). Set
+  references are one plain name (no separators, `..` or drive). Error messages do
+  not include server paths. Arbitrary SQL (`atlas-log query`) is not exposed over HTTP.
 
 ## Not built yet
 

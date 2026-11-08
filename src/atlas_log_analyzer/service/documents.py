@@ -1400,7 +1400,11 @@ def row_schemas() -> dict[str, dict[str, Any]]:
                 "rate_b": {"description": "--rate, triage grew: count_b per hour.", **_NULL_NUM},
                 "rate_ratio": {"description": "rate_b / rate_a.", **_NULL_NUM},
                 "rate_per_hour": {"description": "triage new: count_b per hour.", **_NULL_NUM},
-                "report_url": {"description": "API triage: report page of the group.", **_STR},
+                "report_url": {
+                    "description": "API triage: report page of the group (vanished: the "
+                    "baseline's report).",
+                    **_STR,
+                },
             },
         ),
     }

@@ -273,6 +273,46 @@ def test_named_files_are_always_read(tmp_path: Path) -> None:
     assert len(result.logset.manifest.sources) == 2
 
 
+SIDE_LINES = {
+    # invented lines in the main log's header layout: a format recognises them
+    "atlassian-jira-security.log": "2026-10-29 02:20:00,000+0100 http-nio-8080-exec-5 "
+    "INFO jdoe 140x1x1 1abcd 10.0.0.1 /login.jsp [c.a.j.security.login.LoginLoggerImpl] "
+    "login : 'jdoe' tried to login\n",
+    "atlassian-jira-outgoing-mail.log": "2026-10-29 02:21:00,000+0100 Caesium-1-3 INFO "
+    "anonymous    Mail Queue Service [c.a.mail.outgoing] Sending mail to x@example.com\n",
+    "atlassian-jira-slow-queries.log.1": "2026-10-29 02:22:00,000+0100 http-nio-8080-exec-7 "
+    "INFO jdoe 141x2x1 1abcd 10.0.0.1 /rest/api/2/search [c.a.j.issue.search.Slow] "
+    "JQL query took 4000 ms\n",
+}
+
+
+def test_side_logs_of_a_jira_home_log_directory_are_skipped(tmp_path: Path) -> None:
+    from atlas_log_analyzer.store.pipeline import select_sources
+
+    folder = mixed_dir(tmp_path)
+    for name, line in SIDE_LINES.items():
+        (folder / name).write_text(line, encoding="utf-8")
+    assert all(select_sources([folder / n]).sources for n in SIDE_LINES)  # in the format
+    selection = select_sources([folder])
+    assert [s.path.name for s in selection.sources] == ["atlassian-jira.log"]
+    assert sorted(s.path.name for s in selection.side) == sorted(SIDE_LINES)
+    assert len(selection.skipped) == len(SIDE_LINES) + 2  # and the access and GC logs
+    notes = selection.skipped_notes()
+    assert notes[0].startswith("skipped 2 file(s) that are not jira logs: ")
+    assert notes[1].startswith("skipped 3 side log(s) next to their main log")
+    result = ingest_paths(Store(tmp_path / "store"), [folder])
+    assert [Path(s.path).name for s in result.logset.manifest.sources] == ["atlassian-jira.log"]
+    assert {Path(p).name for p in result.skipped} >= set(SIDE_LINES)
+    # named explicitly, a side log is read; without its main log, it is no side log
+    security = folder / "atlassian-jira-security.log"
+    named = select_sources([folder, security])
+    assert sorted(s.path.name for s in named.sources) == [security.name, "atlassian-jira.log"]
+    alone = tmp_path / "alone"
+    alone.mkdir()
+    (alone / security.name).write_text(SIDE_LINES[security.name], encoding="utf-8")
+    assert [s.path.name for s in select_sources([alone]).sources] == [security.name]
+
+
 def test_select_sources_without_format_files(tmp_path: Path) -> None:
     from atlas_log_analyzer.store.pipeline import select_sources
 

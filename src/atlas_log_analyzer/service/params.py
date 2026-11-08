@@ -21,6 +21,7 @@ import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from atlas_log_analyzer.service.errors import Front, OpError, flag
@@ -32,6 +33,7 @@ if TYPE_CHECKING:
 
 __all__ = [
     "DEFAULT_MAX_RAW",
+    "MAX_COUNT",
     "SPLIT_MODES",
     "EntryQuery",
     "GroupQuery",
@@ -41,7 +43,10 @@ __all__ = [
     "SplitMode",
     "TextCap",
     "blank",
+    "check_count",
     "check_label",
+    "check_out",
+    "hex_ref",
     "parse_columns",
     "parse_level",
     "parse_time",
@@ -50,6 +55,12 @@ __all__ = [
 DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
 
+MAX_COUNT = 2**31 - 1
+"""Largest count, offset, length or number of seconds either front end accepts.
+
+The web API's bound (``webapp.api.BIG``); larger values overflow the store's queries.
+"""
+
 _RELATIVE = re.compile(r"^(\d{1,12})\s*([smhd])$")
 type SplitMode = Literal["auto", "prefix", "dir", "none"]
 """``--split``: detect the nodes (``auto``), force a kind, or keep one set (``none``)."""
@@ -57,11 +68,50 @@ SPLIT_MODES: tuple[SplitMode, ...] = ("auto", "prefix", "dir", "none")
 _LABEL = re.compile(r"^\w[\w.-]{0,127}$")
 """A node id, cluster name or capture id: letters, digits, ``_``, ``.``, ``-`` (at most 128)."""
 _UNITS = {"s": "seconds", "m": "minutes", "h": "hours", "d": "days"}
+_HEX_REF = re.compile(r"^[0-9a-f]{4,16}$")
 
 
 def blank(value: str | None) -> str | None:
     """Return ``None`` for a missing or blank value, else the value unchanged."""
     return value if value is not None and value.strip() else None
+
+
+def hex_ref(value: str) -> str:
+    """Lowercase a signature, signature prefix or id typed in upper case (``83D1…``).
+
+    Stored signatures and ids are lowercase hex; any other text is returned unchanged.
+    """
+    low = value.strip().lower()
+    return low if _HEX_REF.match(low) else value
+
+
+def check_count(value: int, name: str, *, front: Front, zero: str = "") -> int:
+    """Return ``value`` if it is in ``0..MAX_COUNT``; ``zero`` ends the ``>= 0`` message.
+
+    Raises:
+        OpError: ``invalid_value`` naming the parameter as ``front`` spells it.
+
+    """
+    if value < 0:
+        raise OpError("invalid_value", f"{flag(name, front)} must be >= 0{zero}")
+    if value > MAX_COUNT:
+        raise OpError("invalid_value", f"{flag(name, front)} must be <= {MAX_COUNT}")
+    return value
+
+
+def check_out(path: Path | None, *, front: Front) -> None:
+    """Refuse an output file (``report --out``) that is an existing directory.
+
+    Raises:
+        OpError: ``usage``.
+
+    """
+    if path is not None and path.is_dir():
+        raise OpError(
+            "usage",
+            f"{flag('out', front)} {path.as_posix()} is a directory",
+            hint="name the HTML file to write, e.g. DIR/report.html",
+        )
 
 
 def parse_time(
@@ -278,9 +328,10 @@ class EntryQuery:
 
         """
         last = manifest.last_ts
+        signature, coarse = blank(self.signature), blank(self.coarse_signature)
         return EntryFilter(
-            signature=blank(self.signature),
-            coarse_signature=blank(self.coarse_signature),
+            signature=None if signature is None else hex_ref(signature),
+            coarse_signature=None if coarse is None else hex_ref(coarse),
             level=parse_level(self.level, "level", front=front),
             min_level=parse_level(self.min_level, "min_level", front=front),
             logger=blank(self.logger),
@@ -316,13 +367,11 @@ class Page:
         """Validate ``limit`` (0 = all) and ``offset``.
 
         Raises:
-            OpError: ``invalid_value`` for a negative value.
+            OpError: ``invalid_value`` for a negative value or one above :data:`MAX_COUNT`.
 
         """
-        if limit < 0:
-            raise OpError("invalid_value", f"{flag('limit', front)} must be >= 0 (0 = no limit)")
-        if offset < 0:
-            raise OpError("invalid_value", f"{flag('offset', front)} must be >= 0")
+        check_count(limit, "limit", front=front, zero=" (0 = no limit)")
+        check_count(offset, "offset", front=front)
         return cls(limit or None, offset)
 
     def complete(self, rows: int) -> bool:
@@ -375,14 +424,13 @@ class TextCap:
         """Build the cap from ``max_raw`` (0 = no limit, ``None`` = ``default``) for ``front``.
 
         Raises:
-            OpError: ``invalid_value`` for a negative value.
+            OpError: ``invalid_value`` for a negative value or one above :data:`MAX_COUNT`.
 
         """
         how = "use --max-raw 0" if front == "cli" else "use max_raw=0"
         if value is None:
             return cls(default, how)
-        if value < 0:
-            raise OpError("invalid_value", f"{flag('max_raw', front)} must be >= 0 (0 = no limit)")
+        check_count(value, "max_raw", front=front, zero=" (0 = no limit)")
         return cls(value or None, how)
 
     def text(self, text: str) -> str:

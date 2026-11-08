@@ -9,7 +9,7 @@ import threading
 import time
 import uuid
 from collections.abc import Callable, Iterable, Iterator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum
@@ -280,8 +280,10 @@ class Store:
 
     def _resolve(self, ref: str) -> tuple[Path, LogSetManifest]:
         """Directory and manifest of the set ``ref`` (see :meth:`open`), without polars."""
-        exact = self.root / ref
-        plain = ref and not ref.startswith(".") and "/" not in ref and "\\" not in ref
+        # one plain path part only: no "..", no separators, no drive ("C:x" is relative to
+        # drive C's current directory on Windows, outside the store)
+        plain = bool(ref) and not ref.startswith(".") and not any(c in ref for c in "/\\:")
+        exact = self.root / ref if plain else self.root
         if plain and (exact / MANIFEST_FILE).is_file():
             m = self._cached(exact)
             return exact, (m if m is not None else self._read(exact))
@@ -368,20 +370,27 @@ class Store:
         return tmp
 
     def _sweep(self) -> None:
-        """Delete ``.tmp-*``/``.trash-*`` directories left by a killed write a day ago or more.
+        """Delete what a killed write or ingest left a day ago or more.
 
-        A running write touches its own directory far more often than that; readers
-        already skip these directories, this only gives the disk space back.
+        That is ``.tmp-*``/``.trash-*`` directories and the entries of the ZIP spool
+        (``.spool/<id>``, extracted when the ingest started). A running write touches
+        its own directory far more often than that; readers already skip these
+        directories, this only gives the disk space back.
         """
+        from atlas_log_analyzer.store.split import SPOOL_DIR
+
         cutoff = time.time() - LEFTOVER_AGE_S
-        for d in self.root.iterdir():
-            if not d.name.startswith((".tmp-", ".trash-")):
+        spool = self.root / SPOOL_DIR
+        for d in [*self.root.iterdir(), *(spool.iterdir() if spool.is_dir() else ())]:
+            if d.parent == self.root and not d.name.startswith((".tmp-", ".trash-")):
                 continue
             try:
                 if d.is_dir() and d.stat().st_mtime < cutoff:
                     shutil.rmtree(d, ignore_errors=True)
             except OSError:
                 continue
+        with suppress(OSError):
+            spool.rmdir()  # only when empty: another ingest may use it
 
     @contextmanager
     def _writing(self) -> Iterator[None]:

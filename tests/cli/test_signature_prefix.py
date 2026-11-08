@@ -83,3 +83,14 @@ def test_ambiguous_prefix(jcli: Invoke, crowded: str) -> None:
         _ambiguous(res.json(), crowded)
     first = jcli("show", "crowded", crowded).json()["error"]["candidates"][0]
     assert jcli("show", "crowded", first).json()["signature"] == first  # full ones still work
+
+
+def test_upper_case_signatures_match(jcli: Invoke, mini: str) -> None:
+    """``--signature 83D1…`` silently matched nothing."""
+    sig = _sig(jcli, "--level", "ERROR")
+    lower = jcli("entries", mini, "--signature", sig).json()
+    assert lower["total"] > 0
+    assert jcli("entries", mini, "--signature", sig.upper()).json()["total"] == lower["total"]
+    assert jcli("entries", mini, "--signature", sig[:6].upper()).json()["total"] == lower["total"]
+    assert jcli("show", mini, sig[:6].upper()).json()["signature"] == sig
+    assert jcli("frames", mini, sig.upper()).code == jcli("frames", mini, sig).code

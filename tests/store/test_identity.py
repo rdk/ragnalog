@@ -122,3 +122,19 @@ def test_two_sets_label_independently(store: Store) -> None:
     store.label("a", node="NODE1")
     assert store.manifest("b") == b and store.manifest("a").node == "NODE1"
     assert a.id != b.id
+
+
+def test_refs_never_leave_the_store(built: Built, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A ref is one plain path part: no separators, no "..", no drive ("C:x" on Windows)."""
+    store, ls = built.store, built.logset
+    outside = store.root.parent / ls.id  # a set next to the store, not in it
+    if not outside.exists():
+        import shutil
+
+        shutil.copytree(ls.path, outside)
+    drive = store.root.drive or "C:"
+    monkeypatch.chdir(outside.parent)  # "C:<id>" is relative to drive C's current directory
+    for ref in (f"{drive}..", f"..{chr(92)}{ls.id}", f"../{ls.id}", f"{drive}{ls.id}", "a:b"):
+        with pytest.raises(LogSetNotFound):
+            store.open(ref)
+    assert store.open(ls.id).id == ls.id

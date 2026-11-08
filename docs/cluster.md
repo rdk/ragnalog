@@ -73,8 +73,11 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
 
 - **Splitting.** `--split auto|prefix|dir|none`. The default `auto` recognises
   the export ZIP (a `job.json` file and `<NODE>_` prefixes), then the prefixes,
-  then one sub-directory per node. Any other input stays one set, as today.
-  ZIPs are extracted into the store's spool and removed afterwards.
+  then one sub-directory per node (its logs in it or one level down:
+  `node1/application-logs/`). Any other input stays one set, as today; a
+  directory without log files of its own is searched two levels down (a support
+  ZIP's `application-logs/`, an export's `logs/` beside `job.json`). ZIPs are
+  extracted into the store's spool and removed afterwards.
 - **Node id**, first match wins:
   1. `--node`;
   2. the node names in `job.json`;
@@ -109,7 +112,8 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
     entry;
   - `union`;
   - explicit `--since` / `--until`, clamped to the union of the logs (a window
-    outside them is `invalid_value`).
+    outside them is `invalid_value`); with only one of them the other end is
+    the union's (the capture's first or last entry).
 
   Rates are per hour of each node's coverage. Charts hatch the time a node
   has no logs for. Hours inside the coverage that have no entries are

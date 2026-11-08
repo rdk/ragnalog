@@ -230,9 +230,10 @@ def report(
     embedded example entries; a capture adds "capture" (its id) and "nodes".
     Table mode prints one line.
 
-    Exit codes: 0 ok; 1 bad option, invalid level, or the sets were built with
-    different signature/mask-rule versions or specs; 2 the output directory
-    does not exist or unknown capture; 3 unknown set or store error.
+    Exit codes: 0 ok; 1 bad option, invalid level, --out is a directory, or the
+    sets were built with different signature/mask-rule versions or specs; 2 the
+    output directory does not exist or unknown capture; 3 unknown set or store
+    error.
 
     Args:
         logset: Log set id, unique id prefix or name; or a capture (capture:ID,
@@ -248,10 +249,10 @@ def report(
         open_: Open the report in the default web browser.
 
     """
-    from atlas_log_analyzer.service.captures import is_capture_ref
+    from atlas_log_analyzer.service.capture_queries import names_capture
 
     output = ctx.out()
-    if is_capture_ref(logset):
+    if names_capture(ctx.store(), logset):
         if compare is not None or min_level is not None:
             raise OpError(
                 "usage",

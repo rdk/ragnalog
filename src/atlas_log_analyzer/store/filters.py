@@ -194,7 +194,8 @@ class EntryFilter:
         thread: Thread name (exact).
         request_id: Request id from the request context (exact).
         since: Inclusive lower bound on ``ts`` (naive = UTC).
-        until: Exclusive upper bound on ``ts`` (naive = UTC).
+        until: Exclusive upper bound on ``ts`` (naive = UTC). With either bound, entries
+            without a time (:func:`has_time`) are left out, as their groups are.
         contains: Case-insensitive literal substring of ``raw``.
         with_exception: Keep entries whose ``exception_type`` is not null (any level).
         exception: Case-insensitive substring of ``exception_type``.
@@ -243,6 +244,8 @@ class EntryFilter:
             filters.append(pl.col("ts") >= _utc(self.since))
         if self.until is not None:
             filters.append(pl.col("ts") < _utc(self.until))
+        if self.since is not None or self.until is not None:
+            filters.append(has_time())  # an untimed entry is in no time range (as its group)
         if self.contains is not None:
             filters.append(pl.col("raw").str.contains(f"(?i){re.escape(self.contains)}"))
         return _and(filters)

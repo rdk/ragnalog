@@ -23,6 +23,7 @@ from atlas_log_analyzer.service.params import (
     Page,
     Select,
     TextCap,
+    check_count,
     parse_time,
 )
 from atlas_log_analyzer.service.sets import Sets, open_set
@@ -316,8 +317,7 @@ def context(
     ``any_thread``) in time order, the anchor included.
     """
     for name, value in (("before", before), ("after", after)):
-        if value < 0:
-            raise OpError("invalid_value", f"{flag(name, front)} must be >= 0")
+        check_count(value, name, front=front)
     columns = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front=front)
     ls = open_set(sets, ref, front=front)
     df = ls.context(entry_id, before=before, after=after, same_thread=not any_thread)

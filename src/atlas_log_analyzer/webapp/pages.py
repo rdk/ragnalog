@@ -18,6 +18,7 @@ from starlette.responses import HTMLResponse, Response
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.report import asset_text, render_cluster_html, render_html
+from atlas_log_analyzer.report.payload import MAX_TIMELINE_HOURS, densest_hours
 from atlas_log_analyzer.service import queries
 from atlas_log_analyzer.service.errors import OpError
 from atlas_log_analyzer.store.logset import LogSet
@@ -37,6 +38,7 @@ __all__ = [
 ]
 
 router = APIRouter(default_response_class=HTMLResponse)
+_EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 StateDep = Annotated[AppState, Depends(get_state)]
 templates = Jinja2Templates(
     directory=str(resources.files("atlas_log_analyzer.webapp") / "templates")
@@ -114,15 +116,15 @@ _STRIP_BUCKETS = 480
 """At most this many bars across the index's shared time axis (hours are merged above it)."""
 
 
-def _bars(path: list[str], x: int, base: int, height: float) -> None:
-    """Append a one-bucket bar from ``base`` (negative ``height`` grows up)."""
+def _bars(path: list[str], x: float, base: int, height: float, width: float = 1) -> None:
+    """Append a bar from ``base`` (negative ``height`` grows up), one bucket wide by default."""
     if height:
-        path.append(f"M{x} {base}h1v{height:.2f}h-1z")
+        path.append(f"M{x:g} {base}h{width:g}v{height:.2f}h{-width:g}z")
 
 
 def _scale(value: int, top: int) -> float:
-    """``value`` against ``top`` on a square-root scale (0..1); any value above zero shows."""
-    return max(0.08, math.sqrt(value / top)) if value > 0 else 0.0
+    """``value`` against ``top`` on a square-root scale (0..1)."""
+    return math.sqrt(value / top) if value > 0 and top > 0 else 0.0
 
 
 def activity_strips(
@@ -133,15 +135,23 @@ def activity_strips(
     ``activity`` maps a row key (a set id, ``capture:<id>``) to its
     :func:`~atlas_log_analyzer.service.views.set_activity` hours. Each strip spans the
     union of all hours: a faint band covers the key's own time range; grey bars grow up
-    from its midline with the entries per bucket, red bars down with the errors, both
-    against the row's own busiest bucket (so the red shows the share of errors and its
-    spikes). Returns the strips and the axis (``lo``/``hi`` epoch
-    milliseconds, ``bucket`` hours) for the page script, or ``({}, None)`` without hours.
+    from its midline with the entries per bucket against the row's busiest bucket, red
+    bars down with the errors against the row's most errors in a bucket (a steady error
+    rate draws flat, a burst of errors stands out). A set much shorter than the axis gets
+    wider bars so it does not vanish into a sliver. The axis is the densest
+    :data:`~atlas_log_analyzer.report.payload.MAX_TIMELINE_HOURS` of all hours. Returns the
+    strips and the axis (``lo``/``hi`` epoch milliseconds, ``bucket`` hours) for the page
+    script, or ``({}, None)`` without hours.
     """
-    hours = [h for rows in activity.values() for h, _, _ in rows]
-    if not hours:
+    per_hour: dict[int, int] = {}
+    for rows in activity.values():
+        for h, n, _ in rows:
+            per_hour[h] = per_hour.get(h, 0) + n
+    if not per_hour:
         return {}, None
-    lo, hi = min(hours), max(hours)
+    # a few entries stamped years off would squeeze every strip into a sliver: densest span
+    lo, hi = densest_hours(per_hour, MAX_TIMELINE_HOURS)
+    activity = {k: [r for r in rows if lo <= r[0] <= hi] for k, rows in activity.items()}
     size = max(1, -(-(hi - lo + 1) // _STRIP_BUCKETS))
     count = (hi - lo) // size + 1
     binned: dict[str, dict[int, list[int]]] = {}
@@ -158,11 +168,15 @@ def activity_strips(
             continue
         first, last = min(bins), max(bins)
         top = max(c[0] for c in bins.values()) or 1
+        top_err = max(c[1] for c in bins.values())
+        # under 1/40 of the axis: bars of count/120 buckets, centred on their bucket
+        width = max(1.0, count / 120) if last - first + 1 < count / 40 else 1.0
         volume: list[str] = []
         errors: list[str] = []
         for i, (n, err) in sorted(bins.items()):
-            _bars(volume, i, 14, -13 * _scale(n, top))
-            _bars(errors, i, 15, 12 * _scale(err, top))
+            x = min(max(0.0, i + 0.5 - width / 2), count - width) if width > 1 else i
+            _bars(volume, x, 14, -13 * _scale(n, top), width)
+            _bars(errors, x, 15, 12 * max(0.1, _scale(err, top_err)) if err else 0, width)
         data = ";".join(f"{i},{n},{err}" for i, (n, err) in sorted(bins.items()))
         strips[key] = Markup(
             f'<svg class="strip" viewBox="0 0 {count} 28" preserveAspectRatio="none"'
@@ -171,8 +185,8 @@ def activity_strips(
             f'<path class="strip-vol" d="{"".join(volume)}"/>'
             f'<path class="strip-err" d="{"".join(errors)}"/></svg>'
         )
-    start = datetime.fromtimestamp(lo * 3600, UTC)
-    end = datetime.fromtimestamp((lo + count * size) * 3600, UTC)
+    start = _EPOCH + timedelta(hours=lo)  # not fromtimestamp: OSError before 1970 on Windows
+    end = _EPOCH + timedelta(hours=lo + count * size)
     short = "%H:%M" if end - start <= timedelta(days=1) else "%m-%d"
     axis = {
         "lo": lo * 3_600_000,
@@ -406,7 +420,10 @@ async def report_page(
         if base
         else f'<a href="/sets/{ls.manifest.id}?compare=auto">Compare with previous</a>'
     )
-    shell = _shell(state, ls.manifest.id, _node_switch(state, ls) + triage)
+    # the switchers read every manifest (a stat each): off the event loop, as the open above
+    shell = await run_in_threadpool(
+        lambda: _shell(state, ls.manifest.id, _node_switch(state, ls) + triage)
+    )
     return HTMLResponse(_with_shell(page, shell))
 
 
@@ -469,7 +486,8 @@ async def triage_page(
             {"title": "Cannot triage", "message": exc.message, "back": f"/sets/{ref}/triage"},
             status_code=exc.status,
         )
-    sets = [m for m in state.manifests() if m.id != doc["set"]["id"]]
+    listed = await run_in_threadpool(state.manifests)
+    sets = [m for m in listed if m.id != doc["set"]["id"]]
     return templates.TemplateResponse(
         request,
         "triage.html",

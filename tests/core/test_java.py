@@ -252,3 +252,16 @@ def test_line_numbers_past_int32_are_dropped() -> None:
     frame = parse_frame("\tat a.B.c(B.java:99999999999)")
     assert frame == Frame("a.B.c", "B.java", None, None)
     assert parse_frame("\tat a.B.c(B.java:²)") == Frame("a.B.c", "B.java:²", None, None)
+
+
+def test_header_like_lines_without_frames_scan_in_linear_time() -> None:
+    """A body of thousands of "Name: text" lines and no frames used to be quadratic."""
+    import time
+
+    lines = [f"com.acme.Weird{i}: message {i}" for i in range(2000)]
+    start = time.perf_counter()
+    assert parse_exceptions(lines) == ()
+    assert time.perf_counter() - start < 0.05  # was about 0.12 s
+    # an unusual name counts when the first marker after it is a frame, as before
+    body = ["com.acme.Odd: one", "\tCaused by: x", "com.acme.Odd2: two", "\tat a.B.c(B.java:1)"]
+    assert [e.type for e in parse_exceptions(body)] == ["com.acme.Odd2"]

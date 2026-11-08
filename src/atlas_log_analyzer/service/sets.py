@@ -34,9 +34,22 @@ def open_set(sets: Sets, ref: str, *, front: Front) -> LogSet:
 
     An unknown set is reason ``set_not_found`` (CLI ``store_error``, API ``not_found``)
     whose message names only the reference; the CLI's hint lists the available sets.
-    An ambiguous one is reason ``ambiguous_ref``.
+    An ambiguous one is reason ``ambiguous_ref``. A set whose ``entries.parquet`` or
+    ``groups.parquet`` is missing is damaged: ``store_error``.
     """
-    return resolving(sets, ref, sets.open, front=front)
+    ls = resolving(sets, ref, sets.open, front=front)
+    for path in (ls.entries_path, ls.groups_path):
+        if not path.is_file():
+            raise OpError(
+                "store_error",
+                f"log set {ls.id} is damaged: {path.name} is missing",
+                hint=(
+                    f"remove it (`atlas-log remove {ls.id}`) and ingest its files again"
+                    if front == "cli"
+                    else f"remove it (DELETE /api/sets/{ls.id}) and ingest its files again"
+                ),
+            )
+    return ls
 
 
 def resolving[T](sets: Sets, ref: str, action: Callable[[str], T], *, front: Front) -> T:

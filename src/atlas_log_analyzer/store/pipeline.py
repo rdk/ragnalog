@@ -22,7 +22,12 @@ from atlas_log_analyzer.core.formats.base import LogFormat
 from atlas_log_analyzer.core.models import LogEntry
 from atlas_log_analyzer.core.parser import parse_sources
 from atlas_log_analyzer.core.pipeline import Recipe, unique_entries
-from atlas_log_analyzer.core.reader import SourceFile, discover_sources, iter_raw_lines
+from atlas_log_analyzer.core.reader import (
+    SourceFile,
+    discover_sources,
+    iter_raw_lines,
+    side_logs,
+)
 from atlas_log_analyzer.core.signature import SignatureSpec
 from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.store.store import Store, StoreError
@@ -166,8 +171,25 @@ class SourceSelection:
     sources: list[SourceFile]
     """Files to ingest, in reading order."""
     skipped: list[SourceFile]
-    """Files found in directories that the format does not recognise."""
+    """Files found in directories that the format does not recognise, and side logs."""
     fmt: LogFormat
+    side: tuple[SourceFile, ...] = ()
+    """The side logs among :attr:`skipped` (:func:`~atlas_log_analyzer.core.reader.side_logs`)."""
+
+    def skipped_notes(self) -> list[str]:
+        """One line per kind of skipped file, for people (empty when nothing was skipped)."""
+        side = {s.path for s in self.side}
+        foreign = [s for s in self.skipped if s.path not in side]
+        notes = []
+        for files, what in (
+            (foreign, f"file(s) that are not {self.fmt.name} logs"),
+            (self.side, "side log(s) next to their main log (name a file to read it)"),
+        ):
+            if files:
+                names = ", ".join(src.path.name for src in files[:5])
+                more = f" and {len(files) - 5} more" if len(files) > 5 else ""
+                notes.append(f"skipped {len(files)} {what}: {names}{more}")
+        return notes
 
 
 def select_sources(
@@ -181,7 +203,9 @@ def select_sources(
     recognises at least one of their first :data:`SNIFF_LINES` lines. Files named
     explicitly are kept, except one larger than :data:`MAX_FOREIGN_BYTES` that
     the format does not recognise at all (a wrong file or ``--format``), unless
-    ``force`` is true.
+    ``force`` is true. A directory's side logs (``atlassian-jira-security.log``
+    next to ``atlassian-jira.log``, :func:`~atlas_log_analyzer.core.reader.side_logs`)
+    are skipped too, unless named explicitly.
 
     Raises:
         NoSourcesFound: ``paths`` holds no log files, or none in the format.
@@ -218,9 +242,15 @@ def select_sources(
             sources.append(source)
         else:
             skipped.append(source)
+    # side logs of a main family that is read, unless named
+    side = side_logs(s.path for s in sources) - named
+    if side:
+        foreign = {s.path for s in skipped}
+        skipped = [s for s in found if s.path in foreign or s.path in side]
+        sources = [s for s in sources if s.path not in side]
     if not sources:
         raise NoSourcesFound(f"no {fmt.name} log files found in {shown}")
-    return SourceSelection(sources, skipped, fmt)
+    return SourceSelection(sources, skipped, fmt, tuple(s for s in skipped if s.path in side))
 
 
 @dataclass
@@ -326,24 +356,33 @@ def ingest_sources(
     grouper = recipe.grouper()
     counter = _Counter()
     started = time.perf_counter()
-    parsed = _tracked(parse_sources(sources, fmt), counter, sources, progress, progress_every)
-    # Deduplicate before grouping so group counts match the stored entries (no
-    # recomputation from entries.parquet) and only one id set is held.
-    signed = grouper.sign(unique_entries(parsed))
-    logset = store.ingest(
-        signed,
-        grouper.sorted_groups,
-        sources,
-        fmt,
-        name=name,
-        spec=spec,
-        overwrite=overwrite,
-        dedupe=False,
-        recipe=recipe,
-        node=node,
-        cluster=cluster,
-        capture=capture,
-    )
+    entries = parse_sources(sources, fmt)
+    try:
+        parsed = _tracked(entries, counter, sources, progress, progress_every)
+        # Deduplicate before grouping so group counts match the stored entries (no
+        # recomputation from entries.parquet) and only one id set is held.
+        signed = grouper.sign(unique_entries(parsed))
+        logset = store.ingest(
+            signed,
+            grouper.sorted_groups,
+            sources,
+            fmt,
+            name=name,
+            spec=spec,
+            overwrite=overwrite,
+            dedupe=False,
+            recipe=recipe,
+            node=node,
+            cluster=cluster,
+            capture=capture,
+        )
+    finally:
+        # A failure or cancellation leaves the parser suspended with a source open, kept
+        # alive by the traceback: close it now, so the file (a ZIP's extracted copy in the
+        # spool) can be deleted on Windows.
+        close = getattr(entries, "close", None)
+        if close is not None:
+            close()
     elapsed = time.perf_counter() - started
     merges = _mine(logset) if mine else None
     existing = counter.entries == 0 and logset.manifest.entry_count > 0

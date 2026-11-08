@@ -152,6 +152,8 @@ def test_activity_strips_share_the_axis_and_merge_buckets() -> None:
     assert axis["hi"] == (base + 1002) * 3_600_000  # 334 buckets of 3 hours
     assert 'data-bins="0,50,4"' in strips["a"]  # hours 0 and 2 share the first bucket
     assert 'x="333"' in strips["b"] and 'data-bins="333,5,5"' in strips["b"]
+    assert "M331.217 14h2.78333v" in strips["b"]  # one bucket of 334: wider, inside the axis
+    assert "M0 14h2.78333v" in strips["a"]
     assert activity_strips({"a": []}) == ({}, None)
 
 

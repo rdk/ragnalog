@@ -28,11 +28,12 @@ import zlib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
 from dataclasses import dataclass
+from itertools import islice
 from pathlib import Path
 from typing import Any, Final, Literal
 
 from atlas_log_analyzer.core.paths import windows_safe
-from atlas_log_analyzer.core.reader import LOG_GLOB
+from atlas_log_analyzer.core.reader import LOG_GLOB, iter_raw_lines
 
 __all__ = [
     "JOB_FILE",
@@ -71,6 +72,10 @@ _NODE_RE = re.compile(r"[^\w.-]+")
 _PREFIX_RE = re.compile(r"^(?P<node>.*[^\W\d_].*?)_(?P<base>[^_]*\.log[^_]*)$")
 """``<NODE>_<log name>``: the node id holds a letter (no dates) and ends at the last ``_``."""
 _ROTATED_RE = re.compile(r"\.\d+$")
+_SNIFF_LINES = 200
+"""Lines of a file a format must recognise one of (as ``store.pipeline.SNIFF_LINES``)."""
+_DEPTH = 2
+"""Levels below an input directory without log files searched for log directories."""
 
 
 class ArchiveError(ValueError):
@@ -214,6 +219,7 @@ def expand_archives(
         return
     root = spool / uuid.uuid4().hex[:12]
     budget = [max_bytes]
+    archives: dict[str, str] = {}  # extracted directory -> the ZIP, for error messages
     try:
         out: list[Path] = []
         used: set[str] = set()
@@ -227,13 +233,30 @@ def expand_archives(
             used.add(stem.lower())
             target = root / stem
             target.mkdir(parents=True)
+            archives[str(target)] = archives[str(target.resolve())] = str(path)
             extract_zip(path, target, budget=budget)
             out.append(_descend(target))
         yield out
+    except Exception as exc:
+        _name_archives(exc, archives)
+        raise
     finally:
         shutil.rmtree(root, ignore_errors=True)
         with suppress(OSError):
             spool.rmdir()  # only when empty: another ingest may use it
+
+
+def _name_archives(exc: Exception, archives: dict[str, str]) -> None:
+    """Replace extracted paths in the message of ``exc`` by their ZIP (the spool is gone)."""
+    if len(exc.args) != 1 or not isinstance(exc.args[0], str) or str(exc) != exc.args[0]:
+        return
+    text = exc.args[0]
+    for extracted in sorted(archives, key=len, reverse=True):
+        text = text.replace(extracted, archives[extracted])
+    if text != exc.args[0]:
+        if getattr(exc, "message", None) == exc.args[0]:
+            exc.message = text  # type: ignore[attr-defined]
+        exc.args = (text,)
 
 
 # --- job.json
@@ -316,23 +339,104 @@ def _logs(directory: Path) -> list[Path]:
     return sorted(c.resolve() for c in directory.glob(LOG_GLOB) if c.is_file())
 
 
-def _inputs(paths: Sequence[Path]) -> tuple[list[Path], list[Path], list[Path]]:
-    """Return (log files, directories, job.json files) of the inputs."""
+def _subdirs(directory: Path) -> list[Path]:
+    try:
+        children = list(directory.iterdir())
+    except OSError:
+        return []
+    return sorted(c for c in children if c.is_dir() and not c.name.startswith("."))
+
+
+def _recognised(path: Path) -> bool:
+    """Whether a registered format recognises one of the first lines of ``path``."""
+    from atlas_log_analyzer.core import formats
+
+    lines = iter_raw_lines(path)
+    try:
+        head = [text for _, _, text in islice(lines, _SNIFF_LINES)]
+    except OSError:
+        return False
+    finally:
+        lines.close()
+    return formats.detect(head) is not None
+
+
+def _holds_logs(directory: Path) -> bool:
+    """Whether ``directory`` holds a log file (:data:`LOG_GLOB`) that a format recognises."""
+    return any(_recognised(f) for f in _logs(directory))
+
+
+def _log_dirs(directory: Path, depth: int) -> list[Path]:
+    """``directory`` when it holds log files, else the log directories ``depth`` levels below."""
+    if _holds_logs(directory):
+        return [directory]
+    if depth <= 0:
+        return []
+    return [d for c in _subdirs(directory) for d in _log_dirs(c, depth - 1)]
+
+
+def _groups(directory: Path) -> dict[Path, list[Path]]:
+    """Log directories below ``directory``, by the sub-directory (a node candidate) they are in.
+
+    A sub-directory counts when it, or one of its own sub-directories, holds log files
+    a format recognises: ``node1/`` or ``node1/application-logs/``, not ``tomcat-logs/``.
+    """
+    groups: dict[Path, list[Path]] = {}
+    for child in _subdirs(directory):
+        if found := _log_dirs(child, _DEPTH - 1):
+            groups[child] = found
+    return groups
+
+
+@dataclass(frozen=True, slots=True)
+class _Inputs:
+    files: list[Path]
+    """Log files given, or found in :attr:`search`."""
+    dirs: list[Path]
+    """The directories given."""
+    jobs: list[Path]
+    """``job.json`` files given, in a directory given or next to its log directories."""
+    search: list[Path]
+    """What to discover the sources in: files given, and the log directories."""
+    found: dict[Path, list[Path]]
+    """Log directories of each directory given (itself when it holds log files or none)."""
+    groups: dict[Path, dict[Path, list[Path]]]
+    """Of a directory given that holds no log files: its log directories by sub-directory."""
+
+
+def _inputs(paths: Sequence[Path]) -> _Inputs:
+    """Sort the inputs; a directory without log files is searched :data:`_DEPTH` levels down.
+
+    A support ZIP holds ``application-logs/`` beside ``tomcat-logs/``, a ZIP of several
+    nodes ``node1/application-logs/``, an export ``job.json`` beside ``logs/``.
+    """
     files: dict[Path, None] = {}
     dirs: list[Path] = []
     jobs: list[Path] = []
+    search: list[Path] = []
+    found: dict[Path, list[Path]] = {}
+    groups: dict[Path, dict[Path, list[Path]]] = {}
     for path in paths:
         if path.is_dir():
             dirs.append(path)
-            for f in _logs(path):
-                files[f] = None
-            if (path / JOB_FILE).is_file():
-                jobs.append(path / JOB_FILE)
+            below = {} if _holds_logs(path) else _groups(path)
+            log_dirs = [d for ds in below.values() for d in ds] or [path]
+            if below:
+                groups[path] = below
+            found[path] = log_dirs
+            for d in log_dirs:
+                search.append(d)
+                files.update(dict.fromkeys(_logs(d)))
+            for d in (path, *log_dirs, *(d.parent for d in log_dirs)):
+                if (job := d / JOB_FILE).is_file() and job not in jobs:
+                    jobs.append(job)
         elif path.is_file() and path.name.lower() == JOB_FILE:
             jobs.append(path)
-        elif path.is_file():
-            files[path.resolve()] = None
-    return list(files), dirs, jobs
+        else:
+            if path.is_file():
+                files[path.resolve()] = None
+            search.append(path)  # a missing path fails in discover_sources
+    return _Inputs(list(files), dirs, jobs, search, found, groups)
 
 
 def _names(paths: Sequence[Path], limit: int = 5) -> str:
@@ -387,24 +491,20 @@ def _dir_node(directory: Path, files: Sequence[Path]) -> str:
     return safe_node(directory.resolve().name)
 
 
-def _by_dirs(dirs: Sequence[Path]) -> tuple[list[NodeFiles], tuple[Path, ...]]:
-    """One node per directory that holds log files; also return those directories."""
+def _by_dirs(groups: dict[Path, list[Path]]) -> tuple[list[NodeFiles], tuple[Path, ...]]:
+    """One node per node directory whose log directories hold log files; also return those."""
     nodes: dict[str, NodeFiles] = {}
     used: list[Path] = []
-    for d in dirs:
-        files = _logs(d)
+    for directory, log_dirs in groups.items():
+        files = sorted({f for d in log_dirs for f in _logs(d)})
         if not files:
             continue
-        node = _dir_node(d, files)
+        node = _dir_node(directory, files)
         if node in nodes:
             raise SplitError(f"two node directories are named {node}: give each node its own name")
         nodes[node] = NodeFiles(node, tuple(files))
-        used.append(d)
+        used.extend(log_dirs)
     return list(nodes.values()), tuple(used)
-
-
-def _subdirs(directory: Path) -> list[Path]:
-    return sorted(c for c in directory.iterdir() if c.is_dir() and not c.name.startswith("."))
 
 
 def _unassigned(rest: list[Path]) -> tuple[str, ...]:
@@ -416,6 +516,13 @@ def _unassigned(rest: list[Path]) -> tuple[str, ...]:
 def plan_split(paths: Sequence[Path], mode: SplitMode = "auto") -> Split:
     """Decide whether the inputs hold several nodes and which files belong to which.
 
+    A directory given that holds no log file a registered format recognises is
+    searched two levels down: its sub-directories that hold such files, or whose
+    own sub-directories do, are its log directories (a support ZIP's
+    ``application-logs/`` but not ``tomcat-logs/``; ``node1/application-logs/``; an
+    export's ``logs/`` beside ``job.json``). ``job.json`` is also looked for next to
+    the log directories.
+
     ``auto`` tries, in order:
 
     1. ``job``: a ``job.json`` (in an input directory, or given) names the nodes, and
@@ -424,41 +531,50 @@ def plan_split(paths: Sequence[Path], mode: SplitMode = "auto") -> Split:
        share a log name (``NODE1_atlassian-jira.log``, ``NODE2_atlassian-jira.log.1``);
        a node id holds a letter and ends at the name's last ``_``;
     3. ``dir``: one input directory without log files of its own whose (at least two)
-       sub-directories hold log files, one node per sub-directory (named after the
-       ``<NODE>_`` prefix all its files share, else after the directory).
+       sub-directories hold log files (themselves or one level down), one node per
+       sub-directory (named after the ``<NODE>_`` prefix all its files share, else
+       after the sub-directory).
 
-    Otherwise the inputs stay one set. ``prefix`` and ``dir`` force that kind (``dir``
-    also takes several input directories, one per node); ``none`` never splits. Files
-    that belong to no node are left out with a warning. A ``job.json`` is never read
-    as a log file, and its ``jobId`` is kept unless the mode is ``none``.
+    Otherwise the inputs stay one set (a single sub-directory with log files is that
+    set). ``prefix`` and ``dir`` force that kind (``dir`` also takes several input
+    directories, one per node); ``none`` never splits. Files that belong to no node
+    are left out with a warning. A ``job.json`` is never read as a log file, and its
+    ``jobId`` is kept unless the mode is ``none``.
 
     Raises:
         SplitError: A forced mode finds no node, or two node directories share a name.
 
     """
-    files, dirs, jobs = _inputs(paths)
-    inputs = tuple(p for p in paths if not (p.is_file() and p.name.lower() == JOB_FILE))
+    inputs = _inputs(paths)
+    files, dirs = inputs.files, inputs.dirs
+    search = tuple(inputs.search)
     if mode == "none":
-        return Split(None, (), inputs)
-    job = next((j for j in map(read_job, jobs) if j is not None), None)
+        return Split(None, (), search)
+    job = next((j for j in map(read_job, inputs.jobs) if j is not None), None)
     warnings: list[str] = []
     if mode == "auto" and job is not None and job.nodes:
         nodes, rest, notes = _by_job(files, job)
         if nodes:
-            return Split("job", tuple(nodes), inputs, job, (*notes, *_unassigned(rest)))
+            return Split("job", tuple(nodes), search, job, (*notes, *_unassigned(rest)))
         names = ", ".join(n for n, _, _ in job.nodes)
         warnings.append(f"{JOB_FILE} names nodes {names}, but no log file is named after them")
-    if mode in ("auto", "prefix"):
+    # node directories (two or more sub-directories with log files) win over prefixes
+    nested = len(paths) == 1 and len(dirs) == 1 and len(inputs.groups.get(dirs[0], {})) > 1
+    if mode == "prefix" or (mode == "auto" and not nested):
         nodes, rest, shared = _by_prefix(files)
         if (mode == "prefix" and nodes) or (len(nodes) > 1 and shared):
-            return Split("prefix", tuple(nodes), inputs, job, (*warnings, *_unassigned(rest)))
+            return Split("prefix", tuple(nodes), search, job, (*warnings, *_unassigned(rest)))
         if mode == "prefix":
             raise SplitError(
                 "--split prefix: no log file is named <NODE>_<log name> (e.g. "
                 "NODE1_atlassian-jira.log)"
             )
     if mode == "dir":
-        nodes, node_dirs = _by_dirs(dirs if len(dirs) > 1 else (_subdirs(dirs[0]) if dirs else []))
+        if len(dirs) > 1:
+            groups = {d: inputs.found[d] for d in dirs}
+        else:
+            groups = (inputs.groups.get(dirs[0]) or _groups(dirs[0])) if dirs else {}
+        nodes, node_dirs = _by_dirs(groups)
         if not nodes:
             raise SplitError(
                 "--split dir: give one directory per node, or one directory whose "
@@ -467,8 +583,7 @@ def plan_split(paths: Sequence[Path], mode: SplitMode = "auto") -> Split:
         taken = {f for n in nodes for f in n.files}
         rest = [f for f in files if f not in taken]
         return Split("dir", tuple(nodes), node_dirs, job, (*warnings, *_unassigned(rest)))
-    if mode == "auto" and len(paths) == 1 and len(dirs) == 1 and not files:
-        nodes, node_dirs = _by_dirs(_subdirs(dirs[0]))
-        if len(nodes) > 1:
-            return Split("dir", tuple(nodes), node_dirs, job, tuple(warnings))
-    return Split(None, (), inputs, job, tuple(warnings))
+    if mode == "auto" and nested:
+        nodes, node_dirs = _by_dirs(inputs.groups[dirs[0]])
+        return Split("dir", tuple(nodes), node_dirs, job, tuple(warnings))
+    return Split(None, (), search, job, tuple(warnings))

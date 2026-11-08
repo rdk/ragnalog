@@ -30,3 +30,15 @@ def test_query_session_is_utc(jcli: Invoke, mini: str) -> None:
     assert row["tz"] == "UTC"
     assert row["d"].startswith("2026-10-29T00:00:00") and row["d"].endswith("+00:00")
     assert row["hm"] == "01:19"
+
+
+def test_query_interval_results_are_text(jcli: Invoke, mini: str) -> None:
+    """polars cannot import a DuckDB INTERVAL: it used to be a sql_error."""
+    sql = 'select max(ts) - min(ts) "span ""a""", epoch(max(ts) - min(ts)) s, 1 n from entries'
+    result = jcli("query", mini, sql)
+    assert result.code == 0, result.stdout
+    row = result.json()["items"][0]
+    assert row == {'span "a"': "06:52:20.584", "s": 24740.584, "n": 1}
+    gaps = jcli("query", mini, "select ts - lag(ts) over (order by ts) gap from entries limit 2")
+    first, second = (r["gap"] for r in gaps.json()["items"])
+    assert first is None and isinstance(second, str)

@@ -50,6 +50,7 @@ def formats(sample: Path | None = None) -> Doc:
 
     Raises:
         FileNotFoundError: ``sample`` does not exist (``file_not_found``).
+        OpError: ``usage`` when ``sample`` is a directory.
 
     """
     from atlas_log_analyzer.core import formats as registry
@@ -57,6 +58,12 @@ def formats(sample: Path | None = None) -> Doc:
 
     lines = None
     if sample is not None:
+        if sample.is_dir():
+            raise OpError(
+                "usage",
+                f"--sample {sample.as_posix()} is a directory",
+                hint="name one log file of the directory",
+            )
         lines = [line.text for line in islice(iter_lines(sample), SNIFF_LINES)]
     items: list[dict[str, Any]] = []
     for name in registry.names():

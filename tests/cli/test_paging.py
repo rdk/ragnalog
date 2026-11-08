@@ -70,6 +70,31 @@ def test_negative_offset(jcli: Invoke, mini: str) -> None:
         assert res.code == 1 and res.json()["error"]["code"] == "invalid_value"
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ("groups", "mini", "--limit", "99999999999999999999"),
+        ("groups", "mini", "--offset", "99999999999999999999"),
+        ("entries", "mini", "--limit", "9223372036854775807", "--offset", "1"),
+        ("entries", "mini", "--max-raw", "2147483648", "--limit", "1"),
+        ("diff", "mini", "mini", "--limit", "99999999999999999999"),
+        ("report", "mini", "--max-raw", "99999999999999999999"),
+    ],
+)
+def test_counts_past_int32_are_invalid_values(jcli: Invoke, mini: str, argv: tuple[str]) -> None:
+    """They used to overflow the store's queries: internal_error."""
+    res = jcli(*argv)
+    assert res.code == 1 and res.json()["error"]["code"] == "invalid_value", res.stdout
+    assert "must be <= 2147483647" in res.json()["error"]["message"]
+
+
+def test_context_bounds(jcli: Invoke, mini: str) -> None:
+    entry = jcli("entries", mini, "--limit", "1", "--columns", "id").json()["items"][0]["id"]
+    for option in ("--before", "--after"):
+        res = jcli("context", mini, entry, option, "99999999999999999999")
+        assert res.code == 1 and res.json()["error"]["code"] == "invalid_value", option
+
+
 def test_table_shows_offset(cli: Invoke, mini: str, store_dir: Path) -> None:
     res = cli("--output", "table", "--store", store_dir, "groups", mini, "--offset", "2")
     assert "offset=2" in res.stderr
