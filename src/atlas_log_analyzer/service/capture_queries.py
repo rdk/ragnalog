@@ -300,7 +300,8 @@ def entries(
     """``entries.v1`` of all nodes of a capture, by time then node; rows add ``node``, ``set``.
 
     ``q`` filters as ``entries``: ``signature`` may be a unique prefix in any member, or
-    several (comma-separated: entries of any of them); ``node`` keeps the entries of
+    several (comma-separated: entries of any of them), each also ``NODE:SIGNATURE`` (that
+    group on that node only: both sides of a co-burst); ``node`` keeps the entries of
     those nodes. Its ``since``/``until`` give the window (explicit; of all nodes, also
     with ``node``), else ``window``. ``sel`` may name ``node`` and ``set``, which every
     row has.
@@ -319,8 +320,9 @@ def entries(
     win = CaptureWindow(window=window, since=q.since, until=q.until).resolve(capture_, front=front)
     plain = dataclasses.replace(q, since=None, until=None, signature=None, node=None)
     where = plain.resolve(capture_.nodes[0].logset.manifest, front=front)
-    sigs = resolve_signatures(capture_, q.signatures, front=front)
-    if len(sigs) == 1:
+    sigs = resolve_signatures(capture_, [s for s in q.signatures if ":" not in s], front=front)
+    by_node = _node_signatures(capture_, q.signatures, front=front)
+    if len(sigs) == 1 and not by_node:
         where = dataclasses.replace(where, signature=sigs[0])
     if q.nodes:
         capture_ = _only_nodes(capture_, q.nodes, front=front)
@@ -329,7 +331,8 @@ def entries(
             capture_,
             window=win,
             where=where,
-            signatures=sigs if len(sigs) > 1 else None,
+            signatures=sigs if len(sigs) > 1 or by_node else None,
+            node_signatures=by_node or None,
             limit=page.limit,
             offset=page.offset,
             max_raw=cap.limit or 0,
@@ -337,6 +340,35 @@ def entries(
             front=front,
         )
     )
+
+
+def _node_signatures(
+    capture_: Capture, given: Sequence[str], *, front: Front
+) -> dict[str, list[str]]:
+    """Resolve the ``NODE:SIGNATURE`` items of ``given``: the signatures kept per node.
+
+    Raises:
+        OpError: ``invalid_value`` for a node not in the capture; the errors of
+            :func:`~atlas_log_analyzer.service.cluster.resolve_signatures`.
+
+    """
+    from atlas_log_analyzer.service.cluster import resolve_signatures
+
+    pairs = [tuple(s.split(":", 1)) for s in given if ":" in s]
+    unknown = [n for n, _ in pairs if n not in capture_.node_ids]
+    if unknown:
+        raise OpError(
+            "invalid_value",
+            f"node {unknown[0]!r} of {flag('signature', front)} is not in the capture",
+            hint=f"its nodes: {', '.join(capture_.node_ids)}",
+        )
+    out: dict[str, list[str]] = {}
+    for node, sig in pairs:
+        (whole,) = resolve_signatures(capture_, [sig], front=front)
+        kept = out.setdefault(node, [])
+        if whole not in kept:
+            kept.append(whole)
+    return out
 
 
 def _only_nodes(capture_: Capture, nodes: Sequence[str], *, front: Front) -> Capture:

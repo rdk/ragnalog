@@ -78,3 +78,40 @@ def test_reload_passes_app_packages(calls: list[Any], tmp_path: Path, monkeypatc
     monkeypatch.setenv("ATLAS_LOG_APP_PACKAGES", "org.acme.")
     assert run(["--store", str(tmp_path / "s"), "serve", "--reload"]) == 0
     assert Settings.from_env().app_packages == ("org.acme.",)
+
+
+def test_network_bind_without_token_warns(
+    calls: list[Any], tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    assert run(["--store", str(tmp_path / "s"), "serve", "--host", "0.0.0.0"]) == 0
+    assert "no --token is set" in capsys.readouterr().err
+    assert run(["--store", str(tmp_path / "s"), "serve", "--host", "0.0.0.0", "--token", "t"]) == 0
+    assert run(["--store", str(tmp_path / "s"), "serve"]) == 0  # loopback: no warning
+    assert "no --token" not in capsys.readouterr().err
+
+
+def test_allowed_host_compared_without_port_or_case(calls: list[Any], tmp_path: Path) -> None:
+    from fastapi.testclient import TestClient
+
+    argv = ["--store", str(tmp_path / "s"), "serve", "--allowed-host", "Logs.Example.org:443"]
+    assert run(argv) == 0
+    (args, _), *_ = calls
+    with TestClient(args[0], base_url="http://127.0.0.1:8321") as c:
+        assert c.get("/api/sets", headers={"Host": "logs.example.org"}).status_code == 200
+        assert c.get("/api/sets", headers={"Host": "[::1]:8321"}).status_code == 200
+        assert c.get("/api/sets", headers={"Host": "other.example"}).status_code == 400
+
+
+def test_reload_factory_checks_host_on_loopback(calls: list[Any], tmp_path: Path) -> None:
+    """The reloading child is not told its address: it checks per connection."""
+    from fastapi.testclient import TestClient
+
+    from atlas_log_analyzer.webapp import create_app
+
+    assert run(["--store", str(tmp_path / "s"), "serve", "--reload"]) == 0
+    app = create_app()  # what uvicorn's factory call builds
+    with TestClient(app, base_url="http://127.0.0.1:8321") as c:
+        assert c.get("/api/sets").status_code == 200
+        assert c.get("/api/sets", headers={"Host": "rebind.example:8321"}).status_code == 400
+    with TestClient(create_app(), base_url="http://192.0.2.7:8321") as c:  # on the network
+        assert c.get("/api/sets", headers={"Host": "logs.example.org"}).status_code == 200

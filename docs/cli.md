@@ -557,12 +557,14 @@ set the window, else `--window` (overlap by default); the other filters,
 paging, `--columns`, `--brief` and `--max-raw` work as for a set, and
 `--signature` is resolved in the groups of any node; it may name several
 groups, comma-separated (`--signature 83d1,a7f0`: the entries of any of them,
-each a full signature or a unique prefix). `--node N1,N2` keeps the entries of
+each a full signature or a unique prefix), and `NODE:SIGNATURE` keeps a group's
+entries on that node only (`--signature N1:83d1,N2:a7f0`: both sides of a
+co-burst; a node the capture lacks is `invalid_value`). `--node N1,N2` keeps the entries of
 those nodes; the window stays that of all nodes, and a node the capture does not
 have is error `invalid_value` (exit 1) naming its nodes in `hint`. `--raw`
 prints the raw texts; with colour on, each rule names the node and
-`file:line`. `--window`, `--node` and several signatures with a set are usage
-errors.
+`file:line`. `--window`, `--node`, several signatures and `NODE:SIGNATURE` with a
+set are usage errors.
 
 <!-- generated:entries-columns by docs/formats/generate.py from store/schema.py -->
 entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
@@ -996,6 +998,12 @@ builds those entries again from their stored `raw` text (only rows with a
 Masking rules version 2 (`…|mask2`) masks an IP address that ends a sentence
 (`from 10.0.0.1.`) whole; `upgrade` re-signs for it.
 
+A set ingested from a ZIP before 0.2.0 named its files by the spool directory they
+were extracted to (`<store>/.spool/<id>/<zip stem>/<member>`, removed after the
+ingest). `upgrade` renames them to `<zip stem>.zip/<member>` in the entries, groups
+and manifest, also for a set that is otherwise current, and adds
+`"renamed_sources": N` to its item.
+
 ```json
 {"schema": "upgrade.v1", "count": 1, "upgraded": 1,
  "items": [<manifest without "schema"> + "status": "upgraded|skipped",
@@ -1084,7 +1092,8 @@ capture's cluster page payload is built in the background (its first open is a
 cache hit). On a loopback `--host` only loopback `Host` names (and the
 `--allowed-host` names, `ATLAS_LOG_ALLOWED_HOSTS`) are answered, and
 requests that change something from a page of another site are refused (see
-`docs/webapp.md`, Security). Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
+`docs/webapp.md`, Security). A `--host` off loopback without a token prints a
+warning on stderr. Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
 second `serve` on a store that is being served fails with `store_error`.
 
 Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3

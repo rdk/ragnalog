@@ -589,7 +589,8 @@ def upgrade(store: Store, refs: Sequence[str], *, all_sets: bool = False, front:
 
     ``refs`` names the sets (in that order), or ``all_sets`` takes every set (newest
     first). Items carry ``status`` (``upgraded``/``skipped``), ``reason`` and
-    ``previous_recipe_key``.
+    ``previous_recipe_key``, and ``renamed_sources`` when source paths in a removed ZIP
+    spool were renamed to ``<zip>/<member>``.
     """
     every = flag("all", front)
     if all_sets and refs:
@@ -607,6 +608,8 @@ def upgrade(store: Store, refs: Sequence[str], *, all_sets: bool = False, front:
         item["status"] = "upgraded" if result.upgraded else "skipped"
         item["reason"] = result.reason
         item["previous_recipe_key"] = result.previous_recipe_key
+        if result.renamed_sources:
+            item["renamed_sources"] = result.renamed_sources
         items.append(item)
     return {
         "schema": "upgrade.v1",

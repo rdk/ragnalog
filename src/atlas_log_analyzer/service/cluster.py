@@ -54,7 +54,7 @@ import bisect
 import re
 import statistics
 from collections import defaultdict
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import TYPE_CHECKING, Any, Literal, Self, cast
@@ -1559,14 +1559,14 @@ def _rows_by_index(
     return out
 
 
-def _keys(capture: Capture, cond: pl.Expr) -> pl.DataFrame:
-    """``ts, _n, _row`` of the matching entries of every node, in ``ts, node, file`` order."""
+def _keys(capture: Capture, cond: Callable[[str], pl.Expr]) -> pl.DataFrame:
+    """``ts, _n, _row`` of the entries of every node matching ``cond(node)``, by ts, node, file."""
     import polars as pl
 
     frames = [
         m.logset.entries_lazy()
         .with_row_index("_row")
-        .filter(cond)
+        .filter(cond(m.node))
         .select("ts", pl.lit(i, dtype=pl.UInt16).alias("_n"), "_row")
         for i, m in enumerate(capture.nodes)
     ]
@@ -1583,13 +1583,15 @@ def merged_entries(
     max_raw: int | None = DEFAULT_MAX_RAW,
     columns: Sequence[str] | None = None,
     signatures: Sequence[str] | None = None,
+    node_signatures: Mapping[str, Sequence[str]] | None = None,
     front: Front = "api",
 ) -> Entries:
     """``entries.v1`` of all nodes interleaved by time (then node); rows add ``node``, ``set``.
 
     ``logset`` is the capture reference (``capture:<id>``). ``where`` filters as
     ``entries`` (exact signatures); ``signatures`` keeps the entries of any of these
-    (exact) signatures besides; ``columns`` selects entries.v1 columns; ``raw`` and
+    (exact) signatures besides, ``node_signatures`` also those of a node's own (a group
+    on one node only); ``columns`` selects entries.v1 columns; ``raw`` and
     ``body`` are cut to ``max_raw`` characters (0 = all).
 
     Raises:
@@ -1614,9 +1616,14 @@ def merged_entries(
         raise OpError("invalid_level", str(exc)) from exc
     if predicate is not None:
         cond = cond & predicate
-    if signatures is not None:
-        cond = cond & pl.col("signature").is_in(list(signatures))
-    keys = _keys(capture, cond)
+
+    def node_cond(node: str) -> pl.Expr:
+        if signatures is None and node_signatures is None:
+            return cond
+        sigs = [*(signatures or ()), *(node_signatures or {}).get(node, ())]
+        return cond & pl.col("signature").is_in(sigs)
+
+    keys = _keys(capture, node_cond)
     total = keys.height
     page = keys.slice(offset, limit or None)
     wanted: dict[int, list[int]] = defaultdict(list)
@@ -1687,7 +1694,8 @@ def context_all_nodes(
     cols = _entry_columns(columns, front)
     at = anchor["ts"]
     span = timedelta(seconds=window_s)
-    keys = _keys(capture, pl.col("ts").is_between(at - span, at + span, closed="both"))
+    near = pl.col("ts").is_between(at - span, at + span, closed="both")
+    keys = _keys(capture, lambda _node: near)
     total = keys.height
     if total > CONTEXT_MAX_ROWS:
         distance = (pl.col("ts").dt.epoch("ms") - _ms(at)).abs()

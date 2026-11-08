@@ -310,13 +310,15 @@ def upgrade(*logsets: str, all: bool = False) -> None:
     re-assembled from its stored entries (Jira sets of format version 1:
     banner lines join the entry they announce); the log files are not read.
     Sets that are current, or whose format is not registered, are skipped
-    with a reason.
+    with a reason. A set ingested from a ZIP by an older version names its
+    files by the spool directory they were extracted to (removed since):
+    upgrade renames them to <zip>/<member>, stale or not.
 
     Output (json):
       {"schema": "upgrade.v1", "count": int, "upgraded": int,
        "items": [<logset.v1 manifest without "schema"> +
                  {"status": "upgraded" | "skipped", "reason": str | null,
-                  "previous_recipe_key": str}, ...]}
+                  "previous_recipe_key": str, "renamed_sources"?: int}, ...]}
     "reason" is null for an upgraded set, "current" for a set already at the
     current recipe, or names the unknown format or spec. Items follow the
     order of SET arguments (with --all: the `sets` order, newest first).

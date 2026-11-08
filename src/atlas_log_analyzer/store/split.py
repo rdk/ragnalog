@@ -25,7 +25,7 @@ import stat
 import time
 import uuid
 import zlib
-from collections.abc import Iterator, Sequence
+from collections.abc import Collection, Iterator, Sequence
 from contextlib import contextmanager, suppress
 from contextvars import ContextVar
 from dataclasses import dataclass
@@ -218,6 +218,28 @@ def shown_path(path: str) -> str:
                 rest = path[len(extracted) :].lstrip("/\\").replace("\\", "/")
                 return f"{archives[extracted]}/{rest}" if rest else archives[extracted]
     return path
+
+
+_SPOOLED = re.compile(r"[\\/]\.spool[\\/][0-9a-f]{12}[\\/](?P<stem>[^\\/]+)(?:[\\/](?P<rest>.+))?$")
+
+
+def unspooled(path: str, known: Collection[str] = ()) -> str | None:
+    """Return the ``<zip>/<member>`` name of a path in a removed ZIP spool; ``None`` otherwise.
+
+    Sets ingested from a ZIP by older versions recorded where the file was extracted
+    (``<store>/.spool/<id>/<zip stem>/<member>``), a directory removed after the ingest.
+    The name is ``<zip stem>.zip/<member>``, or the one path of ``known`` (the
+    manifest's sources) that ends with ``.zip/<member>``.
+    """
+    m = _SPOOLED.search(path)
+    if m is None:
+        return None
+    rest = (m["rest"] or "").replace("\\", "/")
+    name = f"{m['stem']}.zip" + (f"/{rest}" if rest else "")
+    if name in known or not rest:
+        return name
+    hits = [k for k in known if k.replace("\\", "/").endswith(f".zip/{rest}")]
+    return hits[0] if len(hits) == 1 else name
 
 
 @contextmanager

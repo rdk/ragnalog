@@ -229,6 +229,10 @@
         "previous_recipe_key": {
           "description": "Recipe key before the call.",
           "type": "string"
+        },
+        "renamed_sources": {
+          "description": "Source paths renamed from a removed ZIP spool (sets ingested from a ZIP by older versions) to <zip>/<member>; only when some were.",
+          "type": "integer"
         }
       },
       "required": [

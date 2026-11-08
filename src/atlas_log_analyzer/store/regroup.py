@@ -24,7 +24,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -381,6 +381,38 @@ def _rebuild_file(src: Path, dst: Path, fmt: LogFormat) -> bool:
                     table = table.set_column(ENTRIES_SCHEMA.get_field_index(name), name, column)
             writer.write_table(table, row_group_size=max(table.num_rows, 1))
     return True
+
+
+def rename_sources(src: Path, dst: Path, names: Mapping[str, str]) -> None:
+    """Write ``dst`` = ``src`` with the ``source_path`` values in ``names`` renamed.
+
+    Rows, row groups and every other column are kept; only the column's dictionary
+    changes.
+    """
+    at = ENTRIES_SCHEMA.get_field_index("source_path")
+    field = ENTRIES_SCHEMA.field(at)
+    with (
+        pq.ParquetFile(str(src)) as pf,
+        pq.ParquetWriter(
+            str(dst),
+            ENTRIES_SCHEMA,
+            compression=COMPRESSION,
+            write_statistics=True,
+            **_entries_encodings(),
+        ) as writer,
+    ):
+        for i in range(pf.num_row_groups):
+            table = pf.read_row_group(i)
+            chunks = []
+            for chunk in table.column(at).chunks:
+                coded = chunk if pa.types.is_dictionary(chunk.type) else chunk.dictionary_encode()
+                values = [names.get(v, v) for v in coded.dictionary.to_pylist()]
+                renamed = pa.DictionaryArray.from_arrays(
+                    coded.indices, pa.array(values, pa.string())
+                )
+                chunks.append(renamed.cast(field.type))
+            table = table.set_column(at, field, pa.chunked_array(chunks, field.type))
+            writer.write_table(table, row_group_size=max(table.num_rows, 1))
 
 
 def resign_entries(

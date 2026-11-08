@@ -85,6 +85,12 @@ def hex_ref(value: str) -> str:
     return low if _HEX_REF.match(low) else value
 
 
+def _sig_ref(text: str) -> str:
+    """``hex_ref`` of a signature, keeping a ``NODE:`` before it (``N1:83D1`` -> ``N1:83d1``)."""
+    node, sep, sig = text.strip().rpartition(":")
+    return f"{node.strip()}{sep}{hex_ref(sig)}"
+
+
 def check_count(value: int, name: str, *, front: Front, zero: str = "") -> int:
     """Return ``value`` if it is in ``0..MAX_COUNT``; ``zero`` ends the ``>= 0`` message.
 
@@ -277,7 +283,8 @@ class EntryQuery:
 
     Attributes:
         signature: Only entries of this group signature (or unique prefix, 4+ hex chars); a
-            capture also takes several, comma-separated (entries of any of them).
+            capture also takes several, comma-separated (entries of any of them), and
+            NODE:SIGNATURE for a group on that node only.
         coarse_signature: Only entries of this coarse signature (exact; the signature of
             groups --coarse).
         level: Only these levels, e.g. ERROR or WARN,ERROR.
@@ -323,7 +330,7 @@ class EntryQuery:
     @property
     def signatures(self) -> list[str]:
         """The signatures of ``signature`` (comma-separated), duplicates dropped; ``[]`` if none."""
-        parts = (hex_ref(p.strip()) for p in (self.signature or "").split(",") if p.strip())
+        parts = (_sig_ref(p) for p in (self.signature or "").split(",") if p.strip())
         return list(dict.fromkeys(parts))
 
     @property
@@ -343,7 +350,14 @@ class EntryQuery:
                 several signatures.
 
         """
-        for given, what in ((self.nodes, "node"), (self.signatures[1:], "signature")):
+        sigs = self.signatures
+        if any(":" in s for s in sigs):
+            raise OpError(
+                "usage",
+                f"{flag('signature', front)} NODE:SIGNATURE applies to a capture",
+                hint="pass a capture (capture:ID, cluster:NAME)",
+            )
+        for given, what in ((self.nodes, "node"), (sigs[1:], "signature")):
             if given:
                 raise OpError(
                     "usage",

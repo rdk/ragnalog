@@ -203,6 +203,14 @@ def serve(
     if (probe := lock_server(settings.store)) is not None:  # a clear error if already served
         probe.release()
     ctx.out().info(f"serving {settings.store.as_posix()} at http://{host}:{port}/")
+    from atlas_log_analyzer.webapp.app import served_hosts
+
+    if served_hosts(host, None) is None and not settings.token:
+        ctx.out().warn(
+            f"{host} is reachable from the network and no --token is set: anyone who can "
+            "reach this port can read, upload and delete log sets (pass --token, or set "
+            "ATLAS_LOG_TOKEN)"
+        )
     if reload:
         # the reloading child builds its settings from the environment alone
         os.environ.update(settings.to_env())
@@ -214,12 +222,7 @@ def serve(
             reload=True,
         )
         return
-    # on loopback only loopback names: a page that rebinds its own name here cannot read it
-    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS, _host_name
-
-    # as the Host check compares them: no port, no brackets ("logs.example.org:443")
-    extra = frozenset(_host_name(h.strip()) for h in settings.allowed_hosts or ())
-    hosts = LOOPBACK_HOSTS | extra if host.strip("[]").lower() in LOOPBACK_HOSTS else None
+    hosts = served_hosts(host, settings.allowed_hosts)
     app = create_app(settings, warm=True, hosts=hosts)
     uvicorn.run(app, host=host, port=port, log_level="info")
 

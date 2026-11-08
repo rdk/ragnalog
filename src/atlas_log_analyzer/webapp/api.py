@@ -270,7 +270,8 @@ def capture_entries(
     """Entries of all nodes interleaved by time (``entries.v1``), as ``entries CAPTURE``.
 
     Rows add ``node`` and ``set``; ``logset`` is ``capture:ID``. The filters of
-    ``/sets/{ref}/entries``; ``signature`` may name several groups (comma-separated)
+    ``/sets/{ref}/entries``; ``signature`` may name several groups (comma-separated,
+    each also ``NODE:SIGNATURE``: that group on that node only)
     and ``node`` keeps the entries of those nodes (comma-separated); ``since``/``until``
     set the window (else ``window``).
     """

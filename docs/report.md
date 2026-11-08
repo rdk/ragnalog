@@ -369,8 +369,8 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     once has a huge lift and tells little): source (node badge, template on up to two
     lines, full text in its title, `+N` other groups that burst with it) → target, a hits
     meter ("7 / 8"), median lag, lift chip (above ×100 shown as `>×100`, the exact lift in
-    its title), and "show in log" (co-bursts: both groups on their nodes in the merged
-    log) or example times (event pairs, those in the window). Below, side by side when
+    its title), and "show in log" (co-bursts: each group on its own node in the merged
+    log, `signature=NODE:SIG,...`) or example times (event pairs, those in the window). Below, side by side when
     each card gets 540 px (else stacked):
     the N×N mention matrix (a cell lists that edge's entries in the merged log) with the
     groups behind each edge (a group outside the payload's `groups`, which `max_groups`

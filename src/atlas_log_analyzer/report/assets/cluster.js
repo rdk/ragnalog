@@ -144,6 +144,12 @@
   const NODES = [...new Set((arr(D.nodes).length ? arr(D.nodes) : CNODES.map((n) => n.node)).map(String))];
   const NIDX = new Map(NODES.map((n, i) => [n, i]));
   const NLABEL = (n) => (NIDX.has(n) ? "N" + (NIDX.get(n) + 1) : str(n));
+  /** A merged-log group filter for its chip: the template, "N2: template" for NODE:SIGNATURE. */
+  const msLabel = (m) => {
+    const i = m.indexOf(":"), sig = i < 0 ? m : m.slice(i + 1);
+    const g = GBY.get(sig);
+    return (i < 0 ? "" : NLABEL(m.slice(0, i)) + ": ") + trunc(g ? g.tpl : sig, 40);
+  };
   const ncls = (n) => {
     const i = NIDX.get(n);
     return i == null || i >= 8 ? "ncx" : "nc" + i;
@@ -1902,15 +1908,21 @@
     const text = tplHtml(trunc(tpl || (g && g.tpl) || sig, 140));
     return g ? `<button type="button" class="tplref" data-open="${esc(g.id)}" title="${esc(g.tpl)}">${text}</button>` : `<b>${text}</b>`;
   };
+  /** The data-show of a co-burst: each group on its own node only (NODE:SIGNATURE; a side whose
+   * node the page lacks: on any node). */
+  const coBurstShow = (a, b) => esc(JSON.stringify({
+    ms: [...new Set([a, b].filter((x) => x.signature != null)
+      .map((x) => (NIDX.has(str(x.node)) ? `${str(x.node)}:` : "") + str(x.signature)))],
+    mn: [],
+  }));
   function coBurstSentence(c) {
     const a = obj(c.a), b = obj(c.b);
     const extra = [isNum(c.median_lag_ms) ? `median ${lagText(c.median_lag_ms)}` : "", isNum(c.lift) ? `lift ${c.lift > LIFT_CAP ? ">×" + LIFT_CAP : "×" + ratioText(c.lift)}` : ""].filter(Boolean);
-    const ms = [...new Set([a.signature, b.signature].filter((s) => s != null).map(String))];
-    const mn = [...new Set([a.node, b.node].filter((n) => NIDX.has(str(n))).map(String))];
+    const show = coBurstShow(a, b);
     return `When ${tplRef(a.signature, a.template)} burst on ${nodeBadge(str(a.node))}, ${tplRef(b.signature, b.template)} burst on ${nodeBadge(str(b.node))} ` +
       `within ${esc(spanText(DELTA_S * 1000))}, <b>${fmt(num(c.hits))} of ${fmt(num(c.of))}</b> times` +
       (extra.length ? ` (${esc(extra.join(", "))})` : "") + `.` +
-      `<button type="button" class="linkbtn act" data-show='${esc(JSON.stringify({ ms, mn }))}'>show me</button>`;
+      `<button type="button" class="linkbtn act" data-show='${show}' title="The merged log with each group on its own node">show me</button>`;
   }
   /** Strongest first: the share of hits, then lift, then hits. */
   const share = (h, o) => (o > 0 ? Math.min(1, h / o) : 0);
@@ -1945,12 +1957,11 @@
   function coBurstRow(c) {
     const a = obj(c.a), b = obj(c.b);
     const hits = num(c.hits), of = num(c.of);
-    const ms = [...new Set([a.signature, b.signature].filter((s) => s != null).map(String))];
-    const mn = [...new Set([a.node, b.node].filter((n) => NIDX.has(str(n))).map(String))];
+
     return `<tr><td class="c-from">${burstSide(a)}</td><td class="c-arr" aria-hidden="true">→</td><td class="c-to">${burstSide(b)}</td>` +
       `<td class="c-hits">${hitsMeter(hits, of, `${fmt(hits)} of ${fmt(of)} bursts on ${str(a.node)} were followed by a burst on ${str(b.node)} within ${spanText(DELTA_S * 1000)}`)}</td>` +
       `<td class="c-lag">${esc(lagText(c.median_lag_ms))}</td><td class="c-lift">${liftChip(c.lift)}</td>` +
-      `<td class="c-act"><button type="button" class="linkbtn" data-show='${esc(JSON.stringify({ ms, mn }))}' title="The merged log with both groups on their nodes">show in log</button></td></tr>`;
+      `<td class="c-act"><button type="button" class="linkbtn" data-show='${coBurstShow(a, b)}' title="The merged log with each group on its own node">show in log</button></td></tr>`;
   }
   function pairRow(p, rg) {
     const a = obj(p.a), b = obj(p.b);
@@ -2242,7 +2253,7 @@
     const q = logSearch().toLowerCase();
     const sigs = S.ms.length ? new Set(S.ms) : null;
     return STATIC_LOG.filter((r) => (!rg || inRange(r.ms, rg)) && (!minLv || r.lvl >= minLv) && (!S.mn || S.mn.has(r.node)) &&
-      (!q || r.key.includes(q)) && (!sigs || sigs.has(r.sig)));
+      (!q || r.key.includes(q)) && (!sigs || sigs.has(r.sig) || sigs.has(r.node + ":" + r.sig)));
   }
   /** The row reachable with Tab (a roving tabindex): the cursor's, else the first. */
   const tabRow = () => Math.max(0, LOG.cur);
@@ -2339,7 +2350,7 @@
           (filtered ? " (matching the filters)" : "") + (S.at ? " from the moment on" : " in the range") : "Loading…")
         : plural(VIEW.length, "entry", "entries")) + `</span>`;
     const chips = [];
-    if (S.ms.length) chips.push(["ms", `${plural(S.ms.length, "group")}: ${S.ms.map((s) => trunc((GBY.get(s) || {}).tpl || s, 40)).join(" · ")}`]);
+    if (S.ms.length) chips.push(["ms", `${plural(S.ms.length, "group")}: ${S.ms.map(msLabel).join(" · ")}`]);
     if (S.mn) chips.push(["mn", `Nodes: ${[...S.mn].map(NLABEL).join(", ")}`]);
     if (S.at) chips.push(["at", `From ${tsSec(S.at)}`]);
     if (S.t) chips.push(["t", `Window ${tsShort(isoOf(tRange()[0]))} (${spanText(tRange()[1] - tRange()[0])})`]);

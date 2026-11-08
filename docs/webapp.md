@@ -126,13 +126,13 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/captures/{ref}/matrix` | the filters of `/groups` (`since`/`until` set the window), `window`, `node`, `spread` (`all`, `only`, `skewed`), `sort` (`count`, `skew`, `lead`), `skew_min` (4.0), `signature`, `limit` (50; 0 = all), `offset` | `matrix.v1` (as `atlas-log matrix`) |
 | `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `atlas-log events`) |
 | `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `atlas-log interactions`) |
-| `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window; `signature` may name several groups, comma-separated), `node` (comma-separated: only those nodes, the window stays all nodes'; an unknown node is 400 `invalid_value`), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
+| `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window; `signature` may name several groups, comma-separated, each also `NODE:SIGNATURE`: that group on that node only), `node` (comma-separated: only those nodes, the window stays all nodes'; an unknown node is 400 `invalid_value`), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
 | `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
 | `GET /api/sets/{ref}/groups/{sig}` | `limit` (20; 1..10000, no `0` for all), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw`; `since`, `until`, `limit` (3, max 50) | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape; with `since`/`until` its first `limit` entries in that window instead (the report's time window) |
-| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all); `node` and several signatures are 400 `usage` (they apply to a capture) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
+| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all); `node`, several signatures and `NODE:SIGNATURE` are 400 `usage` (they apply to a capture) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
 | `GET /api/sets/{ref}/entries/{id}/raw` | | `text/plain`: the exact text of the entry as in its log file, banner lines it carries first (the pages' "Open raw" link; not in the OpenAPI schema) |
 | `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief`; `all_nodes` with `window` (30 s): every node of the set's capture around the entry | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context [--all-nodes]`; with `all_nodes` rows add `node`, `set`) |
 | `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
@@ -300,7 +300,10 @@ run next to the server.
   DNS name to 127.0.0.1 cannot read the API. No header lifts that check (a
   rebinding page is same-origin and may send any): behind a reverse proxy that passes
   the public `Host` through, name it with `--allowed-host` (`ATLAS_LOG_ALLOWED_HOSTS`);
-  a proxy that rewrites `Host` to the upstream needs nothing. `--reload` (development) skips the `Host` check. An upload needs
+  a proxy that rewrites `Host` to the upstream needs nothing (`--reload` checks it
+  per connection, by the address it arrived on). A `--host` off loopback without
+  `--token` prints a warning at startup: anyone who reaches the port may upload and
+  delete sets. An upload needs
   `Content-Length` (411 otherwise; browsers always send it), so its size is checked
   before the body is read. Uploaded file names are reduced to an ASCII basename (a
   Windows device name such as `nul.log` or `COM¹.log` gets a `_` prefix). Set

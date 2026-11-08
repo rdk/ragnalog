@@ -155,6 +155,16 @@ def test_capture_entries_filter_by_groups_and_nodes(client: TestClient, tmp_path
     assert total(node=node, signature=a)["total"] == sum(
         1 for r in one["items"] if r["node"] == node
     )
+    # NODE:SIGNATURE: a co-burst's sides, each group on its own node only
+    n1, n2 = payload["nodes"][0], payload["nodes"][-1]
+    paired = total(signature=f"{n1}:{a[:8].upper()},{n2}:{b}")
+    expect = {(n1, a), (n2, b)}
+    assert {(r["node"], r["signature"]) for r in paired["items"]} == expect
+    assert paired["total"] == sum(1 for r in both["items"] if (r["node"], r["signature"]) in expect)
+    mixed = total(signature=f"{a},{n2}:{b}")  # a anywhere, b on n2 only
+    assert mixed["total"] == one["total"] + sum(1 for r in other["items"] if r["node"] == n2)
+    bad = client.get(url, params={"signature": f"NODE7:{a}"})
+    assert bad.status_code == 400 and "NODE7" in bad.json()["error"]["message"]
     bad = client.get(url, params={"node": "NODE7"})
     assert bad.status_code == 400 and "NODE7" in bad.json()["error"]["message"]
     member = payload["capture"]["nodes"][0]["set"]["id"]

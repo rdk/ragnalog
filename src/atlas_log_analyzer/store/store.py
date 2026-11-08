@@ -141,6 +141,28 @@ def _restat(
     return tuple(out)
 
 
+def _spool_renames(ls: LogSet) -> dict[str, str]:
+    """Map the set's source paths in a removed ZIP spool to their ``<zip>/<member>`` names."""
+    import polars as pl
+
+    from atlas_log_analyzer.store.split import unspooled
+
+    listed = [s.path for s in ls.manifest.sources]
+    stored = (
+        pl.scan_parquet(ls.entries_path)
+        .select(pl.col("source_path").cast(pl.String).unique())
+        .collect()["source_path"]
+        .to_list()
+    )
+    known = [p for p in listed if unspooled(p) is None]
+    out: dict[str, str] = {}
+    for path in {*listed, *(p for p in stored if p is not None)}:
+        name = unspooled(path, known)
+        if name is not None:
+            out[path] = name
+    return out
+
+
 LEFTOVER_AGE_S = 24 * 3600
 """Age after which a ``.tmp-*``/``.trash-*`` directory counts as left over (see ``_sweep``)."""
 
@@ -185,6 +207,8 @@ class UpgradeResult:
     reason: str | None
     """Why the set was skipped: ``"current"`` or an unknown format/spec; ``None`` if upgraded."""
     previous_recipe_key: str
+    renamed_sources: int = 0
+    """Source paths renamed from a removed ZIP spool to ``<zip>/<member>``."""
 
 
 class Store:
@@ -651,24 +675,68 @@ class Store:
         :meth:`regroup` with its own spec; a set that is current, or whose format
         is not registered, is left untouched and reported as skipped.
 
+        A set ingested from a ZIP by an older version names its files by where they
+        were extracted (a spool directory removed since): those paths become
+        ``<zip>/<member>`` in the entries, groups and manifest, whether or not the
+        set is stale.
+
         Raises:
             StoreError: The set does not exist.
 
         """
         ls = self.open(ref)
         m = ls.manifest
+        names = _spool_renames(ls)
         current = current_recipe_key(m.format, m.signature_spec)
-        if current is None:
-            reason = f"format {m.format!r} or signature spec {m.signature_spec!r} is unknown"
-            return UpgradeResult(m, upgraded=False, reason=reason, previous_recipe_key=m.recipe_key)
-        if current == m.recipe_key:
-            return UpgradeResult(
-                m, upgraded=False, reason="current", previous_recipe_key=m.recipe_key
+        if current is not None and current != m.recipe_key:
+            ls = self.regroup(m.id, SignatureSpec.from_key(m.signature_spec))
+        elif not names:
+            reason = (
+                "current"
+                if current is not None
+                else f"format {m.format!r} or signature spec {m.signature_spec!r} is unknown"
             )
-        rebuilt = self.regroup(m.id, SignatureSpec.from_key(m.signature_spec))
+            return UpgradeResult(m, upgraded=False, reason=reason, previous_recipe_key=m.recipe_key)
+        if names:
+            ls = self._rename_sources(ls, names)
         return UpgradeResult(
-            rebuilt.manifest, upgraded=True, reason=None, previous_recipe_key=m.recipe_key
+            ls.manifest,
+            upgraded=True,
+            reason=None,
+            previous_recipe_key=m.recipe_key,
+            renamed_sources=len(names),
         )
+
+    def _rename_sources(self, ls: LogSet, names: dict[str, str]) -> LogSet:
+        """Rewrite the set with its source paths renamed by ``names`` (signatures kept)."""
+        from atlas_log_analyzer.store.regroup import rename_sources
+        from atlas_log_analyzer.store.writer import groups_from_entries, source_stats
+
+        m = ls.manifest
+        tmp = self._tmp_dir(m.id)
+        try:
+            for f in ls.path.iterdir():  # merges and anything else: same signatures
+                if f.is_file() and f.name not in (ENTRIES_FILE, GROUPS_FILE, MANIFEST_FILE):
+                    shutil.copy2(f, tmp / f.name)
+            rename_sources(ls.entries_path, tmp / ENTRIES_FILE, names)
+            group_count = groups_from_entries(tmp / ENTRIES_FILE, tmp / GROUPS_FILE)
+            sources = tuple(replace(s, path=names.get(s.path, s.path)) for s in m.sources)
+            manifest = replace(
+                m,
+                sources=_restat(sources, source_stats(tmp / ENTRIES_FILE)),
+                group_count=group_count,
+                tool_version=__version__,
+            )
+            with self._writing():
+                manifest = self._still_current(ls.path, m, manifest)
+                manifest.write(tmp)
+                final = self._install(tmp, m.id)
+        except BaseException:
+            shutil.rmtree(tmp, ignore_errors=True)
+            raise
+        with self._index_lock:
+            self._index.pop(final, None)
+        return _logset(final, manifest)
 
     def remove(self, ref: str) -> None:
         """Delete a log set directory.

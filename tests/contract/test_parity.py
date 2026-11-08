@@ -454,6 +454,11 @@ CLUSTER_CASES: list[Case] = [
         "/api/captures/cluster:acme/entries?signature={pfx},{sig2}&node=NODE2&brief=true",
     ),
     Case(
+        "merged-entries-group-per-node",
+        ["entries", "cluster:acme", "--signature", "NODE1:{pfx},NODE2:{sig2}", "--brief"],
+        "/api/captures/cluster:acme/entries?signature=NODE1:{pfx},NODE2:{sig2}&brief=true",
+    ),
+    Case(
         "merged-entries-nodes",
         ["entries", "cluster:acme", "--node", "NODE1,NODE2", "--limit", "3"],
         "/api/captures/cluster:acme/entries?node=NODE1,NODE2&limit=3",
@@ -546,6 +551,20 @@ CLUSTER_CASES: list[Case] = [
         exit=2,
         status=404,
         reason="group_not_found",
+    ),
+    Case(
+        "error-merged-entries-group-unknown-node",
+        ["entries", "cluster:acme", "--signature", "NODE9:{sig}"],
+        "/api/captures/cluster:acme/entries?signature=NODE9:{sig}",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-entries-group-per-node-of-a-set",
+        ["entries", "acme_node1", "--signature", "NODE1:{sig}"],
+        "/api/sets/acme_node1/entries?signature=NODE1:{sig}",
+        exit=1,
+        status=400,
     ),
     Case(
         "error-matrix-no-group",

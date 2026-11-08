@@ -23,7 +23,7 @@ from atlas_log_analyzer.webapp.responses import JSON
 from atlas_log_analyzer.webapp.settings import Settings
 from atlas_log_analyzer.webapp.state import AppState
 
-__all__ = ["LOOPBACK_HOSTS", "create_app"]
+__all__ = ["LOOPBACK_HOSTS", "create_app", "served_hosts"]
 
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 """Host names a server bound to loopback answers (anything else: a DNS rebinding page)."""
@@ -35,6 +35,18 @@ def _host_name(header: str) -> str:
     if header.startswith("["):
         return header[1 : header.find("]")].lower()
     return header.rsplit(":", 1)[0].lower() if header.count(":") == 1 else header.lower()
+
+
+def served_hosts(bind: str, allowed: tuple[str, ...] | None) -> frozenset[str] | None:
+    """Return the ``Host`` names a server bound to ``bind`` answers; ``None``: any.
+
+    On a loopback address: :data:`LOOPBACK_HOSTS` plus ``allowed`` (compared as the check
+    does: no port, no brackets); a page that rebinds its own name to it cannot read it.
+    Elsewhere ``None``: a server on the network answers whatever names reach it.
+    """
+    if bind.strip("[]").lower() not in LOOPBACK_HOSTS:
+        return None
+    return LOOPBACK_HOSTS | frozenset(_host_name(h.strip()) for h in allowed or ())
 
 
 _DEFAULT_PORTS = {"http": "80", "https": "443"}
@@ -91,11 +103,14 @@ def create_app(
     ``/api/...`` JSON (OpenAPI at ``/docs``, with the document schemas). Errors are
     ``error.v1`` documents on ``/api`` and HTML pages elsewhere. With ``warm`` (``serve``)
     the newest capture's cluster page payload is built in the background at startup.
-    ``hosts`` (``serve`` on a loopback address: :data:`LOOPBACK_HOSTS` plus
-    ``settings.allowed_hosts``) refuses requests whose ``Host`` is another name.
+    ``hosts`` (``serve`` on a loopback address: :func:`served_hosts`) refuses requests
+    whose ``Host`` is another name. Without ``settings`` (the ``serve --reload`` factory,
+    which cannot be told the address it is bound to) they are found per request from the
+    address the connection arrived on.
     Requests that change something (not GET/HEAD) from a page of another site
     (``Origin``/``Sec-Fetch-Site``) are refused either way.
     """
+    auto = settings is None and hosts is None
     settings = settings or Settings.from_env()
     state = AppState(settings)
 
@@ -126,10 +141,13 @@ def create_app(
     ) -> Response:
         # before any route runs, so an upload body is not read when the token is wrong
         path = request.url.path
+        allowed = hosts
+        if auto and (server := request.scope.get("server")):
+            allowed = served_hosts(str(server[0]), settings.allowed_hosts)
         if (
-            hosts is not None
+            allowed is not None
             # never lifted by a header: a rebinding page is same-origin and can send any
-            and _host_name(request.headers.get("host", "")) not in hosts
+            and _host_name(request.headers.get("host", "")) not in allowed
         ):
             return error_response(OpError("http", "unexpected Host header"), 400)
         if request.method not in _SAFE_METHODS and _cross_site(request):

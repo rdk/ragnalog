@@ -170,6 +170,58 @@ def test_upgrade_keeps_the_spec_and_skips_unknown_formats(
     assert not skipped.upgraded and skipped.reason is not None and "unknown" in skipped.reason
 
 
+def _spooled_set(tmp_path: Path) -> tuple[Store, LogSet]:
+    """A set as older versions stored a ZIP ingest: paths in the (removed) spool."""
+    logs = tmp_path / "store" / ".spool" / "0123456789ab" / "export" / "logs"
+    logs.mkdir(parents=True)
+    (logs / "atlassian-jira.log").write_bytes(MINI.read_bytes())
+    (logs / "atlassian-jira.log.1").write_bytes((FIXTURES / "sample.log").read_bytes())
+    store = Store(tmp_path / "store")
+    ls = ingest_paths(store, [logs], name="old-zip").logset
+    return store, ls
+
+
+def _source_paths(ls: LogSet) -> set[str]:
+    return set(pl.read_parquet(ls.entries_path, columns=["source_path"])["source_path"])
+
+
+def test_upgrade_renames_spool_paths_of_old_zip_ingests(tmp_path: Path) -> None:
+    store, ls = _spooled_set(tmp_path)
+    assert all(".spool" in p for p in _source_paths(ls))
+    before = ls.manifest
+    entries_before = pl.read_parquet(ls.entries_path).drop("source_path")
+    result = store.upgrade("old-zip")  # current recipe: renamed all the same
+    assert result.upgraded and result.reason is None and result.renamed_sources == 2
+    after = store.open("old-zip")
+    want = {"export.zip/logs/atlassian-jira.log", "export.zip/logs/atlassian-jira.log.1"}
+    assert _source_paths(after) == want
+    assert {s.path for s in after.manifest.sources} == want
+    assert [s.entries for s in after.manifest.sources] == [s.entries for s in before.sources]
+    assert after.manifest.recipe_key == before.recipe_key
+    assert pl.read_parquet(after.entries_path).drop("source_path").equals(entries_before)
+    groups = pl.read_parquet(after.groups_path)
+    assert after.manifest.group_count == groups.height == before.group_count
+    listed = {v["value"] for row in groups["sources"].to_list() for v in row}
+    assert listed <= want
+    again = store.upgrade("old-zip")
+    assert not again.upgraded and again.reason == "current" and again.renamed_sources == 0
+
+
+def test_upgrade_takes_the_manifests_zip_name(tmp_path: Path) -> None:
+    """A set whose manifest already names the ZIP (entries still in the spool)."""
+    store, ls = _spooled_set(tmp_path)
+    sources = json.loads((ls.path / MANIFEST_FILE).read_text(encoding="utf-8"))["sources"]
+    for src in sources:
+        src["path"] = "C:/dl/export.zip/logs/" + Path(src["path"]).name
+        src["entries"] = 0  # as those manifests counted: no entry matched the name
+    _rewrite_manifest(ls, sources=sources)
+    store.upgrade("old-zip")
+    after = store.open("old-zip")
+    want = {f"C:/dl/export.zip/logs/atlassian-jira.log{n}" for n in ("", ".1")}
+    assert _source_paths(after) == want
+    assert sum(s.entries for s in after.manifest.sources) == after.manifest.entry_count
+
+
 def test_headerless_start_does_not_reach_back_to_1970(tmp_path: Path) -> None:
     log = tmp_path / "logs" / "atlassian-jira.log"
     log.parent.mkdir()

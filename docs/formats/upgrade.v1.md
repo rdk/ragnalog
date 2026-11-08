@@ -37,3 +37,4 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items[].status` | `"skipped" \| "upgraded"` | yes | What happened to the set. |
 | `items[].reason` | `string \| null` | yes | null when upgraded; "current" or the unknown format/spec when skipped. |
 | `items[].previous_recipe_key` | `string` | yes | Recipe key before the call. |
+| `items[].renamed_sources` | `integer` | no | Source paths renamed from a removed ZIP spool (sets ingested from a ZIP by older versions) to <zip>/<member>; only when some were. |

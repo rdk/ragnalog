@@ -273,6 +273,16 @@ class UpgradeItem(Struct, kw_only=True):
         _d('null when upgraded; "current" or the unknown format/spec when skipped.'),
     ]
     previous_recipe_key: Annotated[str, _d("Recipe key before the call.")]
+    renamed_sources: (
+        Annotated[
+            int,
+            _d(
+                "Source paths renamed from a removed ZIP spool (sets ingested from a ZIP by "
+                "older versions) to <zip>/<member>; only when some were."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
 
 
 class Upgrade(Struct, kw_only=True, tag_field="schema", tag="upgrade.v1"):
