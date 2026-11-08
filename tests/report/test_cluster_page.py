@@ -28,6 +28,8 @@ ROOT_IDS = (
     "c-cards",
     "c-timeline",
     "tl-y",
+    "btn-tz",
+    "btn-theme",
     "c-tabs",
     "p-groups",
     "groups",

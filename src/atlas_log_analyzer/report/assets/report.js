@@ -36,10 +36,27 @@
       if (Math.abs(+t) < 1000 || i === UNITS.length - 1) return t + UNITS[i][1];
     }
   }
-  const ts16 = (iso) => (iso ? iso.slice(0, 10) + " " + iso.slice(11, 16) : "");
-  const tsShort = (iso) => (iso ? iso.slice(5, 10) + " " + iso.slice(11, 16) : "");
-  const tsFull = (iso) => (iso ? iso.slice(0, 10) + " " + iso.slice(11, 23) : "");
   const parseTs = (iso) => Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1"));
+  // times show in UTC or, toggled, in the browser's time zone: a viewer preference kept like the
+  // theme (tz=local|utc in a link wins); windows in the hash stay UTC either way
+  const TZ_KEY = "atlas-log-tz";
+  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) === "local"; } catch { return false; } })();
+  let TZ = "UTC";
+  /** The ISO time shifted into the shown zone (still printed with toISOString's layout). */
+  function zoned(iso) {
+    if (!TZL || !iso) return iso;
+    const ms = parseTs(iso);
+    return ms === ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString() : iso;
+  }
+  function zoneName(ms) {
+    try {
+      const p = new Intl.DateTimeFormat("en-GB", { timeZoneName: "short" }).formatToParts(new Date(ms));
+      return (p.find((x) => x.type === "timeZoneName") || {}).value || "local";
+    } catch { return "local"; }
+  }
+  const ts16 = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 16)) : "");
+  const tsShort = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(5, 10) + " " + iso.slice(11, 16)) : "");
+  const tsFull = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 23)) : "");
   function duration(a, b) {
     const ms = parseTs(b) - parseTs(a);
     if (!(ms >= 0)) return "";
@@ -80,7 +97,7 @@
   const HOURS = (D.timeline && D.timeline.hours) || [];
   const NH = HOURS.length;
   const T0MS = NH ? parseTs(HOURS[0]) : 0;
-  const H0 = NH ? Number(HOURS[0].slice(11, 13)) : 0;
+  const setZone = (local) => { TZL = local; TZ = local ? zoneName(NH ? parseTs(HOURS[NH - 1]) : Date.now()) : "UTC"; };
   const ENTRIES = D.entries || (D.entries = {});
   const ENTRIES_URL = D.entries_url || "";
   const MERGES = D.merges || [];
@@ -302,6 +319,7 @@
       sig: p.get("sig") || "",
       t: parseWindow(p.get("t")),
       theme: p.get("theme") || "",
+      tz: ["local", "utc"].includes(p.get("tz")) ? p.get("tz") : "",
       mute: new Set((p.get("mute") || "").split(",").filter((x) => BASE_BY.has(x))),
       hl: new Set((p.get("hl") || "").split(",").filter((x) => BUCKETS.includes(x))),
     };
@@ -321,6 +339,7 @@
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.theme) p.set("theme", s.theme);
+    if (s.tz) p.set("tz", s.tz);
     if (s.mute.size) p.set("mute", [...s.mute].sort().join(","));
     if (s.hl.size) p.set("hl", BUCKETS.filter((b) => s.hl.has(b)).join(","));
     return p.toString();
@@ -351,6 +370,7 @@
       document.documentElement.setAttribute("data-theme", S.theme);
       renderThemeBtn();
     }
+    if (S.tz && (S.tz === "local") !== TZL) applyZone(S.tz === "local");
     $("f-search").value = S.q;
     update();
   }
@@ -482,16 +502,19 @@
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
     return out;
   }
+  /** Hour of day and day number of hour i in the shown zone (a half-hour zone's hours start at :30). */
+  const hodOf = (i) => Number(zoned(HOURS[i]).slice(11, 13));
+  const dayOf = (i) => Math.floor(parseTs(zoned(HOURS[i]).slice(0, 10)) / 864e5);
   function hourLabel(i) {
-    const hod = (H0 + i) % 24;
-    return hod === 0 ? HOURS[i].slice(5, 10) : String(hod).padStart(2, "0") + ":00";
+    const z = zoned(HOURS[i]);
+    return z.slice(11, 16) === "00:00" ? z.slice(5, 10) : z.slice(11, 16);
   }
   function binRange(b, k) {
     const a = b * k, e = Math.min(NH, a + k);
-    const start = HOURS[a];
-    const end = new Date(parseTs(HOURS[e - 1]) + 3.6e6).toISOString();
+    const start = zoned(HOURS[a]);
+    const end = zoned(new Date(parseTs(HOURS[e - 1]) + 3.6e6).toISOString());
     return start.slice(0, 10) + " " + start.slice(11, 16) + " – " +
-      (end.slice(0, 10) === start.slice(0, 10) ? "" : end.slice(5, 10) + " ") + end.slice(11, 16) + " UTC";
+      (end.slice(0, 10) === start.slice(0, 10) ? "" : end.slice(5, 10) + " ") + end.slice(11, 16) + " " + TZ;
   }
   const rectPath = (x, top, w, bottom) => `M${r1(x)} ${r1(bottom)}V${r1(top)}H${r1(x + w)}V${r1(bottom)}Z`;
   function roundTopPath(x, top, w, bottom) {
@@ -505,7 +528,11 @@
   function drawColumns(el, series, opts) {
     const W = Math.max(200, Math.floor(el.clientWidth || 600));
     const H = opts.height;
-    const padL = 42, padR = 6, padB = 22;
+    // with an overlay, a lane under the axis shows it on its own scale (a small group's line would
+    // hug the baseline); the line over the bars is drawn only when it rises above it
+    const born = opts.births ? 10 : 0;
+    const lane = born + (opts.overlay ? 9 : 0);
+    const padL = 42, padR = 6, padB = 22 + lane;
     const plotW = W - padL - padR;
     const k = chooseBin(NH, plotW);
     const nb = Math.ceil(NH / k);
@@ -550,25 +577,26 @@
       }
     }
     const parts = [];
-    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">`);
+    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}"${opts.overlay ? ` class="has-ov"` : ""}>`);
     if (series.some((s) => s.key === "OTHER")) {
       parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
     }
     for (const t of ticks) {
       const y = r1(bottom0 - (plotH * t) / yMax) + 0.5;
       if (t > 0) parts.push(`<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`);
-      parts.push(`<text class="axis" x="${padL - 6}" y="${y + 4}" text-anchor="end">${compact(t)}</text>`);
+      // with the "new" lane under the axis its label takes the place of the 0
+      if (t > 0 || !born) parts.push(`<text class="axis" x="${padL - 6}" y="${y + 4}" text-anchor="end">${compact(t)}</text>`);
     }
     // x ticks: smallest hour step whose labels are >= 56px apart
     const pxPerHour = slot / k;
     const step = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720].find((h) => h * pxPerHour >= 56) || 720;
     for (let i = 0; i < NH; i++) {
-      const hod = (H0 + i) % 24;
-      const ok = step < 24 ? hod % step === 0 : hod === 0 && Math.floor((i + H0) / 24) % (step / 24) === 0;
+      const hod = hodOf(i);
+      const ok = step < 24 ? hod % step === 0 : hod === 0 && dayOf(i) % (step / 24) === 0;
       if (!ok) continue;
       const x = r1(padL + (i / k) * slot) + 0.5;
       if (x > W - padR - 16) continue;
-      parts.push(`<line class="base" x1="${x}" x2="${x}" y1="${bottom0}" y2="${bottom0 + 4}"/>`);
+      parts.push(`<line class="base" x1="${x}" x2="${x}" y1="${bottom0 + lane}" y2="${bottom0 + lane + 4}"/>`);
       parts.push(`<text class="axis" x="${x}" y="${H - 5}" text-anchor="middle">${hourLabel(i)}</text>`);
     }
     parts.push(`<rect class="hover-band" x="0" y="${padT}" width="${r1(slot)}" height="${plotH}" visibility="hidden"/>`);
@@ -591,12 +619,57 @@
       }
     }
     parts.push(`<line class="base" x1="${padL}" x2="${W - padR}" y1="${bottom0 + 0.5}" y2="${bottom0 + 0.5}"/>`);
+    let bornB = null, bornLv = null;
+    if (opts.births) {
+      // a dot per bin with new groups: area by count, color by the highest level among them
+      bornB = new Float64Array(nb);
+      bornLv = new Int32Array(nb);
+      for (let i = 0; i < NH; i++) {
+        if (!opts.births.n[i]) continue;
+        const b = Math.floor(i / k);
+        bornB[b] += opts.births.n[i];
+        if (opts.births.lv[i] > bornLv[b]) bornLv[b] = opts.births.lv[i];
+      }
+      let mx = 0;
+      for (let b = 0; b < nb; b++) if (bornB[b] > mx) mx = bornB[b];
+      const cy = bottom0 + 6, dots = [];
+      for (let b = 0; b < nb; b++) {
+        if (!bornB[b]) continue;
+        const rad = Math.min(slot / 2 + 0.5, 1.5 + 2.5 * Math.sqrt(bornB[b] / mx));
+        dots.push(`<circle class="s-${bucketOf(Math.max(10, bornLv[b]))}" cx="${r1(padL + (b + 0.5) * slot)}" cy="${cy}" r="${r1(Math.max(1.2, rad))}"/>`);
+      }
+      parts.push(`<text class="axis born-lbl" x="${padL - 6}" y="${cy + 3}" text-anchor="end">new</text><g class="born">${dots.join("")}</g>`);
+    }
+    let ovb = null;
+    if (opts.overlay) {
+      // a stepped line per bin (a run of empty bins sits on the baseline), clamped to a clipped axis
+      ovb = new Float64Array(nb);
+      for (let i = 0; i < NH; i++) if (opts.overlay.data[i]) ovb[Math.floor(i / k)] += opts.overlay.data[i];
+      let ovMax = 0;
+      for (let b = 0; b < nb; b++) if (ovb[b] > ovMax) ovMax = ovb[b];
+      const cells = [];
+      for (let b = 0; b < nb; b++) {
+        if (!ovb[b]) continue;
+        const o = (0.2 + 0.8 * Math.sqrt(ovb[b] / ovMax)).toFixed(2);
+        cells.push(`<rect x="${r1(padL + b * slot)}" y="${bottom0 + born + 2}" width="${r1(Math.max(1, slot - (slot > 3 ? 1 : 0)))}" height="6" fill-opacity="${o}"/>`);
+      }
+      parts.push(`<g class="ov-lane">${cells.join("")}</g>`);
+      if (ovMax >= 0.06 * yMax) {
+        const yOf = (v) => r1(bottom0 - (plotH * Math.min(v, yMax)) / yMax);
+        let d = "";
+        for (let b = 0; b < nb; b++) {
+          const x0 = r1(padL + b * slot), x1 = r1(padL + (b + 1) * slot), y = yOf(ovb[b]);
+          d += (b ? `L${x0} ${y}` : `M${x0} ${y}`) + `L${x1} ${y}`;
+        }
+        parts.push(`<path class="ov-halo" d="${d}"/><path class="ov-line" d="${d}"/>`);
+      }
+    }
     parts.push(`<rect class="brush" x="0" y="${padT}" width="0" height="${plotH}" visibility="hidden"/>`);
     parts.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/>`);
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -633,6 +706,10 @@
         rows.push(`<div class="tt-r"><b>${fmt(v)}</b><i class="sw-${geo.series[s].key}"></i><span>${esc(geo.series[s].name)}</span></div>`);
       }
       if (geo.series.length > 1) rows.push(`<div class="tt-r tt-t"><b>${fmt(geo.totals[b])}</b><i></i><span>total</span></div>`);
+      if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>open group</span></div>`);
+      if (geo.bornB && geo.bornB[b]) {
+        rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} (first seen; click the dot to list them)</span></div>`);
+      }
       tip.innerHTML = `<div class="tt-h">${esc(binRange(b, geo.k))}</div>${rows.join("")}`;
       tip.hidden = false;
       placeTip(e);
@@ -664,7 +741,28 @@
       : "";
   const TL_TOTALS = {};
   let TLK = "";
-  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",");
+  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",") + "|" + TZ + "|" + overlayKey();
+  /** Groups first seen per hour (signatures; the set's first hour left out: everything starts
+   *  there) and the highest level among them: a deploy or an incident shows as a cluster of
+   *  new groups. */
+  const BIRTHS = (() => {
+    const n = new Float64Array(NH), lv = new Int32Array(NH);
+    for (const r of BASE) {
+      if (r.gone || !r.first) continue;
+      const h = Math.floor((parseTs(r.first) - T0MS) / 3.6e6);
+      if (h >= 1 && h < NH) {
+        n[h]++;
+        if (r.level > lv[h]) lv[h] = r.level;
+      }
+    }
+    return n.some((x) => x > 0) ? { n, lv } : null;
+  })();
+  /** The open group, drawn as a line over the timeline: where in the set's day it happens. */
+  function overlayRow() {
+    const r = S.sig ? lookup(S.sig) : null;
+    return r && !r.gone && r.hourly && r.hourly.length && !isMuted(r) ? r : null;
+  }
+  const overlayKey = () => { const r = overlayRow(); return r ? r.id : ""; };
   const LV_TITLE = { ERROR: "ERROR and FATAL", DEBUG: "DEBUG and TRACE", OTHER: "Unknown level" };
   function renderLegend() {
     const shown = BUCKETS.filter((b) => (((D.timeline || {}).levels || {})[b] || []).some((v) => v > 0));
@@ -676,6 +774,9 @@
       let n = 0;
       for (const s of S.mute) n += (BASE_BY.get(s) || { count: 0 }).count;
       html += `<span class="tl-muted" title="Muted groups are left out of the chart and the window totals; the table still lists them">${fmt(S.mute.size)} muted (${compact(n)} entries) <button type="button" class="btn small link" data-unmute>Unmute</button></span>`;
+    }
+    if (overlayRow()) {
+      html += `<span class="lg-sel" title="The open group: its entries per hour as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest hour"><i class="sw-sel"></i>Open group</span>`;
     }
     $("tl-legend").innerHTML = html;
   }
@@ -697,7 +798,14 @@
     const series = BUCKETS.filter((b) => TL_TOTALS[b] > 0 && !S.hl.has(b)).map((b) => ({
       key: b, name: b, cls: "s-" + b, data: levels[b],
     }));
-    TL = drawColumns(el, series, { height: 190, label: "Entries per hour by level" });
+    const ov = overlayRow();
+    let overlay = null;
+    if (ov) {
+      const data = new Float64Array(NH);
+      for (const [i, n] of ov.hourly) if (i >= 0 && i < NH) data[i] += n;
+      overlay = { data, name: "open group" };
+    }
+    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
     $("tl-clip").innerHTML = clipBtn(TL);
@@ -723,6 +831,11 @@
       geo.dragging = null;
       if (e.type === "pointercancel") return showWindow(geo);
       if (!d.moved) {
+        const y = e.clientY - geo.svg.getBoundingClientRect().top;
+        if (geo.bornB && geo.bornB[d.b0] && y > geo.bottom0 && y <= geo.bottom0 + geo.born + 2) {
+          commit({ t: [d.b0 * geo.k, Math.min(NH - 1, (d.b0 + 1) * geo.k - 1)], sort: "first_seen" });
+          return;
+        }
         if (S.t) commit({ t: null });
         return;
       }
@@ -765,7 +878,7 @@
     const what = [`${fmt(total)} entries`];
     if (lv.ERROR) what.push(`<span class="w-err">${fmt(lv.ERROR)} errors</span>`);
     if (lv.WARN) what.push(`${fmt(lv.WARN)} warnings`);
-    el.innerHTML = `<span class="win-what">Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> UTC (${hoursText(b - a + 1)}) · ${what.join(" · ")}</span>` +
+    el.innerHTML = `<span class="win-what">Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> ${TZ} (${hoursText(b - a + 1)}) · ${what.join(" · ")}</span>` +
       `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
       `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
       seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
@@ -1222,7 +1335,7 @@
     const all = bodyLines(raw);
     const cut = all.length > BODY_LINES && !FULL_BODIES.has(id);
     const body = cut ? all.slice(0, BODY_LINES) : all;
-    const meta = [["", tsFull(e.ts) + " UTC"], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
+    const meta = [["", tsFull(e.ts) + " " + TZ], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
       .filter((x) => x[1]);
     return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
       meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
@@ -1357,12 +1470,12 @@
       } else st = [["Entries", fmt(r.count)], ["First seen", ts16(r.first)], ["Last seen", ts16(r.last)]];
       st.push([r.members ? "Users (≥)" : "Users", fmt(r.users)], [r.members ? "Threads (≥)" : "Threads", fmt(r.threads)], ["Sources", fmt(r.nsrc)]);
       stats += `<dl class="stats">` + st.map(([k, v, t]) => `<div${t ? ` title="${esc(t)}"` : ""}><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl>`;
-      if (S.t) stats += `<div class="muted small">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} UTC. Users, threads and sources cover the whole set.</div>`;
+      if (S.t) stats += `<div class="muted small">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} ${TZ}. Users, threads and sources cover the whole set.</div>`;
     }
     if (r.cmp) {
       const d = r.cmp.d;
       let note = "";
-      if (d && d.first_seen_a) note = `<div class="muted">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} UTC</div>`;
+      if (d && d.first_seen_a) note = `<div class="muted">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} ${TZ}</div>`;
       stats += `<div class="cmp-row"><span class="muted">vs ${esc(OTHERNAME)}</span><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</div>${note}`;
     }
     out.push(`<section class="d-sec" id="d-s-stats">${stats}</section>`);
@@ -1474,7 +1587,7 @@
     const total = st.group_count ?? BASE.length;
     $("set-meta").textContent = [
       LS.format,
-      tr.first ? `${ts16(tr.first)} → ${tsShort(tr.last)} UTC (${duration(tr.first, tr.last)})` : "no entries",
+      tr.first ? `${ts16(tr.first)} → ${tsShort(tr.last)} ${TZ} (${duration(tr.first, tr.last)})` : "no entries",
       `${fmt(nsrc)} source file${nsrc === 1 ? "" : "s"}`,
       st.parse_errors ? "" : "0 unparsed",
       opts.truncated_groups > 0 ? `showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups` : "",
@@ -1609,6 +1722,28 @@
     renderThemeBtn();
     if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
   }
+  function renderTzBtn() {
+    const b = $("btn-tz");
+    if (!b) return;
+    b.textContent = TZ;
+    b.setAttribute("aria-pressed", String(TZL));
+    b.title = TZL ? `Times in your time zone (${TZ}); click to show UTC` : "Times in UTC; click to show your time zone";
+  }
+  /** Re-renders everything that prints a time in the newly shown zone. */
+  function applyZone(local) {
+    setZone(local);
+    renderTzBtn();
+    renderOverview();
+    renderTimeline();
+    update();
+    renderFoot();
+  }
+  function toggleTz() {
+    const next = !TZL;
+    try { localStorage.setItem(TZ_KEY, next ? "local" : "utc"); } catch { /* storage unavailable */ }
+    if (S.tz) commit({ tz: next ? "local" : "utc" }, { keepPage: true, replace: true });
+    applyZone(next);
+  }
   function toggleClip(geo, key) {
     CLIP[key] = !(geo && geo.clip);
     renderTimeline();
@@ -1638,8 +1773,8 @@
     const facts = [`*Level:* ${r.lvl || ""}`, `*Logger:* {{${r.logger || "-"}}}`];
     if (r.exc) facts.push(`*Exception:* {{${r.exc}}}`);
     lines.push(facts.join(" · "));
-    const when = r.gone ? `only in ${OTHERNAME}` : `${fmt(r.count)} entries, ${ts16(r.first)} → ${ts16(r.last)} UTC`;
-    const win = S.t ? ` (${fmt(winOf(r).n)} in the window ${ts16(HOURS[S.t[0]])} → ${ts16(new Date(parseTs(HOURS[S.t[1]]) + 3.6e6).toISOString())} UTC)` : "";
+    const when = r.gone ? `only in ${OTHERNAME}` : `${fmt(r.count)} entries, ${ts16(r.first)} → ${ts16(r.last)} ${TZ}`;
+    const win = S.t ? ` (${fmt(winOf(r).n)} in the window ${ts16(HOURS[S.t[0]])} → ${ts16(new Date(parseTs(HOURS[S.t[1]]) + 3.6e6).toISOString())} ${TZ})` : "";
     lines.push(`* *Seen:* ${when}${win}`);
     if (!r.gone) lines.push(`* *Users / threads:* ${fmt(r.users)} / ${fmt(r.threads)}`);
     if (r.cmp && r.cmp.cls !== "unchanged") lines.push(`* *vs ${OTHERNAME}:* ${abText(r.cmp)} (${r.cmp.cls})`);
@@ -1796,6 +1931,7 @@
       else if (t.dataset.open != null) open(t.dataset.open);
     });
     $("btn-theme").onclick = toggleTheme;
+    if ($("btn-tz")) $("btn-tz").onclick = toggleTz;
     $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
     $("tl-legend").addEventListener("click", (e) => {
       if (e.target.closest("[data-unmute]")) return commit({ mute: new Set() }, { keepPage: true });
@@ -1876,6 +2012,8 @@
 
   // ---------------------------------------------------------------- start
   if (S.theme === "dark" || S.theme === "light") document.documentElement.setAttribute("data-theme", S.theme);
+  setZone(S.tz ? S.tz === "local" : TZL);
+  renderTzBtn();
   renderOverview();
   bind();
   renderTimeline();
@@ -1886,14 +2024,19 @@
   }
   update();
   const T1 = performance.now();
-  requestAnimationFrame(() => setTimeout(() => {
-    const t2 = performance.now();
+  let T2 = 0;
+  function renderFoot() {
+    if (!T2) return;
     const foot = $("foot");
-    foot.textContent = `Generated ${ts16(D.generated_at)} UTC by atlas-log ${D.tool_version || ""} · ${D.schema} · ` +
-      `${fmt(BASE.length)} groups, ${fmt(Object.keys(ENTRIES).length)} example entries · ` +
-      `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(t2)} ms after navigation start`;
+    foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by atlas-log ${D.tool_version || ""} · ${D.schema} · ` +
+      `${fmt(BASE.length)} groups, ${ENTRIES_URL ? "examples fetched per group" : fmt(Object.keys(ENTRIES).length) + " example entries"} · ` +
+      `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(T2)} ms after navigation start`;
     foot.dataset.script = String(Math.round(T1 - T0));
-    foot.dataset.paint = String(Math.round(t2));
+    foot.dataset.paint = String(Math.round(T2));
+  }
+  requestAnimationFrame(() => setTimeout(() => {
+    T2 = performance.now();
+    renderFoot();
   }, 0));
   }
 

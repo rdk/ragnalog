@@ -153,6 +153,20 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   so one noisy group (a WARN that is 84% of a set) no longer flattens the errors;
   muted rows stay in the table, dimmed, and the legend says how many are muted,
   with "Unmute" (`mute=<sig>,…`).
+- The open group on the timeline: a shaded lane under the axis shows its entries
+  per hour on its own scale (darkest at its busiest hour), so even a small group
+  shows *when* it happens; when it rises above the baseline it is also drawn as a
+  stepped line over the (dimmed) level bars, on the chart's scale. The tooltip adds
+  its count.
+- *New* lane (under the timeline's axis): a dot per hour in which groups were first
+  seen (the set's first hour left out, everything starts there), its area by how
+  many, its color the highest level among them. A deploy or an incident shows as a
+  cluster of new groups; clicking a dot narrows the table to that hour sorted by
+  first seen.
+- Time zone: the header button switches every printed time, axis label and tooltip
+  between UTC and the browser's time zone (shown by its short name, e.g. CET). It
+  is a viewer preference like the theme (kept in `localStorage`, shared with the
+  cluster page; `tz=local|utc` in a link wins); the window in the hash stays UTC.
 - Sort *Spike*: with a window, the group's rate in it over its rate outside it
   ("what started at 14:00?"); without one, its busiest hour over its average
   active hour. The ratio shows under the count (`×37`).
@@ -277,11 +291,15 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
 
 - Header: cluster, capture id, one chip per node (colour swatch plus `N1 NODE1`; a
   "report ↗" link when `urls.set_report` is set), window mode and range, node and group
-  counts, the clock-skew estimate ("estimate, not applied"), theme toggle, JSON download.
+  counts, the clock-skew estimate ("estimate, not applied"), time zone toggle (UTC or
+  the browser's zone by its short name, as on the set report: every printed time, axis
+  tick and tooltip follows it; same `localStorage` key, `tz=local|utc` in a link wins,
+  the window in the hash stays UTC), theme toggle, JSON download.
 - Node cards: entries, errors, warnings, errors/h, events (totals, or within the
   brushed window from the timeline), coverage with gap count and length, top error
   (opens the group), triage verdict chip and baseline, events by kind, "Groups on N1".
-- Timeline: one SVG, one row per node on a shared UTC axis. Each row is an event lane
+- Timeline: one SVG, one row per node on a shared time axis (ticks on the shown zone's
+  hours and midnights). Each row is an event lane
   (a glyph per kind in ink colour; legend under the chart) above a band of columns
   stacked by level in the report's status colours. Hatching marks time outside a node's
   coverage and its gaps; the window (`capture.window`) is a ruler above the rows with
@@ -315,10 +333,16 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     co-bursts, mentions and events involving the group, and CLI commands
     (`atlas-log matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
     `show SET SIG` per node).
-  - *Interactions*: the N×N mention matrix (a cell lists that edge's entries in the
-    merged log) with the groups behind each edge, event pairs and co-bursts as
-    sentences ("When … burst on N1, … burst on N2 within 5 min, 7 of 8 times (median
-    +40 s, lift ×12)") with "show me" links, concurrent jobs, sessions across nodes, and
+  - *Interactions*: co-bursts and event pairs in one wide card, one row each, strongest
+    first (share of hits, then lift): source (node badge, template on one line, full text
+    in its title, `+N` other groups that burst with it) → target, a hits meter ("7 / 8"),
+    median lag, lift chip, and "show in log" (co-bursts: both groups on their nodes in the
+    merged log) or example times (event pairs, those in the window). Below, side by side:
+    the N×N mention matrix (a cell lists that edge's entries in the merged log) with the
+    groups behind each edge (a group outside the payload's `groups`, which `max_groups`
+    caps, shows a short signature and the text of one of its events, with "entries" to
+    list it in the merged log), and concurrent jobs and sessions across nodes as compact
+    tables (job, nodes, same-minute slots with a bar, example times). Last, full width,
     an events table (the table view of the lanes, filtered by the window).
   - *Merged log*: entries of all nodes interleaved by time; node badge, level chip,
     logger, message; a click expands the entry (raw, trace, "±30 s on all nodes", open
@@ -333,7 +357,7 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
 
 **State** in `location.hash`: `tab` (`g`, `i`, `l`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
 `sig`, `ex` (example tab), `t` (the time window, as on the set report), `y`, `fit=0`, `arrows=0`, `ml`, `mn`,
-`mq`, `ms` (signatures), `ctx`/`cts` (context anchor), `at` (log moment), `theme`.
+`mq`, `ms` (signatures), `ctx`/`cts` (context anchor), `at` (log moment), `theme`, `tz`.
 Keyboard as in the report, plus `1`/`2`/`3` for the tabs; in the merged log `j`/`k` move
 and `Enter` expands. Theme: the report's bootstrap and `localStorage` key. Print: light
 colours, controls and drawer hidden, charts scaled to the page.

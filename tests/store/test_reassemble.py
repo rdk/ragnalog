@@ -231,3 +231,22 @@ def test_upgrade_from_v2_rebuilds_entries_from_raw(
     assert pre[CTX_PREAMBLE].endswith(STARS)  # the banner stays attached
     assert entries["exception_chain"].list.len().to_list()[0] == 1  # suppressed cause out
     assert entries.height == stale.height  # no banner attached a second time
+
+
+def test_upgrade_from_v2_across_row_groups(
+    tmp_path: Path, v3_log: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Rebuilt rows are patched into their own row group, wherever they fall."""
+    new = ingest_paths(Store(tmp_path / "new"), [v3_log], name="fx").logset
+    old_store = Store(tmp_path / "old")
+    with monkeypatch.context() as patch:
+        _v2_parse(patch)
+        old = ingest_paths(old_store, [v3_log], name="fx", fmt=JiraV2()).logset
+    table = pq.read_table(old.entries_path)
+    pq.write_table(table, old.entries_path, row_group_size=3)
+    assert pq.ParquetFile(old.entries_path).num_row_groups > 3
+    assert old_store.upgrade("fx").upgraded
+    entries, groups = _tables(old_store.open("fx"))
+    want_entries, want_groups = _tables(new)
+    assert entries.equals(want_entries)
+    assert groups.equals(want_groups)

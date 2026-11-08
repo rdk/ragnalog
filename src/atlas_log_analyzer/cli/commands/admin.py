@@ -205,7 +205,7 @@ def serve(
             reload=True,
         )
         return
-    uvicorn.run(create_app(settings), host=host, port=port, log_level="info")
+    uvicorn.run(create_app(settings, warm=True), host=host, port=port, log_level="info")
 
 
 def version() -> None:

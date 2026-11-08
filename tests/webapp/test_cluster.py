@@ -173,3 +173,24 @@ def test_an_explicit_window_is_clamped_to_the_logs(client: TestClient, tmp_path:
     assert outside.status_code == 400 and "holds no entries" in outside.json()["error"]["message"]
     bucket = client.get(f"{url}/timeline", params={"bucket": "999999999999d"})
     assert bucket.status_code == 400
+
+
+def test_warm_builds_the_newest_capture_page(
+    client: TestClient, store_dir: Path, tmp_path: Path
+) -> None:
+    from atlas_log_analyzer.service.capture_queries import CaptureWindow
+    from atlas_log_analyzer.webapp import Settings, create_app
+
+    assert _upload(client, export_zip(tmp_path / "export.zip"))["state"] == "succeeded"
+    app = create_app(Settings(store=store_dir), warm=True)
+    state = app.state.atlas
+    state.warm().join(60)
+    assert len(state._clusters) == 1
+    built = next(iter(state._clusters.values()))
+    again = state.cluster_report_bytes(  # the page's default request is a cache hit
+        f"capture:{JOB_ID}", CaptureWindow(), examples=3, max_raw=4000, max_groups=500, triage=True
+    )
+    assert again is built
+    empty = create_app(Settings(store=tmp_path / "none"))
+    empty.state.atlas.warm().join(60)  # no capture: nothing to build, no error
+    assert not empty.state.atlas._clusters

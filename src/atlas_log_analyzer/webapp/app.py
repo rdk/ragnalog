@@ -25,12 +25,13 @@ from atlas_log_analyzer.webapp.state import AppState
 __all__ = ["create_app"]
 
 
-def create_app(settings: Settings | None = None) -> FastAPI:
+def create_app(settings: Settings | None = None, *, warm: bool = False) -> FastAPI:
     """Build the web app over the store in ``settings`` (default: from the environment).
 
     Routes: ``/`` sets index, ``/sets/{ref}`` interactive report, ``/sets/{ref}/triage``,
     ``/api/...`` JSON (OpenAPI at ``/docs``, with the document schemas). Errors are
-    ``error.v1`` documents on ``/api`` and HTML pages elsewhere.
+    ``error.v1`` documents on ``/api`` and HTML pages elsewhere. With ``warm`` (``serve``)
+    the newest capture's cluster page payload is built in the background at startup.
     """
     settings = settings or Settings.from_env()
     state = AppState(settings)
@@ -38,6 +39,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         state.start()
+        if warm:
+            state.warm()
         try:
             yield
         finally:

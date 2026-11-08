@@ -88,7 +88,7 @@
   {% if rows %}
   <div class="table-wrap">
   <table class="sets triage-table">
-    <thead><tr><th>Level</th><th>Template</th>{% for c in cols %}<th class="{{ 'num' if loop.index < 3 else '' }}">{{ c }}</th>{% endfor %}</tr></thead>
+    <thead><tr><th>Level</th><th>Template</th>{% for c in cols %}<th class="{{ 'num' if loop.index < 3 else '' }}">{{ c }}{% if loop.index == 3 %} <span class="muted" data-tz-name>UTC</span>{% endif %}</th>{% endfor %}</tr></thead>
     <tbody>{% for r in rows[:25] %}{{ row(r, kind) }}{% endfor %}</tbody>
     {% if rows|length > 25 %}<tbody class="rest" hidden>{% for r in rows[25:] %}{{ row(r, kind) }}{% endfor %}</tbody>{% endif %}
   </table>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import shutil
 import threading
 import time
@@ -44,6 +45,9 @@ _ENCODER = msgspec.json.Encoder()
 
 class StoreInUse(StoreError):
     """Another server process holds the store's :data:`SERVER_LOCK_FILE`."""
+
+
+_LOG = logging.getLogger(__name__)
 
 
 def lock_server(root: Path) -> FileLock | None:
@@ -140,6 +144,36 @@ class AppState:
                     shutil.rmtree(orphan, ignore_errors=True)
                 else:
                     orphan.unlink(missing_ok=True)
+
+    def warm(self) -> threading.Thread:
+        """Build the newest capture's cluster page payload in a background thread.
+
+        The first open of a cluster page builds it (about half a second for two nodes of
+        700k entries each); ``atlas-log serve`` does that at startup for the capture most
+        likely opened next, with the options the page asks for. Failures are only logged.
+        """
+
+        def run() -> None:
+            from atlas_log_analyzer.service.capture_queries import CaptureWindow
+            from atlas_log_analyzer.service.captures import list_captures
+
+            try:
+                found = list_captures(self)
+                if found:
+                    self.cluster_report_bytes(
+                        f"capture:{found[0].capture}",
+                        CaptureWindow(),
+                        examples=3,
+                        max_raw=4000,
+                        max_groups=500,
+                        triage=True,
+                    )
+            except Exception:
+                _LOG.debug("warming the newest capture failed", exc_info=True)
+
+        thread = threading.Thread(target=run, name="atlas-log-warm", daemon=True)
+        thread.start()
+        return thread
 
     def close(self) -> None:
         """Cancel the jobs, delete their spools and release the store."""

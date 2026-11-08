@@ -50,9 +50,19 @@ def _fmt_int(value: Any) -> str:
     return f"{int(value):,}" if isinstance(value, int | float) else "-"
 
 
-def _fmt_ts(value: Any) -> str:
+def _ts_text(value: Any) -> str:
     text = str(value or "")
     return text[:16].replace("T", " ") if text else "-"
+
+
+def _fmt_ts(value: Any) -> Markup | str:
+    """Return a UTC time to the minute as ``<time>``, so the page can show the viewer's zone."""
+    text = _ts_text(value)
+    if text == "-":
+        return text
+    return Markup(
+        f'<time class="tz-ts" datetime="{html.escape(str(value))}">{html.escape(text)}</time>'
+    )
 
 
 def _fmt_bytes(value: Any) -> str:
@@ -64,14 +74,26 @@ def _fmt_bytes(value: Any) -> str:
     return f"{size:.1f} GB"
 
 
-def _fmt_range(first: Any, last: Any) -> str:
-    """``first → last`` to the minute; the end drops the year (and date) it shares."""
-    a, b = _fmt_ts(first), _fmt_ts(last)
+def _range_text(a: str, b: str) -> str:
     if a == "-" or b == "-":
         return f"{a} → {b}"
     if a[:10] == b[:10]:
         return f"{a} → {b[11:]}"
     return f"{a} → {b[5:]}" if a[:4] == b[:4] else f"{a} → {b}"
+
+
+def _fmt_range(first: Any, last: Any) -> Markup:
+    """``first → last`` (UTC) to the minute; the end drops the year (and date) it shares.
+
+    The ISO ends ride along (``data-a``/``data-b``) so the page can show them in the
+    viewer's time zone when that preference is set (``webapp.js``, as in the report).
+    """
+    a, b = _ts_text(first), _ts_text(last)
+    text = html.escape(_range_text(a, b))
+    if a == "-" or b == "-":
+        return Markup(text)
+    ends = f'data-a="{html.escape(str(first))}" data-b="{html.escape(str(last))}"'
+    return Markup(f'<span class="tz-range" {ends}>{text}</span>')
 
 
 _PLACEHOLDER = re.compile(r"&lt;([A-Z][A-Z0-9_]*|\*)&gt;")

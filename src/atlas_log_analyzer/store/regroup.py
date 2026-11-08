@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import defaultdict
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -269,47 +270,74 @@ def _with_preambles(column: Any, lo: int, preambles: dict[int, str]) -> pa.Array
     return pa.array(values, ENTRIES_SCHEMA.field("context").type)
 
 
-def _rebuilt_entries(entries_path: Path, fmt: LogFormat) -> dict[int, LogEntry]:
-    """Entries of the :data:`_REBUILD_HINT` rows built again from ``raw``, by row index.
-
-    A row stored with ``parse_error`` (lines before a file's first header, an unrecognised
-    header) is built as the parser builds it, without a header: only its exception
-    chain is taken (:func:`_rebuilt_columns`).
-    """
+def _hinted_rows(entries_path: Path) -> list[int]:
+    """Row indices (file order) of the :data:`_REBUILD_HINT` rows."""
     df = (
         pl.scan_parquet(entries_path)
         .with_row_index("_row")
         .filter(_REBUILD_HINT)
-        .select("_row", pl.col("raw").fill_null(""), pl.col("parse_error").is_null())
+        .select("_row")
         .collect()
     )
+    return [int(r) for r in df["_row"]]
+
+
+def _rebuilt_entries(
+    table: pa.Table, lo: int, rows: Sequence[int], fmt: LogFormat
+) -> dict[int, LogEntry]:
+    """Entries of the hinted ``rows`` of one row group built again from ``raw``, by row index.
+
+    A row stored with ``parse_error`` (lines before a file's first header, an unrecognised
+    header) is built as the parser builds it, without a header: only its exception
+    chain is taken (:func:`_rebuilt_columns`). One row group at a time, so an upgrade
+    holds the rebuilt entries of a row group only.
+    """
+    at = pa.array([r - lo for r in rows], pa.int64())
+    raws = table.column("raw").take(at).to_pylist()
+    parsed = table.column("parse_error").take(at).is_null().to_pylist()
     out: dict[int, LogEntry] = {}
     nowhere = SourceRef("", 0, 0)
-    for row, raw, parsed in df.iter_rows():
-        header_line, *continuation = raw.split("\n")
-        header = fmt.parse_header(header_line) if parsed else None
-        if header is not None or not parsed:
+    for row, raw, ok in zip(rows, raws, parsed, strict=True):
+        header_line, *continuation = (raw or "").split("\n")
+        header = fmt.parse_header(header_line) if ok else None
+        if header is not None or not ok:
             out[row] = fmt.build(header, header_line, continuation, nowhere)
     return out
+
+
+def _patched(column: Any, lo: int, fixes: dict[int, Any], name: str) -> pa.Array:
+    """``column`` (one row group) with the values at row indices ``fixes`` replaced.
+
+    The replacements are appended and picked by ``take``: the rest of the column is never
+    converted to Python objects (exception chains with their frames are large).
+    """
+    rows = sorted(fixes)
+    n = len(column)
+    new = pa.array([fixes[r] for r in rows], ENTRIES_SCHEMA.field(name).type)
+    index = list(range(n))
+    for j, r in enumerate(rows):
+        index[r - lo] = n + j
+    whole = column.combine_chunks() if isinstance(column, pa.ChunkedArray) else column
+    return pa.concat_arrays([whole, new]).take(pa.array(index, pa.int64()))
 
 
 def _rebuilt_columns(table: pa.Table, lo: int, entries: dict[int, LogEntry]) -> dict[str, Any]:
     """Columns of one row group with the parsed fields of re-built entries replaced."""
     names = (*_REBUILT_COLUMNS, "context", "exception_type", "exception_message")
-    values = {name: table.column(name).to_pylist() for name in names}
-    chains = table.column("exception_chain").to_pylist()
+    fixes: dict[str, dict[int, Any]] = {name: {} for name in (*names, "exception_chain")}
+    context = table.column("context")
     for row, e in entries.items():
         i = row - lo
         if e.parse_error is None:  # an unparsed row has no context to split again
             ctx = e.context
             for name, key in _REBUILT_COLUMNS.items():
-                values[name][i] = ctx.get(key)
-            kept = [kv for kv in values["context"][i] or () if kv[0] == CTX_PREAMBLE]
-            values["context"][i] = [(k, v) for k, v in ctx.items() if k not in _WELL_KNOWN] + kept
+                fixes[name][row] = ctx.get(key)
+            kept = [kv for kv in context[i].as_py() or () if kv[0] == CTX_PREAMBLE]
+            fixes["context"][row] = [(k, v) for k, v in ctx.items() if k not in _WELL_KNOWN] + kept
         chain = e.exceptions
-        values["exception_type"][i] = chain[0].type if chain else None
-        values["exception_message"][i] = chain[0].message if chain else None
-        chains[i] = [
+        fixes["exception_type"][row] = chain[0].type if chain else None
+        fixes["exception_message"][row] = chain[0].message if chain else None
+        fixes["exception_chain"][row] = [
             {
                 "type": ex.type,
                 "message": ex.message,
@@ -321,16 +349,16 @@ def _rebuilt_columns(table: pa.Table, lo: int, entries: dict[int, LogEntry]) -> 
             }
             for ex in chain
         ]
-    values["exception_chain"] = chains
-    return {name: pa.array(v, ENTRIES_SCHEMA.field(name).type) for name, v in values.items()}
+    return {
+        name: _patched(table.column(name), lo, rows, name) for name, rows in fixes.items() if rows
+    }
 
 
 def _rebuild_file(src: Path, dst: Path, fmt: LogFormat) -> bool:
     """Write ``dst``: ``src`` with the :data:`_REBUILD_HINT` rows built again (``False``: none)."""
-    entries = _rebuilt_entries(src, fmt)
-    if not entries:
+    rows = _hinted_rows(src)
+    if not rows:
         return False
-    rows = sorted(entries)
     read = 0
     with (
         pq.ParquetFile(str(src)) as pf,
@@ -346,7 +374,8 @@ def _rebuild_file(src: Path, dst: Path, fmt: LogFormat) -> bool:
             table = pf.read_row_group(i)
             lo, hi = read, read + table.num_rows
             read = hi
-            here = {r: entries[r] for r in rows[bisect_left(rows, lo) : bisect_left(rows, hi)]}
+            mine = rows[bisect_left(rows, lo) : bisect_left(rows, hi)]
+            here = _rebuilt_entries(table, lo, mine, fmt) if mine else {}
             if here:
                 for name, column in _rebuilt_columns(table, lo, here).items():
                     table = table.set_column(ENTRIES_SCHEMA.get_field_index(name), name, column)

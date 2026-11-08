@@ -43,6 +43,7 @@ const stubs = {
   obj: (x) => (x && typeof x === "object" && !Array.isArray(x) ? x : {}),
   arr: (x) => (Array.isArray(x) ? x : []),
   badge: () => "", nodeBadge: () => "", tsFull: (t) => String(t), bucketOf: () => "ERROR",
+  TZ: "UTC",
   levelNum: () => 50, srcPath: (s) => String(s), basename: (s) => String(s).split(/[\\/]/).pop(),
   ENTRIES_URL: null, URLS: null, ESIG: new Map(), GBY: new Map(), S: { sig: "" }, VIEW: [],
   ENTRIES: data.entries,

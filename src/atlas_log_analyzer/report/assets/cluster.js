@@ -52,13 +52,34 @@
     }
     return String(n);
   }
-  const ts16 = (iso) => (iso ? str(iso).slice(0, 10) + " " + str(iso).slice(11, 16) : "");
-  const tsShort = (iso) => (iso ? str(iso).slice(5, 10) + " " + str(iso).slice(11, 16) : "");
-  const tsSec = (iso) => (iso ? str(iso).slice(5, 10) + " " + str(iso).slice(11, 19) : "");
-  const tsMs = (iso) => (iso ? str(iso).slice(5, 10) + " " + str(iso).slice(11, 23) : "");
-  const tsFull = (iso) => (iso ? str(iso).slice(0, 10) + " " + str(iso).slice(11, 23) : "");
+  // @zone: parseTs … tsFull (tests/report/test_cluster_zone.py runs this part and xTicks with node)
   const parseTs = (iso) => (iso == null || iso === "" ? NaN : Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1")));
   const isoOf = (ms) => (isNum(ms) ? new Date(ms).toISOString() : "");
+  // times show in UTC or, toggled, in the browser's time zone: a viewer preference shared with the
+  // set report (tz=local|utc in a link wins); windows in the hash and API parameters stay UTC
+  const TZ_KEY = "atlas-log-tz";
+  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) === "local"; } catch { return false; } })();
+  let TZ = "UTC";
+  /** The browser zone's offset from UTC at instant ms, in ms (0 when times show in UTC). */
+  const zoff = (ms) => (TZL && isNum(ms) ? -new Date(ms).getTimezoneOffset() * 6e4 : 0);
+  /** The ISO time shifted into the shown zone (still printed with toISOString's layout). */
+  function zoned(iso) {
+    if (!TZL || !iso) return iso == null ? "" : str(iso);
+    const ms = parseTs(iso);
+    return ms === ms ? new Date(ms + zoff(ms)).toISOString() : str(iso);
+  }
+  function zoneName(ms) {
+    try {
+      const p = new Intl.DateTimeFormat("en-GB", { timeZoneName: "short" }).formatToParts(new Date(ms));
+      return (p.find((x) => x.type === "timeZoneName") || {}).value || "local";
+    } catch { return "local"; }
+  }
+  const ts16 = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 16)) : "");
+  const tsShort = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(5, 10) + " " + iso.slice(11, 16)) : "");
+  const tsSec = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(5, 10) + " " + iso.slice(11, 19)) : "");
+  const tsMs = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(5, 10) + " " + iso.slice(11, 23)) : "");
+  const tsFull = (iso) => (iso ? ((iso = zoned(iso)), iso.slice(0, 10) + " " + iso.slice(11, 23)) : "");
+  // @zone-end
   function spanText(ms) {
     if (!(ms >= 0)) return "";
     if (ms < 60000) return Math.round(ms / 1000) + " s";
@@ -133,7 +154,9 @@
   const NB = BKS.length;
   const BMS = bucketMs(TLD.bucket) || (NB > 1 ? parseTs(BKS[1]) - parseTs(BKS[0]) : 3.6e6) || 3.6e6;
   const TA = NB ? parseTs(BKS[0]) : NaN;
-  const TZ = NB ? parseTs(BKS[NB - 1]) + BMS : NaN;
+  const TE = NB ? parseTs(BKS[NB - 1]) + BMS : NaN;
+  /** Show times in the browser's zone (named after its abbreviation at the capture's end) or in UTC. */
+  const setZone = (local) => { TZL = local; TZ = local ? zoneName(isNum(TE) ? TE : Date.now()) : "UTC"; };
   const TLN = obj(TLD.nodes);
   const LEV = {}, NTOT = {}, NSUM = {}, COVT = {}, GAPS = {}, HASTL = {};
   for (const n of NODES) {
@@ -349,6 +372,7 @@
       cts: get("cts"),
       at: get("at"),
       theme: get("theme"),
+      tz: ["local", "utc"].includes(get("tz")) ? get("tz") : "",
     };
   }
   const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
@@ -376,6 +400,7 @@
     if (s.cts) p.set("cts", s.cts);
     if (s.at) p.set("at", s.at);
     if (s.theme) p.set("theme", s.theme);
+    if (s.tz) p.set("tz", s.tz);
     return p.toString();
   }
   let S = parseHash();
@@ -406,6 +431,8 @@
       document.documentElement.setAttribute("data-theme", S.theme);
       renderThemeBtn();
     }
+    // likewise a link that names a zone (applyZone re-renders; update below then draws the rest)
+    if (S.tz && (S.tz === "local") !== TZL) applyZone(S.tz === "local", true);
     $("f-search").value = S.q;
     $("l-search").value = S.mq;
     update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t);
@@ -541,19 +568,27 @@
   }
   function binRange(b, k) {
     const a = TA + b * k * BMS;
-    const e = Math.min(TZ, a + k * BMS);
-    const s = isoOf(a), t = isoOf(e);
-    return s.slice(0, 10) + " " + s.slice(11, 16) + " – " + (t.slice(0, 10) === s.slice(0, 10) ? "" : t.slice(5, 10) + " ") + t.slice(11, 16) + " UTC";
+    const e = Math.min(TE, a + k * BMS);
+    const s = zoned(isoOf(a)), t = zoned(isoOf(e));
+    return s.slice(0, 10) + " " + s.slice(11, 16) + " – " + (t.slice(0, 10) === s.slice(0, 10) ? "" : t.slice(5, 10) + " ") + t.slice(11, 16) + " " + TZ;
   }
-  /** x-axis ticks: the smallest UTC-aligned step whose labels are >= 64 px apart. */
+  /** x-axis ticks: the smallest step whose labels are >= 64 px apart, aligned to the shown zone's
+      clock (midnight, whole hours; a half-hour zone's ticks fall on its own :00). */
   function xTicks(xOfMs, pxPerMs, W, padR) {
     const steps = [9e5, 18e5, 36e5, 72e5, 108e5, 216e5, 432e5, 864e5, 1728e5, 6048e5, 12096e5];
     const step = steps.find((s) => s * pxPerMs >= 64) || 12096e5;
     const out = [];
-    for (let t = Math.ceil(TA / step) * step; t <= TZ; t += step) {
+    let last = -Infinity;
+    if (!isNum(TA) || !isNum(TE)) return out;
+    // L is a wall-clock time in the zone (as if UTC); t the instant it shows (DST: offset at that time)
+    for (let L = Math.ceil((TA + zoff(TA)) / step) * step; ; L += step) {
+      const t = L - zoff(L - zoff(L));
+      if (t > TE) break;
+      if (t < TA || t <= last) continue;
+      last = t;
       const x = xOfMs(t);
       if (x > W - padR - 14) continue;
-      const iso = isoOf(t);
+      const iso = zoned(isoOf(t));
       out.push([x, iso.slice(11, 16) === "00:00" ? iso.slice(5, 10) : iso.slice(11, 16)]);
     }
     return out;
@@ -641,7 +676,7 @@
     const H = bottomAll + AXIS;
     const pxPerMs = slot / (BMS * k);
     const xOfMs = (ms) => padL + (ms - TA) * pxPerMs;
-    const xEnd = Math.min(padL + plotW, xOfMs(TZ));
+    const xEnd = Math.min(padL + plotW, xOfMs(TE));
     const clampX = (x) => Math.max(padL, Math.min(xEnd, x));
     const sel = S.sig ? GBY.get(S.sig) || null : null;
     const fit = !!sel && S.fit;
@@ -675,7 +710,7 @@
     if (WIN) {
       const x0 = clampX(xOfMs(WIN[0])), x1 = clampX(xOfMs(WIN[1]));
       if (x1 > x0) {
-        const label = `${WIN_NAME} ${tsShort(isoOf(WIN[0]))} → ${tsShort(isoOf(WIN[1]))} UTC (${spanText(WIN[1] - WIN[0])})`;
+        const label = `${WIN_NAME} ${tsShort(isoOf(WIN[0]))} → ${tsShort(isoOf(WIN[1]))} ${TZ} (${spanText(WIN[1] - WIN[0])})`;
         const right = x0 > padL + plotW * 0.6;
         P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x1)}" y1="19" y2="19"/>`);
         P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x0)}" y1="14" y2="24"/><line class="win-line" x1="${r1(x1)}" x2="${r1(x1)}" y1="14" y2="24"/>`);
@@ -988,7 +1023,7 @@
         entries += NWT[n] || 0;
         for (let i = S.t[0]; i <= S.t[1]; i++) errors += LEV[n].ERROR[i] || 0;
       }
-      w.innerHTML = `<span class="win-what">Window <b>${esc(ts16(isoOf(rg[0])))} → ${esc(tsShort(isoOf(rg[1])))}</b> UTC (${esc(spanText(rg[1] - rg[0]))})` +
+      w.innerHTML = `<span class="win-what">Window <b>${esc(ts16(isoOf(rg[0])))} → ${esc(tsShort(isoOf(rg[1])))}</b> ${esc(TZ)} (${esc(spanText(rg[1] - rg[0]))})` +
         ` · ${fmt(entries)} entries` + (errors ? ` · <span class="w-err">${fmt(errors)} errors</span>` : "") + `</span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${S.t[0] <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
         `<button type="button" class="btn small" data-shift="1" ${S.t[1] >= NB - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
@@ -1022,7 +1057,7 @@
         (href ? `<a href="${esc(href)}" title="Report of ${esc(set.name || set.id)}">report ↗</a>` : "") + `</span>`;
     }).join("");
     const meta = [];
-    if (WIN) meta.push(`${WIN_NAME}: ${ts16(isoOf(WIN[0]))} → ${tsShort(isoOf(WIN[1]))} UTC (${spanText(WIN[1] - WIN[0])})`);
+    if (WIN) meta.push(`${WIN_NAME}: ${ts16(isoOf(WIN[0]))} → ${tsShort(isoOf(WIN[1]))} ${TZ} (${spanText(WIN[1] - WIN[0])})`);
     else if (WMODE) meta.push(`window: ${WMODE}`);
     meta.push(plural(NODES.length, "node"));
     const trunc_ = num(OPTS.truncated_groups);
@@ -1086,8 +1121,8 @@
       const topRow = top ? GBY.get(str(top.signature)) : null;
       const baseline = c.baseline && typeof c.baseline === "object" ? c.baseline.name || c.baseline.id : c.baseline;
       const rows = [];
-      rows.push(["Coverage", since ? `${esc(ts16(since))} → ${esc(tsShort(until))} UTC (${esc(spanText(parseTs(until) - parseTs(since)))})` +
-        (gaps.length ? ` · <span title="${esc(gaps.map(([x, y]) => `${ts16(isoOf(x))} → ${tsShort(isoOf(y))} UTC`).join("\n"))}">${plural(gaps.length, "gap")} (${esc(spanText(gapMs))})</span>` : " · no gaps")
+      rows.push(["Coverage", since ? `${esc(ts16(since))} → ${esc(tsShort(until))} ${esc(TZ)} (${esc(spanText(parseTs(until) - parseTs(since)))})` +
+        (gaps.length ? ` · <span title="${esc(gaps.map(([x, y]) => `${ts16(isoOf(x))} → ${tsShort(isoOf(y))} ${TZ}`).join("\n"))}">${plural(gaps.length, "gap")} (${esc(spanText(gapMs))})</span>` : " · no gaps")
         : `<span class="muted">no entries</span>`]);
       if (top) {
         rows.push(["Top error", (topRow ? `<button type="button" class="tpl-btn" data-open="${esc(topRow.id)}" title="${esc(top.template)}">${tplHtml(trunc(top.template, 110))}</button>` : tplHtml(trunc(top.template, 110))) +
@@ -1348,7 +1383,7 @@
     const all = bodyLines(raw);
     const cut = all.length > BODY_LINES && !FULL_BODIES.has(str(id));
     const body = cut ? all.slice(0, BODY_LINES) : all;
-    const meta = [["", tsFull(e.ts) + " UTC"], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
+    const meta = [["", tsFull(e.ts) + " " + TZ], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
       .filter((x) => x[1]);
     const src = e.source_path || (typeof e.source === "string" ? e.source : "");
     const sig = str(e.signature) || ESIG.get(str(id)) || "";
@@ -1402,7 +1437,7 @@
         `<td>${esc(ts16(p.first_seen))}</td><td>${esc(ts16(p.last_seen))}</td></tr>`;
     }).join("");
     return `<div class="d-nodes-wrap"><table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
-      `<th class="r">Per hour</th><th>First seen (UTC)</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      `<th class="r">Per hour</th><th>First seen (${esc(TZ)})</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function relatedHtml(r) {
     const out = [];
@@ -1667,17 +1702,82 @@
       (extra.length ? ` (${esc(extra.join(", "))})` : "") + `.` +
       `<button type="button" class="linkbtn act" data-show='${esc(JSON.stringify({ ms, mn }))}'>show me</button>`;
   }
-  function pairSentence(p) {
-    const a = obj(p.a), b = obj(p.b);
-    const ex = arr(p.examples).filter((x) => Array.isArray(x) && x[0]);
-    const rg = tRange();
-    const inWin = rg ? ex.filter((x) => inRange(parseTs(x[0]), rg)) : ex;
-    return `<b>${esc(kindLabel(a.kind))}</b> on ${nodeBadge(str(a.node))} was followed by <b>${esc(kindLabel(b.kind))}</b> on ${nodeBadge(str(b.node))}` +
-      ` <b>${fmt(num(p.count))} of ${fmt(num(p.of))}</b> times` + (isNum(p.median_lag_ms) ? ` (median ${esc(lagText(p.median_lag_ms))})` : "") + `.` +
-      (inWin.length ? inWin.slice(0, 3).map((x) => `<button type="button" class="linkbtn act" data-at="${esc(x[0])}" title="${esc(tsMs(x[0]))} → ${esc(tsMs(x[1]))}">${esc(tsSec(x[0]))}</button>`).join("")
-        : ex.length && rg ? ` <span class="muted">(no example in the window)</span>` : "");
+  /** Strongest first: the share of hits, then lift, then hits. */
+  const share = (h, o) => (o > 0 ? Math.min(1, h / o) : 0);
+  const byStrength = (hits) => (x, y) =>
+    share(hits(y), num(y.of)) - share(hits(x), num(x.of)) || num(y.lift) - num(x.lift) || hits(y) - hits(x);
+  /** "18 / 18" with a small bar: how often the first side was followed by the second. */
+  const hitsMeter = (h, o, title) =>
+    `<span class="ix-hits" title="${esc(title)}"><span class="meter" aria-hidden="true"><i style="width:${r1(share(h, o) * 100)}%"></i></span>` +
+    `<b>${fmt(h)}</b><span class="of">/ ${fmt(o)}</span></span>`;
+  const liftChip = (l) => (isNum(l) ? `<span class="lift" title="Lift: ×${esc(ratioText(l))} the hits chance would give">×${esc(ratioText(l))}</span>` : "");
+  /** One side of a co-burst: node badge, then the group's template on one line (full text in the title). */
+  function burstSide(s) {
+    const sig = str(s.signature), node = str(s.node);
+    const g = GBY.get(sig);
+    const tpl = str(s.template) || (g ? g.tpl : "");
+    const text = tpl ? tplHtml(tpl) : `<span class="mono">${esc(sig.slice(0, 8))}</span>`;
+    const label = g
+      ? `<button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" title="${esc(tpl)}">${text}</button>`
+      : `<span class="ix-tpl" title="${esc(tpl || sig)}">${text}</span>`;
+    const others = num(s.groups) - 1;
+    const more = others > 0
+      ? `<span class="ix-more" title="${esc(`${plural(others, "other group")} of ${node} burst together with it; it stands for them`)}">+${fmt(others)}</span>` : "";
+    return `<div class="ix-side">${nodeBadge(node)}${label}${more}</div>`;
   }
-  // the panel depends on the window only: rebuilt when that changes and the tab is shown
+  const eventSide = (s) => `<div class="ix-side">${nodeBadge(str(s.node))}<span class="ix-kind">${glyphKey(str(s.kind))}${esc(kindLabel(s.kind))}</span></div>`;
+  const flowHead = (from, to, act) =>
+    `<thead><tr><th class="c-from">${from}</th><th class="c-arr"><span class="sr-only">followed by</span></th><th class="c-to">${to}</th>` +
+    `<th class="c-hits">Followed</th><th class="c-lag" title="Median time from the first to the second">Median lag</th><th class="c-lift">Lift</th><th class="c-act">${act}</th></tr></thead>`;
+  function coBurstRow(c) {
+    const a = obj(c.a), b = obj(c.b);
+    const hits = num(c.hits), of = num(c.of);
+    const ms = [a.signature, b.signature].filter((s) => s != null).map(String);
+    const mn = [a.node, b.node].filter((n) => NIDX.has(str(n))).map(String);
+    return `<tr><td class="c-from">${burstSide(a)}</td><td class="c-arr" aria-hidden="true">→</td><td class="c-to">${burstSide(b)}</td>` +
+      `<td class="c-hits">${hitsMeter(hits, of, `${fmt(hits)} of ${fmt(of)} bursts on ${str(a.node)} were followed by a burst on ${str(b.node)} within ${spanText(DELTA_S * 1000)}`)}</td>` +
+      `<td class="c-lag">${esc(lagText(c.median_lag_ms))}</td><td class="c-lift">${liftChip(c.lift)}</td>` +
+      `<td class="c-act"><button type="button" class="linkbtn" data-show='${esc(JSON.stringify({ ms, mn }))}' title="The merged log with both groups on their nodes">show in log</button></td></tr>`;
+  }
+  function pairRow(p, rg) {
+    const a = obj(p.a), b = obj(p.b);
+    const n = num(p.count), of = num(p.of);
+    const ex = arr(p.examples).filter((x) => Array.isArray(x) && x[0]);
+    const inWin = rg ? ex.filter((x) => inRange(parseTs(x[0]), rg)) : ex;
+    const acts = inWin.length
+      ? inWin.slice(0, 3).map((x) => `<button type="button" class="linkbtn ix-at" data-at="${esc(x[0])}" title="${esc(tsMs(x[0]))} → ${esc(tsMs(x[1]))} ${esc(TZ)}: open the merged log here">${esc(tsSec(x[0]))}</button>`).join("")
+      : ex.length && rg ? `<span class="muted" title="Its examples fall outside the time window">none in window</span>` : "";
+    return `<tr><td class="c-from">${eventSide(a)}</td><td class="c-arr" aria-hidden="true">→</td><td class="c-to">${eventSide(b)}</td>` +
+      `<td class="c-hits">${hitsMeter(n, of, `${fmt(n)} of ${fmt(of)} ${kindLabel(a.kind)} events on ${str(a.node)} were followed by ${kindLabel(b.kind)} on ${str(b.node)}`)}</td>` +
+      `<td class="c-lag">${esc(lagText(p.median_lag_ms))}</td><td class="c-lift">${liftChip(p.lift)}</td><td class="c-act">${acts}</td></tr>`;
+  }
+  /** An event of a group (its own node's first): the text of a mention group the page has no row for. */
+  const EVSIG = new Map();
+  for (const e of EVENTS) {
+    if (!e.sig || !e.text) continue;
+    if (!EVSIG.has(e.sig)) EVSIG.set(e.sig, e);
+    if (!EVSIG.has(e.sig + "\n" + e.node)) EVSIG.set(e.sig + "\n" + e.node, e);
+  }
+  /** One group behind a mention: its template, else a short signature with the text of one of its entries. */
+  function mentionGroup(sig, from) {
+    const g = GBY.get(sig);
+    if (g) return `<li><button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" title="${esc(g.tpl)}">${tplHtml(g.tpl)}</button></li>`;
+    const ev = EVSIG.get(sig + "\n" + from) || EVSIG.get(sig);
+    const show = esc(JSON.stringify({ ms: [sig], mn: NIDX.has(from) ? [from] : [] }));
+    return `<li class="ix-gone"><span class="sigchip" title="Signature ${esc(sig)}: not among the groups of this page">${esc(sig.slice(0, 8))}</span>` +
+      (ev ? `<span class="ix-tx" title="${esc(ev.text)}"><span class="muted">${esc(kindLabel(ev.kind))}:</span> ${esc(ev.text)}</span>`
+        : `<span class="ix-tx muted">group not in this page</span>`) +
+      `<button type="button" class="linkbtn" data-show='${show}' title="This group's entries on ${esc(from)} in the merged log">entries</button></li>`;
+  }
+  /** Example slot / session times as buttons that open the merged log, those in the window when one is set. */
+  function atButtons(times, rg, max) {
+    const ok = times.filter((t) => typeof t === "string" && t);
+    const shown = rg ? ok.filter((t) => inRange(parseTs(t), rg)) : ok;
+    if (!shown.length) return ok.length && rg ? `<span class="muted" title="Its examples fall outside the time window">none in window</span>` : "";
+    return shown.slice(0, max).map((t) => `<button type="button" class="linkbtn ix-at" data-at="${esc(t)}" title="${esc(tsMs(t))} ${esc(TZ)}: open the merged log here">${esc(tsSec(t))}</button>`).join("");
+  }
+  const ixHead = (title, n, sub) => `<div class="ix-head"><h3>${title} <span class="n">${fmt(n)}</span></h3>${sub ? `<span class="ix-sub">${sub}</span>` : ""}</div>`;
+  // the panel depends on the window and the shown zone only: rebuilt when they change and the tab is shown
   let interKey = null;
   const renderInteractions = guard(function renderInteractions() {
     $("tab-i-n").textContent = fmt(MENT.length + PAIRS.length + COB.length + JOBS.length + SESS.length);
@@ -1686,13 +1786,29 @@
     interKey = key;
     const el = $("p-inter");
     const rg = tRange();
-    const cards = [];
-    // mention matrix
+    const out = [];
+    // co-bursts and event pairs: one row each, source → target, strongest first
+    const span = esc(spanText(DELTA_S * 1000));
+    const cob = [...COB].sort(byStrength((c) => num(c.hits)));
+    const always = cob.filter((c) => num(c.of) > 0 && num(c.hits) >= num(c.of)).length;
+    const pairs = [...PAIRS].sort(byStrength((p) => num(p.count)));
+    out.push(`<section class="card ix-flows" aria-label="Co-bursts and event pairs">` +
+      ixHead("Co-bursts", COB.length, `a group bursting on one node, then one bursting on another within ${span} · strongest first` +
+        (always ? ` · ${always === cob.length && always > 1 ? "all" : fmt(always)} followed every time` : "") + (rg ? " · whole capture, not the window" : "")) +
+      (cob.length ? `<div class="ix-scroll"><table class="ix-t ix-flow">${flowHead("When this group bursts", `this one bursts within ${span}`, "")}<tbody>${cob.map(coBurstRow).join("")}</tbody></table></div>`
+        : `<div class="muted">No group bursts on one node were followed by bursts on another more often than chance.</div>`) +
+      `<p class="note">A burst starts at the first minute at or above the threshold after at least 10 quiet minutes. Followed: bursts of the first group followed by one of the second; lift compares that with chance; +N: other groups of the node that burst with it.</p>` +
+      ixHead("Event pairs", PAIRS.length, "an event on one node, then one on another within 60 s · strongest first" + (rg ? " · counts: whole capture" : "")) +
+      (pairs.length ? `<div class="ix-scroll"><table class="ix-t ix-flow">${flowHead("When this event", "this follows within 60 s", "Examples")}<tbody>${pairs.map((p) => pairRow(p, rg)).join("")}</tbody></table></div>`
+        : `<div class="muted">No events on one node were followed by events on another.</div>`) +
+      `</section>`);
+    // mention matrix and its edges
     const M = new Map();
     for (const m of MENT) M.set(str(m.from) + "\n" + str(m.to), m);
     let mmax = 0;
     for (const m of MENT) mmax = Math.max(mmax, num(m.count));
     let mx = `<div class="muted">No node logged about another node.</div>`;
+    let gone = 0;
     if (MENT.length && NODES.length > 1) {
       mx = `<table class="mx"><thead><tr><th class="mx-corner rh">from ↓ · to →</th>${NODES.map((n) => `<th>${nodeBadge(n)}</th>`).join("")}</tr></thead><tbody>` +
         NODES.map((a) => `<tr><th class="rh">${nodeBadge(a)}</th>` + NODES.map((b) => {
@@ -1703,48 +1819,51 @@
           const alpha = r1(0.08 + 0.3 * (Math.log10(c + 1) / Math.log10(mmax + 1)));
           return `<td><button type="button" class="cell" style="--a:${alpha}" data-mx="${esc(a + "\n" + b)}" title="${esc(a)} names ${esc(b)} ${fmt(c)} times in ${plural(arr(m.groups).length, "group")}; click to list the entries"><span>${fmt(c)}</span></button></td>`;
         }).join("") + `</tr>`).join("") + `</tbody></table>`;
-      mx += `<ul class="edges">` + [...MENT].sort((x, y) => num(y.count) - num(x.count)).map((m) =>
-        `<li><div class="e-head">${nodeBadge(str(m.from))} → ${nodeBadge(str(m.to))}<span>${plural(num(m.count), "mention")} in ${plural(arr(m.groups).length, "group")}</span>` +
-        `<button type="button" class="linkbtn" data-mx="${esc(str(m.from) + "\n" + str(m.to))}">show entries</button></div>` +
-        `<div class="e-groups">${arr(m.groups).slice(0, 6).map((s) => `<span>${tplRef(s)}</span>`).join("")}${arr(m.groups).length > 6 ? `<span class="muted">+${fmt(arr(m.groups).length - 6)} more</span>` : ""}</div></li>`).join("") + `</ul>`;
+      mx += `<ul class="edges">` + [...MENT].sort((x, y) => num(y.count) - num(x.count)).map((m) => {
+        const from = str(m.from), sigs = arr(m.groups).map(String);
+        gone += sigs.slice(0, 6).filter((s) => !GBY.has(s)).length;
+        return `<li><div class="e-head">${nodeBadge(from)}<span class="e-arr" aria-label="names">→</span>${nodeBadge(str(m.to))}<span class="muted">${plural(num(m.count), "mention")} · ${plural(sigs.length, "group")}</span>` +
+          `<span class="grow"></span><button type="button" class="linkbtn" data-mx="${esc(from + "\n" + str(m.to))}">show entries</button></div>` +
+          `<ul class="e-groups">${sigs.slice(0, 6).map((s) => mentionGroup(s, from)).join("")}${sigs.length > 6 ? `<li class="muted">+${fmt(sigs.length - 6)} more</li>` : ""}</ul></li>`;
+      }).join("") + `</ul>`;
     } else if (NODES.length < 2) {
       mx = `<div class="muted">A single node: no mentions between nodes.</div>`;
     }
-    cards.push(`<div class="card"><h3>Mentions <span class="n">${fmt(MENT.length)}</span></h3>${mx}<p class="note">An entry on one node naming another member node. Counts cover the whole capture window.</p></div>`);
-    // event pairs + co-bursts
-    cards.push(`<div class="card"><h3>Event pairs <span class="n">${fmt(PAIRS.length)}</span></h3>` +
-      (PAIRS.length ? PAIRS.map((p) => `<p class="sent">${pairSentence(p)}</p>`).join("") : `<div class="muted">No events on one node were followed by events on another.</div>`) +
-      `<h3 style="margin-top:14px">Co-bursts <span class="n">${fmt(COB.length)}</span></h3>` +
-      (COB.length ? COB.map((c) => `<p class="sent">${coBurstSentence(c)}</p>`).join("") : `<div class="muted">No group bursts on one node were followed by bursts on another more often than chance.</div>`) +
-      `<p class="note">A burst starts at the first minute at or above the threshold after at least 10 quiet minutes; lift compares the hits with chance.</p></div>`);
-    // jobs + sessions
-    const jobs = JOBS.length ? JOBS.map((j) => {
-      const ex = arr(j.examples).filter(Boolean);
-      const shown = rg ? ex.filter((t) => inRange(parseTs(t), rg)) : ex;
-      return `<p class="sent"><b class="mono">${esc(j.job)}</b> ran on ${arr(j.nodes).map((n) => nodeBadge(str(n))).join(" ")} in the same slot` +
-        (isNum(j.slots) ? `, <b>${plural(j.slots, "time")}</b>` : "") + `.` +
-        shown.slice(0, 4).map((t) => `<button type="button" class="linkbtn act" data-at="${esc(t)}">${esc(tsSec(t))}</button>`).join("") + `</p>`;
-    }).join("") : `<div class="muted">No scheduled job ran on several nodes at the same time.</div>`;
-    const sess = SESS.length ? SESS.map((s) => {
-      const ns = arr(s.nodes).map(String);
-      return `<p class="sent"><b>${plural(num(s.count), "session")}</b> seen on ${ns.map(nodeBadge).join(" and ")} within an hour: a sticky session was lost or a node failed over.` +
-        arr(s.examples).slice(0, 3).map((x) => {
-          const t = Array.isArray(x) ? x[0] : obj(x).ts || x;
-          return typeof t === "string" ? `<button type="button" class="linkbtn act" data-at="${esc(t)}">${esc(tsSec(t))}</button>` : "";
-        }).join("") + `</p>`;
-    }).join("") : `<div class="muted">No session was seen on more than one node.</div>`;
-    cards.push(`<div class="card"><h3>Concurrent jobs <span class="n">${fmt(JOBS.length)}</span></h3>${jobs}` +
-      `<h3 style="margin-top:14px">Sessions across nodes <span class="n">${fmt(SESS.length)}</span></h3>${sess}</div>`);
+    const truncated = num(OPTS.truncated_groups);
+    const goneNote = gone
+      ? ` Groups shown by a short signature are not among the ${fmt(ROWS.length)} groups of this page${truncated > 0 ? ` (the largest of ${fmt(ROWS.length + truncated)})` : ""}: the text is one of their entries, "entries" lists them in the merged log.`
+      : "";
+    const cards = [`<section class="card" aria-label="Mentions">${ixHead("Mentions", MENT.length, "")}${mx}<p class="note">An entry on one node naming another member node. Counts cover the whole capture window.${goneNote}</p></section>`];
+    // concurrent jobs and sessions: compact tables
+    let smax = 1;
+    for (const j of JOBS) smax = Math.max(smax, num(j.slots));
+    const jobs = JOBS.length
+      ? `<div class="ix-scroll"><table class="ix-t ix-jobs"><thead><tr><th class="c-job">Job</th><th class="c-nodes">Nodes</th><th class="c-slots" title="Slots of 60 s in which it ran on 2 or more nodes">Same minute</th><th class="c-ex">Examples</th></tr></thead><tbody>` +
+        JOBS.map((j) => {
+          const s = num(j.slots);
+          return `<tr><td class="c-job"><span class="ix-job" title="${esc(j.job)}">${esc(j.job)}</span></td><td class="c-nodes">${arr(j.nodes).map((n) => nodeBadge(str(n))).join("")}</td>` +
+            `<td class="c-slots"><span class="ix-hits" title="${esc(`${fmt(s)} slots of 60 s with a run on ${plural(arr(j.nodes).length, "node")}`)}"><span class="meter" aria-hidden="true"><i style="width:${r1(share(s, smax) * 100)}%"></i></span><b>${fmt(s)}</b></span></td>` +
+            `<td class="c-ex">${atButtons(arr(j.examples), rg, 2)}</td></tr>`;
+        }).join("") + `</tbody></table></div>`
+      : `<div class="muted">No scheduled job ran on several nodes at the same time.</div>`;
+    const sess = SESS.length
+      ? `<div class="ix-scroll"><table class="ix-t ix-jobs"><thead><tr><th class="c-nodes">Nodes</th><th class="c-slots">Sessions</th><th class="c-ex">Examples</th></tr></thead><tbody>` +
+        SESS.map((s) => `<tr><td class="c-nodes">${arr(s.nodes).map((n) => nodeBadge(str(n))).join("")}</td><td class="c-slots"><b>${fmt(num(s.count))}</b></td>` +
+          `<td class="c-ex">${atButtons(arr(s.examples).map((x) => (Array.isArray(x) ? x[0] : obj(x).ts || x)), rg, 2)}</td></tr>`).join("") + `</tbody></table></div>`
+      : `<div class="muted">No session was seen on more than one node.</div>`;
+    cards.push(`<section class="card" aria-label="Concurrent jobs and sessions">${ixHead("Concurrent jobs", JOBS.length, "the same job on several nodes in the same minute")}${jobs}` +
+      `${ixHead("Sessions across nodes", SESS.length, "seen on two nodes within an hour: a lost sticky session or a fail-over")}${sess}</section>`);
+    out.push(`<div class="ix-grid">${cards.join("")}</div>`);
     // events table (the table view of the event lanes)
     const evs = rg ? EVENTS.filter((e) => inRange(e.ms, rg)) : EVENTS;
     const LIMIT = 300;
-    cards.push(`<div class="card wide"><h3>Events <span class="n">${fmt(evs.length)}${rg ? " in the window" : ""}</span></h3>` +
-      (evs.length ? `<table class="ev-table"><thead><tr><th class="c-ts">Time (UTC)</th><th class="c-nd">Node</th><th class="c-kd">Kind</th><th class="c-sb">Names</th><th>Text</th></tr></thead><tbody>` +
+    out.push(`<section class="card wide" aria-label="Events">${ixHead("Events", evs.length, rg ? "in the window" : "")}` +
+      (evs.length ? `<table class="ev-table"><thead><tr><th class="c-ts">Time (${esc(TZ)})</th><th class="c-nd">Node</th><th class="c-kd">Kind</th><th class="c-sb">Names</th><th>Text</th></tr></thead><tbody>` +
         evs.slice(0, LIMIT).map((e) => `<tr data-at="${esc(e.ts)}" title="Open the merged log at this moment"><td class="c-ts">${esc(tsMs(e.ts))}</td><td class="c-nd">${nodeBadge(e.node)}</td>` +
           `<td class="c-kd">${glyphKey(e.kind)} ${esc(kindLabel(e.kind))}</td><td class="c-sb">${e.subject ? nodeBadge(e.subject) : ""}</td><td title="${esc(e.text)}">${esc(e.text)}</td></tr>`).join("") +
         `</tbody></table>` + (evs.length > LIMIT ? `<p class="note">First ${fmt(LIMIT)} of ${fmt(evs.length)}; narrow the window to see the rest.</p>` : "")
-        : `<div class="muted">No cluster events${rg ? " in the window" : ""}.</div>`) + `</div>`);
-    el.innerHTML = cards.join("");
+        : `<div class="muted">No cluster events${rg ? " in the window" : ""}.</div>`) + `</section>`);
+    el.innerHTML = out.join("");
   });
 
   // ---------------------------------------------------------------- merged log
@@ -1893,7 +2012,7 @@
       notes.push(`Static report: these are the ${fmt(STATIC_LOG.length)} example entries of all nodes, interleaved by time. The full log: <code>${esc(`atlas-log entries ${CAPREF}` + (logRange() ? ` --since ${isoOf(logRange()[0])} --until ${isoOf(logRange()[1])}` : ""))}</code>`);
     }
     if (S.ctx) {
-      notes.push(`±30 s around ${esc(tsFull(S.cts))} UTC on all nodes${WEB_LOG && URLS.context ? "" : " (from the entries in this report)"}. <button type="button" class="linkbtn" data-ctx-close>Back to the log</button>`);
+      notes.push(`±30 s around ${esc(tsFull(S.cts))} ${esc(TZ)} on all nodes${WEB_LOG && URLS.context ? "" : " (from the entries in this report)"}. <button type="button" class="linkbtn" data-ctx-close>Back to the log</button>`);
     }
     if (LOG.error) notes.push(`Could not load entries: ${esc(LOG.error)}`);
     $("l-summary").innerHTML = (notes.length ? notes.map((n) => `<div class="ml-note">${n}</div>`).join("") : "") +
@@ -2014,6 +2133,16 @@
     updateSticky();
     restoreFocus(fk);
   }
+  let T2 = 0; // first paint (ms after navigation start), once known
+  function renderFoot() {
+    if (!T2) return;
+    const foot = $("foot");
+    foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by atlas-log ${D.tool_version || ""} · ${D.schema} · ` +
+      `${plural(NODES.length, "node")}, ${plural(ROWS.length, "group")}, ${plural(STATIC_LOG.length, "example entry", "example entries")}, ${plural(EVENTS.length, "event")} · ` +
+      `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(T2)} ms after navigation start`;
+    foot.dataset.script = String(Math.round(T1 - T0));
+    foot.dataset.paint = String(Math.round(T2));
+  }
   function updateSticky() {
     const f = $("filters");
     const h = getComputedStyle(f).position === "sticky" ? f.offsetHeight : 0;
@@ -2066,6 +2195,35 @@
     try { localStorage.setItem("atlas-log-report-theme", next); } catch { /* storage unavailable */ }
     renderThemeBtn();
     if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
+  }
+  function renderTzBtn() {
+    const b = $("btn-tz");
+    if (!b) return;
+    b.textContent = TZ;
+    b.setAttribute("aria-pressed", String(TZL));
+    b.title = TZL ? `Times in your time zone (${TZ}); click to show UTC` : "Times in UTC; click to show your time zone";
+  }
+  /** Re-render everything that prints a time in the newly shown zone; deferred: the caller's update() draws. */
+  function applyZone(local, deferred) {
+    setZone(local);
+    renderTzBtn();
+    guard(renderHeader)();
+    cardsKey = null;
+    interKey = null;
+    drawerStale = true;
+    lastTl = "";
+    renderFoot();
+    if (!deferred) update(true);
+  }
+  function toggleTz() {
+    const next = !TZL;
+    try { localStorage.setItem(TZ_KEY, next ? "local" : "utc"); } catch { /* storage unavailable */ }
+    // the hash keeps tz only when the link named one (like theme)
+    if (S.tz) {
+      S.tz = next ? "local" : "utc";
+      try { history.replaceState(null, "", "#" + hashOf(S)); } catch { location.hash = hashOf(S); }
+    }
+    applyZone(next);
   }
   // the control that opened the drawer (a focusKey; "" for a table row): focus returns there on close
   let opener = "";
@@ -2327,6 +2485,7 @@
       commit({ mn: mn.size === NODES.length || !mn.size ? null : mn }, { keepPage: true });
     });
     $("btn-theme").onclick = toggleTheme;
+    if ($("btn-tz")) $("btn-tz").onclick = toggleTz;
     window.atlasTheme = toggleTheme;
     renderThemeBtn();
     $("btn-data").onclick = () => {
@@ -2398,6 +2557,8 @@
 
   // ---------------------------------------------------------------- start
   if (S.theme === "dark" || S.theme === "light") document.documentElement.setAttribute("data-theme", S.theme);
+  setZone(S.tz ? S.tz === "local" : TZL);
+  renderTzBtn();
   guard(renderHeader)();
   bind();
   compute();
@@ -2408,13 +2569,8 @@
   update(true);
   const T1 = performance.now();
   requestAnimationFrame(() => setTimeout(() => {
-    const t2 = performance.now();
-    const foot = $("foot");
-    foot.textContent = `Generated ${ts16(D.generated_at)} UTC by atlas-log ${D.tool_version || ""} · ${D.schema} · ` +
-      `${plural(NODES.length, "node")}, ${plural(ROWS.length, "group")}, ${plural(STATIC_LOG.length, "example entry", "example entries")}, ${plural(EVENTS.length, "event")} · ` +
-      `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(t2)} ms after navigation start`;
-    foot.dataset.script = String(Math.round(T1 - T0));
-    foot.dataset.paint = String(Math.round(t2));
+    T2 = performance.now();
+    renderFoot();
   }, 0));
   }
 

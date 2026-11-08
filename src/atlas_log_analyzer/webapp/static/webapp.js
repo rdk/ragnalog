@@ -24,9 +24,65 @@
     setThemeLabel();
   }
 
+  // times: UTC or the viewer's zone, the preference the report and cluster pages share
+  const TZ_KEY = "atlas-log-tz";
+  let tzLocal = false;
+  try { tzLocal = localStorage.getItem(TZ_KEY) === "local"; } catch (e) { tzLocal = false; }
+  /** The ISO-like "YYYY-MM-DDTHH:MM" of ms in the shown zone. */
+  const zoned = (ms) => new Date(tzLocal ? ms - new Date(ms).getTimezoneOffset() * 6e4 : ms).toISOString().slice(0, 16);
+  function zoneName(ms) {
+    if (!tzLocal) return "UTC";
+    try {
+      const p = new Intl.DateTimeFormat("en-GB", { timeZoneName: "short" }).formatToParts(new Date(ms));
+      return (p.find((x) => x.type === "timeZoneName") || {}).value || "local";
+    } catch (e) { return "local"; }
+  }
+  const parseIso = (s) => Date.parse(String(s).replace(/(\.\d{3})\d+/, "$1").replace(" ", "T"));
+  function rangeText(a, b) {
+    // as pages.py _fmt_range: the end drops the year (and date) it shares
+    a = a.replace("T", " "); b = b.replace("T", " ");
+    if (a.slice(0, 10) === b.slice(0, 10)) return `${a} → ${b.slice(11)}`;
+    return a.slice(0, 4) === b.slice(0, 4) ? `${a} → ${b.slice(5)}` : `${a} → ${b}`;
+  }
+  function applyTz() {
+    document.querySelectorAll(".tz-range[data-a]").forEach((el) => {
+      const a = parseIso(el.dataset.a), b = parseIso(el.dataset.b);
+      if (a === a && b === b) {
+        el.textContent = rangeText(zoned(a), zoned(b));
+        el.title = tzLocal ? zoneName(b) : "UTC";
+      }
+    });
+    document.querySelectorAll("time.tz-ts[datetime]").forEach((el) => {
+      const t = parseIso(el.getAttribute("datetime"));
+      if (t === t) el.textContent = zoned(t).replace("T", " ");
+    });
+    const table = document.querySelector("table.sets[data-axis-lo]");
+    if (table) {
+      const lo = +table.dataset.axisLo, hi = +table.dataset.axisHi;
+      const short = hi - lo <= 864e5 ? (s) => s.slice(11, 16) : (s) => s.slice(5, 10);
+      const ax = table.querySelectorAll(".strip-axis span");
+      if (ax.length === 2) { ax[0].textContent = short(zoned(lo)); ax[1].textContent = short(zoned(hi)); }
+    }
+    document.querySelectorAll("[data-tz-name]").forEach((el) => { el.textContent = zoneName(Date.now()); });
+    const b = $("shell-tz");
+    if (b) {
+      b.textContent = zoneName(Date.now());
+      b.setAttribute("aria-pressed", String(tzLocal));
+      b.title = tzLocal ? "Times in your time zone; click to show UTC" : "Times in UTC; click to show your time zone";
+    }
+  }
+  window.atlasZone = { zoned, zoneName, local: () => tzLocal };
+
   document.addEventListener("DOMContentLoaded", () => {
     const tb = $("shell-theme");
     if (tb) { setThemeLabel(); tb.addEventListener("click", toggleTheme); }
+    applyTz();
+    const zb = $("shell-tz");
+    if (zb) zb.addEventListener("click", () => {
+      tzLocal = !tzLocal;
+      try { localStorage.setItem(TZ_KEY, tzLocal ? "local" : "utc"); } catch (e) { /* private mode */ }
+      applyTz();
+    });
 
     // set and node switchers on the report page keep compare/filters (hash) when switching
     ["shell-set", "shell-node"].forEach((id) => {
@@ -96,7 +152,7 @@
     tip.className = "strip-tip"; tip.hidden = true;
     document.body.appendChild(tip);
     const stamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace(/[-:]/g, "");
-    const label = (ms) => new Date(ms).toISOString().slice(5, 16).replace("T", " ");
+    const label = (ms) => zoned(ms).slice(5, 16).replace("T", " ");
     const at = (svg, ev) => {
       const r = svg.getBoundingClientRect();
       return Math.max(0, Math.min(n - 1, Math.floor(((ev.clientX - r.left) / r.width) * n)));
@@ -115,7 +171,7 @@
         show(i);
         const [c, e] = bins.get(svg).get(i) || [0, 0];
         const t0 = lo + i * size * 3.6e6;
-        tip.innerHTML = `<b>${label(t0)}${size > 1 ? " – " + label(t0 + size * 3.6e6).slice(6) : ""} UTC</b>` +
+        tip.innerHTML = `<b>${label(t0)}${size > 1 ? " – " + label(t0 + size * 3.6e6).slice(6) : ""} ${zoneName(t0)}</b>` +
           (c ? `<span>${fmt(c)} entries</span><span class="e">${fmt(e)} errors</span>` : "<span>no entries</span>") +
           (c ? '<span class="muted">click to open this window</span>' : "");
         tip.hidden = false;

@@ -97,7 +97,9 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
 
 ## 4. Time
 
-- All times stay UTC. Each node keeps its `tz_offset` per entry.
+- All times stay UTC. Each node keeps its `tz_offset` per entry. The cluster
+  page can show them in the browser's time zone (a viewer preference; data and
+  links stay UTC).
 - **Coverage.** Nodes rotate logs independently. In a 7-day export, one
   node's oldest kept line can be 12 hours later than the other's because its
   logs filled up faster. A group that seems to exist "only on NODE2" can
@@ -243,7 +245,7 @@ vanilla JS, no build, state in `location.hash`, light and dark.
 ├ node cards ─────────────────────────────────────────────────────────────────┤
 │ N1  615k entries  49k ERR  7.0/h  2 events  verdict: new_errors (vs N1 10-29)│
 │ N2  747k entries  16k ERR  2.3/h  15 events verdict: clean                  │
-├ timeline: small multiples, shared UTC axis ─────────────────────────────────┤
+├ timeline: small multiples, shared time axis (UTC or local) ─────────────────┤
 │ events N1 ·····◆·········▲····························◆·················    │
 │ N1  ░░░░░░▆▅▆▇▆▅▆▆▅▆▇▇▆▅▆▆▅▆  (stacked by level; ░ = no logs from this node)│
 │            ↑ mention arrow N2→N1 ("does not seem to replicate its cache")   │
@@ -277,9 +279,10 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   equivalents (`atlas-log matrix … --signature`).
 - **Interactions.**
   - An N×N mention matrix; a click on a cell lists its entries.
-  - Event pairs and co-bursts as sentences with "show me" links into the
-    merged log.
-  - Concurrent jobs and sessions across nodes.
+  - Co-bursts and event pairs as compact rows, strongest first: source →
+    target (template on one line, node badge), a hits meter, lag, lift, and
+    "show in log" or example times into the merged log.
+  - Concurrent jobs and sessions across nodes as compact tables.
 - **Merged log.** Entries of every node in the window, interleaved by time,
   with windowed rendering. Each row has a node badge (colour plus text,
   `N1`) and a level chip. There is a filter by minimum level and node. Each

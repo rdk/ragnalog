@@ -197,3 +197,20 @@ def test_group_examples_accept_a_signature_prefix(client: TestClient) -> None:
     full = client.get(f"/api/sets/mini/groups/{sig}/examples").json()
     short = client.get(f"/api/sets/mini/groups/{sig[:6]}/examples")
     assert short.status_code == 200 and short.json()["items"] == full["items"]
+
+
+def test_time_ranges_carry_their_utc_ends(client: TestClient) -> None:
+    """Pages print UTC; the ISO ends let webapp.js show the viewer's zone (shared preference)."""
+    from atlas_log_analyzer.webapp.pages import _fmt_range
+
+    page = client.get("/").text
+    assert 'id="shell-tz"' in page and "data-tz-name" in page
+    found = re.findall(
+        r'<span class="tz-range" data-a="([^"]+)" data-b="([^"]+)">([^<]+)</span>', page
+    )
+    assert found and all(a <= b and "→" in text for a, b, text in found)
+    assert 'class="tz-range"' in client.get("/sets/mini/triage").text
+    assert str(_fmt_range(None, "2026-10-29T10:00:00+00:00")) == "- → 2026-10-29 10:00"
+    assert ">2026-10-29 10:00 → 11:30<" in str(
+        _fmt_range("2026-10-29T10:00:00+00:00", "2026-10-29T11:30:00+00:00")
+    )

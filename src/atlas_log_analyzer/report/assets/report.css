@@ -593,6 +593,15 @@ table.groups tbody tr:focus-visible td:first-child { box-shadow: inset 3px 0 0 v
 .legend .lg-item[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
 .legend .lg-item:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
 .legend .tl-muted { color: var(--muted); }
+.legend .lg-sel { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.sw-sel { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--ink); border-radius: 1px; vertical-align: middle; }
+.timeline .ov-line { fill: none; stroke: var(--ink); stroke-width: 2; stroke-linejoin: round; pointer-events: none; }
+.timeline .ov-halo { fill: none; stroke: var(--surface); stroke-width: 4; stroke-linejoin: round; opacity: 0.85; pointer-events: none; }
+.timeline .born circle { stroke: var(--surface); stroke-width: 1; pointer-events: none; }
+.timeline .born-lbl { font-size: 9px; }
+.timeline .ov-lane { fill: var(--ink); pointer-events: none; }
+.timeline svg.has-ov path[class^="s-"] { opacity: 0.55; transition: opacity 0.15s; }
+.tt-r.tt-o { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
 .legend .tl-muted .btn { padding: 0 4px; }
 
 /* muted groups stay in the table, dimmed */
