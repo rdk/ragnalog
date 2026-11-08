@@ -992,6 +992,11 @@
   }
   const abText = (c) =>
     c.cls === "new" ? fmt(c.b) : c.cls === "vanished" ? fmt(c.a) : `${fmt(c.a)} → ${fmt(c.b)}`;
+  /** The table's A → B: counts from 10,000 up compact (369K → 624K), so the chip still fits. */
+  const abShort = (c) => {
+    const f = (n) => (n >= 1e4 ? compact(n) : fmt(n));
+    return c.cls === "new" ? f(c.b) : c.cls === "vanished" ? f(c.a) : `${f(c.a)} → ${f(c.b)}`;
+  };
   const OTHER_SPAN = OTHER && OTHER.first_ts ? duration(OTHER.first_ts, OTHER.last_ts) : "";
   const MOSTLY_NEW = !!CMPD && CMPN.new > 0.8 * Math.max(1, (D.groups || []).length + CMPN.vanished) && !!OTHER_SPAN;
   const baselineNote = () =>
@@ -1045,7 +1050,7 @@
       `<td class="c-spark">${spark(r)}</td>` +
       `<td class="c-last" title="${esc(seenTitle(last))}">${esc(seenText(last))}</td>` +
       `<td class="c-ut">${r.gone ? "" : fmt(r.users) + " / " + fmt(r.threads)}</td>` +
-      (CMP ? `<td class="c-delta"><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</td>` : "") +
+      (CMP ? `<td class="c-delta"><span class="ab" title="${esc(abText(r.cmp))}">${abShort(r.cmp)}</span>${deltaChip(r.cmp)}</td>` : "") +
       `</tr>`;
   }
   function pagerHtml(pages) {
@@ -1705,7 +1710,7 @@
   /** Overview tiles; with a time window each also tells how much of it falls in the window. */
   function renderTiles() {
     WKEY = S.t ? S.t.join("-") : "";
-    const tk = WKEY + "|" + [...S.mute].sort().join(",");
+    const tk = WKEY + "|" + [...S.mute].sort().join(",") + "|" + S.lv.size;
     if (tilesKey === tk) return;
     tilesKey = tk;
     const st = D.stats || {};
@@ -1739,7 +1744,7 @@
       const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k}: shown ${fmt(shown)} of ${fmt(n)}`);
       html += `<div class="tile wide cmp-tile"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</div>` +
         `<div class="minis">` + mini.map(([k, n]) => `<div><div class="value">${fmt(n)}</div><div class="note">${k}</div></div>`).join("") + `</div>` +
-        `<div class="note">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
+        `<div class="note">${fmt(CMPN.unchanged)} unchanged · groups of every level${S.lv.size < BUCKETS.length ? `; the filter below counts the levels it shows` : ""}${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
     }
     $("tiles").innerHTML = html;
   }
