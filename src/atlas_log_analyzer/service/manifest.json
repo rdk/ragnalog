@@ -151,7 +151,7 @@
     ]
    },
    "entries": {
-    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
+    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
     "output": "entries.v1",
     "exit": [
      0,
@@ -860,8 +860,8 @@
    "schema": "manifest-command.v1",
    "command": "entries",
    "version": "",
-   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
-   "description": "List entries of a log set (or of all nodes of a capture), filtered, ordered by time.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"items\": [<entries.v1 row>, ...]}\n\"total\" counts the matching entries before --offset/--limit; \"offset\"\nechoes --offset; \"truncated\" is true when more entries follow this page\nand \"next_offset\" is where it starts (offset + count; null on the last\npage). --coarse-signature takes the signature of `groups --coarse`. With\n--raw the raw log text of the entries is printed instead (as `show --raw`;\n--offset/--limit apply).\nRows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,\nlevel numeric) unless --columns is given:\n  id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n  request_id, session, ip, url, request_url, context, exception_type,\n  exception_message, exception_chain, signature, coarse_signature, template,\n  variables, source_path, source_line, source_offset, raw, parse_error\n--columns takes comma-separated names and/or is repeated\n(--columns ts,level_name --columns message); an unknown name is error\n\"invalid_value\" whose \"hint\" lists the valid columns. --brief is the\npreset --columns id,ts,level_name,thread,user,request_id,logger,message,\nexception_type,signature; --brief with --columns is a usage error.\n--with-exception keeps entries with an exception (exception_type not\nnull) at any level; --exception TEXT matches a case-insensitive substring\nof exception_type (the outermost exception).\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in\njson/jsonl, no limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (of body\nwhen raw is not among --columns); both keys appear only on cut rows.\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the entries of all\nits nodes interleaved by time (then node): \"logset\" is capture:ID and each\nrow adds \"node\" and \"set\" (the node's set id). They are taken from the\ncapture's window: --since/--until, else --window (overlap, the time all\nnodes have logs for, by default; union); --signature is resolved in any\nnode's groups; --columns may name node and set. With --raw and colour on,\neach entry's rule names its node.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, unknown\ncolumn, --brief with --columns, --window with a set, or ambiguous\n--signature prefix; 2 unknown capture; 3 unknown set or store error.",
+   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--columns str*] [--brief] [--limit int=100] [--offset int=0] [--raw] [--max-raw int] [--window overlap|union]",
+   "description": "List entries of a log set (or of all nodes of a capture), filtered, ordered by time.\n\nOutput (json):\n  {\"schema\": \"entries.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"items\": [<entries.v1 row>, ...]}\n\"total\" counts the matching entries before --offset/--limit; \"offset\"\nechoes --offset; \"truncated\" is true when more entries follow this page\nand \"next_offset\" is where it starts (offset + count; null on the last\npage). --coarse-signature takes the signature of `groups --coarse`. With\n--raw the raw log text of the entries is printed instead (as `show --raw`;\n--offset/--limit apply).\nRows hold all entries.v1 columns (`atlas-log schema entries`; ts is UTC,\nlevel numeric) unless --columns is given:\n  id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n  request_id, session, ip, url, request_url, context, exception_type,\n  exception_message, exception_chain, signature, coarse_signature, template,\n  variables, source_path, source_line, source_offset, raw, parse_error\n--columns takes comma-separated names and/or is repeated\n(--columns ts,level_name --columns message); an unknown name is error\n\"invalid_value\" whose \"hint\" lists the valid columns. --brief is the\npreset --columns id,ts,level_name,thread,user,request_id,logger,message,\nexception_type,signature; --brief with --columns is a usage error.\n--with-exception keeps entries with an exception (exception_type not\nnull) at any level; --exception TEXT matches a case-insensitive substring\nof exception_type (the outermost exception).\n\"raw\" and \"body\" are cut to --max-raw characters (default 4000 in\njson/jsonl, no limit in table and --raw mode); a cut text ends with\n\"… [truncated: N chars total, use --max-raw 0]\" and its row gets\n\"body_truncated\": true and \"raw_chars\": <original length of raw> (of body\nwhen raw is not among --columns); both keys appear only on cut rows.\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD]) gives the entries of all\nits nodes interleaved by time (then node): \"logset\" is capture:ID and each\nrow adds \"node\" and \"set\" (the node's set id). They are taken from the\ncapture's window: --since/--until, else --window (overlap, the time all\nnodes have logs for, by default; union); --signature is resolved in any\nnode's groups and may name several, comma-separated (entries of any of\nthem); --node N1,N2 keeps the entries of those nodes (the window stays\nthat of all nodes); --columns may name node and set. With --raw and\ncolour on, each entry's rule names its node.\n\nExit codes: 0 ok (also when nothing matches); 1 bad option, unknown\ncolumn, --brief with --columns, --window, --node or several signatures\nwith a set, a node not in the capture, or ambiguous --signature prefix;\n2 unknown capture or no such group in the capture; 3 unknown set or\nstore error.",
    "output": "entries.v1",
    "exit": [
     0,
@@ -878,7 +878,7 @@
     {
      "name": "--signature",
      "type": "str",
-     "help": "Only entries of this group signature (or unique prefix, 4+ hex chars)."
+     "help": "Only entries of this group signature (or unique prefix, 4+ hex chars); a capture also takes several, comma-separated (entries of any of them)."
     },
     {
      "name": "--coarse-signature",
@@ -939,6 +939,11 @@
      "name": "--exception",
      "type": "str",
      "help": "Only entries whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--node",
+     "type": "str",
+     "help": "Only entries of these nodes, comma-separated (a capture only)."
     },
     {
      "name": "--columns",

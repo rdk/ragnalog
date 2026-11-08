@@ -128,6 +128,7 @@ __all__ = [
     "merged_entries",
     "open_capture",
     "resolve_signature",
+    "resolve_signatures",
     "resolve_window",
 ]
 
@@ -921,6 +922,21 @@ def resolve_signature(capture: Capture, signature: str, *, front: Front = "api")
         return _resolve_signature(db, signature, front)
 
 
+def resolve_signatures(
+    capture: Capture, signatures: Sequence[str], *, front: Front = "api"
+) -> list[str]:
+    """Return the full signatures of ``signatures`` (or unique prefixes), duplicates dropped.
+
+    Raises:
+        OpError: Reasons ``ambiguous_signature`` (``candidates``) and ``group_not_found``.
+
+    """
+    if not signatures:
+        return []
+    with _Db(capture) as db:
+        return list(dict.fromkeys(_resolve_signature(db, s, front) for s in signatures))
+
+
 def _level_case() -> str:
     return (
         "CASE WHEN level >= 50 THEN 'ERROR' WHEN level >= 40 THEN 'WARN' "
@@ -1566,13 +1582,15 @@ def merged_entries(
     offset: int = 0,
     max_raw: int | None = DEFAULT_MAX_RAW,
     columns: Sequence[str] | None = None,
+    signatures: Sequence[str] | None = None,
     front: Front = "api",
 ) -> Entries:
     """``entries.v1`` of all nodes interleaved by time (then node); rows add ``node``, ``set``.
 
     ``logset`` is the capture reference (``capture:<id>``). ``where`` filters as
-    ``entries`` (exact signatures); ``columns`` selects entries.v1 columns; ``raw``
-    and ``body`` are cut to ``max_raw`` characters (0 = all).
+    ``entries`` (exact signatures); ``signatures`` keeps the entries of any of these
+    (exact) signatures besides; ``columns`` selects entries.v1 columns; ``raw`` and
+    ``body`` are cut to ``max_raw`` characters (0 = all).
 
     Raises:
         OpError: ``invalid_value`` for an unknown column or a negative limit, offset
@@ -1596,6 +1614,8 @@ def merged_entries(
         raise OpError("invalid_level", str(exc)) from exc
     if predicate is not None:
         cond = cond & predicate
+    if signatures is not None:
+        cond = cond & pl.col("signature").is_in(list(signatures))
     keys = _keys(capture, cond)
     total = keys.height
     page = keys.slice(offset, limit or None)

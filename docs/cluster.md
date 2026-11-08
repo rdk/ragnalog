@@ -173,7 +173,7 @@ node; `entries` and `report` take a capture only through a capture reference
 | `matrix.v1` | `matrix CAPTURE` | `GET /api/captures/{ref}/matrix` | one row per signature: group fields, and per node `count, rate_per_hour, first_seen, last_seen`; `spread` (`all`, `only`, `skewed`), `skew`, `first_node`, `lead_ms`. Filters as `groups`, plus `node`, `spread`, `sort=count\|skew\|lead` |
 | `events.v1` | `events CAPTURE\|SET` | `GET /api/captures/{ref}/events` | `items` `{node, ts, kind, subject_node?, signature, entry_id, text}`; `pairs` of events on different nodes that follow each other (§7) |
 | `interactions.v1` | `interactions CAPTURE` | `GET /api/captures/{ref}/interactions` | mention matrix, co-bursts, concurrent jobs, sessions on several nodes (§7) |
-| `entries.v1` + `node` | `entries CAPTURE --since … --until …` | `GET /api/captures/{ref}/entries` | entries of all nodes interleaved by time; rows add `node`, `set` |
+| `entries.v1` + `node` | `entries CAPTURE --since … --until … [--signature A,B] [--node N1,N2]` | `GET /api/captures/{ref}/entries` | entries of all nodes interleaved by time; rows add `node`, `set`; several groups and a node filter (a capture only) |
 | `entries.v1` | `context SET ENTRY --all-nodes [--window 30]` | `…/context?all_nodes=1&window=30` | what every node logged within the window (seconds) around one entry |
 | (`capture.v1` verdicts) | `capture CAPTURE` (`triage CAPTURE`: usage error) | (no route) | §5 as built |
 | `cluster-report.v1` | `report CAPTURE` | `GET /api/captures/{ref}/report` | payload of the cluster page (§8) |
@@ -269,7 +269,12 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   - Bands are hatched outside a node's coverage, and the overlap window is
     marked.
   - An event lane above each band shows glyphs by kind. Hover shows the text,
-    and a click opens the merged log at that moment.
+    and a click opens the merged log at that moment (at the event's own entry).
+  - A thin "together" lane above the bands marks cross-node moments: buckets in
+    which two or more nodes log more than 3× their usual errors; a mark opens
+    "±30 s on all nodes" around the moment's busiest 10 s.
+  - y-scale: shared, per node, % of node, or errors only (one ERROR series per
+    node on one scale, spikes clipped and labelled).
   - Mention edges are drawn as arrows from the reporting node's lane to the
     subject's lane.
   - Selecting a group draws its per-node counts as a line over each band.
@@ -283,14 +288,19 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   equivalents (`atlas-log matrix … --signature`).
 - **Interactions.**
   - An N×N mention matrix; a click on a cell lists its entries.
-  - Co-bursts and event pairs as compact rows, strongest first: source →
-    target (template on one line, node badge), a hits meter, lag, lift, and
-    "show in log" or example times into the merged log.
+  - Co-bursts and event pairs as compact rows (co-bursts strongest first, event
+    pairs most often first): source → target (template on up to two lines, node
+    badge), a hits meter, lag, lift (capped at `>×100` when shown), and "show in
+    log" or example times into the merged log.
   - Concurrent jobs and sessions across nodes as compact tables.
+  - An events table with kind chips (job runs follow the lanes' toggle) and
+    same-second bursts of one kind on one node folded into one row.
 - **Merged log.** Entries of every node in the window, interleaved by time,
-  with windowed rendering. Each row has a node badge (colour plus text,
-  `N1`) and a level chip. There is a filter by minimum level and node. Each
-  row has "±30 s on all nodes" (`context --all-nodes`).
+  fetched a page at a time with every filter (level, groups, nodes, search)
+  applied by the server, the next page loaded on scrolling to the end. Each
+  row has a node badge (colour plus text, `N1`) and a level chip. There is a
+  filter by minimum level and node. Each row has "±30 s on all nodes"
+  (`context --all-nodes`).
 - **Node colours.** Use a categorical series palette that is separate from
   the level status colours and always carries the text label. Node order and
   colour are fixed, by node id, in every chart. Check the palette with the
@@ -544,6 +554,13 @@ too far apart for a skew estimate.
   resolved in any member's groups (`cluster.resolve_signature`; `matrix(...,
   signature=)` was added). `--columns` of a capture's entries may name `node`
   and `set` (always present); `context_all_nodes` gained `columns`.
+- Merged `entries` take several groups and a node filter (2026-11-08, for the
+  page's merged log, whose group, node and search filters had applied only to
+  the rows already loaded): `EntryQuery.signature` may be comma-separated (each
+  resolved by `cluster.resolve_signatures`, then `merged_entries(signatures=)`),
+  and `EntryQuery.node` (`--node`, `node=`) keeps those nodes; the window is
+  resolved over all nodes first. With a set both are usage errors
+  (`EntryQuery.resolve`); a node not in the capture is `invalid_value`.
 - `timeline` is a new CLI command for sets too (`timeline.v1`, the twin of the
   existing `GET /api/sets/{ref}/timeline`): the contract's `timeline CAPTURE
   --by-node` needed a `timeline` command, and "otherwise unchanged" meant the

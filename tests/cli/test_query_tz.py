@@ -42,3 +42,15 @@ def test_query_interval_results_are_text(jcli: Invoke, mini: str) -> None:
     gaps = jcli("query", mini, "select ts - lag(ts) over (order by ts) gap from entries limit 2")
     first, second = (r["gap"] for r in gaps.json()["items"])
     assert first is None and isinstance(second, str)
+
+
+def test_query_nested_intervals_and_case_twins(jcli: Invoke, mini: str) -> None:
+    """Intervals inside a list or struct are text too; names that differ in case both come back."""
+    nested = jcli(
+        "query", mini, "select [max(ts) - min(ts)] l, {'d': max(ts) - min(ts)} s from entries"
+    )
+    assert nested.code == 0, nested.stdout
+    assert nested.json()["items"][0] == {"l": "['06:52:20.584']", "s": "{'d': '06:52:20.584'}"}
+    twins = jcli("query", mini, "select max(ts) - min(ts) a, 1 A from entries")
+    assert twins.code == 0, twins.stdout
+    assert list(twins.json()["items"][0].values()) == ["06:52:20.584", 1]

@@ -555,19 +555,30 @@ class LogSet:
             rel = con.sql(query)
             if rel is None:
                 return pl.DataFrame()
-            if any(str(t) == "INTERVAL" for t in rel.types):
-                # polars cannot import DuckDB intervals: return them as text ('4 days 20:15:28')
-                rel = rel.project(
-                    ", ".join(
-                        f"CAST({_ident(c)} AS VARCHAR) AS {_ident(c)}"
-                        if str(t) == "INTERVAL"
-                        else _ident(c)
-                        for c, t in zip(rel.columns, rel.types, strict=True)
-                    )
+            if any("INTERVAL" in str(t) for t in rel.types):
+                # polars cannot import DuckDB intervals (also inside lists and structs): return
+                # those columns as text ('4 days 20:15:28'); columns are renamed by position
+                # first, as two names may differ only in case (DuckDB names ignore case)
+                names = [f"_c{i}" for i in range(len(rel.columns))]
+                cols = ", ".join(
+                    f"CAST({n} AS VARCHAR) AS {_ident(c)}"
+                    if "INTERVAL" in str(t)
+                    else f"{n} AS {_ident(c)}"
+                    for n, c, t in zip(names, rel.columns, rel.types, strict=True)
                 )
+                cast = rel.query("_q", f"SELECT {cols} FROM _q AS _r({', '.join(names)})")
+                if cast is not None:
+                    rel = cast
             if max_rows is not None:
                 rel = rel.limit(max_rows)
-            result: pl.DataFrame = rel.pl()
+            try:
+                result: pl.DataFrame = rel.pl()
+            except Exception:
+                raise
+            except BaseException as exc:  # polars panics on a type it cannot import
+                if type(exc).__name__ != "PanicException":
+                    raise
+                raise duckdb.ConversionException(f"cannot return this result: {exc}") from exc
             return result
         finally:
             con.close()

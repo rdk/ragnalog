@@ -276,7 +276,8 @@ class EntryQuery:
     """Entry filters as the user typed them (``entries``; ``GET /api/sets/{ref}/entries``).
 
     Attributes:
-        signature: Only entries of this group signature (or unique prefix, 4+ hex chars).
+        signature: Only entries of this group signature (or unique prefix, 4+ hex chars); a
+            capture also takes several, comma-separated (entries of any of them).
         coarse_signature: Only entries of this coarse signature (exact; the signature of
             groups --coarse).
         level: Only these levels, e.g. ERROR or WARN,ERROR.
@@ -291,6 +292,7 @@ class EntryQuery:
         contains: Only entries whose raw text contains this text (case-insensitive).
         with_exception: Only entries with an exception (exception_type not null), any level.
         exception: Only entries whose exception_type contains this text (case-insensitive).
+        node: Only entries of these nodes, comma-separated (a capture only).
 
     """
 
@@ -307,6 +309,7 @@ class EntryQuery:
     contains: str | None = None
     with_exception: bool = False
     exception: str | None = None
+    node: str | None = None
 
     def check(self, *, front: Front) -> None:
         """Validate what can be checked before the set is opened (levels, absolute times).
@@ -317,20 +320,42 @@ class EntryQuery:
         """
         _check(self.level, self.min_level, self.since, self.until, front)
 
+    @property
+    def signatures(self) -> list[str]:
+        """The signatures of ``signature`` (comma-separated), duplicates dropped; ``[]`` if none."""
+        parts = (hex_ref(p.strip()) for p in (self.signature or "").split(",") if p.strip())
+        return list(dict.fromkeys(parts))
+
+    @property
+    def nodes(self) -> list[str]:
+        """The node ids of ``node`` (comma-separated), duplicates dropped; ``[]`` if none."""
+        return list(dict.fromkeys(p.strip() for p in (self.node or "").split(",") if p.strip()))
+
     def resolve(self, manifest: LogSetManifest, *, front: Front) -> EntryFilter:
         """Return the filter for the set of ``manifest`` (relative times count back from its end).
 
         ``signature`` is passed on as given: resolving a prefix needs the set's groups
-        (:func:`~atlas_log_analyzer.service.views.resolve_signature`).
+        (:func:`~atlas_log_analyzer.service.views.resolve_signature`). ``node`` and several
+        signatures apply to a capture only (``capture_queries.entries`` takes them out first).
 
         Raises:
-            OpError: ``invalid_level`` or ``invalid_value``.
+            OpError: ``invalid_level`` or ``invalid_value``; ``usage`` for ``node`` or
+                several signatures.
 
         """
+        for given, what in ((self.nodes, "node"), (self.signatures[1:], "signature")):
+            if given:
+                raise OpError(
+                    "usage",
+                    f"{flag(what, front)} "
+                    + ("applies" if what == "node" else "with several signatures applies")
+                    + " to a capture",
+                    hint="pass a capture (capture:ID, cluster:NAME)",
+                )
         last = manifest.last_ts
-        signature, coarse = blank(self.signature), blank(self.coarse_signature)
+        signature, coarse = next(iter(self.signatures), None), blank(self.coarse_signature)
         return EntryFilter(
-            signature=None if signature is None else hex_ref(signature),
+            signature=signature,
             coarse_signature=None if coarse is None else hex_ref(coarse),
             level=parse_level(self.level, "level", front=front),
             min_level=parse_level(self.min_level, "min_level", front=front),

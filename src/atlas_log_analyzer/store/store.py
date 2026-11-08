@@ -112,10 +112,11 @@ def _source_infos(
     normalised = {_norm(k): v for k, v in stats.items()}
     out = []
     for sf in sources:
-        st = stats.get(str(sf.path)) or normalised.get(_norm(str(sf.path))) or SourceStats()
+        shown = shown_path(str(sf.path))  # what the entries record (zip/member)
+        st = stats.get(shown) or normalised.get(_norm(shown)) or SourceStats()
         out.append(
             SourceInfo(
-                path=shown_path(str(sf.path)),  # a ZIP member as zip/member: the spool goes
+                path=shown,
                 size=sf.size,
                 xxh3=sf.xxh3,
                 first_ts=st.first_ts,

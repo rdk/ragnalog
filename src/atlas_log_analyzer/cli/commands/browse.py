@@ -317,12 +317,16 @@ def entries(
     row adds "node" and "set" (the node's set id). They are taken from the
     capture's window: --since/--until, else --window (overlap, the time all
     nodes have logs for, by default; union); --signature is resolved in any
-    node's groups; --columns may name node and set. With --raw and colour on,
-    each entry's rule names its node.
+    node's groups and may name several, comma-separated (entries of any of
+    them); --node N1,N2 keeps the entries of those nodes (the window stays
+    that of all nodes); --columns may name node and set. With --raw and
+    colour on, each entry's rule names its node.
 
     Exit codes: 0 ok (also when nothing matches); 1 bad option, unknown
-    column, --brief with --columns, --window with a set, or ambiguous
-    --signature prefix; 2 unknown capture; 3 unknown set or store error.
+    column, --brief with --columns, --window, --node or several signatures
+    with a set, a node not in the capture, or ambiguous --signature prefix;
+    2 unknown capture or no such group in the capture; 3 unknown set or
+    store error.
 
     Args:
         logset: Log set id, unique id prefix or name; or a capture (capture:ID,

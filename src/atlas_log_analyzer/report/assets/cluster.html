@@ -48,12 +48,14 @@
 
   <section class="card c-tl-card" aria-label="Timeline per node">
     <div class="card-head">
-      <h2>Entries per <span id="tl-bin">hour</span> by level, one band per node</h2>
+      <h2 id="tl-title">Entries per hour by level, one band per node</h2>
       <div class="legend" id="tl-legend"></div>
       <span class="grow"></span>
-      <div class="seg" id="tl-y" role="group" aria-label="Y scale"></div>
-      <button type="button" class="btn small toggle" id="tl-jobs" aria-pressed="false" title="Show scheduled job runs in the event lanes (hidden by default: they repeat and hide the rare events)">Job runs</button>
-      <button type="button" class="btn small toggle" id="tl-arrows" aria-pressed="true" title="Show mention arrows between the nodes' event lanes">Arrows</button>
+      <div class="tl-ctl">
+        <div class="seg" id="tl-y" role="group" aria-label="Y scale"></div>
+        <button type="button" class="btn small toggle" id="tl-jobs" aria-pressed="false" title="Show scheduled job runs in the event lanes and the events table (hidden by default: they repeat and hide the rare events)">Job runs</button>
+        <button type="button" class="btn small toggle" id="tl-arrows" aria-pressed="true" title="Show mention arrows between the nodes' event lanes">Arrows</button>
+      </div>
     </div>
     <div class="c-tl-sub">
       <div class="tl-window" id="tl-window"></div>
@@ -133,8 +135,8 @@
   <h2>Keyboard</h2>
   <dl class="keys">
     <dt><kbd>/</kbd></dt><dd>Focus the search of the current view</dd>
-    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group or log row</dd>
-    <dt><kbd>Enter</kbd></dt><dd>Open the selected group / expand the log row</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group or log row (j on the last loaded row loads more)</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Open the selected group / expand the log row (also <kbd>Space</kbd> on a focused row; <kbd>↑</kbd> <kbd>↓</kbd> move)</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
     <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
     <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page of groups</dd>
@@ -144,6 +146,8 @@
   </dl>
   <p class="muted">Timeline: drag across any band to set the time window of every view; click to clear.
   Hover an event glyph for its text; click it to open the merged log at that moment.
+  The thin "together" lane marks cross-node moments (two or more nodes far above their usual errors);
+  click one, or Tab to it and press Enter, to open ±30 s on all nodes around its busiest moment.
   The view (tab, filters, window, selection, y-scale) is kept in the URL — bookmark or paste it.</p>
   <form method="dialog"><button class="btn">Close</button></form>
 </dialog>

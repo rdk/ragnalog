@@ -407,6 +407,12 @@ def _groups(directory: Path) -> dict[Path, list[Path]]:
     for child in _subdirs(directory):
         if found := _log_dirs(child, _DEPTH - 1):
             groups[child] = found
+    if len(groups) == 1:
+        # one folder holding the node folders (case/logs/node1, case/logs/node2): those are
+        # the candidates, not the one folder (which would merge the nodes into one set)
+        ((child, found),) = groups.items()
+        if len(found) >= 2 and child not in found:
+            return {d: [d] for d in found}
     return groups
 
 
@@ -449,7 +455,10 @@ def _inputs(paths: Sequence[Path]) -> _Inputs:
             for d in log_dirs:
                 search.append(d)
                 files.update(dict.fromkeys(_logs(d)))
-            for d in (path, *log_dirs, *(d.parent for d in log_dirs)):
+            # job.json in the input, its log directories or their parents below the input
+            # (an export's logs/ beside job.json), never above it: a stray old export there
+            parents = [d.parent for d in log_dirs if d != path and d.parent != path.parent]
+            for d in (path, *log_dirs, *parents):
                 if (job := d / JOB_FILE).is_file() and job not in jobs:
                     jobs.append(job)
         elif path.is_file() and path.name.lower() == JOB_FILE:

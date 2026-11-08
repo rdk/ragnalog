@@ -377,4 +377,37 @@ def test_zip_members_are_recorded_as_zip_paths(tmp_path: Path) -> None:
     zip_path = str(archive)
     assert paths and all(p.startswith(zip_path + "/application-logs/") for p in paths)
     assert doc["ingest"]["skipped"] == [zip_path + "/application-logs/access.log"]
+    # entries and groups name the same files, so the report can point at them
+    import polars as pl
+
+    from atlas_log_analyzer.report import build_payload
+
+    ls = store.open(doc["id"])
+    stored = set(pl.read_parquet(ls.entries_path)["source_path"].cast(pl.String).unique())
+    assert stored == set(paths)
+    named = {v["value"] for row in pl.read_parquet(ls.groups_path)["sources"] for v in row}
+    assert named <= set(paths)
+    payload = build_payload(ls)
+    assert all(i >= 0 for g in payload["groups"] for i, _ in g["sources"])
     assert shown_path(str(tmp_path / "x.log")) == str(tmp_path / "x.log")  # outside a ZIP
+
+
+def test_node_folders_under_one_folder_split_by_dir(tmp_path: Path) -> None:
+    """case/logs/node1 and case/logs/node2: two nodes, not one set of both."""
+    for node in ("node1", "node2"):
+        d = tmp_path / "case" / "logs" / node
+        d.mkdir(parents=True)
+        (d / "atlassian-jira.log").write_text(node_lines(node.upper(), 0), encoding="utf-8")
+    split = plan_split([tmp_path / "case"])
+    assert split.kind == "dir" and [n.node for n in split.nodes] == ["node1", "node2"]
+
+
+def test_a_job_json_above_the_input_is_not_its_capture(tmp_path: Path) -> None:
+    """An old export's job.json in the parent folder does not name today's files."""
+    (tmp_path / "job.json").write_text(job_json(job_id="2020-01-01_00-00-00-000_OLD"), "utf-8")
+    today = tmp_path / "today"
+    today.mkdir()
+    for node in ("NODE1", "NODE2"):
+        (today / f"{node}_atlassian-jira.log").write_text(node_lines(node, 0), encoding="utf-8")
+    split = plan_split([today])
+    assert split.job is None or split.job.id != "2020-01-01_00-00-00-000_OLD"

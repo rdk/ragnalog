@@ -10,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from starlette.responses import Response
 
 from atlas_log_analyzer.service.errors import OpError, from_exception
+from atlas_log_analyzer.service.params import MAX_COUNT
 from atlas_log_analyzer.service.views import AmbiguousSignature
 from atlas_log_analyzer.store.store import AmbiguousLogSet, StoreError
 from atlas_log_analyzer.webapp.responses import JSON
@@ -23,9 +24,14 @@ _RANGE_ERRORS = frozenset({"greater_than", "greater_than_equal"})
 def _validation_code(error: Mapping[str, Any]) -> str:
     """``invalid_value`` for a number below its bound, as the CLI reports it; else ``usage``.
 
-    Page caps stay ``usage`` (the CLI has none): an upper bound, and ``limit=0``, which
-    means "all" in the CLI but is below a page's ``limit`` of at least 1 here.
+    A number past :data:`~atlas_log_analyzer.service.params.MAX_COUNT` is ``invalid_value``
+    too. Page caps stay ``usage`` (the CLI has none): a smaller upper bound, and
+    ``limit=0``, which means "all" in the CLI but is below a page's ``limit`` of 1 here.
     """
+    if error.get("type") in ("less_than", "less_than_equal"):
+        # past what the store can count (MAX_COUNT), as the CLI says; a page cap is usage
+        bound = (error.get("ctx") or {}).get("le", (error.get("ctx") or {}).get("lt"))
+        return "invalid_value" if bound is not None and bound >= MAX_COUNT else "usage"
     if error.get("type") not in _RANGE_ERRORS:
         return "usage"
     loc = tuple(error.get("loc", ()))

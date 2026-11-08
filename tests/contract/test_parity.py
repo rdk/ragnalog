@@ -303,6 +303,14 @@ CASES: list[Case] = [
         exit=1,
         status=400,
     ),
+    # and so is a count past int32 (the store's bound), where a page cap would be usage
+    Case(
+        "error-offset-past-int32",
+        ["entries", "edge", "--offset", "2147483648"],
+        "/api/sets/edge/entries?offset=2147483648",
+        exit=1,
+        status=400,
+    ),
     Case(
         "error-negative-max-raw",
         ["entries", "edge", "--max-raw", "-1"],
@@ -336,8 +344,8 @@ CASES: list[Case] = [
 # The capture views, on a store of their own (cluster_dir): nodes NODE1 and NODE2 of
 # capture "cap-acme" of cluster "acme" (tests/fixtures/cluster) and an earlier NODE1 set
 # (tests/cluster.py), the triage baseline of NODE1. Placeholders: {n1} = the NODE1 set id,
-# {sig} = the heartbeat group (on both nodes), {pfx} = its first 6 characters,
-# {entry} = an entry of NODE1 inside the overlap.
+# {sig} = the heartbeat group (on both nodes), {pfx} = its first 6 characters, {sig2} = a
+# WARN/ERROR group of NODE2, {entry} = an entry of NODE1 inside the overlap.
 CLUSTER_CASES: list[Case] = [
     Case("capture", ["capture", "cluster:acme"], "/api/captures/cluster:acme"),
     Case(
@@ -441,6 +449,16 @@ CLUSTER_CASES: list[Case] = [
         "/api/captures/cluster:acme/entries?columns=id,ts,node&signature={pfx}",
     ),
     Case(
+        "merged-entries-groups-node",
+        ["entries", "cluster:acme", "--signature", "{pfx},{sig2}", "--node", "NODE2", "--brief"],
+        "/api/captures/cluster:acme/entries?signature={pfx},{sig2}&node=NODE2&brief=true",
+    ),
+    Case(
+        "merged-entries-nodes",
+        ["entries", "cluster:acme", "--node", "NODE1,NODE2", "--limit", "3"],
+        "/api/captures/cluster:acme/entries?node=NODE1,NODE2&limit=3",
+    ),
+    Case(
         "merged-entries-union-max-raw",
         ["entries", "cluster:acme", "--window", "union", "--max-raw", "30", "--limit", "4"],
         "/api/captures/cluster:acme/entries?window=union&max_raw=30&limit=4",
@@ -499,6 +517,35 @@ CLUSTER_CASES: list[Case] = [
         "/api/captures/cluster:acme/matrix?node=NODE9",
         exit=1,
         status=400,
+    ),
+    Case(
+        "error-merged-entries-unknown-node",
+        ["entries", "cluster:acme", "--node", "NODE1,NODE9"],
+        "/api/captures/cluster:acme/entries?node=NODE1,NODE9",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-entries-node-of-a-set",
+        ["entries", "acme_node1", "--node", "NODE1"],
+        "/api/sets/acme_node1/entries?node=NODE1",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-entries-signatures-of-a-set",
+        ["entries", "acme_node1", "--signature", "{sig},{sig2}"],
+        "/api/sets/acme_node1/entries?signature={sig},{sig2}",
+        exit=1,
+        status=400,
+    ),
+    Case(
+        "error-merged-entries-no-group",
+        ["entries", "cluster:acme", "--signature", "{sig},0000000000000000"],
+        "/api/captures/cluster:acme/entries?signature={sig},0000000000000000",
+        exit=2,
+        status=404,
+        reason="group_not_found",
     ),
     Case(
         "error-matrix-no-group",
@@ -649,10 +696,13 @@ def cluster_refs(cluster_dir: Path) -> dict[str, str]:
     n1 = store.open("acme_node1")
     groups = n1.groups(contains="heartbeat", limit=1)
     sig = str(groups["signature"][0])
+    n2 = store.open("acme_node2")
+    sig2 = next(s for s in n2.groups(level="WARN,ERROR", limit=5)["signature"] if s != sig)
     inside = n1.entries_lazy().filter(pl.col("ts").dt.hour() == 11).select("id").head(1)
     return {
         "n1": n1.manifest.id,
         "sig": sig,
+        "sig2": str(sig2),
         "pfx": sig[:6],
         "entry": str(inside.collect()["id"][0]),
     }

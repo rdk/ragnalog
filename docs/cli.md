@@ -527,7 +527,7 @@ repeats the stack trace in `raw`, `body`, `exception_chain` and
 Exit: 0; 1 bad option, unknown column, `--brief` with `--columns`; 2 no
 entries with this signature; 3.
 
-### `entries SET|CAPTURE [--signature] [--coarse-signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N] [--window overlap|union]`
+### `entries SET|CAPTURE [--signature] [--coarse-signature] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--since] [--until] [--contains] [--with-exception] [--exception T] [--node N[,N…]] [--columns C[,C…]]... [--brief] [--limit 100] [--offset 0] [--raw] [--max-raw N] [--window overlap|union]`
 
 `--user`/`--thread`/`--request-id` are exact (`--request-id` is the Jira
 request id of the request context, e.g. `540x101x1`: all entries of one HTTP
@@ -554,9 +554,14 @@ interleaved by time (then node), the twin of `GET /api/captures/{ref}/entries`.
 id; `--columns` may name both, they are always there). `--since`/`--until`
 set the window, else `--window` (overlap by default); the other filters,
 paging, `--columns`, `--brief` and `--max-raw` work as for a set, and
-`--signature` is resolved in the groups of any node. `--raw` prints the raw
-texts; with colour on, each rule names the node and `file:line`. `--window`
-with a set is a usage error.
+`--signature` is resolved in the groups of any node; it may name several
+groups, comma-separated (`--signature 83d1,a7f0`: the entries of any of them,
+each a full signature or a unique prefix). `--node N1,N2` keeps the entries of
+those nodes; the window stays that of all nodes, and a node the capture does not
+have is error `invalid_value` (exit 1) naming its nodes in `hint`. `--raw`
+prints the raw texts; with colour on, each rule names the node and
+`file:line`. `--window`, `--node` and several signatures with a set are usage
+errors.
 
 <!-- generated:entries-columns by docs/formats/generate.py from store/schema.py -->
 entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
@@ -567,7 +572,8 @@ entries.v1 columns: `id`, `ts`, `tz_offset`, `level`, `level_name`, `thread`,
 <!-- /generated -->
 
 Exit: 0 (also empty); 1 bad option, unknown column, `--brief` with
-`--columns`, `--window` with a set; 2 unknown capture; 3.
+`--columns`, `--window`, `--node` or several signatures with a set, a node not
+in the capture; 2 unknown capture, or a signature in no node's groups; 3.
 
 ### `context SET ENTRY_ID [--before 5] [--after 5] [--any-thread] [--max-raw N] [--columns C[,C…]]... [--brief] [--all-nodes] [--window 30]`
 

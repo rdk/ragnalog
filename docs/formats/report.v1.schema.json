@@ -31,7 +31,7 @@
       "type": "object"
     },
     "timeline": {
-      "description": "{hours, levels}.",
+      "description": "{hours, levels, clipped?}.",
       "type": "object"
     },
     "groups": {

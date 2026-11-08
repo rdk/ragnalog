@@ -127,6 +127,43 @@ def test_cluster_payload_urls_and_cache(client: TestClient, tmp_path: Path) -> N
     assert {r["level_name"] for r in page["items"]} <= {"WARN", "ERROR"}
 
 
+def test_capture_entries_filter_by_groups_and_nodes(client: TestClient, tmp_path: Path) -> None:
+    """The page's merged log sends its group, node and search filters to the server."""
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    url = f"/api/captures/capture:{JOB_ID}/entries"
+    payload = client.get(f"/api/captures/capture:{JOB_ID}/report?window=union").json()
+    on_two = [g for g in payload["groups"] if len(g["per_node"]) == 2]
+    a, b = (g["signature"] for g in on_two[:2])
+    params = {"window": "union", "limit": 10_000, "columns": "id,node,signature"}
+
+    def total(**more: str) -> dict:  # type: ignore[type-arg]
+        res = client.get(url, params={**params, **more})
+        assert res.status_code == 200, res.json()
+        doc: dict = res.json()  # type: ignore[type-arg]
+        return doc
+
+    one, other = total(signature=a), total(signature=b)
+    both = total(signature=f"{a},{b[:8].upper()}, {a}")  # prefixes, case, repeats, blanks
+    assert both["total"] == one["total"] + other["total"] > 0
+    assert {r["signature"] for r in both["items"]} == {a, b}
+    node = payload["nodes"][-1]
+    only = total(signature=f"{a},{b}", node=node)
+    assert 0 < only["total"] < both["total"]
+    assert {r["node"] for r in only["items"]} == {node}
+    assert total(node=",".join(payload["nodes"]))["total"] == total()["total"]
+    # the window is still that of all nodes: node N alone gives the same rows as its share
+    assert total(node=node, signature=a)["total"] == sum(
+        1 for r in one["items"] if r["node"] == node
+    )
+    bad = client.get(url, params={"node": "NODE7"})
+    assert bad.status_code == 400 and "NODE7" in bad.json()["error"]["message"]
+    member = payload["capture"]["nodes"][0]["set"]["id"]
+    on_set = client.get(f"/api/sets/{member}/entries", params={"node": node})
+    assert on_set.status_code == 400 and on_set.json()["error"]["code"] == "usage"
+    several = client.get(f"/api/sets/{member}/entries", params={"signature": f"{a},{b}"})
+    assert several.status_code == 400 and "capture" in several.json()["error"]["message"]
+
+
 def test_stale_spool_is_removed_at_start(store_dir: Path) -> None:
     import os
     import time

@@ -591,7 +591,7 @@ def test_out_of_range_parameters_are_errors_not_500(client: TestClient) -> None:
         "/api/sets/mini/report?max_raw=100000000000000000000",
     ):
         r = client.get(path)
-        assert r.status_code == 400 and r.json()["error"]["code"] == "usage", path
+        assert r.status_code == 400 and r.json()["error"]["code"] == "invalid_value", path
 
 
 @pytest.mark.parametrize("name", ["nul.log", "AUX.log", "com1.log"])
@@ -644,3 +644,28 @@ def test_upload_without_content_length_is_refused(empty_client: TestClient) -> N
         headers={"Content-Type": "multipart/form-data; boundary=x"},
     )
     assert res.status_code == 411 and res.json()["error"]["code"] == "http"
+
+
+def test_guards_behind_a_reverse_proxy(store_dir: Path) -> None:
+    """A proxy rewrites Host or forwards it: same-origin writes and reads still work."""
+    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
+
+    app = create_app(Settings(store=store_dir), hosts=LOOPBACK_HOSTS)
+    with TestClient(app, base_url="http://127.0.0.1:8321") as c:
+        public = {"Host": "logs.example.org", "X-Forwarded-For": "10.0.0.5"}
+        assert c.get("/api/sets", headers=public).status_code == 200
+        # the proxy sets Host to the upstream; the browser says same-origin
+        same = {"Origin": "https://logs.example.org", "Sec-Fetch-Site": "same-origin"}
+        assert c.post("/api/jobs/x/cancel", headers=same).status_code == 404
+        # no Sec-Fetch-Site: Origin against X-Forwarded-Host, default ports aside
+        fwd = {
+            "Origin": "https://logs.example.org",
+            "X-Forwarded-Host": "logs.example.org:443",
+            "X-Forwarded-Proto": "https",
+        }
+        assert c.post("/api/jobs/x/cancel", headers=fwd).status_code == 404
+        other = {**fwd, "Origin": "https://evil.example"}
+        assert c.post("/api/jobs/x/cancel", headers=other).status_code == 403
+        assert (
+            c.post("/api/jobs/x/cancel", headers={"Sec-Fetch-Site": "same-site"}).status_code == 403
+        )

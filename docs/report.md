@@ -307,10 +307,14 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   counts, the clock-skew estimate ("estimate, not applied"), time zone toggle (UTC or
   the browser's zone by its short name, as on the set report: every printed time, axis
   tick and tooltip follows it; same `localStorage` key, `tz=local|utc` in a link wins,
-  the window in the hash stays UTC), theme toggle, JSON download.
-- Node cards: entries, errors, warnings, errors/h, events (totals, or within the
-  brushed window from the timeline), coverage with gap count and length, top error
-  (opens the group), triage verdict chip and baseline, events by kind, "Groups on N1".
+  the window in the hash stays UTC), theme toggle, JSON download. A capture across a DST
+  change names both zones (`CEST/CET`), and a range names each end's zone when they
+  differ (`02:00 CEST – 02:00 CET`, the repeated hour); axis ticks follow the zone's
+  wall clock (a skipped hour has no tick, a repeated hour one, dates only at midnight).
+- Node cards: entries, errors, warnings, errors/h, events with how many are job runs
+  (`709 (684 job runs)`; totals, or within the brushed window from the timeline),
+  coverage with gap count and length, top error (opens the group), triage verdict chip
+  and baseline, events by kind, "Groups on N1" (not with one node).
 - Timeline: one SVG, one row per node on a shared time axis (ticks on the shown zone's
   hours and midnights). Each row is an event lane
   (a glyph per kind in ink colour; legend under the chart) above a band of columns
@@ -319,8 +323,19 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   hairlines at its edges. Arrows go from the lane of the node that logs a mention to
   the lane of the node it names: one per event with `subject_node`, plus fainter ones
   per bucket for `interactions.mentions` groups (from their `hourly` on the reporting
-  node) where no event arrow exists; "Arrows" hides them. Job runs (`job_run`) are left out of the lanes unless "Job runs" is on (`#jobs=1`): they repeat on a schedule and would hide the rare events. y-scale: shared, per node,
-  or % of node (counts over the node's entries in the range). A selected group is drawn
+  node) where no event arrow exists; "Arrows" hides them. Job runs (`job_run`) are left out of the lanes (and the events table) unless "Job runs" is on (`#jobs=1`): they repeat on a schedule and would hide the rare events. `reindex` has its own glyph (a circular arrow), apart from `index_replay`'s dot. y-scale: shared, per node,
+  % of node (counts over the node's entries in the range), or *Errors* (`y=err`: only the
+  ERROR column of every node on one scale, so a flood of WARN does not flatten them; a
+  spike above 4× the 95th percentile is clipped and labelled `↑ 18.3K`). The y-scale and
+  the two toggles wrap as one group on a narrow page. With two or more nodes a thin
+  *together* lane above the first node marks cross-node moments: the drawn buckets in
+  which two or more nodes log more than 3× their own usual errors (usual: the median of
+  that node's buckets with errors). Each mark is a button (Tab, Enter) with a tooltip
+  naming the nodes, their errors and the factor; it sets the window to that bucket and
+  opens "±30 s on all nodes" at its busiest moment (web: the 10 s with the most errors on
+  two or more nodes, from `urls.entries` with `min_level=ERROR`; static: the merged log
+  of the window at ERROR on those nodes). Without a timeline the y-scale, Job runs and
+  Arrows controls are hidden. A selected group is drawn
   as a line on every band, on the same axis over faded columns; "Fit y to group" (on by
   default) scales the axis to the group and drops the columns. Hover shows the bucket's
   levels for that node and every node's total; hovering a lane lists its events (text,
@@ -345,34 +360,55 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     entries per node in tabs (collapsible stack traces, "±30 s on all nodes"), the
     co-bursts, mentions and events involving the group, and CLI commands
     (`atlas-log matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
-    `show SET SIG` per node).
-  - *Interactions*: co-bursts and event pairs in one wide card, one row each, strongest
-    first (share of hits, then lift): source (node badge, template on one line, full text
-    in its title, `+N` other groups that burst with it) → target, a hits meter ("7 / 8"),
-    median lag, lift chip, and "show in log" (co-bursts: both groups on their nodes in the
-    merged log) or example times (event pairs, those in the window). Below, side by side:
+    `show SET SIG` per node). With one node there are no spread or lead columns, no
+    spread or node filter and no per-node sorts. The drawer bar stays on one line (its
+    section links scroll).
+  - *Interactions*: co-bursts and event pairs in one wide card, one row each; co-bursts
+    strongest first (share of hits, then lift), event pairs most often first (a pair seen
+    once has a huge lift and tells little): source (node badge, template on up to two
+    lines, full text in its title, `+N` other groups that burst with it) → target, a hits
+    meter ("7 / 8"), median lag, lift chip (above ×100 shown as `>×100`, the exact lift in
+    its title), and "show in log" (co-bursts: both groups on their nodes in the merged
+    log) or example times (event pairs, those in the window). Below, side by side when
+    each card gets 540 px (else stacked):
     the N×N mention matrix (a cell lists that edge's entries in the merged log) with the
     groups behind each edge (a group outside the payload's `groups`, which `max_groups`
     caps, shows a short signature and the text of one of its events, with "entries" to
     list it in the merged log), and concurrent jobs and sessions across nodes as compact
     tables (job, nodes, same-minute slots with a bar, example times). Last, full width,
-    an events table (the table view of the lanes, filtered by the window).
+    an events table (the table view of the lanes, filtered by the window): one chip per
+    kind with its count toggles the kind (`ek` in the hash; the job run chip is the "Job
+    runs" toggle, so the table shows job runs exactly when the lanes do); events of one
+    kind on one node in the same second fold into one row ("15 health checks failed",
+    "show all" lists them). The time of each row is a button (keyboard) and the row a
+    click target: both open the merged log at that event.
   - *Merged log*: entries of all nodes interleaved by time; node badge, level chip,
-    logger, message; a click expands the entry (raw, trace, "±30 s on all nodes", open
-    group, copy raw). Filters: minimum level, nodes, search, and groups (set from the
-    matrix or "show me"). 200 rows at a time. Static file: the payload's example
-    entries, with the equivalent `atlas-log entries CAPTURE --since … --until …`. Web
-    (`urls.entries` set): pages fetched from that URL with `since`, `until` (the window,
-    or from 60 s before a clicked event), `min_level`, `limit=200` and `offset` (the
-    `next_offset` of the `entries.v1` answer); node, search and group filters apply to
-    the loaded rows. "±30 s" fetches `urls.context` with `{set}` and `{id}` filled in;
-    without it the page uses the entries it has.
+    logger, message; a click, or Enter / Space on the focused row (a button with
+    `aria-expanded`; the row with the cursor is the Tab stop, ↑/↓ move), expands the
+    entry (raw, trace, "±30 s on all nodes", open group, copy raw). Filters: minimum
+    level, nodes, search, and groups (set from the matrix, "entries", "show in log" or
+    "show me"). Static file: the payload's example entries, 200 rows at a time, with the
+    equivalent `atlas-log entries CAPTURE --since … --until …`. Web (`urls.entries` set):
+    pages of 200 fetched from that URL with `since`, `until` (the window, or from 2 s
+    before a clicked event, inside the window), `min_level`, `signature` (the groups,
+    comma-separated), `node` (comma-separated), `contains` (the search, on the raw text),
+    `limit=200` and `offset` (the `next_offset` of the `entries.v1` answer); every page is
+    appended as it arrives. Scrolling near the end of the list, "Load 200 more" or `j` on
+    the last row loads the next page (the cursor then moves on). An event opens the log at
+    its own entry (`entry_id`, `ae` in the hash), else at the first entry at or after its
+    time; while the loaded rows end before it, the next pages are fetched (at most 25).
+    Setting a window that does not contain that moment drops it. Rows are redrawn only
+    when what they show changes (range, filters, zone, the moment); new pages are
+    appended. "±30 s" fetches `urls.context` with `{set}` and `{id}` filled in; without it
+    the page uses the entries it has.
 
 **State** in `location.hash`: `tab` (`g`, `i`, `l`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
-`sig`, `ex` (example tab), `t` (the time window, as on the set report), `y`, `fit=0`, `arrows=0`, `ml`, `mn`,
-`mq`, `ms` (signatures), `ctx`/`cts` (context anchor), `at` (log moment), `theme`, `tz`.
-Keyboard as in the report, plus `1`/`2`/`3` for the tabs; in the merged log `j`/`k` move
-and `Enter` expands. Theme: the report's bootstrap and `localStorage` key. Print: light
+`sig`, `ex` (example tab), `t` (the time window, as on the set report), `y` (`node`, `pct`,
+`err`), `fit=0`, `arrows=0`, `jobs=1`, `ml`, `mn`, `mq`, `ms` (signatures), `ctx`/`cts`
+(context anchor), `at` (log moment) and `ae` (its entry id), `ek` (event kinds hidden
+from the events table), `theme`, `tz`. Keyboard as in the report, plus `1`/`2`/`3` for
+the tabs; in the merged log `j`/`k` move (past the last loaded row: the next page) and
+`Enter` expands. Theme: the report's bootstrap and `localStorage` key. Print: light
 colours, controls and drawer hidden, charts scaled to the page.
 
 **Node colours** (`--n1` … `--n8`; fixed order = `payload.nodes`; never a level colour;

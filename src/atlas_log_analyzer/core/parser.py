@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import dataclasses
 from collections import OrderedDict, deque
-from collections.abc import Iterable, Iterator
+from collections.abc import Callable, Iterable, Iterator
 from datetime import datetime, timedelta
 from itertools import islice
 from pathlib import Path
@@ -315,18 +315,21 @@ def parse_file(
     max_entry_chars: int = MAX_ENTRY_CHARS,
     max_entry_lines: int = MAX_ENTRY_LINES,
     max_bytes: int | None = None,
+    name: str | None = None,
 ) -> Iterator[LogEntry]:
     """Stream entries from one file (lines over 1 MiB are cut, see :func:`iter_raw_lines`).
 
     As :func:`parse_lines`: ids made unique, then banners attached when the format
-    opts in. ``max_bytes`` stops reading after that many bytes.
+    opts in. ``max_bytes`` stops reading after that many bytes. ``name`` is the path the
+    entries record (``source.path``; default ``path``): a file extracted from a ZIP
+    records ``<zip>/<member>``, not its temporary copy.
     """
     return attach_banners(
         _distinct_ids(
             _assemble(
                 iter_raw_lines(path, max_bytes=max_bytes),
                 fmt,
-                str(path),
+                name or str(path),
                 max_chars=max_entry_chars,
                 max_lines=max_entry_lines,
             )
@@ -335,15 +338,22 @@ def parse_file(
     )
 
 
-def parse_sources(sources: Iterable[SourceFile], fmt: LogFormat) -> Iterator[LogEntry]:
+def parse_sources(
+    sources: Iterable[SourceFile],
+    fmt: LogFormat,
+    *,
+    name_of: Callable[[Path], str] | None = None,
+) -> Iterator[LogEntry]:
     """Stream entries from several sources in the given order (default caps).
 
     Each file is read up to the size it had when it was discovered and hashed
     (:attr:`~atlas_log_analyzer.core.reader.SourceFile.size`): lines appended to a live
-    log meanwhile are not part of the set its digest names.
+    log meanwhile are not part of the set its digest names. ``name_of`` gives the path
+    each file's entries record (see :func:`parse_file`).
     """
     for source in sources:
-        yield from parse_file(source.path, fmt, max_bytes=source.size)
+        name = name_of(source.path) if name_of is not None else None
+        yield from parse_file(source.path, fmt, max_bytes=source.size, name=name)
 
 
 def parse(paths: Iterable[Path | str], fmt: LogFormat | None = None) -> Iterator[LogEntry]:

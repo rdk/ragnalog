@@ -270,7 +270,9 @@ def capture_entries(
     """Entries of all nodes interleaved by time (``entries.v1``), as ``entries CAPTURE``.
 
     Rows add ``node`` and ``set``; ``logset`` is ``capture:ID``. The filters of
-    ``/sets/{ref}/entries``; ``since``/``until`` set the window (else ``window``).
+    ``/sets/{ref}/entries``; ``signature`` may name several groups (comma-separated)
+    and ``node`` keeps the entries of those nodes (comma-separated); ``since``/``until``
+    set the window (else ``window``).
     """
     cap = TextCap.parse(max_raw, default=DEFAULT_MAX_RAW, front="api")
     return capture_queries.entries(

@@ -41,7 +41,7 @@ page; `/static` and `/assets` (CSS, JS) need none.
 |---|---|
 | `/` | Sets, newest first: time range with an **activity strip** (every row on one shared time axis: entries per hour up from a midline, errors down, so overlapping sets line up; hovering shows that hour on all rows, a click opens the row's report narrowed to it), entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The sets of one capture (`captures`) are listed under one capture row: cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
 | `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. A set of a capture also gets a node switcher (its sibling node sets, keeping the hash) and "Open cluster view". |
-| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, a bare capture id, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). When the nodes' logs do not overlap the page opens the `union` window instead of an error. The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through; `since`/`until` are UTC whichever zone the page shows its times in (header toggle). The navigation bar links back to the sets and to each node's report. An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
+| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, a bare capture id, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). When the nodes' logs do not overlap the page opens the `union` window instead of an error. The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` (with its level, group, node and search filters: `min_level`, `signature`, `node`, `contains`) and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through; `since`/`until` are UTC whichever zone the page shows its times in (header toggle). The navigation bar links back to the sets and to each node's report. An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
 | `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each section folds (Vanished starts folded), shows its first 25 rows with "Show all", and a sticky bar jumps between them. Each row links into the report with that group open. |
 | `/docs` | OpenAPI (Swagger UI) for the JSON API; `/openapi.json` is the schema, with every response document as a component. |
 
@@ -125,13 +125,13 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/captures/{ref}/matrix` | the filters of `/groups` (`since`/`until` set the window), `window`, `node`, `spread` (`all`, `only`, `skewed`), `sort` (`count`, `skew`, `lead`), `skew_min` (4.0), `signature`, `limit` (50; 0 = all), `offset` | `matrix.v1` (as `atlas-log matrix`) |
 | `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `atlas-log events`) |
 | `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `atlas-log interactions`) |
-| `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
+| `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window; `signature` may name several groups, comma-separated), `node` (comma-separated: only those nodes, the window stays all nodes'; an unknown node is 400 `invalid_value`), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
 | `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
 | `GET /api/sets/{ref}/groups/{sig}` | `limit` (20; 1..10000, no `0` for all), `coarse`, `max_raw` (4000; 0 = all), `columns`, `brief` (as `show --columns/--brief`; `brief` also cuts `group`) | `group.v1`: `group`, hourly `histogram`, first entries in `items` |
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw`; `since`, `until`, `limit` (3, max 50) | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape; with `since`/`until` its first `limit` entries in that window instead (the report's time window) |
-| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
+| `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all); `node` and several signatures are 400 `usage` (they apply to a capture) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
 | `GET /api/sets/{ref}/entries/{id}/raw` | | `text/plain`: the exact text of the entry as in its log file, banner lines it carries first (the pages' "Open raw" link; not in the OpenAPI schema) |
 | `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief`; `all_nodes` with `window` (30 s): every node of the set's capture around the entry | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context [--all-nodes]`; with `all_nodes` rows add `node`, `set`) |
 | `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
@@ -164,8 +164,9 @@ Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
 (`triage.v1`, `groups.v1`, … and the rows `EntryRow`, `GroupRow`, `DiffRow`,
 `MergeRow`), each operation's success response refers to its document, and
 every `/api` operation documents its errors as `error.v1` (status 400 for a bad
-parameter, not FastAPI's 422: a number below its bound, such as `offset=-1`, is
-`invalid_value` as in the CLI; a page cap and any other bad parameter are `usage`). `webapp/openapi.py` maps the operations to
+parameter, not FastAPI's 422: a number below its bound, such as `offset=-1`, or past
+2147483647 (what the store counts) is `invalid_value` as in the CLI; a page cap and any
+other bad parameter are `usage`). `webapp/openapi.py` maps the operations to
 the documents; a new route needs an entry there (a test checks it).
 
 `{ref}` under `/api/captures` is a capture reference (`capture:ID`, a unique
@@ -289,11 +290,16 @@ run next to the server.
   in a background thread at startup (about half a second for two nodes of 700k
   entries each), so its first open is a cache hit.
 - **Security:** binds to loopback by default; `--token` guards the pages and `/api`.
-  Requests that change something (POST, DELETE) sent by a page of another site
-  (`Origin` of another host, `Sec-Fetch-Site: cross-site`) are refused with 403: a
-  form on any web page could otherwise post to the local server. On a loopback
-  address only loopback `Host` names are answered (400 otherwise), so a page that
-  rebinds its own DNS name to 127.0.0.1 cannot read the API. An upload needs
+  Requests that change something (POST, DELETE) sent by a page of another site are
+  refused with 403: a form on any web page could otherwise post to the local server.
+  `Sec-Fetch-Site` decides when the browser sends it (only `same-origin` and `none`
+  pass); otherwise `Origin` must name the host the browser addressed (`Host`, or a
+  proxy's `X-Forwarded-Host`; default ports aside). On a loopback address only
+  loopback `Host` names are answered (400 otherwise), so a page that rebinds its own
+  DNS name to 127.0.0.1 cannot read the API. Behind a reverse proxy that passes the
+  public `Host` through, the proxy's `X-Forwarded-For`/`X-Forwarded-Host`/`Forwarded`
+  header (a page cannot add those) lifts that check; a proxy that rewrites `Host` to
+  the upstream needs nothing. `--reload` (development) skips the `Host` check. An upload needs
   `Content-Length` (411 otherwise; browsers always send it), so its size is checked
   before the body is read. Uploaded file names are reduced to an ASCII basename (a
   Windows device name such as `nul.log` or `COM¹.log` gets a `_` prefix). Set

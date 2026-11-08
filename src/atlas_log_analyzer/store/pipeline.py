@@ -270,9 +270,12 @@ def _tracked(
     base: dict[str, int] = {}
     sizes: dict[str, int] = {}
     acc = 0
+    from atlas_log_analyzer.store.split import shown_path
+
     for s in sources:
-        base[str(s.path)] = acc
-        sizes[str(s.path)] = s.size
+        key = shown_path(str(s.path))  # the path the entries record
+        base[key] = acc
+        sizes[key] = s.size
         acc += s.size
     for item in entries:
         counter.entries += 1
@@ -361,7 +364,10 @@ def ingest_sources(
     grouper = recipe.grouper()
     counter = _Counter()
     started = time.perf_counter()
-    entries = parse_sources(sources, fmt)
+    from atlas_log_analyzer.store.split import shown_path
+
+    # entries, groups and the manifest all name a ZIP member as zip/member (the spool goes)
+    entries = parse_sources(sources, fmt, name_of=lambda p: shown_path(str(p)))
     try:
         parsed = _tracked(entries, counter, sources, progress, progress_every)
         # Deduplicate before grouping so group counts match the stored entries (no

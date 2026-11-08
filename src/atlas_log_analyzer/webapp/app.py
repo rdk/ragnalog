@@ -37,17 +37,47 @@ def _host_name(header: str) -> str:
     return header.rsplit(":", 1)[0].lower() if header.count(":") == 1 else header.lower()
 
 
+_DEFAULT_PORTS = {"http": "80", "https": "443"}
+_PROXY_HEADERS = ("x-forwarded-host", "x-forwarded-for", "forwarded")
+
+
+def _authority(host: str, scheme: str) -> str:
+    """``host[:port]`` lower-cased, without the scheme's default port (``name:443`` = ``name``)."""
+    host = host.strip().lower()
+    port = _DEFAULT_PORTS.get(scheme)
+    if port and host.endswith(":" + port) and not host.endswith("]"):
+        host = host[: -len(port) - 1]
+    return host
+
+
+def _served_host(request: Request) -> str:
+    """Return the host the browser addressed: a proxy's ``X-Forwarded-Host``, else ``Host``.
+
+    A page cannot add ``X-Forwarded-*`` to a request without a CORS preflight, which this
+    server never grants, so the header comes from a proxy in front of it.
+    """
+    forwarded = request.headers.get("x-forwarded-host")
+    return forwarded.split(",", 1)[0] if forwarded else request.headers.get("host", "")
+
+
 def _cross_site(request: Request) -> bool:
-    """Tell whether a page of another site sent this request (a form post needs no preflight)."""
-    if request.headers.get("sec-fetch-site") == "cross-site":
-        return True
+    """Tell whether a page of another site sent this request (a form post needs no preflight).
+
+    Browsers say so in ``Sec-Fetch-Site``, which then decides alone (a proxy that rewrites
+    ``Host`` does not change it); older ones send ``Origin``, compared with the host the
+    browser addressed (default ports aside).
+    """
+    site = request.headers.get("sec-fetch-site")
+    if site is not None:
+        return site not in ("same-origin", "none")  # same-site: another port of localhost
     origin = request.headers.get("origin")
     if origin is None:
         return False  # not a browser (curl, scripts): the token, if any, guards those
-    return (
-        origin == "null"
-        or urlsplit(origin).netloc.lower() != request.headers.get("host", "").lower()
-    )
+    if origin == "null":
+        return True
+    parts = urlsplit(origin)
+    scheme = request.headers.get("x-forwarded-proto", parts.scheme)
+    return _authority(parts.netloc, parts.scheme) != _authority(_served_host(request), scheme)
 
 
 def create_app(
@@ -96,7 +126,12 @@ def create_app(
     ) -> Response:
         # before any route runs, so an upload body is not read when the token is wrong
         path = request.url.path
-        if hosts is not None and _host_name(request.headers.get("host", "")) not in hosts:
+        if (
+            hosts is not None
+            # a reverse proxy in front (it adds these; a page cannot) answers for the names
+            and not any(h in request.headers for h in _PROXY_HEADERS)
+            and _host_name(request.headers.get("host", "")) not in hosts
+        ):
             return error_response(OpError("http", "unexpected Host header"), 400)
         if request.method not in _SAFE_METHODS and _cross_site(request):
             return error_response(OpError("http", "cross-site request refused"), 403)

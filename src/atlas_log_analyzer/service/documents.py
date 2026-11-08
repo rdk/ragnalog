@@ -722,7 +722,7 @@ class Report(Struct, kw_only=True, tag_field="schema", tag="report.v1"):
     options: Annotated[ReportOptions, _d("Build options.")]
     logset: Annotated[Logset, _d("The set's manifest.")]
     stats: Annotated[dict[str, Any], _d("stats.v1 body without sources.")]
-    timeline: Annotated[dict[str, Any], _d("{hours, levels}.")]
+    timeline: Annotated[dict[str, Any], _d("{hours, levels, clipped?}.")]
     groups: Annotated[list[dict[str, Any]], _d("Compact group rows.")]
     entries: Annotated[dict[str, dict[str, Any]], _d("Example entries by id.")]
     merges: Annotated[list[dict[str, Any]], _d("Drain3 proposals within the groups.")]

@@ -35,10 +35,12 @@ also `atlas-log schema report.v1`.
 
 | Key | Type | Description |
 |---|---|---|
-| `hours` | list<string> | Contiguous UTC hours from the hour of the first entry to the hour of the last (`YYYY-MM-DDTHH:00:00Z`); `[]` for an empty set. |
+| `hours` | list<string> | Contiguous UTC hours from the hour of the first timed entry to the hour of the last (`YYYY-MM-DDTHH:00:00Z`), at most 400 days: when the entries span more (a clock years off), the densest 400 days; `[]` for an empty set. |
 | `levels` | object | `ERROR`, `WARN`, `INFO`, `DEBUG`, `OTHER` → list<int>, each as long as `hours`. FATAL is counted as ERROR, TRACE as DEBUG, UNKNOWN (unparsed) as OTHER. |
+| `clipped` | int | Only when > 0: timed entries outside `hours` (left out of `levels` and every group's `hourly`). |
 
-The sum over all series equals `stats.entry_count`.
+The sum over all series plus `clipped` equals `stats.entry_count` minus the entries
+without a time (stored at the epoch).
 
 ## `groups[*]`
 
@@ -57,7 +59,7 @@ All `groups.v1` columns (`atlas-log schema groups`) plus `hourly`, in a compact 
 | `top_users`, `top_threads` | list<[string, int]> | `[value, count]` pairs, as in groups.v1. |
 | `sources` | list<[int, int]> | `[source_index, count]`; `source_index` indexes `logset.sources`. |
 | `examples` | list<string> | At most `options.examples` entry ids taken from groups.v1 `examples`; all present in `entries`. |
-| `hourly` | list<[int, int]> | Sparse `[hour_index, count]` pairs, ascending; `hour_index` indexes `timeline.hours`; the counts sum to `count`. |
+| `hourly` | list<[int, int]> | Sparse `[hour_index, count]` pairs, ascending; `hour_index` indexes `timeline.hours`; the counts sum to `count` less the group's entries without a time or outside `timeline.hours`. |
 
 ## `entries[id]`
 

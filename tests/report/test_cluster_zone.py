@@ -28,7 +28,8 @@ const isNum = (x) => typeof x === "number" && Number.isFinite(x);
 const str = (x) => (x == null ? "" : String(x));
 const TA = Date.parse("2026-10-24T00:00:00Z"), TE = Date.parse("2026-10-27T00:00:00Z");
 const page = new Function("isNum", "str", "TA", "TE",
-  block + "\nreturn { zoned, ts16, tsSec, setLocal: (v) => { TZL = v; }, xTicks };",
+  block + "\nreturn { zoned, ts16, tsSec, setLocal: (v) => { TZL = v; }, xTicks, zAt, wallToMs, " +
+    "setTwo: (v) => { TZ2 = v; } };",
 )(isNum, str, TA, TE);
 const ticks = (pxPerHour) =>
   page.xTicks((ms) => ((ms - TA) / 36e5) * pxPerHour, pxPerHour / 36e5, 1e9, 0).map((t) => t[1]);
@@ -39,9 +40,15 @@ for (const local of [false, true]) {
     ts16: page.ts16("2026-10-25T00:15:00.000Z"),
     tsSec: page.tsSec("2026-10-25T00:15:07.123456+00:00"),
     hourly: ticks(70).slice(0, 4), // 1 h steps
+    hourlyAll: ticks(70),
     sixHourly: ticks(12), // 6 h steps
   };
 }
+page.setLocal(true);
+page.setTwo(true);
+out.zones = ["2026-10-25T00:30:00Z", "2026-10-25T01:30:00Z"].map((t) => page.zAt(Date.parse(t)));
+// 02:30 on 2026-10-25 is shown twice in Prague (00:30Z CEST, 01:30Z CET): the first instant
+out.repeated = new Date(page.wallToMs(Date.parse("2026-10-25T02:30:00Z"))).toISOString();
 process.stdout.write(JSON.stringify(out));
 """
 
@@ -81,8 +88,16 @@ def test_half_hour_zone_shifts_times_and_aligns_ticks_to_its_hours(tmp_path: Pat
 
 
 def test_dst_change_keeps_ticks_on_local_wall_clock(tmp_path: Path) -> None:
-    local = _run("Europe/Prague", tmp_path)["local"]  # CEST -> CET on 2026-10-25 03:00
+    out = _run("Europe/Prague", tmp_path)
+    local = out["local"]  # CEST -> CET on 2026-10-25 03:00
     assert local["ts16"] == "2026-10-25 02:15"
     # 02:00 CEST to 01:00 CET: after the change the ticks keep to 06/12/18 and midnight
     day = ["06:00", "12:00", "18:00"]
     assert local["sixHourly"] == [*day, "10-25", *day, "10-26", *day, "10-27"]
+    # hourly: the repeated hour 02:00 gets one tick (not "02:00" twice), the date at midnight only
+    hours = local["hourlyAll"]
+    assert hours[hours.index("10-25") + 1 : hours.index("10-26")] == [
+        f"{h:02d}:00" for h in range(1, 24)
+    ]
+    assert out["zones"] == ["CEST", "CET"]  # ranges name each end's zone across the change
+    assert out["repeated"] == "2026-10-25T00:30:00.000Z"

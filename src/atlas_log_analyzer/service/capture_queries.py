@@ -299,28 +299,37 @@ def entries(
 ) -> Doc:
     """``entries.v1`` of all nodes of a capture, by time then node; rows add ``node``, ``set``.
 
-    ``q`` filters as ``entries`` (``signature`` may be a unique prefix in any member);
-    its ``since``/``until`` give the window (explicit), else ``window``. ``sel`` may
-    name ``node`` and ``set``, which every row has.
+    ``q`` filters as ``entries``: ``signature`` may be a unique prefix in any member, or
+    several (comma-separated: entries of any of them); ``node`` keeps the entries of
+    those nodes. Its ``since``/``until`` give the window (explicit; of all nodes, also
+    with ``node``), else ``window``. ``sel`` may name ``node`` and ``set``, which every
+    row has.
+
+    Raises:
+        OpError: ``invalid_value`` for a node not in the capture; the errors of
+            :func:`~atlas_log_analyzer.service.cluster.resolve_signatures`.
+
     """
-    from atlas_log_analyzer.service.cluster import merged_entries, resolve_signature
+    from atlas_log_analyzer.service.cluster import merged_entries, resolve_signatures
     from atlas_log_analyzer.service.views import ENTRY_BRIEF
 
     q.check(front=front)
     columns = _columns(sel, ENTRY_BRIEF, front=front)
     capture_ = capture_from_ref(sets, ref, front=front)
     win = CaptureWindow(window=window, since=q.since, until=q.until).resolve(capture_, front=front)
-    plain = dataclasses.replace(q, since=None, until=None)
+    plain = dataclasses.replace(q, since=None, until=None, signature=None, node=None)
     where = plain.resolve(capture_.nodes[0].logset.manifest, front=front)
-    if where.signature is not None:
-        where = dataclasses.replace(
-            where, signature=resolve_signature(capture_, where.signature, front=front)
-        )
+    sigs = resolve_signatures(capture_, q.signatures, front=front)
+    if len(sigs) == 1:
+        where = dataclasses.replace(where, signature=sigs[0])
+    if q.nodes:
+        capture_ = _only_nodes(capture_, q.nodes, front=front)
     return _doc(
         merged_entries(
             capture_,
             window=win,
             where=where,
+            signatures=sigs if len(sigs) > 1 else None,
             limit=page.limit,
             offset=page.offset,
             max_raw=cap.limit or 0,
@@ -328,6 +337,24 @@ def entries(
             front=front,
         )
     )
+
+
+def _only_nodes(capture_: Capture, nodes: Sequence[str], *, front: Front) -> Capture:
+    """Return the capture with only ``nodes`` (its id and reference stay the capture's).
+
+    Raises:
+        OpError: ``invalid_value`` naming a node the capture does not have.
+
+    """
+    unknown = [n for n in nodes if n not in capture_.node_ids]
+    if unknown:
+        raise OpError(
+            "invalid_value",
+            f"{flag('node', front)}: no node {', '.join(map(repr, unknown))} in {capture_.ref}",
+            hint=f"its nodes: {', '.join(capture_.node_ids)}",
+        )
+    keep = tuple(m for m in capture_.nodes if m.node in nodes)
+    return dataclasses.replace(capture_, nodes=keep)
 
 
 def raw_entries(
