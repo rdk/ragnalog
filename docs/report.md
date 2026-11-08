@@ -193,7 +193,8 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   dropped. Older links with bucket indices (`t=95-118`) still open.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
   `Esc` closes the drawer (focus returns to its row), `c` copies the signature,
-  `m` mutes the selected group in the chart, `[`/`]` move the time window.
+  `m` mutes the selected group in the chart, `z` switches UTC / local time,
+  `[`/`]` move the time window.
 - Every drawer shows the equivalent CLI commands
   (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) so a
   human can hand a finding to an agent verbatim.

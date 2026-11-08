@@ -2096,6 +2096,7 @@
         case "k": e.preventDefault(); move(-1); break;
         case "Enter": if (CUR && !S.sig) open(CUR); break;
         case "m": toggleMute(lookup(S.sig || CUR)); break;
+        case "z": toggleTz(); toast(TZL ? `Times in ${TZ}` : "Times in UTC"); break;
         case "c": {
           const r = lookup(S.sig || CUR);
           if (r) copy(r.kind === "sig" ? r.sig : r.id.replace(/^[cm]:/, ""));
