@@ -440,6 +440,25 @@
     }
     return (LV_EFF = out);
   }
+  /** Hour -> [group, count] of every signature group active in it (built on first hover). */
+  let BY_HOUR = null;
+  /** The largest groups of hours [a, b] the chart shows (not muted, level not hidden): what a
+   *  bar is made of, for the timeline tooltip. */
+  function topIn(a, b, n) {
+    if (!BY_HOUR) {
+      BY_HOUR = Array.from({ length: NH }, () => []);
+      for (const r of BASE) if (!r.gone) for (const [i, c] of r.hourly) if (i >= 0 && i < NH) BY_HOUR[i].push(r, c);
+    }
+    const sum = new Map();
+    for (let h = a; h <= b; h++) {
+      const l = BY_HOUR[h];
+      for (let j = 0; j < l.length; j += 2) sum.set(l[j], (sum.get(l[j]) || 0) + l[j + 1]);
+    }
+    const out = [];
+    for (const [r, c] of sum) if (!S.hl.has(r.bucket) && !(S.mute.size && S.mute.has(r.sig))) out.push([r, c]);
+    out.sort((x, y) => y[1] - x[1]);
+    return out.slice(0, n);
+  }
   /** Level totals of the timeline over hours [a, b] (muted groups left out). */
   function levelsIn(a, b) {
     const out = {};
@@ -669,7 +688,7 @@
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -707,6 +726,13 @@
       }
       if (geo.series.length > 1) rows.push(`<div class="tt-r tt-t"><b>${fmt(geo.totals[b])}</b><i></i><span>total</span></div>`);
       if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>open group</span></div>`);
+      if (geo.top) {
+        const top = topIn(b * geo.k, Math.min(NH, (b + 1) * geo.k) - 1, 3);
+        if (top.length) {
+          rows.push(`<div class="tt-top">` + top.map(([r, c]) =>
+            `<div class="tt-g"><b>${fmt(c)}</b><i class="sw-${r.bucket}"></i><span>${esc(r.tpl || r.sig)}</span></div>`).join("") + `</div>`);
+        }
+      }
       if (geo.bornB && geo.bornB[b]) {
         rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} (first seen; click the dot to list them)</span></div>`);
       }
@@ -805,7 +831,7 @@
       for (const [i, n] of ov.hourly) if (i >= 0 && i < NH) data[i] += n;
       overlay = { data, name: "open group" };
     }
-    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS });
+    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS, top: true });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
     $("tl-clip").innerHTML = clipBtn(TL);

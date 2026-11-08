@@ -124,6 +124,18 @@ table.sets tr.capture-member td:first-child { padding-left: 28px; }
 .progress span { display: block; height: 100%; width: 0; background: var(--blue); border-radius: 4px; transition: width 0.3s; }
 .job.failed .progress span { background: var(--lv-error); }
 
+/* mid widths: the warnings column goes, names shrink, so the actions stay on screen */
+@media (max-width: 1280px) {
+  table.sets:not(.triage-table) th:nth-child(6), table.sets:not(.triage-table) td:nth-child(6) { display: none; }
+  table.sets:not(.triage-table) td:first-child { min-width: 200px; }
+  table.sets td { padding: 10px 8px; }
+  .verdict-badge { white-space: normal; }
+}
+@media (max-width: 1080px) {
+  table.sets:not(.triage-table) th:nth-child(4), table.sets:not(.triage-table) td:nth-child(4) { display: none; }
+  table.sets th.when, table.sets td.when { min-width: 180px; }
+  table.sets .actions .btn { display: block; margin: 0 0 4px auto; }
+}
 @media (max-width: 720px) {
   .shell { padding: 0 16px; gap: 10px; }
   .page { padding: 16px; }

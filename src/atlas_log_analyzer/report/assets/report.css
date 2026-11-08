@@ -601,6 +601,11 @@ table.groups tbody tr:focus-visible td:first-child { box-shadow: inset 3px 0 0 v
 .timeline .born-lbl { font-size: 9px; }
 .timeline .ov-lane { fill: var(--ink); pointer-events: none; }
 .timeline svg.has-ov path[class^="s-"] { opacity: 0.55; transition: opacity 0.15s; }
+.tooltip .tt-top { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; max-width: 420px; }
+.tooltip .tt-g { display: flex; align-items: center; gap: 8px; }
+.tooltip .tt-g b { min-width: 52px; text-align: right; font-variant-numeric: tabular-nums; font-weight: 500; color: var(--ink-2); }
+.tooltip .tt-g i { flex: none; width: 8px; height: 8px; border-radius: 2px; }
+.tooltip .tt-g span { min-width: 0; color: var(--ink); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tt-r.tt-o { border-top: 1px solid var(--border); margin-top: 2px; padding-top: 2px; }
 .legend .tl-muted .btn { padding: 0 4px; }
 
