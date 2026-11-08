@@ -25,7 +25,8 @@ or run the container image (see the README).
   per node (`--split`), labelled with node, cluster and capture. Files from a ZIP
   are named `export.zip/<member>`. A Jira home's side logs (`-security`,
   `-outgoing-mail`, `-slow-queries`) are skipped, not mixed into the main set.
-- Duplicate files are skipped; a cut-short `.gz` is a clear error naming the file.
+- Duplicate files are skipped (a gzipped copy counts by its content, so it is the same
+  file); a cut-short `.gz` is a clear error naming the file.
 - `upgrade` rebuilds stale sets from their stored entries alone (no log files),
   equal to a fresh ingest; it also renames the spool paths that ZIP ingests of
   earlier development builds recorded.
@@ -39,6 +40,11 @@ or run the container image (see the README).
   the same documents (a parity contract test keeps them equal).
 - The merged log of a capture takes several groups and `NODE:SIGNATURE` (a group
   on one node only).
+- `--logger com.atlassian.jira` also matches the forms Jira abbreviates
+  (`c.a.jira.index.X`, `c.a.j.issue.index.X`).
+- Memory stays bounded on large sets: a page of entries reads only its row groups
+  (about 110 MB for a 644k-entry set), and a whole set (`entries --limit 0`, `query`)
+  is written a batch at a time (1.3 GB peak for 870 MB of JSON, was 14 GB).
 
 ### Report and cluster page
 
