@@ -174,6 +174,11 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 - Sort *Spike*: with a window, the group's rate in it over its rate outside it
   ("what started at 14:00?"); without one, its busiest hour over its average
   hour over the whole set (a group seen in one hour only is a spike). The ratio shows under the count (`×37`).
+- *Moves with* (drawer, *Related*): up to six signature groups whose entries per
+  hour rise and fall with the open group's (Pearson's r >= 0.6 over every hour of
+  the set, groups of 5+ entries in 3+ hours), with r and a sparkline: a job's
+  start and end, an error and the warning it causes, groups split by an unmasked
+  value. Computed in the browser from the payload's hourly counts.
 - *Copy for ticket* (drawer) copies the group as Jira wiki markup: template,
   level, logger, exception, counts, first and last seen (and the window), the set,
   the signature, the first example entry and the CLI command.

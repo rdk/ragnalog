@@ -633,7 +633,7 @@
     for (let i = 0; i < NH; i++) {
       const hod = hodOf(i);
       // a repeated hour (DST fall-back) gets no second tick
-      const ok = step < 24 ? hod % step === 0 && (i === 0 || hodOf(i - 1) !== hod) : newDay(i) && dayOf(i) % (step / 24) === 0;
+      const ok = step < 24 ? hod % step === 0 && (i === 0 || hodOf(i - 1) !== hod) : hod === 0 && newDay(i) && dayOf(i) % (step / 24) === 0;
       if (!ok) continue;
       const x = r1(padL + ((i + off) / k) * slot) + 0.5;
       if (x > W - padR - 16) continue;
@@ -1310,6 +1310,38 @@
         `<span class="v">${fmt(x.count)}</span>`;
     }).join("") + `</div>`;
   }
+  /** Signature groups whose entries per hour rise and fall with r's: Pearson's r over every
+   *  hour of the set (sparse sums, so ~1,500 groups take a few ms). Two halves of one story
+   *  (a job's start and end, an error and the warning it causes) move together. */
+  function movesWith(r, n) {
+    if (NH < 6 || !r.hourly.length) return [];
+    const x = new Float64Array(NH);
+    let sx = 0, sxx = 0;
+    for (const [i, c] of r.hourly) if (i >= 0 && i < NH) x[i] += c;
+    for (let i = 0; i < NH; i++) { sx += x[i]; sxx += x[i] * x[i]; }
+    const vx = sxx - (sx * sx) / NH;
+    if (vx <= 0) return [];
+    const own = new Set(r.sigs);
+    const out = [];
+    for (const g of BASE) {
+      if (g.gone || own.has(g.sig) || g.count < 5 || g.hourly.length < 3) continue;
+      let sy = 0, syy = 0, sxy = 0;
+      for (const [i, c] of g.hourly) {
+        if (i < 0 || i >= NH) continue;
+        sy += c; syy += c * c; sxy += x[i] * c;
+      }
+      const vy = syy - (sy * sy) / NH;
+      if (vy <= 0) continue;
+      const rho = (sxy - (sx * sy) / NH) / Math.sqrt(vx * vy);
+      if (rho >= 0.6) out.push([g, rho]);
+    }
+    out.sort((a, b) => b[1] - a[1] || b[0].count - a[0].count);
+    return out.slice(0, n);
+  }
+  function movesList(rows) {
+    return `<ul class="members moves">` + rows.map(([m, rho]) =>
+      `<li><button type="button" data-open="${esc(m.id)}" title="Correlation of the entries per hour: ${rho.toFixed(2)}">${badge(m.lvl, m.level)}<span class="n">${fmt(m.count)}</span><span class="t" title="${esc(m.tpl)}">${tplHtml(m.tpl)}</span><span class="rho">r ${rho.toFixed(2)}</span>${spark(m)}</button></li>`).join("") + `</ul>`;
+  }
   function memberList(rows) {
     return `<ul class="members">` + rows.map((m) =>
       `<li><button type="button" data-open="${esc(m.id)}">${badge(m.lvl, m.level)}<span class="n">${fmt(m.count)}</span><span class="t" title="${esc(m.tpl)}">${tplHtml(m.tpl)}</span><span class="s">${esc(m.sig)}</span></button></li>`).join("") + `</ul>`;
@@ -1579,6 +1611,10 @@
         ["Sources", mergeTops(src, "sources"), basename, r.nsrc, "sources"],
       ];
       out.push(`<section class="d-sec tops" id="d-s-who">` + tops.map(([t, items, fn, total, noun]) => `<div><h3>${t}</h3>${barList(items, fn, total, noun)}</div>`).join("") + `</section>`);
+      const moves = movesWith(r, 6);
+      if (moves.length) {
+        out.push(secId("d-s-rel", "Moves with", `<p class="muted small">Groups whose entries per hour rise and fall with this one (correlation r over the whole set): often the other half of the story.</p>` + movesList(moves)));
+      }
     }
     if (r.members) {
       out.push(sec(r.kind === "merged" ? "Merged signatures" : "Member signatures", memberList(r.members)));
