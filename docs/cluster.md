@@ -270,8 +270,8 @@ vanilla JS, no build, state in `location.hash`, light and dark.
     marked.
   - An event lane above each band shows glyphs by kind. Hover shows the text,
     and a click opens the merged log at that moment (at the event's own entry).
-  - A thin "together" lane above the bands marks cross-node moments: buckets in
-    which two or more nodes log more than 3× their usual errors; a mark opens
+  - A thin "together" lane above the bands marks cross-node moments: timeline
+    buckets in which two or more nodes log more than 3× their usual errors; a mark opens
     "±30 s on all nodes" around the moment's busiest 10 s.
   - y-scale: shared, per node, % of node, or errors only (one ERROR series per
     node on one scale, spikes clipped and labelled).

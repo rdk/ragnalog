@@ -328,9 +328,10 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   ERROR column of every node on one scale, so a flood of WARN does not flatten them; a
   spike above 4× the 95th percentile is clipped and labelled `↑ 18.3K`). The y-scale and
   the two toggles wrap as one group on a narrow page. With two or more nodes a thin
-  *together* lane above the first node marks cross-node moments: the drawn buckets in
-  which two or more nodes log more than 3× their own usual errors (usual: the median of
-  that node's buckets with errors). Each mark is a button (Tab, Enter) with a tooltip
+  *together* lane above the first node marks cross-node moments: the drawn buckets
+  holding a timeline bucket (an hour, or 15 min) in which two or more nodes log more
+  than 3× their own usual errors (usual: the median of that node's timeline buckets with
+  errors; found at that resolution, so a narrow chart marks the same moments). Each mark is a button (Tab, Enter) with a tooltip
   naming the nodes, their errors and the factor; it sets the window to that bucket and
   opens "±30 s on all nodes" at its busiest moment (web: the 10 s with the most errors on
   two or more nodes, from `urls.entries` with `min_level=ERROR`; static: the merged log

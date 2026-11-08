@@ -790,10 +790,10 @@
       }
     }
     // cross-node moments: the bins where 2 or more nodes log errors far above their own usual
-    const XMS = MULTI ? crossMoments(rows, nb) : [];
+    const XMS = MULTI ? crossMoments(rows, nb, k) : [];
     if (XM) {
       const y = RULER + 3;
-      P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end">together<title>Cross-node moments: the ${esc(binLabel(k))}s in which two or more nodes log more than 3× their own usual errors (the median of their ${esc(binLabel(k))}s with errors). Click one, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment.</title></text>`);
+      P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end">together<title>Cross-node moments: the ${esc(binLabel(k))}s holding a ${esc(binLabel(1))} in which two or more nodes log more than 3× their own usual errors (the median of their ${esc(binLabel(1))}s with errors). Click one, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment.</title></text>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${y + 5.5}" y2="${y + 5.5}"/>`);
       for (const m of XMS) {
         const x = padL + m.b * slot + Math.max(0, (slot - Math.max(3, bw)) / 2);
@@ -1018,25 +1018,33 @@
     }
     return out.join("");
   }
-  /** Bins of the drawn width in which two or more nodes log more than 3× their usual errors (the
-      median of their bins with errors): [{b, nodes: [{n, e, x}]}]. */
-  function crossMoments(rows, nb) {
-    const base = rows.map((r) => {
+  /** Drawn bins holding a base bucket (the timeline's hour or 15 min) in which two or more nodes
+      log more than 3× their usual errors (the median of their base buckets with errors):
+      [{b, nodes: [{n, e, x}]}], each with its strongest bucket. Found at the base resolution,
+      so a narrow chart (2-hour bins, where a spike averages out) marks the same moments. */
+  function crossMoments(rows, nb, k) {
+    const errs = rows.map((r) => (LEV[r.n] && LEV[r.n].ERROR) || []);
+    const base = errs.map((a) => {
       const nz = [];
-      for (let b = 0; b < nb; b++) if (r.levAll[0][b] > 0) nz.push(r.levAll[0][b]);
+      for (let j = 0; j < NB && j < a.length; j++) if (a[j] > 0) nz.push(a[j]);
       nz.sort((x, y) => x - y);
       return nz.length ? nz[Math.floor((nz.length - 1) / 2)] : 0;
     });
-    const out = [];
-    for (let b = 0; b < nb; b++) {
+    const best = new Map();
+    for (let j = 0; j < NB; j++) {
       const nodes = [];
       rows.forEach((r, i) => {
-        const e = r.levAll[0][b];
+        const e = errs[i][j] || 0;
         if (base[i] > 0 && e > 3 * base[i]) nodes.push({ n: r.n, e, x: e / base[i] });
       });
-      if (nodes.length >= 2) out.push({ b, nodes });
+      if (nodes.length < 2) continue;
+      const b = Math.floor(j / k);
+      if (b >= nb) continue;
+      const score = nodes.length * 1e9 + nodes.reduce((t, o) => t + o.e, 0);
+      const old = best.get(b);
+      if (!old || score > old.score) best.set(b, { b, nodes, score });
     }
-    return out;
+    return [...best.values()].sort((x, y) => x.b - y.b);
   }
   const xmLabel = (m, k) => `Cross-node moment ${binRange(m.b, k)}: ` +
     m.nodes.map((o) => `${NLABEL(o.n)} ${fmt(o.e)} errors (×${ratioText(o.x)} its usual)`).join(", ") +
@@ -1044,7 +1052,7 @@
   function xmTip(m, k) {
     return `<div class="tt-h">Cross-node moment · ${esc(binRange(m.b, k))}</div>` +
       m.nodes.map((o) => `<div class="tt-r"><b>${fmt(o.e)}</b>${nodeBadge(o.n)}<span>errors, ×${esc(ratioText(o.x))} its usual</span></div>`).join("") +
-      `<div class="muted tt-note">Two or more nodes log more than 3× their usual errors at once (usual: the median of a node's ${esc(binLabel(k))}s with errors). Click: the window moves here and the merged log opens ±30 s on all nodes around the busiest moment.</div>`;
+      `<div class="muted tt-note">Two or more nodes log more than 3× their usual errors at once (usual: the median of a node's ${esc(binLabel(1))}s with errors). Click: the window moves here and the merged log opens ±30 s on all nodes around the busiest moment.</div>`;
   }
   /** A cross-node moment: window on its bin, then ±30 s on all nodes around its busiest moment
       (web app: the 10 s with the most errors on two or more nodes; static: the window's errors). */
