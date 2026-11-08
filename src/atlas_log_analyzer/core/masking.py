@@ -63,7 +63,12 @@ GENERIC_RULES: Sequence[MaskRule] = (
         r"[A-Za-z][\w.@-]*",
     ),
     MaskRule.make("id", r"\b(?=[A-Za-z_])(?=\w*\d{3})\w+\b"),
-    MaskRule.make("num", r"(?<![\w.$-])-?\d+(?:[.,]\d+)?|(?<=[\w.$-])\d+(?:[.,]\d+)?(?![\w.])"),
+    # the second branch starts only where a run of digits starts and never gives digits back:
+    # trying every start inside a long run (v.1111…x in a JQL) took time quadratic in its length
+    MaskRule.make(
+        "num",
+        r"(?<![\w.$-])-?\d+(?:[.,]\d+)?|(?<=[\w.$-])(?<!\d)\d++(?:[.,]\d++)?(?![\w.])",
+    ),
 )
 """Built-in, format-independent rules (timestamps, UUIDs, IPs, hex ids, numbers …), in order.
 

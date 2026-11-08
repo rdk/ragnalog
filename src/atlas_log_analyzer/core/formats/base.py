@@ -24,6 +24,7 @@ __all__ = [
     "HeaderMatch",
     "LogFormat",
     "banner_window_ms",
+    "banners_since",
     "node_hints",
     "titles_from_body",
 ]
@@ -141,6 +142,15 @@ def banner_window_ms(fmt: object) -> int:
     ``0`` (the default for formats without the attribute) turns banners off.
     """
     return max(0, int(getattr(fmt, "banner_window_ms", 0) or 0))
+
+
+def banners_since(fmt: object) -> int:
+    """First version of the format that attached banners (``fmt.banners_since``, else 1).
+
+    ``upgrade`` attaches banners only to sets built before it: a later set has them
+    attached already, and attaching them again would drop banners of long runs.
+    """
+    return max(1, int(getattr(fmt, "banners_since", 1) or 1))
 
 
 def titles_from_body(fmt: object) -> bool:

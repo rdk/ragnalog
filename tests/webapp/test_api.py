@@ -587,3 +587,11 @@ def test_out_of_range_parameters_are_errors_not_500(client: TestClient) -> None:
     ):
         r = client.get(path)
         assert r.status_code == 400 and r.json()["error"]["code"] == "usage", path
+
+
+@pytest.mark.parametrize("name", ["nul.log", "AUX.log", "com1.log"])
+def test_upload_of_a_windows_device_name(empty_client: TestClient, name: str) -> None:
+    res = empty_client.post("/api/ingest", files=[("files", (name, MINI.read_bytes()))])
+    job = res.json()
+    assert job["state"] == "succeeded", job
+    assert job["files"] == ["_" + name] and job["result"]["entry_count"] == 10

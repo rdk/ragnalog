@@ -166,14 +166,17 @@ def _distinct_ids(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
     out of order), and a repeated line there would get the id of its first
     occurrence. The ids issued in each of the last :data:`RECENT_TIMESTAMPS`
     milliseconds are therefore kept (the first :data:`IDS_PER_MILLISECOND` of
-    each, so memory stays bounded), and an id issued already in its
-    millisecond is re-hashed as ``xxh3(id, 0x1e, j)`` with the smallest free
-    ``j``. Only such collisions change, so ids of earlier versions stay valid.
+    each, so memory stays bounded, plus every re-hashed one), and an id issued
+    already in its millisecond is re-hashed as ``xxh3(id, 0x1e, j)`` with the
+    smallest free ``j`` (counted on per id, so a line repeated thousands of
+    times costs no rescans). Only such collisions change, so ids of earlier
+    versions stay valid.
     Both rules depend only on the file content before the entry, so the same
     entry keeps its id when the file shows up again in another snapshot.
     """
-    recent: OrderedDict[datetime, set[str]] = OrderedDict()
+    recent: OrderedDict[datetime, tuple[set[str], dict[str, int]]] = OrderedDict()
     issued: set[str] = set()
+    next_j: dict[str, int] = {}
     last_ts = None
     k = 0
     for entry in entries:
@@ -184,21 +187,23 @@ def _distinct_ids(entries: Iterable[LogEntry]) -> Iterator[LogEntry]:
             k = 0
             seen = recent.get(ts)
             if seen is None:
-                issued = recent[ts] = set()
+                issued, next_j = recent[ts] = (set(), {})
                 if len(recent) > RECENT_TIMESTAMPS:
                     recent.popitem(last=False)
             else:
-                issued = seen
+                issued, next_j = seen
                 recent.move_to_end(ts)
         else:
             k += 1
             eid = xxhash.xxh3_64_hexdigest(f"{eid}\x1f{k}".encode())
         if eid in issued:
-            base, j = eid, 0
+            base, j = eid, next_j.get(eid, 0)
             while eid in issued:
                 j += 1
                 eid = xxhash.xxh3_64_hexdigest(f"{base}\x1e{j}".encode())
-        if len(issued) < IDS_PER_MILLISECOND:
+            next_j[base] = j
+            issued.add(eid)  # always: past the cap a later repeat would get this id again
+        elif len(issued) < IDS_PER_MILLISECOND:
             issued.add(eid)
         yield entry if eid is entry.id else _with_id(entry, eid)
 

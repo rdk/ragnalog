@@ -133,3 +133,13 @@ def test_ip_before_punctuation_is_masked_whole(text: str, template: str) -> None
 
 def test_dotted_runs_longer_than_an_ip_are_no_ip() -> None:
     assert "<IP>" not in Masker(GENERIC_RULES).template("version 10.0.0.1.4 and 10.0.0.1.x")
+
+
+def test_a_long_run_of_digits_is_masked_in_linear_time(masker: Masker) -> None:
+    import time
+
+    run = "1" * 200_000
+    start = time.perf_counter()
+    template, _ = masker.apply(f"Invalid JQL: key in (v.{run}x)")
+    assert time.perf_counter() - start < 2.0  # was quadratic: hours at the 1 MiB line cap
+    assert template == f"Invalid JQL: key in (v.{run}x)"  # glued to a letter: no number

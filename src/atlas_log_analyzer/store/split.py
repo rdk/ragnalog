@@ -31,6 +31,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Literal
 
+from atlas_log_analyzer.core.paths import windows_safe
 from atlas_log_analyzer.core.reader import LOG_GLOB
 
 __all__ = [
@@ -98,7 +99,7 @@ def _member_parts(name: str) -> list[str]:
     parts = [p for p in text.split("/") if p not in ("", ".")]
     if text.startswith("/") or any(p == ".." or ":" in p for p in parts):
         raise ArchiveError(f"unsafe path in ZIP: {name!r} (absolute, drive or '..')")
-    return parts
+    return [windows_safe(p) for p in parts]
 
 
 def _wanted(name: str) -> bool:

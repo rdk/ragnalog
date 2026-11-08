@@ -6,6 +6,7 @@ import shutil
 import threading
 import time
 from collections import OrderedDict
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -13,7 +14,7 @@ import msgspec
 from fastapi import Request
 
 from atlas_log_analyzer.report import build_payload
-from atlas_log_analyzer.service.views import set_summary
+from atlas_log_analyzer.service.views import set_activity, set_summary
 from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import MANIFEST_FILE, LogSet, LogSetManifest
 from atlas_log_analyzer.store.store import UNSET, Label, Store, StoreError
@@ -116,7 +117,9 @@ class AppState:
         self._reports: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
         self._clusters: OrderedDict[tuple[Any, ...], bytes] = OrderedDict()
         self._summaries: dict[tuple[str, str], dict[str, int]] = {}
+        self._activity: dict[tuple[str, str], list[tuple[int, int, int]]] = {}
         self._cache_lock = threading.Lock()
+        self._building: dict[tuple[Any, ...], threading.Lock] = {}
         self._server_lock: FileLock | None = None
 
     def start(self) -> None:
@@ -155,6 +158,13 @@ class AppState:
         """All manifests, newest first."""
         return self.store.list()
 
+    def _store_version(self) -> tuple[tuple[str, str, int], ...]:
+        """Return the version of every set (:func:`_version`), for keys depending on all."""
+        return tuple(
+            (m.id, str(m.created_at), _manifest_mtime(self.store.set_dir(m.id)))
+            for m in self.manifests()
+        )
+
     def remove(self, ref: str) -> LogSet:
         """Delete a set and drop its cached data."""
         ls = self.store.open(ref)
@@ -185,6 +195,8 @@ class AppState:
             self._clusters.clear()
             for key in [k for k in self._summaries if k[0] == set_id]:
                 del self._summaries[key]
+            for key in [k for k in self._activity if k[0] == set_id]:
+                del self._activity[key]
 
     def summary(self, ls: LogSet) -> dict[str, int]:
         """:func:`~atlas_log_analyzer.service.views.set_summary`, cached per set version."""
@@ -198,6 +210,47 @@ class AppState:
             self._summaries[key] = row
         return row
 
+    def activity(self, ls: LogSet) -> list[tuple[int, int, int]]:
+        """:func:`~atlas_log_analyzer.service.views.set_activity`, cached per set version."""
+        key = (ls.manifest.id, _version(ls))
+        with self._cache_lock:
+            hit = self._activity.get(key)
+        if hit is not None:
+            return hit
+        hours = set_activity(ls)
+        with self._cache_lock:
+            self._activity[key] = hours
+        return hours
+
+    def _cached(
+        self,
+        cache: OrderedDict[tuple[Any, ...], bytes],
+        key: tuple[Any, ...],
+        build: Callable[[], bytes],
+    ) -> bytes:
+        """Return ``cache[key]``, building it once: concurrent callers wait for one build."""
+        with self._cache_lock:
+            hit = cache.get(key)
+            if hit is not None:
+                cache.move_to_end(key)
+                return hit
+            gate = self._building.setdefault(key, threading.Lock())
+        with gate:
+            with self._cache_lock:
+                hit = cache.get(key)
+            if hit is not None:
+                return hit  # built by the caller this one waited for
+            try:
+                data = build()
+                with self._cache_lock:
+                    cache[key] = data
+                    while len(cache) > max(1, self.settings.report_cache):
+                        cache.popitem(last=False)
+            finally:
+                with self._cache_lock:
+                    self._building.pop(key, None)
+        return data
+
     def report_bytes(
         self,
         ls: LogSet,
@@ -209,7 +262,11 @@ class AppState:
         max_groups: int | None,
         entries_url: str | None,
     ) -> bytes:
-        """Return the encoded ``report.v1`` payload, built once per set version and options."""
+        """Return the encoded ``report.v1`` payload, built once per set version and options.
+
+        With ``entries_url`` (the web app) the example entries are not embedded: the page
+        fetches them per group from that URL.
+        """
         key = (
             ls.manifest.id,
             _version(ls),
@@ -221,26 +278,21 @@ class AppState:
             max_groups,
             entries_url,
         )
-        with self._cache_lock:
-            hit = self._reports.get(key)
-            if hit is not None:
-                self._reports.move_to_end(key)
-                return hit
-        payload = build_payload(
-            ls,
-            compare=compare,
-            min_level=min_level,
-            examples=examples,
-            max_raw=max_raw,
-            max_groups=max_groups,
-            entries_url=entries_url,
-        )
-        data = _ENCODER.encode(payload)
-        with self._cache_lock:
-            self._reports[key] = data
-            while len(self._reports) > max(1, self.settings.report_cache):
-                self._reports.popitem(last=False)
-        return data
+
+        def build() -> bytes:
+            payload = build_payload(
+                ls,
+                compare=compare,
+                min_level=min_level,
+                examples=examples,
+                max_raw=max_raw,
+                max_groups=max_groups,
+                entries_url=entries_url,
+                embed_examples=entries_url is None,
+            )
+            return _ENCODER.encode(payload)
+
+        return self._cached(self._reports, key, build)
 
     def cluster_report_bytes(
         self,
@@ -254,7 +306,9 @@ class AppState:
     ) -> bytes:
         """Return the encoded ``cluster-report.v1`` of a capture with the web app's ``urls``.
 
-        Built once per member set versions and options; :meth:`invalidate` drops them all.
+        Built once per member set versions and options; with ``triage`` also per version
+        of every other set (a node's baseline can be any of them, and the CLI can add,
+        remove or relabel one next to the server). :meth:`invalidate` drops them all.
         """
         from atlas_log_analyzer.service import capture_queries
         from atlas_log_analyzer.service.documents import ClusterReportUrls
@@ -269,36 +323,38 @@ class AppState:
             max_raw,
             max_groups,
             triage,
+            self._store_version() if triage else None,
         )
-        with self._cache_lock:
-            hit = self._clusters.get(key)
-            if hit is not None:
-                self._clusters.move_to_end(key)
-                return hit
-        payload = capture_queries.report_payload(
-            self,
-            capture,
-            w,
-            examples=examples,
-            max_raw=max_raw,
-            max_groups=max_groups,
-            triage=triage,
-            front="api",
-        )
-        target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
-        payload.urls = ClusterReportUrls(
-            entries=f"/api/captures/{target}/entries",
-            context="/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
-            set_report="/sets/{set}",
-            examples="/api/sets/{set}/groups/{sig}/examples?max_raw=0",
-            raw="/api/sets/{set}/entries/{id}/raw",
-        )
-        data = _ENCODER.encode(payload)
-        with self._cache_lock:
-            self._clusters[key] = data
-            while len(self._clusters) > max(1, self.settings.report_cache):
-                self._clusters.popitem(last=False)
-        return data
+
+        def build() -> bytes:
+            payload = capture_queries.report_payload(
+                self,
+                capture,
+                w,
+                examples=examples,
+                max_raw=max_raw,
+                max_groups=max_groups,
+                triage=triage,
+                front="api",
+            )
+            target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
+            payload.urls = ClusterReportUrls(
+                entries=f"/api/captures/{target}/entries",
+                context="/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30",
+                set_report="/sets/{set}",
+                examples="/api/sets/{set}/groups/{sig}/examples?max_raw=0",
+                raw="/api/sets/{set}/entries/{id}/raw",
+            )
+            return _ENCODER.encode(payload)
+
+        return self._cached(self._clusters, key, build)
+
+
+def _manifest_mtime(path: Path) -> int:
+    try:
+        return (path / MANIFEST_FILE).stat().st_mtime_ns
+    except OSError:
+        return 0
 
 
 def _version(ls: LogSet) -> str:
@@ -307,11 +363,7 @@ def _version(ls: LogSet) -> str:
     ``regroup``, ``upgrade`` and ``label`` (also when run from the CLI next to the server)
     keep ``created_at`` but rewrite the manifest, so its mtime is part of the version.
     """
-    try:
-        mtime = (ls.path / MANIFEST_FILE).stat().st_mtime_ns
-    except OSError:
-        mtime = 0
-    return f"{ls.manifest.created_at}|{mtime}"
+    return f"{ls.manifest.created_at}|{_manifest_mtime(ls.path)}"
 
 
 def get_state(request: Request) -> AppState:

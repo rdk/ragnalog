@@ -176,8 +176,9 @@
 
 /* groups table */
 table.c-groups th.c-lv { width: 66px; }
-table.c-groups th.c-total { width: 84px; text-align: right; }
-table.c-groups td.c-total { text-align: right; font-variant-numeric: tabular-nums; }
+/* number columns are wide enough for 10,000,000 (14px tabular digits): counts are never cut */
+table.c-groups th.c-total { width: 96px; text-align: right; }
+table.c-groups td.c-total { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: clip; }
 table.c-groups td.c-lead.is-whole { opacity: 0.5; }
 table.c-groups td.c-total .of { display: block; font-size: 11px; line-height: 1.2; color: var(--muted); }
 table.c-groups th.c-n { width: 124px; }
@@ -187,7 +188,8 @@ table.c-groups th.c-lead { width: 128px; }
 table.c-groups th.c-n .nb { vertical-align: -5px; }
 table.c-groups th.c-n .nid { color: var(--muted); font-weight: 400; margin-left: 4px; }
 td.c-n .cnt { gap: 6px; }
-td.c-n .cnt .num { flex: 0 0 48px; font-variant-numeric: tabular-nums; }
+td.c-n .cnt .num { flex: 0 0 auto; min-width: 48px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+td.c-n .track { min-width: 12px; }
 td.c-n .cnt .num.zero { color: var(--muted); }
 td.c-n .track i { background: var(--nc); }
 .heat { display: flex; gap: 2px; align-items: center; }
@@ -204,7 +206,7 @@ td.c-n .track i { background: var(--nc); }
 .schip.s-all { color: var(--ink-2); font-weight: 500; }
 .c-groups td.c-tpl .tpl { overflow: hidden; text-overflow: ellipsis; }
 @container (max-width: 1100px) {
-  table.c-groups th.c-n { width: 76px; }
+  table.c-groups th.c-n { width: 88px; }
   td.c-n .track { display: none; }
   td.c-n .cnt .num { flex-basis: auto; }
   table.c-groups th.c-n .nid { display: none; }
@@ -214,10 +216,11 @@ td.c-n .track i { background: var(--nc); }
 }
 @container (max-width: 640px) {
   .c-spread { display: none; }
-  table.c-groups th.c-total { width: 64px; }
+  table.c-groups th.c-total { width: 88px; }
 }
 
 /* drawer */
+.d-nodes-wrap { overflow-x: auto; scrollbar-width: thin; }
 .d-nodes { width: 100%; border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; }
 .d-nodes th { text-align: left; color: var(--ink-2); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--grid); }
 .d-nodes td { padding: 4px 6px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
@@ -320,7 +323,7 @@ table.mx .mx-corner { font-weight: 400; color: var(--muted); }
     --n5: #1baf7a; --n6: #eb6834; --n7: #0f8ea6; --n8: #a3601c;
     --nolog: rgba(11, 11, 11, 0.2); --nolog-bg: transparent;
   }
-  .c-tabs, .lane-hit, #tl-y, #tl-arrows, .ml-foot button, .c-sel button, .nc-head .btn, .tl-window .muted, .tl-window .seg, .tl-window .btn, .e-foot .btn { display: none !important; }
+  [data-clip], .c-tabs, .lane-hit, #tl-y, #tl-arrows, .ml-foot button, .c-sel button, .nc-head .btn, .tl-window .muted, .tl-window .seg, .tl-window .btn, .e-foot .btn { display: none !important; }
   .c-inter { grid-template-columns: minmax(0, 1fr); }
   .ncard, .c-inter .card, .ml { border-color: #ccc; break-inside: avoid; }
   .c-tl-card { break-inside: avoid; }
@@ -329,3 +332,13 @@ table.mx .mx-corner { font-weight: 400; color: var(--muted); }
 }
 
 .ev-key.off { opacity: .45; text-decoration: line-through; }
+
+/* the payload request failed: the server's error.v1 message and hint */
+.load-error {
+  margin: 16px 0; padding: 12px 16px; border: 1px solid var(--border); border-left: 3px solid #d03b3b;
+  border-radius: 8px; background: var(--surface); color: var(--ink);
+}
+.load-error h2 { font-size: 14px; margin: 0 0 6px; }
+.load-error p { margin: 4px 0; }
+.load-error .hint { color: var(--ink-2); }
+.load-error .code { color: var(--muted); font-family: var(--mono); font-size: 12px; }

@@ -148,3 +148,9 @@ def test_check_runs_without_a_set() -> None:
 def test_blank() -> None:
     assert blank(None) is None and blank("") is None and blank(" \t") is None
     assert blank(" a ") == " a "
+
+
+@pytest.mark.parametrize("text", ["0001-01-01T00:00+01:00", "9" * 5000 + "d", "99999999999d"])
+def test_times_out_of_range_are_invalid_values(text: str) -> None:
+    err = _error(lambda: parse_time(text, "since", LAST, front="api"))
+    assert err.code == "invalid_value"

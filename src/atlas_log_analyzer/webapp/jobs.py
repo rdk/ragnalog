@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import itertools
-import re
 import shutil
 import threading
 import time
@@ -14,6 +13,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
+from atlas_log_analyzer.core.paths import safe_name
 from atlas_log_analyzer.service.errors import OpError, from_exception
 from atlas_log_analyzer.service.ingest import ingest_paths
 from atlas_log_analyzer.service.params import IngestTarget
@@ -26,13 +26,10 @@ JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 UPLOADS_DIR = ".uploads"
 """Spool directory inside the store (ignored by store listings: it starts with a dot)."""
 
-_UNSAFE = re.compile(r"[^\w.-]+")
-
 
 def safe_filename(name: str) -> str:
-    """Basename of an uploaded file reduced to ``[A-Za-z0-9_.-]`` (never empty or dot-only)."""
-    base = _UNSAFE.sub("_", Path(name.replace("\\", "/")).name).strip("._")
-    return base or "upload.log"
+    """Basename of an upload reduced to ``[A-Za-z0-9_.-]`` (not empty, dot-only or ``nul.log``)."""
+    return safe_name(Path(name.replace("\\", "/")).name, "upload.log")
 
 
 class JobCancelled(Exception):

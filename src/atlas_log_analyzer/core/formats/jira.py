@@ -272,6 +272,8 @@ class JiraFormat:
     1x2x3 …``) is split into its fields; a suppressed exception's own causes stay
     out of the main chain. ``upgrade`` re-builds such entries from their raw text.
     """
+    banners_since = 2
+    """Version 2 started attaching banners (:func:`~.base.banners_since`)."""
     banner_window_ms = 5
     """ScriptRunner's ``GroovyCustomField`` logs a row of asterisks as an entry of its
     own, on the same thread and logger, right before each "Script field failed" entry;

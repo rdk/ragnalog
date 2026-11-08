@@ -432,6 +432,7 @@ def group_examples(
     from atlas_log_analyzer.report import example_entries
 
     ls = open_set(sets, ref, front=front)
+    signature = resolve_signature(ls, signature)
     row = ls.group(signature)
     if row is None:
         raise OpError.because(

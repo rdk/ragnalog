@@ -4,6 +4,7 @@
 <section class="card empty">
   <h2>{{ title or "Not found" }}</h2>
   <p class="muted">{{ message }}</p>
+  {% if hint %}<p class="muted small">{{ hint }}</p>{% endif %}
   <p>{% if back %}<a class="btn" href="{{ back }}">Try the defaults</a> {% endif %}<a class="btn" href="/">Back to the log sets</a></p>
 </section>
 {% endblock %}

@@ -68,7 +68,71 @@
     }));
 
     setupUpload();
+    setupStrips();
+
+    // triage: "Show all" reveals a section's other rows; the section bar opens what it jumps to
+    document.querySelectorAll("[data-show-rest]").forEach((b) => b.addEventListener("click", () => {
+      const sec = b.closest(".triage-sec");
+      sec.querySelectorAll("tbody.rest").forEach((t) => { t.hidden = false; });
+      b.parentElement.remove();
+    }));
+    document.querySelectorAll(".section-bar [data-open]").forEach((a) => a.addEventListener("click", () => {
+      const d = document.getElementById(a.getAttribute("data-open"));
+      if (d) d.open = true;
+    }));
   });
+
+  // activity strips of the index: one time axis for every row; hover shows the bucket on all
+  // rows at once (where sets overlap), a click opens that row's report narrowed to the bucket
+  function setupStrips() {
+    const table = document.querySelector("table.sets[data-axis-lo]");
+    if (!table) return;
+    const lo = +table.dataset.axisLo, hi = +table.dataset.axisHi, size = +table.dataset.axisBucket;
+    const n = Math.round((hi - lo) / (size * 3.6e6));
+    const strips = Array.from(table.querySelectorAll("svg.strip"));
+    const bins = new Map(strips.map((s) => [s, new Map((s.dataset.bins || "").split(";").filter(Boolean)
+      .map((t) => t.split(",").map(Number)).map(([i, c, e]) => [i, [c, e]]))]));
+    const tip = document.createElement("div");
+    tip.className = "strip-tip"; tip.hidden = true;
+    document.body.appendChild(tip);
+    const stamp = (ms) => new Date(ms).toISOString().slice(0, 16).replace(/[-:]/g, "");
+    const label = (ms) => new Date(ms).toISOString().slice(5, 16).replace("T", " ");
+    const at = (svg, ev) => {
+      const r = svg.getBoundingClientRect();
+      return Math.max(0, Math.min(n - 1, Math.floor(((ev.clientX - r.left) / r.width) * n)));
+    };
+    let shown = -1;
+    const show = (i) => {
+      if (i === shown) return;
+      shown = i;
+      table.style.setProperty("--strip-x", i < 0 ? "-10" : String(((i + 0.5) / n) * 100) + "%");
+      table.classList.toggle("strip-hover", i >= 0);
+    };
+    strips.forEach((svg) => {
+      const link = svg.closest("a");
+      svg.addEventListener("mousemove", (ev) => {
+        const i = at(svg, ev);
+        show(i);
+        const [c, e] = bins.get(svg).get(i) || [0, 0];
+        const t0 = lo + i * size * 3.6e6;
+        tip.innerHTML = `<b>${label(t0)}${size > 1 ? " – " + label(t0 + size * 3.6e6).slice(6) : ""} UTC</b>` +
+          (c ? `<span>${fmt(c)} entries</span><span class="e">${fmt(e)} errors</span>` : "<span>no entries</span>") +
+          (c ? '<span class="muted">click to open this window</span>' : "");
+        tip.hidden = false;
+        tip.style.left = Math.min(ev.clientX + 14, innerWidth - tip.offsetWidth - 8) + "px";
+        tip.style.top = ev.clientY + 16 + "px";
+      });
+      svg.addEventListener("mouseleave", () => { show(-1); tip.hidden = true; });
+      if (link) link.addEventListener("click", (ev) => {
+        const i = at(svg, ev);
+        if (!(bins.get(svg).get(i) || [0])[0]) return;  // empty bucket: open the whole set
+        ev.preventDefault();
+        // the bucket with an hour of context on each side
+        const a = lo + (i * size - 1) * 3.6e6, b = lo + ((i + 1) * size + 1) * 3.6e6;
+        location.href = link.dataset.href + "#t=" + stamp(a) + "-" + stamp(b);
+      });
+    });
+  }
 
   function verdictHtml(t, id) {
     if (t.verdict === "no_baseline") {

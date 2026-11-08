@@ -153,3 +153,23 @@ def test_cluster_examples_url_returns_full_entries(client: TestClient, tmp_path:
     items = client.get(url).json()["items"]
     assert set(ids) <= set(items)
     assert not any(e.get("raw_truncated") for e in items.values())
+
+
+def test_a_bare_capture_id_names_the_capture(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    assert client.get(f"/captures/{JOB_ID}").status_code == 200
+    doc = client.get(f"/api/captures/{JOB_ID}").json()
+    assert doc["capture"] == JOB_ID
+
+
+def test_an_explicit_window_is_clamped_to_the_logs(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    url = f"/api/captures/capture:{JOB_ID}"
+    res = client.get(url, params={"since": "1d", "until": "9999-12-31"})
+    assert res.status_code == 200 and not res.json()["window"]["until"].startswith("9999")
+    report = client.get(f"{url}/report", params={"since": "1d", "until": "9999-12-31"})
+    assert report.status_code == 200
+    outside = client.get(url, params={"since": "2000-01-01", "until": "2000-01-02"})
+    assert outside.status_code == 400 and "holds no entries" in outside.json()["error"]["message"]
+    bucket = client.get(f"{url}/timeline", params={"bucket": "999999999999d"})
+    assert bucket.status_code == 400

@@ -106,7 +106,8 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   - `overlap` (default): from the latest first entry to the earliest last
     entry;
   - `union`;
-  - explicit `--since` / `--until`.
+  - explicit `--since` / `--until`, clamped to the union of the logs (a window
+    outside them is `invalid_value`).
 
   Rates are per hour of each node's coverage. Charts hatch the time a node
   has no logs for. Hours inside the coverage that have no entries are

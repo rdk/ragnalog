@@ -65,15 +65,15 @@ def embed_json(payload: Any) -> str:
     return text.replace("<!--", "\\u003c!--").replace("</", "<\\/")
 
 
-def _title(payload: dict[str, Any] | None) -> str:
+def _title(payload: dict[str, Any] | None, name: str | None = None) -> str:
     logset = (payload or {}).get("logset") or {}
-    name = logset.get("name") or logset.get("id") or "log set"
+    name = logset.get("name") or logset.get("id") or name or "log set"
     return f"{name} · atlas-log report"
 
 
-def _cluster_title(payload: dict[str, Any] | None) -> str:
+def _cluster_title(payload: dict[str, Any] | None, name: str | None = None) -> str:
     capture = (payload or {}).get("capture") or {}
-    name = capture.get("cluster") or capture.get("capture") or "cluster"
+    name = capture.get("cluster") or capture.get("capture") or name or "cluster"
     return f"{name} · atlas-log cluster"
 
 
@@ -104,6 +104,7 @@ def render_html(
     data_url: str | None = None,
     inline_assets: bool = True,
     asset_base: str = "/static/",
+    name: str | None = None,
 ) -> str:
     """Return the report page.
 
@@ -115,6 +116,7 @@ def render_html(
         inline_assets: Inline ``report.css``/``report.js``; ``False`` links them as
             ``{asset_base}report.css`` and ``{asset_base}report.js``.
         asset_base: URL prefix of the assets when not inlined.
+        name: The set's name for the page title when ``payload`` is ``None``.
 
     Raises:
         ValueError: Neither ``payload`` nor ``data_url`` given, or a broken template/asset.
@@ -126,7 +128,7 @@ def render_html(
     if data_url is not None:
         attr = f' data-report-url="{html.escape(data_url, quote=True)}"'
         page = _replace_once(page, "<html", "<html" + attr)
-    page = _replace_once(page, TITLE, html.escape(_title(payload)))
+    page = _replace_once(page, TITLE, html.escape(_title(payload, name)))
     if inline_assets:
         css, js = asset_text("report.css"), asset_text("report.js")
         for name, text in (("report.css", css), ("report.js", js)):
@@ -147,6 +149,7 @@ def render_cluster_html(
     *,
     data_url: str | None = None,
     asset_base: str | None = None,
+    name: str | None = None,
 ) -> str:
     """Return the cluster page of a capture (``cluster-report.v1``).
 
@@ -157,6 +160,7 @@ def render_cluster_html(
             the ``<html>`` element.
         asset_base: ``None`` inlines ``report.css``, ``cluster.css`` and ``cluster.js``
             (a self-contained file); otherwise they are linked as ``{asset_base}<name>``.
+        name: The cluster or capture for the page title when ``payload`` is ``None``.
 
     Raises:
         ValueError: Neither ``payload`` nor ``data_url`` given, or a broken template/asset.
@@ -168,7 +172,7 @@ def render_cluster_html(
     if data_url is not None:
         attr = f' data-report-url="{html.escape(data_url, quote=True)}"'
         page = _replace_once(page, "<html", "<html" + attr)
-    page = _replace_once(page, TITLE, html.escape(_cluster_title(payload)))
+    page = _replace_once(page, TITLE, html.escape(_cluster_title(payload, name)))
     if asset_base is None:
         page = _inline(page, CSS, "report.css")
         page = _inline(page, CLUSTER_CSS, "cluster.css")

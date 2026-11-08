@@ -12,7 +12,7 @@ Directory layout::
 from __future__ import annotations
 
 import re
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Unpack
 
@@ -49,18 +49,28 @@ _BUCKET_UNITS_MS = {"s": 1_000, "m": 60_000, "h": 3_600_000, "d": 86_400_000}
 _BUCKET_RE = re.compile(r"^\s*(\d+)\s*([smhd])\s*$")
 MAX_HISTOGRAM_BUCKETS = 100_000
 """Upper bound on the number of (zero-filled) buckets :meth:`LogSet.histogram` returns."""
+MAX_BUCKET_MS = 366 * 86_400_000
+"""Longest histogram bucket (366 days)."""
 
 
 def _bucket_ms(bucket: str) -> int:
-    """``"15m"``, ``"1h"``, ``"1d"`` … as milliseconds; ``ValueError`` when malformed."""
+    """``"15m"``, ``"1h"``, ``"1d"`` … as milliseconds; ``ValueError`` when malformed.
+
+    A bucket is at most :data:`MAX_BUCKET_MS` (a year) long.
+    """
     m = _BUCKET_RE.match(bucket)
     if m is None or int(m.group(1)) <= 0:
         raise ValueError(f"invalid bucket {bucket!r}; expected e.g. '5m', '1h', '1d'")
-    return int(m.group(1)) * _BUCKET_UNITS_MS[m.group(2)]
+    size = int(m.group(1)) * _BUCKET_UNITS_MS[m.group(2)]
+    if size > MAX_BUCKET_MS:
+        raise ValueError(f"bucket {bucket!r} is longer than a year; use at most '366d'")
+    return size
 
 
 def _bucket_iso(start_ms: int) -> str:
-    return datetime.fromtimestamp(start_ms / 1000, UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    # not fromtimestamp: it raises OSError on Windows before 1970 (a log stamped year 1)
+    start = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=start_ms)
+    return start.isoformat(timespec="seconds").removesuffix("+00:00") + "Z"  # year 1: 0001
 
 
 def _sql_path(path: Path) -> str:

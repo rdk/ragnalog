@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -129,3 +130,70 @@ def test_index_rows() -> None:
     assert [m["id"] for m in rows[1]["members"]] == ["a", "b"]
     assert capture["last_ts"] == "2026-11-06T12:00:00+01:00"  # by instant, not by text
     assert (capture["nodes"], capture["entry_count"], capture["errors"]) == (2, 10, 2)
+
+
+def test_index_draws_activity_strips_on_one_axis(client: TestClient) -> None:
+    page = client.get("/").text
+    assert page.count('<svg class="strip"') == 2  # mini and sample
+    assert 'data-axis-lo="' in page and 'data-axis-bucket="1"' in page
+    assert re.search(r'data-bins="\d+,\d+,\d+', page)
+    assert client.get("/favicon.ico").headers["content-type"].startswith("image/svg+xml")
+
+
+def test_activity_strips_share_the_axis_and_merge_buckets() -> None:
+    from atlas_log_analyzer.webapp.pages import activity_strips
+
+    base = 490_000
+    strips, axis = activity_strips(
+        {"a": [(base, 10, 0), (base + 2, 40, 4)], "b": [(base + 1000, 5, 5)], "c": []}
+    )
+    assert set(strips) == {"a", "b"}  # a key without hours draws nothing
+    assert axis is not None and axis["lo"] == base * 3_600_000 and axis["bucket"] == 3
+    assert axis["hi"] == (base + 1002) * 3_600_000  # 334 buckets of 3 hours
+    assert 'data-bins="0,50,4"' in strips["a"]  # hours 0 and 2 share the first bucket
+    assert 'x="333"' in strips["b"] and 'data-bins="333,5,5"' in strips["b"]
+    assert activity_strips({"a": []}) == ({}, None)
+
+
+def test_set_activity_counts_entries_and_errors_per_hour(client: TestClient) -> None:
+    from atlas_log_analyzer.service.views import set_activity
+
+    state = client.app.state.atlas  # type: ignore[attr-defined]
+    ls = state.open(client.get("/api/sets/mini").json()["id"])
+    hours = set_activity(ls)
+    assert sum(n for _, n, _ in hours) == ls.manifest.entry_count
+    assert [h for h, _, _ in hours] == sorted(h for h, _, _ in hours)
+    assert sum(e for _, _, e in hours) == state.summary(ls)["errors"]
+
+
+def test_page_errors_are_html_with_their_status(client: TestClient) -> None:
+    html = {"accept": "text/html"}
+    res = client.get("/sets/mini?examples=x", headers=html)
+    assert res.status_code == 400 and "text/html" in res.headers["content-type"]
+    assert "examples" in res.text
+    api = client.get("/api/sets/mini/report?examples=x")
+    assert api.json()["schema"] == "error.v1"  # the API keeps error.v1
+
+
+def test_pages_answer_head_and_have_titles(client: TestClient) -> None:
+    assert client.head("/").status_code == 200
+    assert client.head("/sets/mini").status_code == 200
+    assert "<title>mini · atlas-log report</title>" in client.get("/sets/mini").text
+
+
+def test_report_payload_is_gzipped_with_an_etag(client: TestClient) -> None:
+    url = "/api/sets/mini/report"
+    res = client.get(url, headers={"accept-encoding": "gzip"})
+    assert res.status_code == 200 and res.headers["content-encoding"] == "gzip"
+    payload = res.json()  # httpx decodes it
+    assert payload["entries"] == {} and any(g["examples"] for g in payload["groups"])
+    tag = res.headers["etag"]
+    again = client.get(url, headers={"if-none-match": tag})
+    assert again.status_code == 304 and not again.content
+
+
+def test_group_examples_accept_a_signature_prefix(client: TestClient) -> None:
+    sig = client.get("/api/sets/mini/groups?limit=1").json()["items"][0]["signature"]
+    full = client.get(f"/api/sets/mini/groups/{sig}/examples").json()
+    short = client.get(f"/api/sets/mini/groups/{sig[:6]}/examples")
+    assert short.status_code == 200 and short.json()["items"] == full["items"]

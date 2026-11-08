@@ -39,6 +39,7 @@ __all__ = [
     "frames_view",
     "resolve_signature",
     "select_columns",
+    "set_activity",
     "set_item",
     "set_summary",
 ]
@@ -114,6 +115,31 @@ def set_summary(ls: LogSet | Path) -> dict[str, int]:
         elif level == 40:
             warnings += count
     return {"errors": errors, "warnings": warnings, "error_groups": error_groups}
+
+
+def set_activity(ls: LogSet) -> list[tuple[int, int, int]]:
+    """Entries and errors (ERROR and above) per UTC hour of a set, for the index strips.
+
+    Returns ``[(hour, entries, errors), ...]`` sorted by ``hour`` (whole hours since the
+    Unix epoch); hours without entries are left out, and so are entries without a time.
+    """
+    import polars as pl
+
+    from atlas_log_analyzer.store.filters import has_time
+
+    df = (
+        ls.entries_lazy()
+        .filter(pl.col("ts").is_not_null() & has_time())
+        .select(
+            (pl.col("ts").dt.epoch("ms") // 3_600_000).alias("h"),
+            (pl.col("level") >= 50).alias("e"),
+        )
+        .group_by("h")
+        .agg(pl.len().alias("n"), pl.col("e").sum().alias("err"))
+        .sort("h")
+        .collect()
+    )
+    return [(int(h), int(n), int(err)) for h, n, err in df.iter_rows()]
 
 
 def set_item(

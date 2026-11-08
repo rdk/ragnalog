@@ -39,20 +39,23 @@ page; `/static` and `/assets` (CSS, JS) need none.
 
 | Path | Page |
 |---|---|
-| `/` | Sets, newest first: time range, entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The sets of one capture (`captures`) are listed under one capture row: cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
+| `/` | Sets, newest first: time range with an **activity strip** (every row on one shared time axis: entries per hour up from a midline, errors down, so overlapping sets line up; hovering shows that hour on all rows, a click opens the row's report narrowed to it), entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The sets of one capture (`captures`) are listed under one capture row: cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
 | `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. A thin navigation bar sits above it with a set switcher that keeps the URL hash, so filters survive switching sets. A set of a capture also gets a node switcher (its sibling node sets, keeping the hash) and "Open cluster view". |
-| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through. The navigation bar links back to the sets and to each node's report. An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
-| `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each row links into the report with that group open. |
+| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, a bare capture id, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). When the nodes' logs do not overlap the page opens the `union` window instead of an error. The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through. The navigation bar links back to the sets and to each node's report. An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
+| `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. Each section folds (Vanished starts folded), shows its first 25 rows with "Show all", and a sticky bar jumps between them. Each row links into the report with that group open. |
 | `/docs` | OpenAPI (Swagger UI) for the JSON API; `/openapi.json` is the schema, with every response document as a component. |
 
 `{ref}` is a set id, a unique id prefix or a name, as in the CLI. Unknown sets
-and paths render a 404 page; under `/api` they return `error.v1`.
+and paths render a 404 page, and any other error of a page (an ambiguous
+reference, a bad parameter) an HTML page with its status and hint; under `/api`
+they return `error.v1`. Pages also answer `HEAD`.
 
 The report page is the same `template.html`, `report.js` and `report.css` as the
 static file (the cluster page: `cluster.html`, `cluster.js`, `cluster.css`). The page is rendered without an embedded payload and
 `data-report-url` points at `/api/sets/{id}/report`; the assets are served from
-`/assets/report/`. Example entries missing from the payload are fetched per group
-from `/api/sets/{id}/groups/{sig}/examples`.
+`/assets/report/`. The web app's payload carries each group's example ids but not
+the entries (they were three quarters of its size): the drawer fetches them per
+group from `/api/sets/{id}/groups/{sig}/examples` when it opens.
 
 ## JSON API
 
@@ -270,9 +273,15 @@ run next to the server.
   ones may belong to an ingest that is still running.
 - **Encoding:** large documents are encoded with msgspec. The report payload is
   cached as encoded bytes, so a repeat request for the 712k-entry sample set
-  takes about 20 ms instead of about 200 ms.
+  takes about 20 ms instead of about 200 ms. Report payloads are sent gzipped
+  (the compressed bytes are kept too; a 745k-entry set's payload is 170 KB on the
+  wire) with an `ETag`, so a revisit is a `304`; other JSON over 4 KB is gzipped
+  on the fly. Concurrent requests for one uncached payload wait for a single
+  build. With `triage` a cluster payload is also keyed on every set's version,
+  so a baseline added or removed by the CLI next to the server is noticed.
 - **Security:** binds to loopback by default; `--token` guards the pages and `/api`. Uploaded
-  file names are reduced to a safe basename. Error messages do not include
+  file names are reduced to a safe basename (a Windows device name such as
+  `nul.log` gets a `_` prefix). Error messages do not include
   server paths. Arbitrary SQL (`atlas-log query`) is not exposed over HTTP.
 
 ## Not built yet

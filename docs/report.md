@@ -147,6 +147,18 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
     (the examples URL with `since`/`until`). The static file has only the
     stored examples, so it lists the ones inside the window first.
   - The compare column stays whole-set (its tooltip says so).
+- Chart controls: each level in the timeline legend is a toggle (Shift-click
+  shows only that level; `hl=WARN,INFO` in the hash). **Mute** (drawer button, or
+  `m` on the selected row) leaves a group out of the chart and the window totals,
+  so one noisy group (a WARN that is 84% of a set) no longer flattens the errors;
+  muted rows stay in the table, dimmed, and the legend says how many are muted,
+  with "Unmute" (`mute=<sig>,…`).
+- Sort *Spike*: with a window, the group's rate in it over its rate outside it
+  ("what started at 14:00?"); without one, its busiest hour over its average
+  active hour. The ratio shows under the count (`×37`).
+- *Copy for ticket* (drawer) copies the group as Jira wiki markup: template,
+  level, logger, exception, counts, first and last seen (and the window), the set,
+  the signature, the first example entry and the CLI command.
 - Compare mode (payload has `compare`): every row shows `count_a → count_b` and
   a delta chip (new / vanished / ×ratio); the compare filter narrows to one
   class. Colors: increase = status critical, decrease = series blue, neutral
@@ -157,7 +169,8 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   to another set or node keeps the same hours; a window outside a set's range is
   dropped. Older links with bucket indices (`t=95-118`) still open.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
-  `Esc` closes the drawer, `c` copies the signature, `[`/`]` move the time window.
+  `Esc` closes the drawer (focus returns to its row), `c` copies the signature,
+  `m` mutes the selected group in the chart, `[`/`]` move the time window.
 - Every drawer shows the equivalent CLI commands
   (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) so a
   human can hand a finding to an agent verbatim.

@@ -23,16 +23,18 @@
   const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g, (c) => ESC[c]));
   const cmpStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
+  const UNITS = [[1e3, "K"], [1e6, "M"], [1e9, "B"]];
   function compact(n) {
     const a = Math.abs(n);
     if (a < 1000) return String(Math.round(n * 100) / 100);
-    for (const [v, u] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
-      if (a >= v) {
-        const x = n / v;
-        return (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(1).replace(/\.0$/, "")) + u;
-      }
+    let i = UNITS.length - 1;
+    while (i > 0 && a < UNITS[i][0]) i--;
+    for (;; i++) {
+      // rounded first: 999,500 is "1M", not "1000K"
+      const x = n / UNITS[i][0];
+      const t = Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(1).replace(/\.0$/, "");
+      if (Math.abs(+t) < 1000 || i === UNITS.length - 1) return t + UNITS[i][1];
     }
-    return String(n);
   }
   const ts16 = (iso) => (iso ? iso.slice(0, 10) + " " + iso.slice(11, 16) : "");
   const tsShort = (iso) => (iso ? iso.slice(5, 10) + " " + iso.slice(11, 16) : "");
@@ -162,8 +164,26 @@
     const x = winOf(r)[k];
     return x ? x.ms : NaN;
   };
+  /** How much a group stands out: with a window its rate there over its rate outside (+1
+   *  smoothing), else its busiest hour over its average active hour. Cached per window. */
+  function spikeOf(r) {
+    if (r.spKey === WKEY) return r.sp;
+    let v = 0;
+    if (S.t) {
+      const n = winOf(r).n;
+      const hin = S.t[1] - S.t[0] + 1, hout = Math.max(1, NH - hin);
+      v = n ? n / hin / ((r.count - n + 1) / hout) : 0;
+    } else if (r.hourly.length) {
+      let peak = 0;
+      for (const [, c] of r.hourly) if (c > peak) peak = c;
+      v = peak / (r.count / r.hourly.length);
+    }
+    r.spKey = WKEY;
+    return (r.sp = v);
+  }
   const SORTS = {
     count: ["Count", byShown],
+    spike: ["Spike (window vs rest)", (a, b) => spikeOf(b) - spikeOf(a) || byShown(a, b)],
     last_seen: ["Last seen", (a, b) => (S.t ? (seenMs(b, "last") || -1) - (seenMs(a, "last") || -1) : cmpStr(b.last || "", a.last || "")) || byShown(a, b)],
     first_seen: ["First seen", (a, b) => (S.t ? (seenMs(a, "first") || Infinity) - (seenMs(b, "first") || Infinity) : cmpStr(a.first || "￿", b.first || "￿")) || byShown(a, b)],
     level: ["Level", (a, b) => b.level - a.level || byShown(a, b)],
@@ -282,6 +302,8 @@
       sig: p.get("sig") || "",
       t: parseWindow(p.get("t")),
       theme: p.get("theme") || "",
+      mute: new Set((p.get("mute") || "").split(",").filter((x) => BASE_BY.has(x))),
+      hl: new Set((p.get("hl") || "").split(",").filter((x) => BUCKETS.includes(x))),
     };
   }
   const sameSet = (a, b) => a.size === b.size && [...a].every((x) => b.has(x));
@@ -299,6 +321,8 @@
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.theme) p.set("theme", s.theme);
+    if (s.mute.size) p.set("mute", [...s.mute].sort().join(","));
+    if (s.hl.size) p.set("hl", BUCKETS.filter((b) => s.hl.has(b)).join(","));
     return p.toString();
   }
   let S = parseHash();
@@ -376,11 +400,32 @@
   /** "11-03 14:05", or "11-03 14:xx" when only the hour is known. */
   const seenText = (x, long) => (!x ? "" : x.approx ? (long ? ts16(x.iso) : tsShort(x.iso)).slice(0, -2) + "xx" : long ? ts16(x.iso) : tsShort(x.iso));
   const seenTitle = (x) => (x && x.approx ? "Within this hour: the exact time of the group's entries inside the window is not in the report" : "");
-  /** Level totals of the timeline over hours [a, b]. */
+  /** Signatures of a row (its members for a coarse or merged row) that have entries here. */
+  const sigsOf = (r) => (r.members || [r]).filter((m) => !m.gone).map((m) => m.sig);
+  const isMuted = (r) => S.mute.size > 0 && !r.gone && sigsOf(r).every((s) => S.mute.has(s));
+  let LVKEY = null, LV_EFF = null;
+  /** The timeline's level series without the entries of muted groups. */
+  function levelData() {
+    const key = [...S.mute].sort().join(",");
+    if (key === LVKEY) return LV_EFF;
+    LVKEY = key;
+    const src = (D.timeline || {}).levels || {};
+    if (!S.mute.size) return (LV_EFF = src);
+    const out = {};
+    for (const b of BUCKETS) out[b] = Float64Array.from(src[b] || []);
+    for (const s of S.mute) {
+      const r = BASE_BY.get(s);
+      const arr = r && out[r.bucket];
+      if (arr) for (const [i, n] of r.hourly) arr[i] = Math.max(0, arr[i] - n);
+    }
+    return (LV_EFF = out);
+  }
+  /** Level totals of the timeline over hours [a, b] (muted groups left out). */
   function levelsIn(a, b) {
     const out = {};
+    const levels = levelData();
     for (const k of BUCKETS) {
-      const arr = ((D.timeline || {}).levels || {})[k] || [];
+      const arr = levels[k] || [];
       let t = 0;
       for (let i = a; i <= b && i < arr.length; i++) t += arr[i] || 0;
       out[k] = t;
@@ -618,15 +663,39 @@
       ? `<button type="button" class="btn small toggle" data-clip aria-pressed="${geo.clip}" title="Clip the y-axis to the 95th percentile so spikes do not flatten the rest; clipped bars are labelled with their value">Clip spikes</button>`
       : "";
   const TL_TOTALS = {};
+  let TLK = "";
+  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",");
+  const LV_TITLE = { ERROR: "ERROR and FATAL", DEBUG: "DEBUG and TRACE", OTHER: "Unknown level" };
+  function renderLegend() {
+    const shown = BUCKETS.filter((b) => (((D.timeline || {}).levels || {})[b] || []).some((v) => v > 0));
+    let html = shown.map((b) => {
+      const on = !S.hl.has(b);
+      return `<button type="button" class="lg-item" data-hl="${b}" aria-pressed="${on}" title="${LV_TITLE[b] || b}: click to ${on ? "hide it in" : "show it in"} the chart; Shift-click to show only it"><i class="sw sw-${b}"></i>${b} ${fmt(TL_TOTALS[b] || 0)}</button>`;
+    }).join("");
+    if (S.mute.size) {
+      let n = 0;
+      for (const s of S.mute) n += (BASE_BY.get(s) || { count: 0 }).count;
+      html += `<span class="tl-muted" title="Muted groups are left out of the chart and the window totals; the table still lists them">${fmt(S.mute.size)} muted (${compact(n)} entries) <button type="button" class="btn small link" data-unmute>Unmute</button></span>`;
+    }
+    $("tl-legend").innerHTML = html;
+  }
   function renderTimeline() {
     const el = $("timeline");
+    TLK = tlKey();
     if (!NH) {
       el.innerHTML = `<div class="empty">No entries.</div>`;
       $("tl-legend").innerHTML = "";
       return;
     }
-    const series = BUCKETS.filter((b) => TL_TOTALS[b] > 0).map((b) => ({
-      key: b, name: b, cls: "s-" + b, data: D.timeline.levels[b],
+    const levels = levelData();
+    for (const b of BUCKETS) {
+      let t = 0;
+      for (const v of levels[b] || []) t += v;
+      TL_TOTALS[b] = t;
+    }
+    renderLegend();
+    const series = BUCKETS.filter((b) => TL_TOTALS[b] > 0 && !S.hl.has(b)).map((b) => ({
+      key: b, name: b, cls: "s-" + b, data: levels[b],
     }));
     TL = drawColumns(el, series, { height: 190, label: "Entries per hour by level" });
     const k = TL.k;
@@ -704,16 +773,18 @@
 
   function spark(r) {
     if (!NH || !r.hourly.length) return `<span class="muted">—</span>`;
-    const W = 100, H = 22, nb = Math.min(NH, 50), bw = W / nb;
+    // whole hours per bin (k), so a steady rate draws flat: 174 h over 50 bins of 3 or 4 h
+    // each drew a sawtooth
+    const W = 100, H = 22, k = Math.ceil(NH / 50), nb = Math.ceil(NH / k), bw = W / nb;
     const bins = new Float64Array(nb);
     let max = 0;
     for (const [i, n] of r.hourly) {
-      const b = Math.floor((i * nb) / NH);
+      const b = Math.floor(i / k);
       bins[b] += n;
       if (bins[b] > max) max = bins[b];
     }
     // with a window: its bins drawn in full, the rest muted
-    const wb = S.t ? [Math.floor((S.t[0] * nb) / NH), Math.floor((S.t[1] * nb) / NH)] : null;
+    const wb = S.t ? [Math.floor(S.t[0] / k), Math.floor(S.t[1] / k)] : null;
     let d = "", o = "";
     const w = bw >= 3 ? bw - 1 : bw;
     for (let b = 0; b < nb; b++) {
@@ -781,16 +852,18 @@
     const lmin = Math.log10(SCALE.min), span = Math.log10(SCALE.max) - lmin;
     const w = n > 0 ? Math.max(2, span > 0 ? ((Math.log10(n) - lmin) / span) * 100 : 100) : 0;
     const track = v.max >= 1000 ? `<span class="track"><i style="width:${r1(w)}%"></i></span>` : "";
-    const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone" : "");
+    const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone " : "") + (isMuted(r) ? "is-muted" : "");
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
-    const of = S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
+    const of = S.sort === "spike" && spikeOf(r) > 0
+      ? `<small class="of spk" title="${S.t ? "Rate in the window over the rate outside it" : "Busiest hour over the average active hour"}">×${esc(compact(spikeOf(r)))}</small>`
+      : S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
     const last = S.t ? winOf(r).last : r.last ? { iso: r.last } : null;
     const cTitle = S.t ? ` title="${fmt(n)} in the window of ${fmt(r.count)} in total"` : "";
-    return `<tr data-id="${esc(r.id)}" class="${cls}">` +
+    return `<tr data-id="${esc(r.id)}" class="${cls}" tabindex="-1">` +
       `<td class="c-count"${cTitle}><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-logger" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</td>` +
-      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
+      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
       `<td class="c-exc" title="${esc(r.exc)}">${r.exc ? `<span class="xc"><span class="xp">${esc(r.exc.slice(0, r.exc.lastIndexOf(".") + 1))}</span><span class="xs">${esc(shortExc(r.exc))}</span></span>` : ""}</td>` +
       `<td class="c-spark">${spark(r)}</td>` +
       `<td class="c-last" title="${esc(seenTitle(last))}">${esc(seenText(last))}</td>` +
@@ -992,11 +1065,18 @@
       (all.length > limit ? `<button type="button" class="more" data-more="${esc("ex:" + q)}">${fmt(all.length - limit)} more…</button>` : "") +
       (all.length ? "" : `<div class="muted">No exception types.</div>`);
   }
+  const POPS = { "f-logger-pop": "f-logger", "f-exc-pop": "f-exc" };
+  /** Close the open facet popover; focus returns to its button when it was inside. */
   function closePops() {
     let closed = false;
-    for (const id of ["f-logger-pop", "f-exc-pop"]) {
+    for (const [id, btn] of Object.entries(POPS)) {
       const p = $(id);
-      if (!p.hidden) { p.hidden = true; closed = true; }
+      if (p.hidden) continue;
+      const inside = p.contains(document.activeElement);
+      p.hidden = true;
+      closed = true;
+      $(btn).setAttribute("aria-expanded", "false");
+      if (inside) $(btn).focus({ preventScroll: true });
     }
     return closed;
   }
@@ -1006,6 +1086,7 @@
     closePops();
     if (open) {
       p.hidden = false;
+      $(POPS[id]).setAttribute("aria-expanded", "true");
       render();
       const inp = p.querySelector("input");
       if (inp) inp.focus();
@@ -1227,10 +1308,7 @@
         })
         .catch((err) => { EX_FAILED.add(key); EX_ERR = String(err.message || err); })
         .finally(() => WIN_PENDING.delete(key))))
-      .then(() => {
-        drawnKey = null;
-        renderDrawer();
-      });
+      .then(redrawDrawer);
   }
   /** Webapp: fetch examples missing from the payload (entries.v1), then redraw the drawer once. */
   function loadExamples(r) {
@@ -1245,10 +1323,7 @@
         .then((res) => (res.ok ? res.json() : fetchFail(res)))
         .then((doc) => { if (doc && doc.items) Object.assign(ENTRIES, doc.items); })
         .catch((err) => { LAZY.delete(s); EX_FAILED.add(s); EX_ERR = String(err.message || err); })))
-      .then(() => {
-        drawnKey = null;
-        renderDrawer();
-      });
+      .then(redrawDrawer);
   }
   const iconCopy = (text, what) =>
     `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
@@ -1258,7 +1333,11 @@
     const what = r.kind === "merged" ? `Drain3 cluster ${r.cluster ? r.cluster.cluster_id : ""}` : r.kind === "coarse" ? "Coarse group" : "";
     out.push(`<div class="d-head">${badge(r.lvl, r.level)}${r.cmp ? deltaChip(r.cmp) : ""}` +
       (r.members ? `<span class="muted">${esc(what)} · ${r.members.length} signatures</span>` : "") +
-      (r.gone ? `<span class="muted">only in ${esc(OTHERNAME)}</span>` : "") + `</div>`);
+      (r.gone ? `<span class="muted">only in ${esc(OTHERNAME)}</span>` : "") +
+      `<span class="d-acts">` +
+      (r.gone ? "" : `<button type="button" class="btn small toggle" data-mute aria-pressed="${isMuted(r)}" title="Leave this group out of the chart and the window totals, so what it hides shows (m)">Mute in chart</button>`) +
+      `<button type="button" class="btn small" data-ticket title="Copy the group as Jira wiki markup: template, counts, first and last seen, the set and an example">Copy for ticket</button>` +
+      `</span></div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
     if (r.logger) out.push(`<div class="d-sub mono">${esc(r.logger)}</div>`);
     if (r.exc) out.push(`<div class="d-sub mono">${esc(r.exc)}</div>`);
@@ -1347,6 +1426,11 @@
     const k = DCHART.k;
     if (h3) h3.innerHTML = esc("Entries per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours") + (S.t ? " (window shaded)" : "")) + clipBtn(DCHART);
   }
+  /** Redraw the drawer with what arrived (examples), keeping its scroll position. */
+  function redrawDrawer() {
+    if (drawnKey) drawnKey += "|stale";  // still the same group: no jump to the top, no fade
+    renderDrawer();
+  }
   function renderDrawer() {
     const dr = $("drawer");
     if (!S.sig) {
@@ -1396,14 +1480,6 @@
       opts.truncated_groups > 0 ? `showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups` : "",
     ].filter(Boolean).join(" · ");
     renderTiles();
-    for (const b of BUCKETS) {
-      const arr = ((D.timeline || {}).levels || {})[b] || [];
-      let t = 0;
-      for (const v of arr) t += v;
-      TL_TOTALS[b] = t;
-    }
-    $("tl-legend").innerHTML = BUCKETS.filter((b) => TL_TOTALS[b] > 0).map((b) =>
-      `<span title="${b === "ERROR" ? "ERROR and FATAL" : b === "DEBUG" ? "DEBUG and TRACE" : b === "OTHER" ? "Unknown level" : b}"><i class="sw sw-${b}"></i>${b} ${fmt(TL_TOTALS[b])}</span>`).join("");
     const sort = $("f-sort");
     sort.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${esc(label)}</option>`).join("");
     $("f-merged").hidden = !MERGES.length;
@@ -1473,6 +1549,7 @@
     renderTiles();
     renderControls(v);
     renderTable(v);
+    if (TL && tlKey() !== TLK) renderTimeline();
     renderWindowLabel();
     if (TL) showWindow(TL);
     renderDrawer();
@@ -1494,10 +1571,10 @@
     clearTimeout(toastTimer);
     toastTimer = setTimeout(() => (t.hidden = true), 1400);
   }
-  async function copy(text) {
+  async function copy(text, done = "Copied") {
     try {
       await navigator.clipboard.writeText(text);
-      toast("Copied");
+      toast(done);
       return;
     } catch {
       /* fall back below */
@@ -1512,7 +1589,7 @@
     ta.select();
     let ok = false;
     try { ok = document.execCommand("copy"); } catch { ok = false; }
-    toast(ok ? "Copied" : "Copy failed");
+    toast(ok ? done : "Copy failed");
     ta.remove();
     if (prev && prev.focus) prev.focus();
   }
@@ -1543,6 +1620,45 @@
     const was = !!S.sig;
     commit({ sig: id }, { keepPage: true });
     if (!was) $("d-close").focus({ preventScroll: true });
+  }
+  /** Mute or unmute a row's signatures in the chart (all of them when any is not muted). */
+  function toggleMute(r) {
+    if (!r || r.gone) return;
+    const mute = new Set(S.mute);
+    const sigs = sigsOf(r);
+    if (isMuted(r)) for (const s of sigs) mute.delete(s);
+    else for (const s of sigs) mute.add(s);
+    commit({ mute }, { keepPage: true });
+    toast(isMuted(r) ? "Muted in the chart" : "Back in the chart");
+  }
+  /** The group as Jira wiki markup for a ticket: what, how often, when, where, one example. */
+  function ticketText(r) {
+    const plain = (t) => String(t || "").replace(/<([A-Z][A-Z0-9_]*|\*)>/g, (_, n) => "<" + n.toLowerCase() + ">");
+    const lines = [`h3. ${plain(r.tpl) || "(no message)"}`];
+    const facts = [`*Level:* ${r.lvl || ""}`, `*Logger:* {{${r.logger || "-"}}}`];
+    if (r.exc) facts.push(`*Exception:* {{${r.exc}}}`);
+    lines.push(facts.join(" · "));
+    const when = r.gone ? `only in ${OTHERNAME}` : `${fmt(r.count)} entries, ${ts16(r.first)} → ${ts16(r.last)} UTC`;
+    const win = S.t ? ` (${fmt(winOf(r).n)} in the window ${ts16(HOURS[S.t[0]])} → ${ts16(new Date(parseTs(HOURS[S.t[1]]) + 3.6e6).toISOString())} UTC)` : "";
+    lines.push(`* *Seen:* ${when}${win}`);
+    if (!r.gone) lines.push(`* *Users / threads:* ${fmt(r.users)} / ${fmt(r.threads)}`);
+    if (r.cmp && r.cmp.cls !== "unchanged") lines.push(`* *vs ${OTHERNAME}:* ${abText(r.cmp)} (${r.cmp.cls})`);
+    const sig = r.members ? r.members[0].sig : r.sig;
+    lines.push(`* *Log set:* ${LS.name || LS.id}${LS.name ? ` ({{${LS.id}}})` : ""} · signature {{${sig}}}`);
+    const id = exampleIds(r).find((x) => ENTRIES[x]);
+    if (id) {
+      const raw = fullText(ENTRIES[id]).split("\n");
+      lines.push("{noformat}", ...raw.slice(0, 60), ...(raw.length > 60 ? [`… ${raw.length - 60} more lines`] : []), "{noformat}");
+    }
+    lines.push(`_atlas-log show ${r.gone ? OTHERREF : SETREF} ${sig}_`);
+    return lines.join("\n");
+  }
+  /** Close the drawer; focus goes back to the group's row (else the table), not the page. */
+  function closeDrawer() {
+    const id = S.sig;
+    commit({ sig: "" }, { keepPage: true });
+    const tr = [...$("t-body").rows].find((x) => x.dataset.id === id);
+    (tr || $("table-wrap")).focus({ preventScroll: true });
   }
   function move(d) {
     if (!LIST.length) return;
@@ -1648,12 +1764,18 @@
     };
     $("pager-top").addEventListener("click", pagerClick);
     $("pager-bottom").addEventListener("click", pagerClick);
-    $("d-close").onclick = () => commit({ sig: "" }, { keepPage: true });
+    $("d-close").onclick = closeDrawer;
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex],[data-mute],[data-ticket]");
       if (!t) return;
+      if (t.dataset.mute != null) return toggleMute(lookup(S.sig));
+      if (t.dataset.ticket != null) {
+        const r = lookup(S.sig);
+        if (r) copy(ticketText(r), "Copied for a Jira ticket");
+        return;
+      }
       if (t.dataset.retryEx != null) {
         EX_FAILED.clear();
         EX_ERR = "";
@@ -1675,6 +1797,19 @@
     });
     $("btn-theme").onclick = toggleTheme;
     $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
+    $("tl-legend").addEventListener("click", (e) => {
+      if (e.target.closest("[data-unmute]")) return commit({ mute: new Set() }, { keepPage: true });
+      const b = e.target.closest("[data-hl]");
+      if (!b) return;
+      const k = b.dataset.hl;
+      const shown = BUCKETS.filter((x) => TL_TOTALS[x] > 0);
+      let hl = new Set(S.hl);
+      if (e.shiftKey || e.altKey) hl = new Set(shown.filter((x) => x !== k));  // only this level
+      else if (hl.has(k)) hl.delete(k);
+      else hl.add(k);
+      if (shown.every((x) => hl.has(x))) hl = new Set();  // never an empty chart
+      commit({ hl }, { keepPage: true });
+    });
     window.atlasTheme = toggleTheme;
     renderThemeBtn();
     $("d-nav").addEventListener("click", (e) => {
@@ -1702,7 +1837,7 @@
         if (help.open) return;
         if (closePops()) return;
         if (typing) { t.blur(); return; }
-        if (S.sig) commit({ sig: "" }, { keepPage: true });
+        if (S.sig) closeDrawer();
         return;
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open) return;
@@ -1711,6 +1846,7 @@
         case "j": e.preventDefault(); move(1); break;
         case "k": e.preventDefault(); move(-1); break;
         case "Enter": if (CUR && !S.sig) open(CUR); break;
+        case "m": toggleMute(lookup(S.sig || CUR)); break;
         case "c": {
           const r = lookup(S.sig || CUR);
           if (r) copy(r.kind === "sig" ? r.sig : r.id.replace(/^[cm]:/, ""));

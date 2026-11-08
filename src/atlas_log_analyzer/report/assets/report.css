@@ -579,3 +579,28 @@ kbd {
   main { padding: 0; }
 }
 .ex-err { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 6px; background: color-mix(in srgb, var(--lv-error) 10%, transparent); color: var(--ink-2); font-size: 12px; }
+.table-wrap:focus { outline: none; }
+table.groups tbody tr:focus { outline: none; }
+table.groups tbody tr:focus-visible td:first-child { box-shadow: inset 3px 0 0 var(--blue); }
+
+/* timeline legend: each level toggles in the chart; muted groups noted */
+.legend .lg-item {
+  display: inline-flex; align-items: center; gap: 5px; padding: 2px 6px; margin: -2px -6px;
+  border: 0; border-radius: 6px; background: none; color: inherit; font: inherit; cursor: pointer;
+  transition: background-color 0.12s ease, opacity 0.12s ease;
+}
+.legend .lg-item:hover { background: var(--hover); }
+.legend .lg-item[aria-pressed="false"] { opacity: 0.45; text-decoration: line-through; }
+.legend .lg-item:focus-visible { outline: 2px solid var(--blue); outline-offset: 1px; }
+.legend .tl-muted { color: var(--muted); }
+.legend .tl-muted .btn { padding: 0 4px; }
+
+/* muted groups stay in the table, dimmed */
+table.groups tbody tr.is-muted td { opacity: 0.55; }
+table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel td { opacity: 0.85; }
+.badge-mute {
+  display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 4px; font-size: 10.5px;
+  line-height: 16px; vertical-align: 1px; background: var(--chip-bg); color: var(--ink-2);
+}
+.of.spk { color: var(--up); font-weight: 600; }
+.d-head .d-acts { display: inline-flex; gap: 6px; margin-left: auto; }

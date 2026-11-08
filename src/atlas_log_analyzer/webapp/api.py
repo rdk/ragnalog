@@ -27,7 +27,7 @@ from atlas_log_analyzer.service.sets import open_set
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
 from atlas_log_analyzer.webapp.jobs import safe_filename
 from atlas_log_analyzer.webapp.params import query_model
-from atlas_log_analyzer.webapp.responses import JSON
+from atlas_log_analyzer.webapp.responses import JSON, payload_response
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
 __all__ = ["manifest_item", "router"]
@@ -280,6 +280,7 @@ def capture_entries(
 @router.get("/captures/{ref}/report")
 async def capture_report(
     ref: str,
+    request: Request,
     state: StateDep,
     w: CaptureWindowDep,
     examples: Annotated[int, Query(ge=0, le=50)] = 3,
@@ -292,8 +293,8 @@ async def capture_report(
     Cached per member set versions and options (and dropped when any set changes).
     """
 
-    def build() -> bytes:
-        return state.cluster_report_bytes(
+    def build() -> Response:
+        data = state.cluster_report_bytes(
             ref,
             w,
             examples=examples,
@@ -301,9 +302,9 @@ async def capture_report(
             max_groups=max_groups,
             triage=triage,
         )
+        return payload_response(request, data)
 
-    data = await run_in_threadpool(build)
-    return Response(data, media_type="application/json")
+    return await run_in_threadpool(build)
 
 
 @router.get("/sets/{ref}/stats")
@@ -516,6 +517,7 @@ def timeline(
 @router.get("/sets/{ref}/report")
 async def report(
     ref: str,
+    request: Request,
     state: StateDep,
     compare: str | None = None,
     min_level: str | None = None,
@@ -530,11 +532,11 @@ async def report(
     """
     lvl = parse_level(min_level, "min_level", front="api")
 
-    def build() -> bytes:
+    def build() -> Response:
         ls = open_set(state, ref, front="api")
         base = _baseline(state, ls, compare)
         try:
-            return state.report_bytes(
+            data = state.report_bytes(
                 ls,
                 compare=base,
                 min_level=lvl,
@@ -545,9 +547,9 @@ async def report(
             )
         except ValueError as exc:  # options are valid: the sets are not comparable
             raise OpError.because("incompatible_sets", "api", str(exc)) from exc
+        return payload_response(request, data)
 
-    data = await run_in_threadpool(build)
-    return Response(data, media_type="application/json")
+    return await run_in_threadpool(build)
 
 
 @router.get("/diff")

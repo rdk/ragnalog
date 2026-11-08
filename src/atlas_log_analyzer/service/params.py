@@ -50,7 +50,7 @@ __all__ = [
 DEFAULT_MAX_RAW = 4000
 """Characters of ``raw`` and ``body`` kept per entry in JSON documents by default."""
 
-_RELATIVE = re.compile(r"^(\d+)\s*([smhd])$")
+_RELATIVE = re.compile(r"^(\d{1,12})\s*([smhd])$")
 type SplitMode = Literal["auto", "prefix", "dir", "none"]
 """``--split``: detect the nodes (``auto``), force a kind, or keep one set (``none``)."""
 SPLIT_MODES: tuple[SplitMode, ...] = ("auto", "prefix", "dir", "none")
@@ -85,7 +85,7 @@ def parse_time(
         base = base if base.tzinfo is not None else base.replace(tzinfo=UTC)
         try:
             return base - timedelta(**{_UNITS[m.group(2)]: int(m.group(1))})
-        except OverflowError:
+        except OverflowError, ValueError:
             raise OpError(
                 "invalid_value", f"{flag(name, front)} {value!r} reaches before year 1"
             ) from None
@@ -98,7 +98,14 @@ def parse_time(
             "naive = UTC), a date (2026-10-29) or a duration before the last entry of the set "
             "(30m, 2h, 1d)",
         ) from None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    try:
+        return parsed.astimezone(UTC)
+    except OverflowError:
+        raise OpError(
+            "invalid_value", f"{flag(name, front)} {value!r} is out of range in UTC"
+        ) from None
 
 
 def parse_level(value: str | None, name: str, *, front: Front) -> str | None:

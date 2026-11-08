@@ -327,3 +327,21 @@ def test_with_id_copies_every_field(jira: JiraFormat) -> None:
     entry = dataclasses.replace(entry, parse_error="x")
     assert len(dataclasses.fields(LogEntry)) == 13, "update _with_id for the new field"
     assert _with_id(entry, "0123456789abcdef") == dataclasses.replace(entry, id="0123456789abcdef")
+
+
+def test_a_line_repeated_past_the_id_cap_keeps_every_entry() -> None:
+    from atlas_log_analyzer.core.parser import IDS_PER_MILLISECOND, parse_lines
+    from atlas_log_analyzer.core.reader import Line
+
+    # an unreadable time is stored at the epoch: every repeat recurs in that millisecond,
+    # with other entries between them
+    bad = "2026-02-30 10:00:00,000+0100 exec-1 ERROR [x.Y] same text"
+    texts = []
+    for i in range(IDS_PER_MILLISECOND * 2 + 44):
+        texts += [bad, f"2026-10-29 10:00:{i // 1000:02d},{i % 1000:03d}+0100 exec-2 INFO [x.Z] n"]
+    lines = [Line(i + 1, i * 80, t) for i, t in enumerate(texts)]
+    ids = [e.id for e in parse_lines(lines, JiraFormat(), "x.log")]
+    assert len(set(ids)) == len(texts)
+    # ids below the cap are those of earlier versions: only collisions past it are new
+    head = [e.id for e in parse_lines(lines[:IDS_PER_MILLISECOND], JiraFormat(), "x.log")]
+    assert ids[:IDS_PER_MILLISECOND] == head

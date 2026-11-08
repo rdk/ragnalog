@@ -11,7 +11,7 @@ src/atlas_log_analyzer/
   core/      pure library: models, formats (registry, jira), reader, parser,
              java stack traces, masking, signatures, grouping, pipeline (Recipe:
              format + spec + rules -> masker/signer/grouper and the recipe key),
-             mining (drain3, optional)
+             mining (drain3, optional), paths (file names safe on Windows)
   store/     Parquet + manifest persistence (polars/pyarrow; manifest.py needs neither),
              typed filters (filters.py), DuckDB queries, diff, regroup (column-wise
              re-signing), triage (triage.v1 and rank_baselines, shared by the CLI and the

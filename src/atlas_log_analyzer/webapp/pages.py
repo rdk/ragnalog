@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import html
+import math
 import re
-from datetime import datetime
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote, urlencode
@@ -26,7 +27,14 @@ from atlas_log_analyzer.webapp.state import AppState, get_state
 if TYPE_CHECKING:
     from atlas_log_analyzer.service.cluster import Capture
 
-__all__ = ["index_rows", "not_found_page", "router", "templates", "unauthorized_page"]
+__all__ = [
+    "error_page",
+    "index_rows",
+    "not_found_page",
+    "router",
+    "templates",
+    "unauthorized_page",
+]
 
 router = APIRouter(default_response_class=HTMLResponse)
 StateDep = Annotated[AppState, Depends(get_state)]
@@ -80,6 +88,80 @@ templates.env.filters.update(
 )
 
 
+_STRIP_BUCKETS = 480
+"""At most this many bars across the index's shared time axis (hours are merged above it)."""
+
+
+def _bars(path: list[str], x: int, base: int, height: float) -> None:
+    """Append a one-bucket bar from ``base`` (negative ``height`` grows up)."""
+    if height:
+        path.append(f"M{x} {base}h1v{height:.2f}h-1z")
+
+
+def _scale(value: int, top: int) -> float:
+    """``value`` against ``top`` on a square-root scale (0..1); any value above zero shows."""
+    return max(0.08, math.sqrt(value / top)) if value > 0 else 0.0
+
+
+def activity_strips(
+    activity: dict[str, list[tuple[int, int, int]]],
+) -> tuple[dict[str, Markup], dict[str, Any] | None]:
+    """Inline SVG strips of the sets index, one per key, on one shared time axis.
+
+    ``activity`` maps a row key (a set id, ``capture:<id>``) to its
+    :func:`~atlas_log_analyzer.service.views.set_activity` hours. Each strip spans the
+    union of all hours: a faint band covers the key's own time range; grey bars grow up
+    from its midline with the entries per bucket, red bars down with the errors, both
+    against the row's own busiest bucket (so the red shows the share of errors and its
+    spikes). Returns the strips and the axis (``lo``/``hi`` epoch
+    milliseconds, ``bucket`` hours) for the page script, or ``({}, None)`` without hours.
+    """
+    hours = [h for rows in activity.values() for h, _, _ in rows]
+    if not hours:
+        return {}, None
+    lo, hi = min(hours), max(hours)
+    size = max(1, -(-(hi - lo + 1) // _STRIP_BUCKETS))
+    count = (hi - lo) // size + 1
+    binned: dict[str, dict[int, list[int]]] = {}
+    for key, rows in activity.items():
+        bins: dict[int, list[int]] = {}
+        for h, n, err in rows:
+            cell = bins.setdefault((h - lo) // size, [0, 0])
+            cell[0] += n
+            cell[1] += err
+        binned[key] = bins
+    strips: dict[str, Markup] = {}
+    for key, bins in binned.items():
+        if not bins:
+            continue
+        first, last = min(bins), max(bins)
+        top = max(c[0] for c in bins.values()) or 1
+        volume: list[str] = []
+        errors: list[str] = []
+        for i, (n, err) in sorted(bins.items()):
+            _bars(volume, i, 14, -13 * _scale(n, top))
+            _bars(errors, i, 15, 12 * _scale(err, top))
+        data = ";".join(f"{i},{n},{err}" for i, (n, err) in sorted(bins.items()))
+        strips[key] = Markup(
+            f'<svg class="strip" viewBox="0 0 {count} 28" preserveAspectRatio="none"'
+            f' data-bins="{data}" aria-hidden="true">'
+            f'<rect class="strip-cov" x="{first}" y="0" width="{last - first + 1}" height="28"/>'
+            f'<path class="strip-vol" d="{"".join(volume)}"/>'
+            f'<path class="strip-err" d="{"".join(errors)}"/></svg>'
+        )
+    start = datetime.fromtimestamp(lo * 3600, UTC)
+    end = datetime.fromtimestamp((lo + count * size) * 3600, UTC)
+    short = "%H:%M" if end - start <= timedelta(days=1) else "%m-%d"
+    axis = {
+        "lo": lo * 3_600_000,
+        "hi": (lo + count * size) * 3_600_000,
+        "bucket": size,
+        "lo_text": start.strftime(short),
+        "hi_text": end.strftime(short),
+    }
+    return strips, axis
+
+
 def index_rows(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Rows of the sets index: a set, or a capture with its member sets under it.
 
@@ -127,6 +209,7 @@ def _instant(text: str) -> datetime:
     return datetime.fromisoformat(text)
 
 
+@router.head("/", include_in_schema=False)  # uptime and link checkers
 @router.get("/")
 def index(request: Request, state: StateDep) -> Response:
     """Render the sets index with upload form and per-set triage verdicts (loaded by the page).
@@ -140,13 +223,42 @@ def index(request: Request, state: StateDep) -> Response:
         store=state.store.root.name,
         summary=lambda m: state.summary(state.open(m.id)),
     )
+    activity: dict[str, list[tuple[int, int, int]]] = {}
     for item in doc["items"]:
         item["bytes"] = sum(int(s.get("size") or 0) for s in item.get("sources") or [])
+        hours = state.activity(state.open(item["id"]))
+        activity[item["id"]] = hours
+        if item.get("capture"):
+            merged = activity.setdefault(f"capture:{item['capture']}", [])
+            merged.extend(hours)
+    strips, axis = activity_strips(activity)
     return templates.TemplateResponse(
         request,
         "index.html",
-        {"sets": doc["items"], "rows": index_rows(doc["items"]), "store": doc["store"]},
+        {
+            "sets": doc["items"],
+            "rows": index_rows(doc["items"]),
+            "store": doc["store"],
+            "strips": strips,
+            "axis": axis,
+        },
     )
+
+
+FAVICON = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">'
+    '<rect width="16" height="16" rx="3" fill="#1a1a19"/>'
+    '<rect x="3" y="8" width="2.5" height="5" fill="#a3a29b"/>'
+    '<rect x="6.75" y="3" width="2.5" height="10" fill="#e5a50a"/>'
+    '<rect x="10.5" y="5.5" width="2.5" height="7.5" fill="#e5484d"/></svg>'
+)
+"""The tab icon: three level-coloured bars (an SVG, also at ``/favicon.ico``)."""
+
+
+@router.get("/favicon.ico", include_in_schema=False)
+def favicon() -> Response:
+    """Serve the tab icon (browsers ask for ``/favicon.ico`` on every page)."""
+    return Response(FAVICON, media_type="image/svg+xml", headers={"Cache-Control": "max-age=86400"})
 
 
 @router.get("/assets/report/{name}")
@@ -226,6 +338,7 @@ def _capture_shell(capture: Capture) -> str:
 
 
 _HEAD = (
+    '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
     '<link rel="stylesheet" href="/static/webapp.css">'
     '<script defer src="/static/webapp.js"></script>'
 )
@@ -238,6 +351,7 @@ def _with_shell(page: str, shell: str) -> str:
     return _BODY.sub(lambda m: m.group(0) + shell, page, count=1)
 
 
+@router.head("/sets/{ref}", include_in_schema=False)  # uptime and link checkers
 @router.get("/sets/{ref}")
 async def report_page(
     ref: str,
@@ -257,7 +371,13 @@ async def report_page(
     data_url = f"/api/sets/{ls.manifest.id}/report?" + urlencode(
         {k: v for k, v in query.items() if v not in (None, "")}
     )
-    page = render_html(None, data_url=data_url, inline_assets=False, asset_base="/assets/report/")
+    page = render_html(
+        None,
+        data_url=data_url,
+        inline_assets=False,
+        asset_base="/assets/report/",
+        name=ls.manifest.name or ls.manifest.id,
+    )
     base = None if compare in (None, "", "none") else compare
     triage = f'<a href="/sets/{ls.manifest.id}/triage">Triage</a>' + (
         f'<a href="/sets/{ls.manifest.id}">Without compare</a>'
@@ -268,6 +388,18 @@ async def report_page(
     return HTMLResponse(_with_shell(page, shell))
 
 
+def _overlaps(capture: Capture) -> bool:
+    """Whether the default ``overlap`` window of ``capture`` is not empty."""
+    from atlas_log_analyzer.service.cluster import resolve_window
+
+    try:
+        resolve_window(capture, "overlap")
+    except OpError:
+        return False
+    return True
+
+
+@router.head("/captures/{ref}", include_in_schema=False)  # uptime and link checkers
 @router.get("/captures/{ref}")
 async def capture_page(
     ref: str, request: Request, state: StateDep, window: str | None = None
@@ -286,12 +418,17 @@ async def capture_page(
             return not_found_page(request, exc.message)
         raise
     target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
+    if window is None and not await run_in_threadpool(_overlaps, capture):
+        window = "union"  # the nodes' logs do not overlap: show them all, not an error
     query = urlencode({"window": window}) if window else ""
     data_url = f"/api/captures/{quote(target, safe=':@')}/report" + (f"?{query}" if query else "")
-    page = render_cluster_html(None, data_url=data_url, asset_base="/assets/report/")
+    page = render_cluster_html(
+        None, data_url=data_url, asset_base="/assets/report/", name=capture.cluster or capture.ref
+    )
     return HTMLResponse(_with_shell(page, _capture_shell(capture)))
 
 
+@router.head("/sets/{ref}/triage", include_in_schema=False)  # uptime and link checkers
 @router.get("/sets/{ref}/triage")
 async def triage_page(
     ref: str, request: Request, state: StateDep, baseline: str = "auto", min_level: str = "WARN"
@@ -326,3 +463,17 @@ def unauthorized_page(request: Request) -> Response:
 def not_found_page(request: Request, message: str) -> Response:
     """Render the HTML 404 page."""
     return templates.TemplateResponse(request, "404.html", {"message": message}, status_code=404)
+
+
+_ERROR_TITLES = {404: "Not found", 409: "Ambiguous reference", 500: "Something went wrong"}
+
+
+def error_page(request: Request, err: OpError) -> Response:
+    """Render an :class:`OpError` of a page route as HTML, with its status and hint."""
+    title = _ERROR_TITLES.get(err.status, "Cannot show this page")
+    return templates.TemplateResponse(
+        request,
+        "404.html",
+        {"title": title, "message": err.message, "hint": err.hint},
+        status_code=err.status,
+    )

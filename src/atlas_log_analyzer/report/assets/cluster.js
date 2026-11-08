@@ -39,13 +39,16 @@
   const arr = (x) => (Array.isArray(x) ? x : []);
 
   function compact(n) {
+    if (!isNum(n)) return String(n);
     const a = Math.abs(n);
-    if (a < 1000) return String(Math.round(n * 100) / 100);
-    for (const [v, u] of [[1e9, "B"], [1e6, "M"], [1e3, "K"]]) {
-      if (a >= v) {
-        const x = n / v;
-        return (Math.abs(x) >= 100 ? x.toFixed(0) : x.toFixed(1).replace(/\.0$/, "")) + u;
-      }
+    if (Math.round(a * 100) / 100 < 1000) return String(Math.round(n * 100) / 100);
+    // round first, then pick the unit: 999,500 is "1M", not "1000K"
+    const units = [[1e3, "K"], [1e6, "M"], [1e9, "B"]];
+    for (let i = 0; i < units.length; i++) {
+      const [v, u] = units[i];
+      const x = a / v;
+      const s = x >= 100 ? String(Math.round(x)) : (Math.round(x * 10) / 10).toFixed(1).replace(/\.0$/, "");
+      if (+s < 1000 || i === units.length - 1) return (n < 0 ? "-" : "") + s + u;
     }
     return String(n);
   }
@@ -392,9 +395,10 @@
     }
     update();
   }
-  let qTimer = 0;
+  let qTimer = 0, mqTimer = 0; // one debounce per search box
   function onNav() {
     clearTimeout(qTimer);
+    clearTimeout(mqTimer);
     const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t;
     S = parseHash();
     if (S.theme === "dark" || S.theme === "light") {
@@ -1043,8 +1047,10 @@
   }
   let cardsKey = null;
   const renderCards = guard(function renderCards() {
-    if (cardsKey === WKEY) return;
-    cardsKey = WKEY;
+    // the node filter too: it presses a card's "Groups on N" button
+    const key = WKEY + "|" + S.nd;
+    if (cardsKey === key) return;
+    cardsKey = key;
     const rg = tRange();
     $("c-cards").innerHTML = NODES.map((n) => {
       const c = obj(CN.get(n));
@@ -1166,7 +1172,7 @@
           (CMAX >= 100 ? `<span class="track"><i style="width:${r1(cellBar(c))}%"></i></span>` : "") + `</div></td>`;
       }).join("");
     }
-    return `<tr data-id="${esc(r.id)}" class="${cls}">` +
+    return `<tr data-id="${esc(r.id)}" class="${cls}" tabindex="-1">` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
       (S.t ? `<td class="c-total" title="${fmt(r.total)} in the window of ${fmt(row.total)} in total">${fmt(r.total)}<small class="of">of ${esc(compact(row.total))}</small></td>`
@@ -1247,6 +1253,7 @@
 
   // ---------------------------------------------------------------- drawer
   let drawnKey = null;
+  let drawerStale = false; // the drawn group's data changed (examples arrived): redraw in place
   const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${title}</h3>${body}</section>`;
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   const iconCopy = (text, what) =>
@@ -1394,8 +1401,8 @@
         `<td class="r">${isNum(p.rate_per_hour) && c > 0 ? esc(r1(p.rate_per_hour)) : ""}</td>` +
         `<td>${esc(ts16(p.first_seen))}</td><td>${esc(ts16(p.last_seen))}</td></tr>`;
     }).join("");
-    return `<table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
-      `<th class="r">Per hour</th><th>First seen (UTC)</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table>`;
+    return `<div class="d-nodes-wrap"><table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
+      `<th class="r">Per hour</th><th>First seen (UTC)</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function relatedHtml(r) {
     const out = [];
@@ -1475,20 +1482,42 @@
     out.push(secId("d-s-cli", "CLI", `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`));
     return out.join("");
   }
+  // drawer chart: null clips automatically (max > 4 × p95), true/false is the user's choice
+  let DCLIP = null;
+  let DGEO = null;
+  /** The drawer chart and its title, which names the bin drawn (an hour, 2 hours, …). */
+  function drawHourly(r) {
+    const el = $("d-hourly");
+    if (!el) return;
+    DGEO = drawLines(el, r) || null;
+    const h3 = el.parentElement && el.parentElement.querySelector("h3");
+    if (!h3 || !DGEO) return;
+    h3.innerHTML = `Per ${esc(binLabel(DGEO.k))} and node` + (S.t ? " (window shaded)" : "") +
+      (DGEO.spiky ? `<button type="button" class="btn small toggle" data-clip aria-pressed="${DGEO.clip}" title="Clip the y-axis to the 95th percentile so spikes do not flatten the rest; clipped points are labelled with their value">Clip spikes</button>` : "");
+  }
   /** Per-node lines of one group over the timeline buckets (shared y-axis, window shaded). */
   function drawLines(el, r) {
-    if (!el || !NB) return;
+    if (!el || !NB) return undefined;
     const W = Math.max(240, Math.floor(el.clientWidth || 400));
-    const H = 170, padL = 42, padR = 8, padT = 8, padB = 22;
-    const plotW = W - padL - padR, plotH = H - padT - padB;
-    const k = chooseBin(NB, plotW);
+    const H = 170, padL = 42, padR = 8, padB = 22;
+    const k = chooseBin(NB, W - padL - padR);
     const nb = Math.ceil(NB / k);
-    const slot = plotW / nb;
     const series = NODES.map((n) => ({ n, v: binArr(denseOf(r.hourly[n]), k, nb), has: binHas(n, k, nb) }))
       .filter((s, i) => r.counts[i] > 0 || NODES.length <= 8);
     let max = 0;
-    for (const s of series) for (let b = 0; b < nb; b++) max = Math.max(max, s.v[b]);
-    const ticks = niceTicks(max, 3);
+    const nz = [];
+    for (const s of series) for (let b = 0; b < nb; b++) {
+      max = Math.max(max, s.v[b]);
+      if (s.v[b] > 0) nz.push(s.v[b]);
+    }
+    nz.sort((x, y) => x - y);
+    const p95 = nz.length ? nz[Math.floor(0.95 * (nz.length - 1))] : 0;
+    const spiky = p95 > 0 && max > 4 * p95;
+    const clip = spiky && DCLIP !== false;
+    const padT = clip ? 18 : 8;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+    const slot = plotW / nb;
+    const ticks = niceTicks(clip ? p95 : max, 3);
     const yMax = ticks[ticks.length - 1] || 1;
     const pxPerMs = slot / (BMS * k);
     const xOfMs = (ms) => padL + (ms - TA) * pxPerMs;
@@ -1508,12 +1537,19 @@
     }
     P.push(`<line class="base" x1="${padL}" x2="${W - padR}" y1="${padT + plotH + 0.5}" y2="${padT + plotH + 0.5}"/>`);
     P.push(`<line class="crosshair" x1="0" x2="0" y1="${padT}" y2="${padT + plotH}" visibility="hidden"/>`);
+    const over = new Float64Array(nb); // clipped: the highest value per bin, labelled above the plot
     for (const s of series) {
       const pts = [];
-      for (let b = 0; b < nb; b++) pts.push(s.has[b] || s.v[b] ? [padL + b * slot + slot / 2, padT + plotH - (plotH * s.v[b]) / yMax] : null);
+      for (let b = 0; b < nb; b++) {
+        if (s.v[b] > yMax) over[b] = Math.max(over[b], s.v[b]);
+        pts.push(s.has[b] || s.v[b] ? [padL + b * slot + slot / 2, Math.max(padT, padT + plotH - (plotH * s.v[b]) / yMax)] : null);
+      }
       const { d, dots } = linePath(pts);
       P.push(`<g class="${ncls(s.n)}">` + (d ? `<path class="nline" d="${d}"/>` : "") +
         dots.map(([x, y]) => `<circle class="ndot" cx="${r1(x)}" cy="${r1(y)}" r="3.5"/>`).join("") + `</g>`);
+    }
+    for (let b = 0; b < nb; b++) {
+      if (over[b]) P.push(`<text class="clip-lbl" x="${r1(padL + b * slot + slot / 2)}" y="${padT - 5}" text-anchor="middle">${esc(compact(over[b]))}</text>`);
     }
     P.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/></svg>`);
     el.innerHTML = P.join("");
@@ -1533,6 +1569,7 @@
       cross.setAttribute("visibility", "hidden");
       tip.hidden = true;
     });
+    return { k, spiky, clip };
   }
   /** Web app: fetch a node's examples of a group in full (max_raw=0) when the payload cut them. */
   const FULL = new Set();
@@ -1545,8 +1582,7 @@
     fetchJson(new URL(urlFill(URLS.examples, { set, sig: r.sig }), location.href).toString())
       .then((doc) => {
         for (const [id, e] of Object.entries(obj(doc && doc.items))) ENTRIES[id] = Object.assign({}, ENTRIES[id] || {}, e, { node, set });
-        drawnKey = null;
-        renderDrawer();
+        redrawDrawer();
       })
       .catch(() => FULL.delete(key)); // asked again the next time the drawer shows it
   }
@@ -1575,8 +1611,7 @@
       .catch((err) => EXN_ERR.set(key, String(err && err.message ? err.message : err)))
       .finally(() => {
         WIN_EXN_PENDING.delete(key);
-        drawnKey = null;
-        renderDrawer();
+        redrawDrawer();
       });
   }
   const renderDrawer = guard(function renderDrawer() {
@@ -1585,6 +1620,8 @@
       dr.hidden = true;
       document.body.classList.remove("drawer-open");
       drawnKey = null;
+      drawerStale = false;
+      DGEO = null;
       return;
     }
     dr.hidden = false;
@@ -1592,9 +1629,10 @@
     const idx = LIST.findIndex((x) => x.id === S.sig);
     $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
     const key = [S.sig, S.t, S.ex, idx >= 0].join("|");
-    if (key === drawnKey) return;
+    if (key === drawnKey && !drawerStale) return;
     const sameGroup = drawnKey && drawnKey.split("|")[0] === S.sig;
     drawnKey = key;
+    drawerStale = false;
     const r = GBY.get(S.sig);
     const body = $("drawer-body");
     const top = body.scrollTop;
@@ -1605,8 +1643,13 @@
       void body.offsetWidth;
       body.classList.add("fresh");
     }
-    if (r) drawLines($("d-hourly"), r);
+    if (r) drawHourly(r);
   });
+  /** Redraw the drawer after its data changed, keeping its scroll position (no fade). */
+  function redrawDrawer() {
+    drawerStale = true;
+    renderDrawer();
+  }
 
   // ---------------------------------------------------------------- interactions
   const tplRef = (sig, tpl) => {
@@ -1706,7 +1749,7 @@
 
   // ---------------------------------------------------------------- merged log
   const CHUNK = 200;
-  const LOG = { req: 0, key: "", rows: [], next: null, total: null, loading: false, error: "", shown: CHUNK, cur: -1, curId: "", open: new Set(), atDone: "", ctxRows: null, ctxKey: "" };
+  const LOG = { req: 0, key: "", rows: [], next: null, total: null, loading: false, error: "", shown: CHUNK, cur: -1, curId: "", open: new Set(), atDone: "", ctxRows: null, ctxKey: "", ctxLoading: false };
   function logRange() {
     if (S.at) {
       const at = parseTs(S.at);
@@ -1761,7 +1804,7 @@
     const key = S.ctx;
     LOG.ctxKey = key;
     LOG.ctxRows = null;
-    LOG.loading = true;
+    LOG.ctxLoading = true;
     LOG.error = "";
     renderLog();
     fetchJson(new URL(urlFill(URLS.context, { set, id }), location.href).toString()).then((doc) => {
@@ -1771,7 +1814,7 @@
       if (LOG.ctxKey === key) LOG.error = String(err && err.message ? err.message : err);
     }).finally(() => {
       if (LOG.ctxKey !== key) return;
-      LOG.loading = false;
+      LOG.ctxLoading = false;
       renderLog();
     });
   }
@@ -1803,7 +1846,9 @@
   }
   let VIEW = [];
   const renderLog = guard(function renderLog() {
-    $("tab-l-n").textContent = fmt(!WEB_LOG ? STATIC_LOG.length : S.ctx ? (LOG.ctxRows || []).length : LOG.rows.length);
+    // the number of entries known: the static examples, the context, or the server's total (none before it answers)
+    const known = !WEB_LOG ? STATIC_LOG.length : S.ctx && URLS.context ? (LOG.ctxRows ? LOG.ctxRows.length : null) : LOG.total;
+    $("tab-l-n").textContent = known != null ? fmt(known) : "";
     if (S.tab !== "l") return;
     // web mode: (re)load when the range or level changes
     if (WEB_LOG && !S.ctx) {
@@ -1841,7 +1886,7 @@
     const shown = VIEW.slice(0, LOG.shown);
     const ml = $("ml");
     ml.innerHTML = shown.map(mlRowHtml).join("") ||
-      `<div class="empty">${LOG.loading ? "Loading…" : S.ctx ? "No entries within ±30 s in this report." : "No entries match."}</div>`;
+      `<div class="empty">${(S.ctx ? LOG.ctxLoading : LOG.loading) ? "Loading…" : S.ctx ? "No entries within ±30 s in this report." : "No entries match."}</div>`;
     // notes, chips, footer
     const notes = [];
     if (!WEB_LOG) {
@@ -1861,19 +1906,37 @@
     if (S.at) chips.push(["at", `From ${tsSec(S.at)}`]);
     if (S.t) chips.push(["t", `Window ${tsShort(isoOf(tRange()[0]))} (${spanText(tRange()[1] - tRange()[0])})`]);
     $("l-active").innerHTML = chips.map(([k, label]) => `<button type="button" class="fchip" data-lclear="${k}" title="Remove this filter">${esc(label)} <span aria-hidden="true">×</span></button>`).join("");
-    const foot = [];
-    if (VIEW.length > LOG.shown) foot.push(`<button type="button" class="btn small" data-more>Show ${fmt(Math.min(CHUNK, VIEW.length - LOG.shown))} more</button><span>${fmt(LOG.shown)} of ${fmt(VIEW.length)} shown</span>`);
-    if (WEB_LOG && !S.ctx) {
-      if (LOG.loading) foot.push(`<span>Loading…</span>`);
-      else if (LOG.next != null) foot.push(`<button type="button" class="btn small" data-load>Load ${fmt(CHUNK)} more from the server</button>`);
-    }
-    $("ml-foot").innerHTML = foot.join("");
+    $("ml-foot").innerHTML = logFootHtml();
     if (LOG.atId && LOG.atDone !== S.at) {
       LOG.atDone = S.at;
       const row = ml.querySelector(".is-at");
       if (row) requestAnimationFrame(() => row.scrollIntoView({ block: "center" }));
     }
   });
+  function logFootHtml() {
+    const foot = [];
+    if (VIEW.length > LOG.shown) foot.push(`<button type="button" class="btn small" data-more>Show ${fmt(Math.min(CHUNK, VIEW.length - LOG.shown))} more</button><span>${fmt(LOG.shown)} of ${fmt(VIEW.length)} shown</span>`);
+    if (WEB_LOG && !S.ctx) {
+      if (LOG.loading) foot.push(`<span>Loading…</span>`);
+      else if (LOG.next != null) foot.push(`<button type="button" class="btn small" data-load>Load ${fmt(CHUNK)} more from the server</button>`);
+    }
+    return foot.join("");
+  }
+  /** The rendered row of VIEW[i], if shown. */
+  function mlRow(i) {
+    const el = $("ml").children[i];
+    return el && el.dataset.i === String(i) ? el : null;
+  }
+  /** "Show more": append the next rows instead of rebuilding the list. */
+  function showMoreLog() {
+    const a = LOG.shown;
+    LOG.shown += CHUNK;
+    const ml = $("ml");
+    if (!VIEW.length || ml.children.length !== Math.min(a, VIEW.length) || !mlRow(a - 1)) return renderLog();
+    ml.insertAdjacentHTML("beforeend", VIEW.slice(a, LOG.shown).map((r, j) => mlRowHtml(r, a + j)).join(""));
+    $("ml-foot").innerHTML = logFootHtml();
+    return undefined;
+  }
   function renderLogControls() {
     $("l-level").innerHTML = `<span class="lbl">Min level</span>` + LOG_LEVELS.map((l) =>
       `<button type="button" data-ml="${l}" aria-pressed="${S.ml === l}">${l || "All"}</button>`).join("");
@@ -2004,15 +2067,32 @@
     renderThemeBtn();
     if (S.theme) commit({ theme: next }, { keepPage: true, replace: true });
   }
-  function open(id) {
+  // the control that opened the drawer (a focusKey; "" for a table row): focus returns there on close
+  let opener = "";
+  function open(id, fromRow) {
     CUR = id;
     const was = !!S.sig && S.tab === "g";
+    if (!was) opener = fromRow ? "" : focusKey(document.activeElement);
     commit({ sig: id, tab: "g" }, { keepPage: true });
     if (!was) $("d-close").focus({ preventScroll: true });
+  }
+  /** Close the drawer (Esc, Close) and put the focus back on its opener, else the group's row, else the table. */
+  function closeDrawer() {
+    const back = opener;
+    opener = "";
+    commit({ sig: "" }, { keepPage: true });
+    let el = back ? document.querySelector(back) : null;
+    if (!el || el.offsetParent === null) el = [...$("t-body").rows].find((tr) => tr.dataset.id === CUR) || null;
+    if (!el || el.offsetParent === null) {
+      el = $("groups");
+      if (el.tabIndex < 0 && !el.hasAttribute("tabindex")) el.tabIndex = -1;
+    }
+    el.focus();
   }
   function openFromElsewhere(id) {
     const i = LIST.findIndex((r) => r.id === id);
     CUR = id;
+    if (!(S.sig && S.tab === "g")) opener = focusKey(document.activeElement);
     commit({ sig: id, tab: "g", p: i >= 0 ? Math.floor(i / PAGE) : S.p }, { keepPage: true });
     scrollToTabs();
   }
@@ -2035,8 +2115,16 @@
     LOG.cur = LOG.cur < 0 ? (d > 0 ? 0 : Math.min(VIEW.length, LOG.shown) - 1) : Math.max(0, Math.min(VIEW.length - 1, LOG.cur + d));
     if (LOG.cur >= LOG.shown) LOG.shown = LOG.cur + CHUNK;
     LOG.curId = VIEW[LOG.cur].id;
-    renderLog();
-    const row = $("ml").querySelector(".is-cur");
+    // move the cursor class between two rows; rebuild only when the list must grow
+    let row = mlRow(LOG.cur);
+    if (!row) {
+      renderLog();
+      row = $("ml").querySelector(".is-cur");
+    } else {
+      const was = $("ml").querySelector(".ml-row.is-cur");
+      if (was && was !== row) was.classList.remove("is-cur");
+      row.classList.add("is-cur");
+    }
     if (row) row.scrollIntoView({ block: "nearest" });
   }
   function toggleRow(i) {
@@ -2045,10 +2133,17 @@
     if (LOG.open.has(r.id)) LOG.open.delete(r.id); else LOG.open.add(r.id);
     LOG.cur = i;
     LOG.curId = r.id;
-    renderLog();
+    // replace the toggled row only
+    const row = mlRow(i);
+    if (!row) return renderLog();
+    const was = $("ml").querySelector(".ml-row.is-cur");
+    if (was && was !== row) was.classList.remove("is-cur");
+    row.outerHTML = mlRowHtml(r, i);
+    return undefined;
   }
   function resetAll() {
     clearTimeout(qTimer);
+    clearTimeout(mqTimer);
     $("f-search").value = "";
     $("l-search").value = "";
     commit({ q: "", lv: new Set(DEFAULT_LV), sp: "any", nd: "", sort: "count", t: null, sig: "", ex: "", ml: "", mn: null, mq: "", ms: [], ctx: "", cts: "", at: "" });
@@ -2068,8 +2163,7 @@
     const d = t.dataset;
     if (d.retryEx != null) {
       EXN_ERR.clear();
-      drawnKey = null;
-      renderDrawer();
+      redrawDrawer();
     } else if (d.rawView != null) toggleRaw(t);
     else if (d.allLines != null) showAllLines(t);
     else if (d.unfold != null) {
@@ -2121,9 +2215,9 @@
       qTimer = setTimeout(() => commit({ q: value }, { replace: true }), 90);
     });
     $("l-search").addEventListener("input", (e) => {
-      clearTimeout(qTimer);
+      clearTimeout(mqTimer);
       const value = e.target.value;
-      qTimer = setTimeout(() => commit({ mq: value }, { replace: true, keepPage: true }), 120);
+      mqTimer = setTimeout(() => commit({ mq: value }, { replace: true, keepPage: true }), 120);
     });
     $("f-levels").addEventListener("click", (e) => {
       const b = e.target.closest("[data-lv]");
@@ -2154,7 +2248,7 @@
     });
     $("t-body").addEventListener("click", (e) => {
       const tr = e.target.closest("tr[data-id]");
-      if (tr) open(tr.dataset.id);
+      if (tr) open(tr.dataset.id, true);
     });
     const pagerClick = (e) => {
       const b = e.target.closest("[data-page]");
@@ -2165,7 +2259,7 @@
     };
     $("pager-top").addEventListener("click", pagerClick);
     $("pager-bottom").addEventListener("click", pagerClick);
-    $("d-close").onclick = () => commit({ sig: "" }, { keepPage: true });
+    $("d-close").onclick = closeDrawer;
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("d-nav").addEventListener("click", (e) => {
@@ -2186,8 +2280,17 @@
           const pw = e.target.closest("[data-win]");
           if (pw) return commit({ t: [NB - Number(pw.dataset.win), NB - 1] });
         }
+        if (id === "drawer-body" && e.target.closest("[data-clip]")) {
+          const r = GBY.get(S.sig);
+          if (!r) return;
+          DCLIP = !(DGEO && DGEO.clip);
+          drawHourly(r);
+          const b = $("drawer-body").querySelector("[data-clip]");
+          if (b) b.focus({ preventScroll: true });
+          return;
+        }
         if (id === "p-log") {
-          if (e.target.closest("[data-more]")) { LOG.shown += CHUNK; return renderLog(); }
+          if (e.target.closest("[data-more]")) return showMoreLog();
           if (e.target.closest("[data-load]")) return fetchLogPage();
           if (e.target.closest("[data-ctx-close]")) return commit({ ctx: "", cts: "" }, { keepPage: true });
           const lc = e.target.closest("[data-lclear]");
@@ -2245,7 +2348,7 @@
       if (e.key === "Escape") {
         if (help.open) return;
         if (typing) { t.blur(); return; }
-        if (S.tab === "g" && S.sig) commit({ sig: "" }, { keepPage: true });
+        if (S.tab === "g" && S.sig) closeDrawer();
         else if (S.tab === "l" && S.ctx) commit({ ctx: "", cts: "" }, { keepPage: true });
         return;
       }
@@ -2287,7 +2390,7 @@
       rz = setTimeout(() => {
         renderTimeline();
         const r = S.sig && GBY.get(S.sig);
-        if (r && $("d-hourly")) drawLines($("d-hourly"), r);
+        if (r && $("d-hourly")) drawHourly(r);
         updateSticky();
       }, 150);
     });
@@ -2316,6 +2419,42 @@
   }
 
   // ---------------------------------------------------------------- loader
+  /** A failed payload request: the server's error.v1 (message, hint) when the body is one. */
+  function loadError(url, status, body) {
+    const err = new Error(`GET ${url}: HTTP ${status}`);
+    try {
+      const doc = JSON.parse(body);
+      const e = doc && doc.schema === "error.v1" && doc.error;
+      if (e && e.message) err.apiError = { code: String(e.code || ""), message: String(e.message), hint: e.hint ? String(e.hint) : "", status };
+    } catch {
+      /* not JSON: reported as the HTTP status */
+    }
+    return err;
+  }
+  /** Show the server's error in a box at the top of the page (no stack trace). */
+  function showLoadError(e) {
+    const box = document.createElement("div");
+    box.className = "load-error";
+    box.setAttribute("role", "alert");
+    const h = document.createElement("h2");
+    h.textContent = "Could not load this cluster page";
+    const m = document.createElement("p");
+    m.textContent = e.message;
+    box.append(h, m);
+    if (e.hint) {
+      const p = document.createElement("p");
+      p.className = "hint";
+      p.textContent = e.hint;
+      box.append(p);
+    }
+    const c = document.createElement("p");
+    c.className = "code";
+    c.textContent = `HTTP ${e.status}` + (e.code ? ` · ${e.code}` : "");
+    box.append(c);
+    const app = $("app");
+    if (app) app.prepend(box);
+    else document.body.prepend(box);
+  }
   const start = (data) => {
     try {
       boot(data);
@@ -2339,9 +2478,9 @@
       fatal("no cluster data: #cluster-data is empty and <html data-report-url> is not set");
     } else {
       fetch(url, { headers: { Accept: "application/json" } })
-        .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`GET ${url}: HTTP ${r.status}`))))
+        .then((r) => (r.ok ? r.json() : r.text().then((body) => Promise.reject(loadError(url, r.status, body)))))
         .then(start)
-        .catch(fatal);
+        .catch((err) => (err && err.apiError ? showLoadError(err.apiError) : fatal(err)));
     }
   }
 })();

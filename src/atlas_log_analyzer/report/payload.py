@@ -235,6 +235,7 @@ def build_payload(
     max_raw: int = 4000,
     max_groups: int | None = None,
     entries_url: str | None = None,
+    embed_examples: bool = True,
 ) -> dict[str, Any]:
     """Build the ``report.v1`` payload for ``logset``.
 
@@ -248,6 +249,10 @@ def build_payload(
         max_groups: Keep only the largest groups (by count); ``None`` = all.
         entries_url: URL template for fetching more entries of a group (the page replaces
             ``{sig}`` with the signature); added as ``entries_url`` only when given.
+        embed_examples: Embed the example entries in ``entries``. ``False`` (requires
+            ``entries_url``) keeps only their ids in each group's ``examples``; the page
+            fetches a group's entries when its drawer opens, which keeps the payload to a
+            quarter of the size.
 
     Returns:
         A JSON-serialisable dict (see ``docs/formats/report.v1.md``).
@@ -263,6 +268,8 @@ def build_payload(
         raise ValueError("max_raw must be >= 0")
     if max_groups is not None and max_groups < 0:
         raise ValueError("max_groups must be >= 0")
+    if not embed_examples and entries_url is None:
+        raise ValueError("embed_examples=False needs an entries_url to fetch them from")
     source_index = {src.path: i for i, src in enumerate(logset.manifest.sources)}
     gdf = logset.groups(where=GroupFilter(min_level=min_level), sort="count")
     truncated_groups = 0
@@ -281,14 +288,15 @@ def build_payload(
 
     timeline, hourly = _timeline_and_hourly(logset, signatures, filtered)
     ids = [i for g in groups for i in g["examples"]]
-    entries = _entries(logset, ids, max_raw, source_index)
+    entries = _entries(logset, ids, max_raw, source_index) if embed_examples else {}
     for g in groups:
         if g.get("coarse_signature") == g["signature"]:
             del g["coarse_signature"]
         g["top_users"] = _pairs(g["top_users"])
         g["top_threads"] = _pairs(g["top_threads"])
         g["sources"] = _pairs(g["sources"], source_index)
-        g["examples"] = [i for i in g["examples"] if i in entries]
+        if embed_examples:
+            g["examples"] = [i for i in g["examples"] if i in entries]
         g["hourly"] = hourly.get(g["signature"], [])
     compare_block = _compare(compare, logset, min_level, present) if compare is not None else None
 

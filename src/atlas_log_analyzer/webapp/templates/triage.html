@@ -78,18 +78,24 @@
   </div>
 </section>
 
-{% for kind, title, rows, cols in [('new', 'New types', t.new, ('Count', 'Per hour', 'First seen')), ('new', 'New exceptions (any level)', t.new_exceptions, ('Count', 'Per hour', 'First seen')), ('grew', 'Grew', t.grew, ('Count', 'Rate', 'Last seen')), ('vanished', 'Vanished', t.vanished, ('Count before', '', 'Last seen before'))] %}
-<section class="card">
-  <h2>{{ title }} <span class="muted">{{ rows|length }}</span></h2>
+{% set sections = [('new', 'New types', t.new, ('Count', 'Per hour', 'First seen'), 's-new'), ('new', 'New exceptions (any level)', t.new_exceptions, ('Count', 'Per hour', 'First seen'), 's-exc'), ('grew', 'Grew', t.grew, ('Count', 'Rate', 'Last seen'), 's-grew'), ('vanished', 'Vanished', t.vanished, ('Count before', '', 'Last seen before'), 's-gone')] %}
+<nav class="section-bar" aria-label="Sections">
+  {% for kind, title, rows, cols, anchor in sections %}<a href="#{{ anchor }}" data-open="{{ anchor }}">{{ title }} <span class="muted">{{ rows|length }}</span></a>{% endfor %}
+</nav>
+{% for kind, title, rows, cols, anchor in sections %}
+<details class="card triage-sec" id="{{ anchor }}"{% if kind != 'vanished' and rows %} open{% endif %}>
+  <summary><h2>{{ title }} <span class="muted">{{ rows|length }}</span></h2>{% if kind == 'vanished' and rows %}<span class="muted small">in the baseline, not in this set</span>{% endif %}</summary>
   {% if rows %}
   <div class="table-wrap">
   <table class="sets triage-table">
     <thead><tr><th>Level</th><th>Template</th>{% for c in cols %}<th class="{{ 'num' if loop.index < 3 else '' }}">{{ c }}</th>{% endfor %}</tr></thead>
-    <tbody>{% for r in rows %}{{ row(r, kind) }}{% endfor %}</tbody>
+    <tbody>{% for r in rows[:25] %}{{ row(r, kind) }}{% endfor %}</tbody>
+    {% if rows|length > 25 %}<tbody class="rest" hidden>{% for r in rows[25:] %}{{ row(r, kind) }}{% endfor %}</tbody>{% endif %}
   </table>
   </div>
+  {% if rows|length > 25 %}<p class="show-rest"><button type="button" class="btn small" data-show-rest>Show all {{ rows|length|num }}</button></p>{% endif %}
   {% else %}<p class="muted">None.</p>{% endif %}
-</section>
+</details>
 {% endfor %}
 {% endif %}
 {% endblock %}

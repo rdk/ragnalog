@@ -12,13 +12,13 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
-import re
 from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, Protocol
 
+from atlas_log_analyzer.core.paths import safe_name
 from atlas_log_analyzer.service.errors import Front, OpError, flag
 from atlas_log_analyzer.service.params import _LABEL, IngestTarget, check_label, parse_level
 from atlas_log_analyzer.service.sets import Sets, open_set, resolving
@@ -628,8 +628,7 @@ def remove(sets: Removable, ref: str, *, front: Front) -> Doc:
 
 def report_filename(ls: LogSet) -> Path:
     """Default report file of a set: ``<name or id>.html`` in the current directory."""
-    stem = re.sub(r"[^\w.-]+", "_", ls.manifest.name or ls.manifest.id).strip("._")
-    return Path((stem or ls.manifest.id) + ".html")
+    return Path(safe_name(ls.manifest.name or ls.manifest.id, ls.manifest.id) + ".html")
 
 
 def report_file(

@@ -323,3 +323,10 @@ def test_reingest_under_another_name_warns(tmp_path: Path) -> None:
     assert ingest_paths(unnamed, [MINI], name="x").warnings == (
         f"--name x ignored: set exists as {set_id} (unnamed)",
     )
+
+
+def test_bucket_labels_before_1970() -> None:
+    from atlas_log_analyzer.store.logset import _bucket_iso
+
+    assert _bucket_iso(-62_135_596_800_000) == "0001-01-01T00:00:00Z"  # fromtimestamp: OSError
+    assert _bucket_iso(0) == "1970-01-01T00:00:00Z"

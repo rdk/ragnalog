@@ -51,11 +51,11 @@
     <input type="search" id="f-search" placeholder="Search template, logger, exception — sig:abc" aria-label="Search" autocomplete="off" spellcheck="false">
     <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
     <div class="facet" id="f-logger-wrap">
-      <button type="button" class="btn facet-btn" id="f-logger" aria-haspopup="true">Logger</button>
+      <button type="button" class="btn facet-btn" id="f-logger" aria-haspopup="true" aria-expanded="false" aria-controls="f-logger-pop">Logger</button>
       <div class="pop" id="f-logger-pop" hidden></div>
     </div>
     <div class="facet" id="f-exc-wrap">
-      <button type="button" class="btn facet-btn" id="f-exc" aria-haspopup="true">Exception</button>
+      <button type="button" class="btn facet-btn" id="f-exc" aria-haspopup="true" aria-expanded="false" aria-controls="f-exc-pop">Exception</button>
       <div class="pop" id="f-exc-pop" hidden></div>
     </div>
     <button type="button" class="btn toggle" id="f-hasexc" aria-pressed="false">Has exception</button>
@@ -73,7 +73,7 @@
   </section>
 
   <section class="body" id="body">
-    <div class="table-wrap" id="table-wrap">
+    <div class="table-wrap" id="table-wrap" tabindex="-1">
       <div class="table-head-line">
         <span id="t-summary" class="muted"></span>
         <span class="pager" id="pager-top"></span>
@@ -112,6 +112,7 @@
     <dt><kbd>Enter</kbd></dt><dd>Open the selected group</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
     <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
+    <dt><kbd>m</kbd></dt><dd>Mute / unmute the selected group in the chart</dd>
     <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page</dd>
     <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window</dd>
     <dt><kbd>?</kbd></dt><dd>This help</dd>

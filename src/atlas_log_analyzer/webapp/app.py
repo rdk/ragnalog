@@ -9,6 +9,7 @@ from importlib import resources
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.responses import RedirectResponse, Response
 
 from atlas_log_analyzer import __version__
@@ -50,7 +51,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         default_response_class=JSON,
     )
     app.state.atlas = state
-    install_handlers(app)
+    install_handlers(app, lambda r, err: pages.error_page(r, err) if _html(r) else None)
     upload_limit = settings.max_upload_mb * 1024 * 1024
 
     @app.middleware("http")
@@ -100,6 +101,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         code = {404: "not_found", 405: "usage", 401: "unauthorized"}.get(exc.status_code, "http")
         return error_response(OpError(code, str(exc.detail)), exc.status_code)
 
+    # large listings (groups?limit=0, entries) compress about tenfold; the report payloads
+    # arrive gzipped already (responses.payload_response) and pass through
+    app.add_middleware(GZipMiddleware, minimum_size=4096, compresslevel=5)
     app.include_router(api.router)
     app.include_router(openapi.router)  # GET /api/manifest
     app.include_router(pages.router)

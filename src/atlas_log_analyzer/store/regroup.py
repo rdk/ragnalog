@@ -13,7 +13,7 @@ With ``reassemble`` (a set built by an older version of its format) the entries
 are also assembled as the format assembles them today, from the stored rows
 alone (the log files may be gone): banners are attached to the entry they
 announce, by the rule of :func:`~atlas_log_analyzer.core.parser.attach_banners`
-applied in file order (``source_path``, then ``source_line``). Their rows are
+applied in file order (the stored order of the rows). Their rows are
 dropped and the entry they announce gets ``context["preamble"]``, which equals
 ingesting the same files with the current format. Entries an older version built
 differently from the same text (:data:`_REBUILD_HINT`) are first built again from
@@ -160,7 +160,8 @@ def _banner_plan(
 ) -> tuple[list[int], dict[int, str]]:
     """Banner rows to drop and the preamble of each entry they announce.
 
-    The rule of :func:`~atlas_log_analyzer.core.parser.attach_banners` in file order: a
+    The rule of :func:`~atlas_log_analyzer.core.parser.attach_banners` in file order (the
+    stored order): a
     banner *links* to the next row of its file when that row has the same thread and
     logger and is at most ``window_ms`` later. A row starts a segment unless the row
     before it links to it; a segment that ends on a row which is no banner gives that
@@ -177,18 +178,18 @@ def _banner_plan(
         & (pl.col("_ms").shift(-1) - pl.col("_ms")).is_between(0, window_ms)
     ).fill_null(False)
     segment = (~pl.col("_link").shift(1, fill_value=False)).cum_sum()
+    # stored rows are in file order already: the files of a set are parsed one after another
+    # (no sort, no string casts of the dictionary columns: a 745k-row set peaked at 800 MB)
     attached = (
         pl.scan_parquet(entries_path)
         .with_row_index("_row")
         .select(
             "_row",
-            pl.col("source_path").cast(pl.String),
-            "source_line",
+            "source_path",
             pl.col("ts").dt.epoch("ms").alias("_ms"),
             "thread",
-            pl.col("logger").cast(pl.String),
+            "logger",
         )
-        .sort(["source_path", "source_line", "_row"], nulls_last=True)
         .with_columns(is_banner.alias("_banner"))
         .with_columns(link.alias("_link"))
         .with_columns(segment.alias("_seg"))
@@ -269,20 +270,25 @@ def _with_preambles(column: Any, lo: int, preambles: dict[int, str]) -> pa.Array
 
 
 def _rebuilt_entries(entries_path: Path, fmt: LogFormat) -> dict[int, LogEntry]:
-    """Entries of the :data:`_REBUILD_HINT` rows built again from ``raw``, by row index."""
+    """Entries of the :data:`_REBUILD_HINT` rows built again from ``raw``, by row index.
+
+    A row stored with ``parse_error`` (lines before a file's first header, an unrecognised
+    header) is built as the parser builds it, without a header: only its exception
+    chain is taken (:func:`_rebuilt_columns`).
+    """
     df = (
         pl.scan_parquet(entries_path)
         .with_row_index("_row")
-        .filter(pl.col("parse_error").is_null() & _REBUILD_HINT)
-        .select("_row", pl.col("raw").fill_null(""))
+        .filter(_REBUILD_HINT)
+        .select("_row", pl.col("raw").fill_null(""), pl.col("parse_error").is_null())
         .collect()
     )
     out: dict[int, LogEntry] = {}
     nowhere = SourceRef("", 0, 0)
-    for row, raw in df.iter_rows():
+    for row, raw, parsed in df.iter_rows():
         header_line, *continuation = raw.split("\n")
-        header = fmt.parse_header(header_line)
-        if header is not None:
+        header = fmt.parse_header(header_line) if parsed else None
+        if header is not None or not parsed:
             out[row] = fmt.build(header, header_line, continuation, nowhere)
     return out
 
@@ -294,11 +300,12 @@ def _rebuilt_columns(table: pa.Table, lo: int, entries: dict[int, LogEntry]) -> 
     chains = table.column("exception_chain").to_pylist()
     for row, e in entries.items():
         i = row - lo
-        ctx = e.context
-        for name, key in _REBUILT_COLUMNS.items():
-            values[name][i] = ctx.get(key)
-        kept = [kv for kv in values["context"][i] or () if kv[0] == CTX_PREAMBLE]
-        values["context"][i] = [(k, v) for k, v in ctx.items() if k not in _WELL_KNOWN] + kept
+        if e.parse_error is None:  # an unparsed row has no context to split again
+            ctx = e.context
+            for name, key in _REBUILT_COLUMNS.items():
+                values[name][i] = ctx.get(key)
+            kept = [kv for kv in values["context"][i] or () if kv[0] == CTX_PREAMBLE]
+            values["context"][i] = [(k, v) for k, v in ctx.items() if k not in _WELL_KNOWN] + kept
         chain = e.exceptions
         values["exception_type"][i] = chain[0].type if chain else None
         values["exception_message"][i] = chain[0].message if chain else None
@@ -354,6 +361,7 @@ def resign_entries(
     format_name: str,
     *,
     reassemble: bool = False,
+    attach: bool | None = None,
     max_banners: int = MAX_BANNERS,
 ) -> int:
     """Write ``dst`` = ``src`` with :data:`DERIVED_COLUMNS` recomputed by ``recipe``.
@@ -369,29 +377,34 @@ def resign_entries(
         dst: Path of the rewritten file.
         recipe: Recipe to sign with (its spec decides how many frames the key holds).
         format_name: The set's format name (the first canonical part of a signature).
-        reassemble: Attach banners as the recipe's format does when parsing (for a set
-            built by an older version of the format).
+        reassemble: Assemble the entries as the recipe's format does today (for a set
+            built by an older version of the format): rebuild the hinted rows from
+            ``raw``, and attach banners unless ``attach`` says otherwise.
+        attach: Attach banners (default: ``reassemble``); ``False`` for a set whose
+            format version attached them already
+            (:func:`~atlas_log_analyzer.core.formats.base.banners_since`).
         max_banners: Most banners attached to one entry (as ``attach_banners``).
 
     Returns:
         The number of rows written.
 
     """
+    banners = reassemble if attach is None else attach
     rebuilt = dst.with_name(f"{dst.stem}.rebuilt{dst.suffix}")
     if reassemble and _rebuild_file(src, rebuilt, recipe.fmt):
         try:
-            return _resign(rebuilt, dst, recipe, format_name, True, max_banners)
+            return _resign(rebuilt, dst, recipe, format_name, banners, max_banners)
         finally:
             rebuilt.unlink(missing_ok=True)
-    return _resign(src, dst, recipe, format_name, reassemble, max_banners)
+    return _resign(src, dst, recipe, format_name, banners, max_banners)
 
 
 def _resign(
-    src: Path, dst: Path, recipe: Recipe, format_name: str, reassemble: bool, max_banners: int
+    src: Path, dst: Path, recipe: Recipe, format_name: str, attach: bool, max_banners: int
 ) -> int:
     import pyarrow.compute as pc
 
-    window = banner_window_ms(recipe.fmt) if reassemble else 0
+    window = banner_window_ms(recipe.fmt) if attach else 0
     banner_rows, blank_rows = _special_rows(src, window > 0, titles_from_body(recipe.fmt))
     drop, preambles = _banner_plan(src, banner_rows, window, max_banners) if window else ([], {})
     keys = _key_frame(src, recipe.spec.frames)

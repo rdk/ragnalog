@@ -21,13 +21,18 @@ or a set: the capture the set belongs to, else a capture of that one node.
 from __future__ import annotations
 
 import dataclasses
-import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
-from atlas_log_analyzer.service.captures import get_capture, is_capture_ref, resolve_capture
+from atlas_log_analyzer.core.paths import safe_name
+from atlas_log_analyzer.service.captures import (
+    CaptureInfo,
+    get_capture,
+    is_capture_ref,
+    resolve_capture,
+)
 from atlas_log_analyzer.service.errors import Front, OpError, flag
 from atlas_log_analyzer.service.params import (
     DEFAULT_MAX_RAW,
@@ -109,10 +114,11 @@ class CaptureWindow:
 
 
 def capture_from_ref(sets: Sets, ref: str, *, front: Front) -> Capture:
-    """Open the capture of ``ref``: a capture reference, or a set (its capture, else itself).
+    """Open the capture of ``ref``: a capture reference, a bare capture id, or a set.
 
-    A set without a ``capture`` becomes a capture of one node (its ``node``, else its
-    name, else its id) without an id.
+    A set opens its capture; a set without a ``capture`` becomes a capture of one node
+    (its ``node``, else its name, else its id) without an id. A ``ref`` that names no set
+    but is exactly a capture id (as ``captures`` and the pages print it) is that capture.
 
     Raises:
         OpError: Reasons ``capture_not_found``, ``ambiguous_capture``, ``set_not_found``,
@@ -121,16 +127,22 @@ def capture_from_ref(sets: Sets, ref: str, *, front: Front) -> Capture:
     """
     from atlas_log_analyzer.service.cluster import open_capture
 
+    info: CaptureInfo | None
     if is_capture_ref(ref):
         info = resolve_capture(sets, ref, front=front)
     else:
-        ls = open_set(sets, ref, front=front)
-        m = ls.manifest
-        found = get_capture(sets, m.capture) if m.capture is not None else None
-        if found is None:
-            node = m.node or m.name or m.id
-            return open_capture([(node, ls)], cluster=m.cluster, front=front)
-        info = found
+        try:
+            ls = open_set(sets, ref, front=front)
+        except OpError as exc:
+            info = get_capture(sets, ref) if exc.reason == "set_not_found" else None
+            if info is None:
+                raise
+        else:
+            m = ls.manifest
+            info = get_capture(sets, m.capture) if m.capture is not None else None
+            if info is None:
+                node = m.node or m.name or m.id
+                return open_capture([(node, ls)], cluster=m.cluster, front=front)
     pairs = [(n.node, open_set(sets, n.id, front=front)) for n in info.nodes]
     return open_capture(pairs, capture_id=info.capture, cluster=info.cluster, front=front)
 
@@ -428,8 +440,7 @@ def report_filename(capture_: Capture) -> Path:
         stem = m.name or m.id
     else:
         stem = f"{capture_.cluster}_{capture_.id}" if capture_.cluster else capture_.id
-    clean = re.sub(r"[^\w.-]+", "_", stem).strip("._")
-    return Path((clean or "capture") + ".html")
+    return Path(safe_name(stem, "capture") + ".html")
 
 
 def report_file(

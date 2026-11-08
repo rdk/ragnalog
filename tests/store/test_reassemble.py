@@ -162,13 +162,18 @@ def v3_log(tmp_path: Path) -> Path:
     """Entries jira@2 built differently: a two-word user's request, a suppressed cause."""
     head = "2026-10-29 11:00:0{}+0100"
     http = "http-nio-8080-exec-4 url: /rest/api/2/issue/ABC-1"
+    run = [_line("04,000", "exec-7", "org.acme.Run", "=" * (20 + i)) for i in range(20)]
     lines = [
+        f"orphan line before the first header\n{SUPPRESSED}",  # parse_error, own chain
         f"{head.format('0,000')} {http} WARN Automation Robot 660x10x1 1zz9 10.0.0.9 "
         "/rest/api/2/issue/ABC-1 [org.acme.Rest] Request rejected",
         f"{head.format('1,000')} exec-2 ERROR Anonymous user [org.acme.Job] Job ran",
         _line("02,000", "exec-3", "org.acme.Close", STARS),
         f"{head.format('2,002')} exec-3 ERROR      [org.acme.Close] Close failed\n{SUPPRESSED}",
         f"{head.format('3,000')} exec-5 ERROR jdoe 661x11x1 2yy8 10.0.0.8 /x [org.acme.Rest] ok",
+        f"2026-13-45 11:00:03,500+0100 bad header\n{SUPPRESSED}",  # unrecognised header
+        *run,  # more banners than MAX_BANNERS: jira@2 attached the last 16 already
+        _line("04,001", "exec-7", "org.acme.Run", "Run failed"),
     ]
     path = tmp_path / "v3.log"
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -204,8 +209,9 @@ def test_upgrade_from_v2_rebuilds_entries_from_raw(
         _v2_parse(patch)
         old = ingest_paths(old_store, [v3_log], name="fx", fmt=JiraV2()).logset
     stale = pl.read_parquet(old.entries_path)
-    assert stale["user"][0].startswith("Automation Robot 660x10x1")
-    assert stale["exception_chain"].list.len().to_list()[2] == 2
+    assert stale["user"][1].startswith("Automation Robot 660x10x1")
+    assert stale["exception_chain"].list.len().to_list()[0] == 2  # orphan: old chain
+    assert stale["exception_chain"].list.len().to_list()[3] == 2
     v3_log.unlink()  # upgrade reads the stored entries only
 
     assert old_store.upgrade("fx").upgraded
@@ -215,11 +221,13 @@ def test_upgrade_from_v2_rebuilds_entries_from_raw(
     assert entries.equals(want_entries)
     assert groups.equals(want_groups)
     assert _manifest(up) == _manifest(new)
-    first = entries.row(0, named=True)
+    first = entries.row(1, named=True)
     assert (first["user"], first["request_id"], first["ip"]) == (
         "Automation Robot",
         "660x10x1",
         "10.0.0.9",
     )
-    pre = dict(entries.row(2, named=True)["context"])
+    pre = dict(entries.row(3, named=True)["context"])
     assert pre[CTX_PREAMBLE].endswith(STARS)  # the banner stays attached
+    assert entries["exception_chain"].list.len().to_list()[0] == 1  # suppressed cause out
+    assert entries.height == stale.height  # no banner attached a second time

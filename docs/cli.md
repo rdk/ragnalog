@@ -186,7 +186,9 @@ unique id prefix (resolved in that order).
 A capture (the sets of several cluster nodes collected together, see
 `captures`) is referred to as `capture:ID` (its id or a unique prefix of it),
 `cluster:NAME` (the newest capture of the cluster) or `cluster:NAME@YYYY-MM-DD`
-(the cluster's capture whose last entry falls on that UTC day). No match is
+(the cluster's capture whose last entry falls on that UTC day). A bare capture
+id (as `captures` prints it) also names its capture where a set is accepted,
+when no set has that id or name. No match is
 reason `capture_not_found` (`not_found`, exit 2), several are
 `ambiguous_capture` (`ambiguous`, exit 1). `capture`, `timeline`, `matrix`,
 `events`, `interactions`, `entries` and `report` take a capture reference
@@ -198,7 +200,9 @@ from the latest first entry of the nodes to the earliest last entry, the time
 all nodes have logs for, so a group is not "only on NODE2" because NODE1's
 files start later), `--window union` (earliest first to latest last), or
 `--since`/`--until` (an explicit window; relative times count back from the
-capture's last entry). Both ends are inclusive.
+capture's last entry). Both ends are inclusive. An explicit window is clamped to
+the logs (`--until 9999-12-31` ends at the last entry); one that misses them
+entirely is `invalid_value`.
 
 ### Signature prefixes
 

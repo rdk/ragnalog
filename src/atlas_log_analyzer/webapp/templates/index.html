@@ -7,7 +7,7 @@
         <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
         <div class="set-meta muted small"><span class="mono">{{ s.id }}</span><span>{{ s.format }}</span><span>{{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }}</span><span>{{ s.bytes|size }}</span>{% if s.node and not capture %}<span>node {{ s.node }}</span>{% endif %}</div>
       </td>
-      <td class="nowrap">{{ s.first_ts|range(s.last_ts) }}</td>
+      <td class="when"><span class="nowrap">{{ s.first_ts|range(s.last_ts) }}</span>{% if strips[s.id] %}<a class="strip-link" href="/sets/{{ s.id }}" data-href="/sets/{{ s.id }}" tabindex="-1">{{ strips[s.id] }}</a>{% endif %}</td>
       <td class="num">{{ s.entry_count|num }}</td>
       <td class="num">{{ s.group_count|num }}</td>
       <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
@@ -30,11 +30,11 @@
 
 {% if sets %}
 <div class="card table-wrap">
-<table class="sets">
+<table class="sets"{% if axis %} data-axis-lo="{{ axis.lo }}" data-axis-hi="{{ axis.hi }}" data-axis-bucket="{{ axis.bucket }}"{% endif %}>
   <thead>
     <tr>
       <th>Set</th>
-      <th>Log time range</th>
+      <th class="when">Log time range{% if axis %}<span class="strip-axis muted" aria-hidden="true"><span>{{ axis.lo_text }}</span><span>{{ axis.hi_text }}</span></span>{% endif %}</th>
       <th class="num">Entries</th>
       <th class="num">Groups</th>
       <th class="num">Errors</th>
@@ -52,7 +52,8 @@
         <span class="muted small">{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span>
         <div class="set-meta muted small"><span>capture <span class="mono">{{ c.id }}</span></span><span>{{ c.bytes|size }}</span></div>
       </td>
-      <td class="nowrap">{{ c.first_ts|range(c.last_ts) }}</td>
+      {% set ck = "capture:" ~ c.id %}
+      <td class="when"><span class="nowrap">{{ c.first_ts|range(c.last_ts) }}</span>{% if strips[ck] %}<a class="strip-link" href="/captures/{{ ck|urlencode }}" data-href="/captures/{{ ck|urlencode }}" tabindex="-1">{{ strips[ck] }}</a>{% endif %}</td>
       <td class="num">{{ c.entry_count|num }}</td>
       <td class="num"><span class="muted">–</span></td>
       <td class="num">{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}–{% endif %}</td>

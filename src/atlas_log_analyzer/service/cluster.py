@@ -329,11 +329,13 @@ def resolve_window(
     entry, ``union`` from the earliest first to the latest last. With ``since`` or
     ``until`` the mode is ``explicit``; a missing end comes from ``mode``. Times are
     datetimes (naive = UTC) or the strings of ``--since`` (ISO 8601, a date, or
-    ``30m``/``2h``/``1d`` before the capture's last entry).
+    ``30m``/``2h``/``1d`` before the capture's last entry). An explicit window is
+    clamped to the union of the logs.
 
     Raises:
         OpError: ``invalid_value`` for an unknown mode, a bad time, ``since`` after
-            ``until``, no entries at all, or an empty overlap (hint: union).
+            ``until``, an explicit window outside the logs, no entries at all, or an
+            empty overlap (hint: union).
 
     """
     if mode not in WINDOW_MODES:
@@ -344,7 +346,7 @@ def resolve_window(
     ranges = [r for m in capture.nodes if (r := _node_range(m.logset)) is not None]
     if not ranges:
         raise OpError("invalid_value", "the capture has no entries with a timestamp")
-    last = max(r[1] for r in ranges)
+    first, last = min(r[0] for r in ranges), max(r[1] for r in ranges)
     if mode == "overlap":
         start, end = max(r[0] for r in ranges), min(r[1] for r in ranges)
     else:
@@ -358,7 +360,14 @@ def resolve_window(
                 "invalid_value",
                 f"{flag('since', front)} {_iso(start)} is after {flag('until', front)} {_iso(end)}",
             )
-        return Window("explicit", start, end)
+        if start > last or end < first:
+            raise OpError(
+                "invalid_value",
+                f"the window {_iso(start)} → {_iso(end)} holds no entries of the capture "
+                f"({_iso(first)} → {_iso(last)})",
+            )
+        # clamped to the logs: an open end (until=9999-12-31) must not make empty buckets
+        return Window("explicit", max(start, first), min(end, last))
     if start > end:
         raise OpError(
             "invalid_value",

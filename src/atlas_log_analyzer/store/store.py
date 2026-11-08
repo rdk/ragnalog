@@ -20,7 +20,7 @@ import xxhash
 
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats.base import LogFormat
+from atlas_log_analyzer.core.formats.base import LogFormat, banners_since
 from atlas_log_analyzer.core.grouping import Group, SignedEntry
 from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.pipeline import Recipe, format_version, key_format_version
@@ -576,6 +576,7 @@ class Store:
                 recipe,
                 m.format,
                 reassemble=built_with < format_version(fmt),
+                attach=built_with < banners_since(fmt),
             )
             group_count = groups_from_entries(tmp / ENTRIES_FILE, tmp / GROUPS_FILE)
             sources, first_ts, last_ts = m.sources, m.first_ts, m.last_ts
