@@ -623,3 +623,5 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .members.moves .rho { flex: none; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
 .members.moves .spark { flex: none; width: 72px; height: 18px; }
 .members.moves button { grid-template-columns: auto auto minmax(0, 1fr) auto auto; }
+/* search matches in the table */
+.c-tpl mark { background: var(--blue-wash-2); color: inherit; border-radius: 2px; padding: 0 1px; }

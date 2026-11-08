@@ -711,7 +711,7 @@
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, ovName: opts.overlay ? opts.overlay.name : "" };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -748,7 +748,7 @@
         rows.push(`<div class="tt-r"><b>${fmt(v)}</b><i class="sw-${geo.series[s].key}"></i><span>${esc(geo.series[s].name)}</span></div>`);
       }
       if (geo.series.length > 1) rows.push(`<div class="tt-r tt-t"><b>${fmt(geo.totals[b])}</b><i></i><span>total</span></div>`);
-      if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>open group</span></div>`);
+      if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>${esc(geo.ovName)}</span></div>`);
       if (geo.top) {
         const [ha, he] = binHours(b, geo.k, geo.off);
         const top = topIn(ha, he - 1, 3);
@@ -807,12 +807,18 @@
     }
     return n.some((x) => x > 0) ? { n, lv } : null;
   })();
-  /** The open group, drawn as a line over the timeline: where in the set's day it happens. */
-  function overlayRow() {
+  /** What the timeline draws over its bars: the open group, else (with a search, logger,
+   *  exception or has-exception filter) the groups the table lists, so a search shows when
+   *  its matches happen. ``{key, name, rows}`` or null. */
+  function overlaySpec() {
     const r = S.sig ? lookup(S.sig) : null;
-    return r && !r.gone && r.hourly && r.hourly.length && !isMuted(r) ? r : null;
+    if (r && !r.gone && r.hourly && r.hourly.length && !isMuted(r)) return { key: "g:" + r.id, name: "open group", rows: [r] };
+    if (!(S.q || S.lg || S.ex || S.hx)) return null;
+    const rows = LIST.filter((x) => !x.gone && x.hourly.length && !isMuted(x));
+    if (!rows.length || rows.length >= view(S.view).rows.length) return null;
+    return { key: ["f", S.view, S.q, S.lg, S.ex, S.hx, S.lv.size, rows.length].join("|"), name: `${fmt(rows.length)} listed group${rows.length === 1 ? "" : "s"}`, rows };
   }
-  const overlayKey = () => { const r = overlayRow(); return r ? r.id : ""; };
+  const overlayKey = () => { const o = overlaySpec(); return o ? o.key : ""; };
   const LV_TITLE = { ERROR: "ERROR and FATAL", DEBUG: "DEBUG and TRACE", OTHER: "Unknown level" };
   function renderLegend() {
     const shown = BUCKETS.filter((b) => (((D.timeline || {}).levels || {})[b] || []).some((v) => v > 0));
@@ -829,8 +835,10 @@
     if (clipped) {
       html += `<span class="tl-muted" title="Entries stamped far outside the set's main time span (a wrong clock, a corrupt line) are left out of the chart; the table counts them">${fmt(clipped)} outside the chart</span>`;
     }
-    if (overlayRow()) {
-      html += `<span class="lg-sel" title="The open group: its entries per hour as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest hour"><i class="sw-sel"></i>Open group</span>`;
+    const ov = overlaySpec();
+    if (ov) {
+      const what = ov.rows.length === 1 && S.sig ? "The open group" : "The groups the filters list";
+      html += `<span class="lg-sel" title="${what}: entries per hour as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest hour"><i class="sw-sel"></i>${esc(ov.name.charAt(0).toUpperCase() + ov.name.slice(1))}</span>`;
     }
     $("tl-legend").innerHTML = html;
   }
@@ -852,12 +860,12 @@
     const series = BUCKETS.filter((b) => TL_TOTALS[b] > 0 && !S.hl.has(b)).map((b) => ({
       key: b, name: b, cls: "s-" + b, data: levels[b],
     }));
-    const ov = overlayRow();
+    const ov = overlaySpec();
     let overlay = null;
     if (ov) {
       const data = new Float64Array(NH);
-      for (const [i, n] of ov.hourly) if (i >= 0 && i < NH) data[i] += n;
-      overlay = { data, name: "open group" };
+      for (const row of ov.rows) for (const [i, n] of row.hourly) if (i >= 0 && i < NH) data[i] += n;
+      overlay = { data, name: ov.name };
     }
     TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
     const k = TL.k;
@@ -1029,6 +1037,21 @@
       return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted} title="${esc(tip || label)}">${esc(label)}</th>`;
     }).join("") + "</tr>";
   }
+  /** ``html`` (escaped text and tags) with every match of the search text marked. */
+  function markHtml(html, text) {
+    if (!text) return html;
+    const needle = esc(text).toLowerCase();
+    return html.split(/(<[^>]*>)/).map((part) => {
+      if (part.startsWith("<")) return part;
+      const low = part.toLowerCase();
+      let out = "", i = 0, j;
+      while ((j = low.indexOf(needle, i)) >= 0) {
+        out += part.slice(i, j) + "<mark>" + part.slice(j, j + needle.length) + "</mark>";
+        i = j + needle.length;
+      }
+      return out + part.slice(i);
+    }).join("");
+  }
   function rowHtml(r, v) {
     const n = cnt(r);
     const lmin = Math.log10(SCALE.min), span = Math.log10(SCALE.max) - lmin;
@@ -1037,7 +1060,7 @@
     const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone " : "") + (isMuted(r) ? "is-muted" : "");
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
     const of = S.sort === "spike" && spikeOf(r) > 0
-      ? `<small class="of spk" title="${S.t ? "Rate in the window over the rate outside it" : "Busiest hour over the average active hour"}">×${esc(compact(spikeOf(r)))}</small>`
+      ? `<small class="of spk" title="${S.t ? "Rate in the window over the rate outside it" : "Busiest hour over the average hour of the set"}">×${esc(compact(spikeOf(r)))}</small>`
       : S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
     const last = S.t ? winOf(r).last : r.last ? { iso: r.last } : null;
     const cTitle = S.t ? ` title="${fmt(n)} in the window of ${fmt(r.count)} in total"` : "";
@@ -1045,7 +1068,7 @@
       `<td class="c-count"${cTitle}><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-logger" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</td>` +
-      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
+      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${markHtml(tplHtml(r.tpl), Q.text)}</span><span class="sub">${markHtml(esc(shortLogger(r.logger)), Q.text)}${r.exc ? " · " + markHtml(esc(shortExc(r.exc)), Q.text) : ""}</span></td>` +
       `<td class="c-exc" title="${esc(r.exc)}">${r.exc ? `<span class="xc"><span class="xp">${esc(r.exc.slice(0, r.exc.lastIndexOf(".") + 1))}</span><span class="xs">${esc(shortExc(r.exc))}</span></span>` : ""}</td>` +
       `<td class="c-spark">${spark(r)}</td>` +
       `<td class="c-last" title="${esc(seenTitle(last))}">${esc(seenText(last))}</td>` +

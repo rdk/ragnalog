@@ -159,6 +159,9 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   shows *when* it happens; when it rises above the baseline it is also drawn as a
   stepped line over the (dimmed) level bars, on the chart's scale. The tooltip adds
   its count.
+  With no group open, a search, logger, exception or has-exception filter draws
+  the groups the table lists the same way ("17 listed groups"): when a search's
+  matches happen. Matches of the search are marked in the table's templates.
 - The timeline tooltip lists, under the level counts, the three largest groups of
   the hovered bar (muted groups and hidden levels left out): what a spike is made of.
 - *First* lane (under the timeline's axis): a dot per hour in which groups were first
