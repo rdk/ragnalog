@@ -173,7 +173,8 @@ class GroupFilter:
         logger: Logger name; also matches loggers below it (``com.foo`` → ``com.foo.Bar``),
             also as Jira abbreviates them (``com.foo`` → ``c.foo.Bar``, ``c.f.x.y.Bar``).
         since: Keep groups seen at or after this time (``last_seen >= since``; naive = UTC).
-        until: Keep groups first seen before this time (``first_seen < until``).
+        until: Keep groups first seen before this time (``first_seen < until``). With both,
+            :meth:`LogSet.groups` keeps only groups with an entry in ``[since, until)``.
         with_exception: Keep groups whose ``exception_type`` is not null (any level).
         exception: Case-insensitive substring of ``exception_type``.
         contains: Case-insensitive substring of ``template``.

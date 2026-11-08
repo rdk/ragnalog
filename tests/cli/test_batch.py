@@ -88,8 +88,12 @@ def test_bad_lines_are_errors_and_never_stop(
 def test_global_options_inside_a_line_are_usage_errors(
     mini: str, store_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _, docs, _ = _batch([["groups", mini, "--output", "table"]], store_dir, capsys, monkeypatch)
+    lines = [["groups", mini, "--output", "table"], ["--store", "elsewhere", "sets"]]
+    _, docs, _ = _batch(lines, store_dir, capsys, monkeypatch)
     assert docs[0]["error"]["code"] == "usage" and "--output" in docs[0]["error"]["message"]
+    # a global option before the command: said so, not "Unknown command"
+    assert docs[1]["error"]["code"] == "usage"
+    assert "global option (--store)" in docs[1]["error"]["message"]
 
 
 def test_unexpected_exception_is_internal_error(

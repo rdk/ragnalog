@@ -235,7 +235,7 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 | `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. Names: `TRACE`, `DEBUG`, `INFO`, `WARN` (also `WARNING`), `ERROR`, `FATAL` and `UNKNOWN` (entries whose header could not be parsed: `parse_error` rows, level 0). Anything else (also `SEVERE`, `FINE`) → error `invalid_level` (`--level: unknown level 'SEVERE'; …`). The web API and `LogSet` use the same parser (`store/levels.py`). |
 | `--min-level L` | This level or more severe (one name, as `--level`; `UNKNOWN` entries are never included). |
 | `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. Jira writes all but the last three parts of a logger as initials, so a prefix also matches those forms: `com.atlassian.jira` matches `c.a.jira.index.Builder` and `c.a.j.issue.index.Finder`. |
-| `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
+| `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` a group is kept when it has an entry in the window: `last_seen >= since`, `first_seen < until`, and with both an entry in `[since, until)` (a group seen before and after the window but not inside it is left out); the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
 | `--with-exception` | `groups`, `entries`: only rows that carry an exception (`exception_type` not null), at any level — a DEBUG entry with a stack trace is found although `--min-level WARN` hides it. |
 | `--exception TEXT` | `groups`, `entries`: case-insensitive substring of `exception_type` (the outermost exception of the chain; `Caused by:` types are not searched). |
 | `--contains TEXT` | `entries`: case-insensitive substring of `raw`. `groups`: case-insensitive substring of the masked `template`. |
@@ -1044,7 +1044,7 @@ name (`usage`).
 of compact JSON (under 10 KB), for agents:
 
 ```json
-{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.2.0", "usage": "...", "notes": [str],
+{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.2.1", "usage": "...", "notes": [str],
  "workflow": [{"run": "triage LOGSET", "purpose": "new kinds of errors since the previous set?"}, ...],
  "when": [{"run": "query LOGSET SQL", "purpose": "..."}],
  "commands": {"groups": {"usage": "LOGSET [--level str] ... [--limit int=50] ... [--brief]", "output": "groups.v1", "exit": [0, 1, 3]}, ...},
@@ -1104,7 +1104,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.2.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 2, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.2.1", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 2, "python": "3.14.2"}
 ```
 
 ### `batch`

@@ -212,3 +212,12 @@ def test_a_damaged_set_is_a_store_error(jcli: Invoke, mini: str, store_dir: Path
     assert result.code == 3 and result.json()["error"]["code"] == "store_error"
     assert "groups.parquet is missing" in result.json()["error"]["message"]
     assert f"atlas-log remove {set_id}" in result.json()["error"]["hint"]
+
+
+def test_report_into_a_missing_folder_names_the_folder(
+    jcli: Invoke, mini: str, tmp_path: Path
+) -> None:
+    res = jcli("report", mini, "--out", tmp_path / "nope" / "r.html")
+    err = res.json()["error"]
+    assert res.code == 2 and err["code"] == "file_not_found"
+    assert f"the folder {tmp_path / 'nope'} does not exist" in err["message"]

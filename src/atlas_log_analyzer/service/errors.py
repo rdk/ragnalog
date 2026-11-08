@@ -303,6 +303,17 @@ def _is(exc: BaseException, module: str, name: str) -> bool:
 
 _ENOENT: Final = "no such file or directory"
 
+
+def _missing(filename: str) -> str:
+    """``no such file or directory: PATH``, naming the folder when that is what is missing."""
+    from pathlib import Path
+
+    parent = Path(filename).parent
+    if str(parent) not in ("", ".") and not parent.exists():
+        return f"{_ENOENT}: {filename} (the folder {parent} does not exist)"
+    return f"{_ENOENT}: {filename}"
+
+
 _ACCESS_ERRORS: Final = (PermissionError, IsADirectoryError, NotADirectoryError, FileExistsError)
 """OSErrors of a path the system refuses: ``store_error`` (the store or a file it writes)."""
 
@@ -358,7 +369,7 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
         return OpError("unknown_format", _message(exc))
     if isinstance(exc, FileNotFoundError):
         if exc.filename is not None:
-            return OpError("file_not_found", f"no such file or directory: {exc.filename}")
+            return OpError("file_not_found", _missing(str(exc.filename)))
         text = _message(exc)
         if not text.startswith(_ENOENT):
             text = f"{_ENOENT}: {text}"

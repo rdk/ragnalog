@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -126,8 +127,6 @@ def test_logger_prefix_matches_the_forms_jira_abbreviates() -> None:
     """Jira writes all but a logger's last three parts as initials."""
     import polars as pl
 
-    from atlas_log_analyzer.store.filters import GroupFilter
-
     names = [
         "c.a.jira.index.Builder",  # com.atlassian.jira.index.Builder
         "c.a.j.issue.index.Finder",  # com.atlassian.jira.issue.index.Finder
@@ -147,3 +146,25 @@ def test_logger_prefix_matches_the_forms_jira_abbreviates() -> None:
     assert matching("c.a.jira") == names[:2]
     assert matching("c.a.jira.index.Builder") == names[:1]
     assert matching("org.acme") == []
+
+
+def test_groups_in_a_window_need_an_entry_inside_it(tmp_path: Path) -> None:
+    """A group seen before and after a window, but not in it, is not listed for it."""
+    from atlas_log_analyzer.store import Store
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+
+    log = tmp_path / "atlassian-jira.log"
+    lines = [
+        "2026-10-29 08:00:00,000+0000 exec-1 ERROR anon [org.acme.A] gap 1",
+        "2026-10-29 09:30:00,000+0000 exec-1 ERROR anon [org.acme.B] inside 1",
+        "2026-10-29 11:00:00,000+0000 exec-1 ERROR anon [org.acme.A] gap 2",
+    ]
+    log.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    ls = ingest_paths(Store(tmp_path / "store"), [log]).logset
+    window = {
+        "since": datetime(2026, 10, 29, 9, tzinfo=UTC),
+        "until": datetime(2026, 10, 29, 10, tzinfo=UTC),
+    }
+    assert ls.groups(**window)["logger"].cast(str).to_list() == ["org.acme.B"]
+    assert ls.count_groups(**window) == 1
+    assert ls.count_groups(since=window["since"]) == 2  # one bound: both have an entry after it

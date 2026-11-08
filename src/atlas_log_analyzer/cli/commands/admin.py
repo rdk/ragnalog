@@ -294,6 +294,11 @@ def _batch_line(outer: ctx.Context, number: int, line: str) -> str:
         return refused(f"{argv[0]} does not write one JSON document and cannot run in batch")
     if any(a in ("--help", "-h", "--version") for a in argv):
         return refused("--help and --version are not available in batch")
+    if argv[0].startswith("-"):
+        return refused(
+            f"a line starts with its command, not a global option ({argv[0]}): give global "
+            "options to batch itself (atlas-log --store DIR batch)"
+        )
     buffer = io.StringIO()
     o = outer.output
     inner = Output(

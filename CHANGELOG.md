@@ -10,11 +10,25 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
-## [0.2.0] - 2026-11-08
+## [0.2.1] - 2026-11-08
 
-The first tagged release. Install it with
-`uv tool install "atlas-log-analyzer[web] @ git+https://github.com/rdk/atlas-log-analyzer@v0.2.0"`
-or run the container image (see the README).
+The first published release (0.2.0 was tagged, but its container image did not
+start, so it has no release). Install it with
+`uv tool install "atlas-log-analyzer[web] @ git+https://github.com/rdk/atlas-log-analyzer@v0.2.1"`
+or run the container image (see the README). What it does is listed under 0.2.0
+in CHANGELOG.md; 0.2.1 adds these fixes.
+
+### Fixed
+
+- Container image: the program starts (its environment is built where it runs).
+- `groups --since T --until T` lists only groups with an entry in the window, not
+  every group whose first-to-last span covers it.
+- A missing output folder is named (`report --out missing/r.html`).
+- `batch`: a line that starts with a global option says so.
+
+## [0.2.0] - 2026-11-08 [no release]
+
+Everything below; tagged only.
 
 ### Ingest and store
 
@@ -69,5 +83,6 @@ or run the container image (see the README).
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.1
 [0.2.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.0

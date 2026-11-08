@@ -313,10 +313,7 @@ class LogSet:
         """
         if sort not in GROUP_SORTS:
             raise ValueError(f"unknown sort {sort!r}; expected one of {', '.join(GROUP_SORTS)}")
-        lf = self.groups_lazy()
-        cond = group_filter(where, filters).predicate()
-        if cond is not None:
-            lf = lf.filter(cond)
+        lf = self._filtered_groups(group_filter(where, filters))
         if coarse:
             lf = _coarse_groups(lf)
         match sort:
@@ -331,6 +328,26 @@ class LogSet:
         if offset or limit is not None:
             lf = lf.slice(offset, limit)
         return lf.collect()
+
+    def _filtered_groups(self, where: GroupFilter) -> pl.LazyFrame:
+        """Return the groups matching ``where`` (lazy).
+
+        With both ``since`` and ``until`` only groups with an entry in that window: a span
+        that merely covers it is not enough.
+        """
+        lf = self.groups_lazy()
+        cond = where.predicate()
+        if cond is not None:
+            lf = lf.filter(cond)
+        if where.since is not None and where.until is not None:
+            inside = (
+                self.entries_lazy()
+                .filter(EntryFilter(since=where.since, until=where.until).predicate())
+                .select(pl.col("signature").unique())
+                .collect()["signature"]
+            )
+            lf = lf.filter(pl.col("signature").is_in(inside.implode()))
+        return lf
 
     def count_groups(
         self,
@@ -354,10 +371,7 @@ class LogSet:
             TypeError: Both ``where`` and keyword filters.
 
         """
-        lf = self.groups_lazy()
-        cond = group_filter(where, filters).predicate()
-        if cond is not None:
-            lf = lf.filter(cond)
+        lf = self._filtered_groups(group_filter(where, filters))
         agg = pl.col("coarse_signature").n_unique() if coarse else pl.len()
         return int(lf.select(agg).collect().item())
 
