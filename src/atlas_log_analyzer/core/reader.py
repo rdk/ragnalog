@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import re
+import zlib
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
@@ -13,6 +14,7 @@ import xxhash
 __all__ = [
     "LOG_GLOB",
     "MAX_LINE_BYTES",
+    "DamagedFileError",
     "Line",
     "SourceFile",
     "discover_sources",
@@ -74,7 +76,7 @@ def is_gzip(path: Path | str) -> bool:
     """Tell whether ``path`` is a gzip file (``x.log.3.gz``): by its first two bytes."""
     try:
         with open(path, "rb") as f:
-            return f.read(2) == GZIP_MAGIC  # REPLACEME"
+            return f.read(2) == GZIP_MAGIC
     except OSError:
         return False
 
@@ -226,7 +228,20 @@ def iter_raw_lines(
     yield from lines
 
 
+class DamagedFileError(ValueError):
+    """A gzip file that is truncated or corrupt (a copy cut short): named, not a crash."""
+
+
 def _raw_lines(
+    path: Path | str, encoding: str, max_line_bytes: int, max_bytes: int | None
+) -> Generator[tuple[int, int, str]]:
+    try:
+        yield from _read_lines(path, encoding, max_line_bytes, max_bytes)
+    except (EOFError, gzip.BadGzipFile, zlib.error) as exc:
+        raise DamagedFileError(f"damaged gzip file {path}: {exc}") from exc
+
+
+def _read_lines(
     path: Path | str, encoding: str, max_line_bytes: int, max_bytes: int | None
 ) -> Generator[tuple[int, int, str]]:
     limit = max_line_bytes

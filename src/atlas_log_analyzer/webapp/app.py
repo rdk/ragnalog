@@ -38,7 +38,6 @@ def _host_name(header: str) -> str:
 
 
 _DEFAULT_PORTS = {"http": "80", "https": "443"}
-_PROXY_HEADERS = ("x-forwarded-host", "x-forwarded-for", "forwarded")
 
 
 def _authority(host: str, scheme: str) -> str:
@@ -53,8 +52,8 @@ def _authority(host: str, scheme: str) -> str:
 def _served_host(request: Request) -> str:
     """Return the host the browser addressed: a proxy's ``X-Forwarded-Host``, else ``Host``.
 
-    A page cannot add ``X-Forwarded-*`` to a request without a CORS preflight, which this
-    server never grants, so the header comes from a proxy in front of it.
+    Only for comparing ``Origin`` (a page of another site cannot add the header without a
+    CORS preflight, which this server never grants); the ``Host`` check ignores it.
     """
     forwarded = request.headers.get("x-forwarded-host")
     return forwarded.split(",", 1)[0] if forwarded else request.headers.get("host", "")
@@ -92,9 +91,10 @@ def create_app(
     ``/api/...`` JSON (OpenAPI at ``/docs``, with the document schemas). Errors are
     ``error.v1`` documents on ``/api`` and HTML pages elsewhere. With ``warm`` (``serve``)
     the newest capture's cluster page payload is built in the background at startup.
-    ``hosts`` (``serve`` on a loopback address: :data:`LOOPBACK_HOSTS`) refuses requests
-    whose ``Host`` is another name. Requests that change something (not GET/HEAD) from a
-    page of another site (``Origin``/``Sec-Fetch-Site``) are refused either way.
+    ``hosts`` (``serve`` on a loopback address: :data:`LOOPBACK_HOSTS` plus
+    ``settings.allowed_hosts``) refuses requests whose ``Host`` is another name.
+    Requests that change something (not GET/HEAD) from a page of another site
+    (``Origin``/``Sec-Fetch-Site``) are refused either way.
     """
     settings = settings or Settings.from_env()
     state = AppState(settings)
@@ -128,8 +128,7 @@ def create_app(
         path = request.url.path
         if (
             hosts is not None
-            # a reverse proxy in front (it adds these; a page cannot) answers for the names
-            and not any(h in request.headers for h in _PROXY_HEADERS)
+            # never lifted by a header: a rebinding page is same-origin and can send any
             and _host_name(request.headers.get("host", "")) not in hosts
         ):
             return error_response(OpError("http", "unexpected Host header"), 400)

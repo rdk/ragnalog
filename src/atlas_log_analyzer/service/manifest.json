@@ -336,7 +336,7 @@
    },
    "serve": {
     "summary": "Run the web app over the store",
-    "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--reload]",
+    "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--allowed-host str] [--reload]",
     "exit": [
      0,
      1,
@@ -498,6 +498,7 @@
    "ATLAS_LOG_APP_PACKAGES": "frames: application package prefixes",
    "ATLAS_LOG_DEBUG": "traceback of an internal_error",
    "ATLAS_LOG_TOKEN": "default of serve --token",
+   "ATLAS_LOG_ALLOWED_HOSTS": "serve: extra Host names (a proxy)",
    "ATLAS_LOG_MAX_UPLOAD_MB": "default of serve --max-upload-mb",
    "ATLAS_LOG_REPORT_CACHE": "serve: reports kept in memory",
    "NO_COLOR": "--color auto: no colour",
@@ -1717,7 +1718,7 @@
    "schema": "manifest-command.v1",
    "command": "serve",
    "version": "",
-   "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--reload]",
+   "usage": "[--host str=127.0.0.1] [--port int=8321] [--token str] [--max-upload-mb int] [--allowed-host str] [--reload]",
    "description": "Run the web app over the store: browse, compare and triage sets, upload new logs.\n\nPages: / (sets with triage verdicts and upload), /sets/SET (interactive\nreport, ?compare=auto|SET), /sets/SET/triage. JSON API under /api with\nthe same documents as this CLI (OpenAPI at /docs). Needs the `web` extra.\n\nOutput: server log on stderr until interrupted (Ctrl+C); nothing on stdout\n(\"schema\": none).\n\nExit codes: 0 stopped normally; 1 the `web` extra is not installed or bad\noption; 3 store error (including the default ./.atlas-log not existing inside\na git work tree: pass --store DIR or set ATLAS_LOG_STORE, and another server\nalready using the store: one server per store).",
    "exit": [
     0,
@@ -1746,6 +1747,11 @@
      "name": "--max-upload-mb",
      "type": "int",
      "help": "Largest accepted upload in MiB (env ATLAS_LOG_MAX_UPLOAD_MB; default 2048)."
+    },
+    {
+     "name": "--allowed-host",
+     "type": "str",
+     "help": "Comma-separated host names a loopback server also answers, e.g. the public name behind a reverse proxy that passes Host through (env ATLAS_LOG_ALLOWED_HOSTS; on loopback every other name is refused)."
     },
     {
      "name": "--reload",

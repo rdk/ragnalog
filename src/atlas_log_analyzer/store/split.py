@@ -294,6 +294,15 @@ class ExportJob:
     """``(node, status, errorMessage)`` per ``nodes.results`` item, in file order."""
 
 
+def _names_files(job_path: Path, files: dict[Path, None]) -> bool:
+    """Tell whether the ``job.json`` names a node that some of ``files`` start with."""
+    job = read_job(job_path)
+    if job is None or not job.nodes:
+        return False
+    names = [n + "_" for n, _, _ in job.nodes]
+    return any(f.name.startswith(tuple(names)) for f in files)
+
+
 def read_job(path: Path) -> ExportJob | None:
     """Read ``job.json``; ``None`` when it is not JSON or has neither a job id nor nodes."""
     try:
@@ -397,6 +406,10 @@ def _log_dirs(directory: Path, depth: int) -> list[Path]:
     return [d for c in _subdirs(directory) for d in _log_dirs(c, depth - 1)]
 
 
+_LOG_DIR_NAMES = ("application-logs", "tomcat-logs", "logs", "log")
+"""Names (and prefixes) of the log folders of one node, never node folders themselves."""
+
+
 def _groups(directory: Path) -> dict[Path, list[Path]]:
     """Log directories below ``directory``, by the sub-directory (a node candidate) they are in.
 
@@ -409,9 +422,11 @@ def _groups(directory: Path) -> dict[Path, list[Path]]:
             groups[child] = found
     if len(groups) == 1:
         # one folder holding the node folders (case/logs/node1, case/logs/node2): those are
-        # the candidates, not the one folder (which would merge the nodes into one set)
+        # the candidates, not the one folder (which would merge the nodes into one set);
+        # not when they are one node's log folders (application-logs, ...-archive)
         ((child, found),) = groups.items()
-        if len(found) >= 2 and child not in found:
+        named_like_logs = any(d.name.lower().startswith(_LOG_DIR_NAMES) for d in found)
+        if len(found) >= 2 and child not in found and not named_like_logs:
             return {d: [d] for d in found}
     return groups
 
@@ -456,11 +471,15 @@ def _inputs(paths: Sequence[Path]) -> _Inputs:
                 search.append(d)
                 files.update(dict.fromkeys(_logs(d)))
             # job.json in the input, its log directories or their parents below the input
-            # (an export's logs/ beside job.json), never above it: a stray old export there
+            # (an export's logs/ beside job.json); above the input (export/logs given) only
+            # when it names the nodes of these files: not a stray old export
             parents = [d.parent for d in log_dirs if d != path and d.parent != path.parent]
             for d in (path, *log_dirs, *parents):
                 if (job := d / JOB_FILE).is_file() and job not in jobs:
                     jobs.append(job)
+            above = path.parent / JOB_FILE
+            if above.is_file() and above not in jobs and _names_files(above, files):
+                jobs.append(above)
         elif path.is_file() and path.name.lower() == JOB_FILE:
             jobs.append(path)
         else:

@@ -20,12 +20,13 @@ atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a networ
 | `--port` | | `8321` |
 | `--token` | `ATLAS_LOG_TOKEN` | none: no auth |
 | `--max-upload-mb` | `ATLAS_LOG_MAX_UPLOAD_MB` | `2048` |
+| `--allowed-host` | `ATLAS_LOG_ALLOWED_HOSTS` | none: on loopback only loopback names |
 | | `ATLAS_LOG_REPORT_CACHE` | `8` report payloads kept in memory (and as many cluster payloads) |
 | `--reload` | | off (development) |
 
 Flags win over the environment. With `--reload` uvicorn runs the app in a child
 process that sees only the environment, so `serve` exports every setting
-(`ATLAS_LOG_STORE`, `ATLAS_LOG_TOKEN`, `ATLAS_LOG_MAX_UPLOAD_MB`,
+(`ATLAS_LOG_STORE`, `ATLAS_LOG_TOKEN`, `ATLAS_LOG_ALLOWED_HOSTS`, `ATLAS_LOG_MAX_UPLOAD_MB`,
 `ATLAS_LOG_REPORT_CACHE`) before it starts: a reloading server keeps its token.
 
 With `--token` every page and `/api` route needs it, checked before an upload body is
@@ -296,10 +297,10 @@ run next to the server.
   pass); otherwise `Origin` must name the host the browser addressed (`Host`, or a
   proxy's `X-Forwarded-Host`; default ports aside). On a loopback address only
   loopback `Host` names are answered (400 otherwise), so a page that rebinds its own
-  DNS name to 127.0.0.1 cannot read the API. Behind a reverse proxy that passes the
-  public `Host` through, the proxy's `X-Forwarded-For`/`X-Forwarded-Host`/`Forwarded`
-  header (a page cannot add those) lifts that check; a proxy that rewrites `Host` to
-  the upstream needs nothing. `--reload` (development) skips the `Host` check. An upload needs
+  DNS name to 127.0.0.1 cannot read the API. No header lifts that check (a
+  rebinding page is same-origin and may send any): behind a reverse proxy that passes
+  the public `Host` through, name it with `--allowed-host` (`ATLAS_LOG_ALLOWED_HOSTS`);
+  a proxy that rewrites `Host` to the upstream needs nothing. `--reload` (development) skips the `Host` check. An upload needs
   `Content-Length` (411 otherwise; browsers always send it), so its size is checked
   before the body is read. Uploaded file names are reduced to an ASCII basename (a
   Windows device name such as `nul.log` or `COM¹.log` gets a `_` prefix). Set

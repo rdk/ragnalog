@@ -235,3 +235,17 @@ def test_gzip_rotations_read_decompressed_in_order(tmp_path: Path) -> None:
     # max_bytes (the compressed size it was hashed at) does not cut a finished gzip file
     lines = list(iter_raw_lines(gz.path, max_bytes=gz.size))
     assert lines == [(1, 0, "line one"), (2, 9, "line two")]
+
+
+def test_a_cut_short_gzip_is_named_not_a_crash(tmp_path: Path) -> None:
+    import gzip
+
+    from atlas_log_analyzer.core.reader import DamagedFileError
+
+    whole = tmp_path / "app.log.1.gz"
+    with gzip.open(whole, "wb") as f:
+        f.write(b"line\n" * 5000)
+    cut = tmp_path / "cut.log.1.gz"
+    cut.write_bytes(whole.read_bytes()[:40])
+    with pytest.raises(DamagedFileError, match=r"cut.log.1.gz"):
+        list(iter_raw_lines(cut))

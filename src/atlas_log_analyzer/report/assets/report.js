@@ -1046,18 +1046,21 @@
     }).join("") + "</tr>";
   }
   /** ``html`` (escaped text and tags) with every match of the search text marked. */
+  const UNESC = { amp: "&", lt: "<", gt: ">", quot: '"', "#39": "'" };
   function markHtml(html, text) {
     if (!text) return html;
-    const needle = esc(text).toLowerCase();
+    const needle = text.toLowerCase();
     return html.split(/(<[^>]*>)/).map((part) => {
       if (part.startsWith("<")) return part;
-      const low = part.toLowerCase();
+      // match on the text itself, not on its escaped form ("lt" must not split "&lt;")
+      const raw = part.replace(/&(amp|lt|gt|quot|#39);/g, (_, n) => UNESC[n]);
+      const low = raw.toLowerCase();
       let out = "", i = 0, j;
       while ((j = low.indexOf(needle, i)) >= 0) {
-        out += part.slice(i, j) + "<mark>" + part.slice(j, j + needle.length) + "</mark>";
+        out += esc(raw.slice(i, j)) + "<mark>" + esc(raw.slice(j, j + needle.length)) + "</mark>";
         i = j + needle.length;
       }
-      return out + part.slice(i);
+      return out + esc(raw.slice(i));
     }).join("");
   }
   function rowHtml(r, v) {
@@ -1704,6 +1707,8 @@
     const body = $("drawer-body");
     const top = body.scrollTop;
     body.innerHTML = r ? drawerHtml(r, idx >= 0) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
+    // the section buttons of sections this group has (Related: only with "Moves with")
+    for (const b of $("d-nav").querySelectorAll("[data-jump]")) b.hidden = !document.getElementById(b.dataset.jump);
     body.scrollTop = sameGroup ? top : 0;
     if (!sameGroup) {
       body.classList.remove("fresh");

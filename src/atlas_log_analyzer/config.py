@@ -65,6 +65,15 @@ ENV_VARS: Final[tuple[EnvVar, ...]] = (
         "default of serve --token",
     ),
     EnvVar(
+        "ATLAS_LOG_ALLOWED_HOSTS",
+        "allowed_hosts",
+        "none",
+        "`serve`: comma-separated host names a loopback server also answers "
+        "(`logs.example.org`, behind a reverse proxy that passes the public `Host` "
+        "through; `--allowed-host` wins).",
+        "serve: extra Host names (a proxy)",
+    ),
+    EnvVar(
         "ATLAS_LOG_MAX_UPLOAD_MB",
         "max_upload_mb",
         "2048",
@@ -106,6 +115,8 @@ class Settings:
         max_upload_mb: Upper bound of one ingest upload in MiB (``ATLAS_LOG_MAX_UPLOAD_MB``).
         report_cache: Number of built report payloads kept in memory
             (``ATLAS_LOG_REPORT_CACHE``).
+        allowed_hosts: Host names a loopback ``serve`` answers besides its own
+            (``ATLAS_LOG_ALLOWED_HOSTS``): the public name behind a reverse proxy.
         app_packages: Package prefixes of application code (``ATLAS_LOG_APP_PACKAGES``);
             ``None`` = frames outside the library packages.
         debug: Let unexpected exceptions propagate (``ATLAS_LOG_DEBUG``).
@@ -120,6 +131,7 @@ class Settings:
     max_upload_mb: int = 2048
     report_cache: int = 8
     app_packages: tuple[str, ...] | None = None
+    allowed_hosts: tuple[str, ...] | None = None
     debug: bool = False
     sync_jobs: bool = False
     implicit_store: bool = field(default=False, compare=False)
@@ -148,15 +160,16 @@ class Settings:
                     values["store"] = Path(text)
                 case "max_upload_mb" | "report_cache":
                     values[var.field] = _int(var.name, text)
-                case "app_packages":
-                    values["app_packages"] = parse_packages(text)
+                case "app_packages" | "allowed_hosts":
+                    values[var.field] = parse_packages(text)
                 case "debug":
                     values["debug"] = True
                 case _:
                     values[var.field] = text
         values.update(given)
-        if isinstance(values.get("app_packages"), str):
-            values["app_packages"] = parse_packages(values["app_packages"])
+        for name in ("app_packages", "allowed_hosts"):
+            if isinstance(values.get(name), str):
+                values[name] = parse_packages(values[name])
         if "store" in values:
             values["store"] = Path(values["store"])
         values["implicit_store"] = "store" not in values
@@ -190,6 +203,7 @@ class Settings:
             "ATLAS_LOG_APP_PACKAGES": ",".join(self.app_packages or ()),
             "ATLAS_LOG_DEBUG": "1" if self.debug else "",
             "ATLAS_LOG_TOKEN": self.token or "",
+            "ATLAS_LOG_ALLOWED_HOSTS": ",".join(self.allowed_hosts or ()),
             "ATLAS_LOG_MAX_UPLOAD_MB": str(self.max_upload_mb),
             "ATLAS_LOG_REPORT_CACHE": str(self.report_cache),
         }

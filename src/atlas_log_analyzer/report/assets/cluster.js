@@ -2858,6 +2858,7 @@
         e.preventDefault();
         e.stopPropagation();
         LOG.cur = i;
+        LOG.curId = VIEW[i] ? VIEW[i].id : LOG.curId;  // a page loading meanwhile restores it
         moveLog(e.key === "ArrowDown" ? 1 : -1);
       }
     });

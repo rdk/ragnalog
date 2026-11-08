@@ -146,6 +146,7 @@ def serve(
     port: int = 8321,
     token: str | None = None,
     max_upload_mb: int | None = None,
+    allowed_host: str | None = None,
     reload: bool = False,
 ) -> None:
     """Run the web app over the store: browse, compare and triage sets, upload new logs.
@@ -168,6 +169,9 @@ def serve(
         token: Require `Authorization: Bearer TOKEN` on /api (env ATLAS_LOG_TOKEN).
         max_upload_mb: Largest accepted upload in MiB (env ATLAS_LOG_MAX_UPLOAD_MB;
             default 2048).
+        allowed_host: Comma-separated host names a loopback server also answers, e.g.
+            the public name behind a reverse proxy that passes Host through (env
+            ATLAS_LOG_ALLOWED_HOSTS; on loopback every other name is refused).
         reload: Restart on code changes (development); the settings above reach the
             reloading process through the ATLAS_LOG_* environment variables.
 
@@ -187,7 +191,12 @@ def serve(
     if max_upload_mb is not None and max_upload_mb < 1:
         raise OpError("invalid_value", "--max-upload-mb must be >= 1")
     store = ctx.store(create=True)  # uploads create the store directory
-    flags = {"store": store.root, "max_upload_mb": max_upload_mb, "token": token}
+    flags = {
+        "store": store.root,
+        "max_upload_mb": max_upload_mb,
+        "token": token,
+        "allowed_hosts": allowed_host,
+    }
     settings = Settings.load(flags, os.environ)
     from atlas_log_analyzer.webapp.state import lock_server
 
@@ -208,7 +217,8 @@ def serve(
     from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
 
     # on loopback only loopback names: a page that rebinds its own name here cannot read it
-    hosts = LOOPBACK_HOSTS if host.strip("[]").lower() in LOOPBACK_HOSTS else None
+    extra = frozenset(h.lower() for h in settings.allowed_hosts or ())
+    hosts = LOOPBACK_HOSTS | extra if host.strip("[]").lower() in LOOPBACK_HOSTS else None
     app = create_app(settings, warm=True, hosts=hosts)
     uvicorn.run(app, host=host, port=port, log_level="info")
 

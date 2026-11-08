@@ -403,11 +403,32 @@ def test_node_folders_under_one_folder_split_by_dir(tmp_path: Path) -> None:
 
 
 def test_a_job_json_above_the_input_is_not_its_capture(tmp_path: Path) -> None:
-    """An old export's job.json in the parent folder does not name today's files."""
-    (tmp_path / "job.json").write_text(job_json(job_id="2020-01-01_00-00-00-000_OLD"), "utf-8")
+    """An old export's job.json in the parent folder (other nodes) is not today's capture."""
+    old = job_json(["OLDA", "OLDB"], job_id="2020-01-01_00-00-00-000_OLD")
+    (tmp_path / "job.json").write_text(old, "utf-8")
     today = tmp_path / "today"
     today.mkdir()
     for node in ("NODE1", "NODE2"):
         (today / f"{node}_atlassian-jira.log").write_text(node_lines(node, 0), encoding="utf-8")
     split = plan_split([today])
     assert split.job is None or split.job.id != "2020-01-01_00-00-00-000_OLD"
+
+
+def test_export_logs_given_finds_the_job_beside_it(tmp_path: Path) -> None:
+    """export/logs given: the job.json beside it names these files' nodes, so it counts."""
+    (tmp_path / "job.json").write_text(job_json(), "utf-8")
+    logs = tmp_path / "logs"
+    logs.mkdir()
+    for node in ("NODE1", "NODE2"):
+        (logs / f"{node}_atlassian-jira.log").write_text(node_lines(node, 0), encoding="utf-8")
+    split = plan_split([logs])
+    assert split.kind == "job" and split.job is not None and split.job.id == JOB_ID
+
+
+def test_one_nodes_log_folders_stay_one_set(tmp_path: Path) -> None:
+    """jira-node1/{application-logs, application-logs-archive}: one node, not two."""
+    for name in ("application-logs", "application-logs-archive"):
+        d = tmp_path / "case" / "jira-node1" / name
+        d.mkdir(parents=True)
+        (d / "atlassian-jira.log").write_text(node_lines("NODE1", 0), encoding="utf-8")
+    assert plan_split([tmp_path / "case"]).kind is None

@@ -650,10 +650,13 @@ def test_guards_behind_a_reverse_proxy(store_dir: Path) -> None:
     """A proxy rewrites Host or forwards it: same-origin writes and reads still work."""
     from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
 
-    app = create_app(Settings(store=store_dir), hosts=LOOPBACK_HOSTS)
+    app = create_app(Settings(store=store_dir), hosts=LOOPBACK_HOSTS | {"logs.example.org"})
     with TestClient(app, base_url="http://127.0.0.1:8321") as c:
         public = {"Host": "logs.example.org", "X-Forwarded-For": "10.0.0.5"}
-        assert c.get("/api/sets", headers=public).status_code == 200
+        assert c.get("/api/sets", headers=public).status_code == 200  # an allowed name
+        # a rebinding page is same-origin: it may send any header, none lifts the check
+        rebound = {"Host": "rebind.example:8321", "X-Forwarded-For": "x", "Forwarded": "for=x"}
+        assert c.get("/api/sets", headers=rebound).status_code == 400
         # the proxy sets Host to the upstream; the browser says same-origin
         same = {"Origin": "https://logs.example.org", "Sec-Fetch-Site": "same-origin"}
         assert c.post("/api/jobs/x/cancel", headers=same).status_code == 404

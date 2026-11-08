@@ -56,6 +56,7 @@ blank variable counts as unset. A number that does not parse is error
 | `ATLAS_LOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
 | `ATLAS_LOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
 | `ATLAS_LOG_TOKEN` | none | `serve`: API token (`--token` wins). |
+| `ATLAS_LOG_ALLOWED_HOSTS` | none | `serve`: comma-separated host names a loopback server also answers (`logs.example.org`, behind a reverse proxy that passes the public `Host` through; `--allowed-host` wins). |
 | `ATLAS_LOG_MAX_UPLOAD_MB` | 2048 | `serve`: largest upload in MiB (`--max-upload-mb` wins). |
 | `ATLAS_LOG_REPORT_CACHE` | 8 | `serve`: report payloads kept in memory. |
 
@@ -335,7 +336,7 @@ per node:
 
 | `--split` | One set per node when |
 |---|---|
-| `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files a format recognises, in them or one level down (one node each: `node1/`, `node1/application-logs/`; `tomcat-logs/` is no node). Otherwise: one set, as before (a single such sub-directory is that set: a support ZIP). |
+| `auto` (default) | 1. a `job.json` (the cluster log export of the ScriptRunner helper, `{"jobId", "nodes": {"results": [{"node", "status"}]}}`) names the nodes and files are named `<NODE>_<log name>` after them; else 2. files named `<NODE>_<log name>` of at least two nodes share a log name (the node id holds a letter and ends at the last `_`: `NODE1_atlassian-jira.log.3`); else 3. the one directory given has no log files of its own but at least two sub-directories with log files a format recognises, in them or one level down (one node each: `node1/`, `node1/application-logs/`; `tomcat-logs/` is no node), or a single sub-directory holding two or more such directories that are not named like log folders (`case/logs/node1/`, `case/logs/node2/`; `application-logs*`, `tomcat-logs*`, `log*` are one node's folders). Otherwise: one set, as before (a single such sub-directory is that set: a support ZIP). A `job.json` is read in the directory given, beside its log directories, or one level up when it names the nodes of these files (`export/logs` given). |
 | `prefix` | Files named `<NODE>_<log name>` (one node is enough). |
 | `dir` | Each directory given is a node, or the sub-directories of the one directory given (the node id is the `<NODE>_` prefix all its files share, else the directory name). |
 | `none` | Never: one set (`job.json` is not read). |
@@ -1070,7 +1071,7 @@ Exit: 0; 2 unknown COMMAND (`not_found`).
 
 Exit: 0; 3.
 
-### `serve [--host 127.0.0.1] [--port 8321] [--token T] [--max-upload-mb 2048] [--reload]`
+### `serve [--host 127.0.0.1] [--port 8321] [--token T] [--max-upload-mb 2048] [--allowed-host NAMES] [--reload]`
 
 Runs the web app over the store until interrupted (needs the `web` extra). Pages:
 `/` (sets with triage verdicts and upload), `/sets/SET` (report, `?compare=auto|SET`),

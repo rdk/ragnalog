@@ -349,6 +349,8 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
     for name, code in _PIPELINE_CODES:
         if _is(exc, pipeline, name):
             return OpError(code, str(exc), hint=hint(code, front))
+    if _is(exc, "atlas_log_analyzer.core.reader", "DamagedFileError"):
+        return OpError("not_in_format", str(exc))  # a cut-short .gz: exit 2, the file named
     if _is(exc, store, "StoreError"):
         return OpError("store_error", str(exc))
     if _is(exc, "atlas_log_analyzer.core.formats.registry", "UnknownFormatError"):
