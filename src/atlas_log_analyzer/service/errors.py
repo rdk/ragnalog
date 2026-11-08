@@ -72,8 +72,9 @@ SPEC: Final[Mapping[str, ErrorSpec]] = {
     "invalid_value": ErrorSpec(
         ExitCode.USAGE,
         400,
-        "A value that does not parse or is out of range (time, column, "
-        "limit, bucket); in the CLI also sets that are not comparable.",
+        "A value that is not valid for its option or out of range (time, column, "
+        "limit, bucket; a number option given no number is `usage`); in the CLI also "
+        "sets that are not comparable.",
     ),
     "invalid_level": ErrorSpec(ExitCode.USAGE, 400, "Unknown level name."),
     "unknown_format": ErrorSpec(ExitCode.USAGE, 400, "Unknown format name."),

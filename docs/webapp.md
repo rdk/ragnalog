@@ -74,7 +74,7 @@ CLI's:
 | Code | Exit | HTTP | Meaning |
 |---|---|---|---|
 | `usage` | 1 | 400 | Bad option or argument (parse error, unexpected argument, `brief` with `columns`, a page over the API's cap). |
-| `invalid_value` | 1 | 400 | A value that does not parse or is out of range (time, column, limit, bucket); in the CLI also sets that are not comparable. |
+| `invalid_value` | 1 | 400 | A value that is not valid for its option or out of range (time, column, limit, bucket; a number option given no number is `usage`); in the CLI also sets that are not comparable. |
 | `invalid_level` | 1 | 400 | Unknown level name. |
 | `unknown_format` | 1 | 400 | Unknown format name. |
 | `sql_error` | 1 | 400 | DuckDB rejected the SQL of `query`. |

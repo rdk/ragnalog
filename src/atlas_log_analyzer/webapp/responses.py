@@ -5,6 +5,7 @@ from __future__ import annotations
 import gzip
 import threading
 from collections import OrderedDict
+from collections.abc import Sequence
 from typing import Any
 
 import msgspec
@@ -14,7 +15,14 @@ from starlette.responses import JSONResponse, Response
 
 __all__ = ["JSON", "payload_response"]
 
-_ENCODER = msgspec.json.Encoder()
+
+def _enc_hook(obj: Any) -> Any:
+    if isinstance(obj, Sequence):  # a RecordStream (rows serialised in batches)
+        return list(obj)
+    raise NotImplementedError(f"cannot encode {type(obj).__name__} as JSON")
+
+
+_ENCODER = msgspec.json.Encoder(enc_hook=_enc_hook)
 _GZIPPED: OrderedDict[str, bytes] = OrderedDict()
 _GZIP_LOCK = threading.Lock()
 _GZIP_KEEP = 8

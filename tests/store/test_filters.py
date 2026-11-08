@@ -120,3 +120,30 @@ def test_store_views_shim_reexports_service_views() -> None:
 
     assert old.frames_view is views.frames_view and old.ENTRY_BRIEF is views.ENTRY_BRIEF
     assert set(old.__all__) <= set(views.__all__)
+
+
+def test_logger_prefix_matches_the_forms_jira_abbreviates() -> None:
+    """Jira writes all but a logger's last three parts as initials."""
+    import polars as pl
+
+    from atlas_log_analyzer.store.filters import GroupFilter
+
+    names = [
+        "c.a.jira.index.Builder",  # com.atlassian.jira.index.Builder
+        "c.a.j.issue.index.Finder",  # com.atlassian.jira.issue.index.Finder
+        "com.atlassian.jira.Plain",
+        "c.a.jx.Other",  # another package
+        "c.a.j.x",  # too short to be an abbreviation
+        "c.o.other.a.B",
+    ]
+    df = pl.DataFrame({"logger": names})
+
+    def matching(prefix: str) -> list[str]:
+        cond = GroupFilter(logger=prefix).predicate()
+        assert cond is not None
+        return df.filter(cond)["logger"].to_list()
+
+    assert matching("com.atlassian.jira") == names[:3]
+    assert matching("c.a.jira") == names[:2]
+    assert matching("c.a.jira.index.Builder") == names[:1]
+    assert matching("org.acme") == []

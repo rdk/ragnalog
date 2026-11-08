@@ -229,6 +229,9 @@ def test_a_bare_capture_id_names_its_capture(jcli: Invoke, captured: str, tmp_pa
     for ref in (JOB_ID, captured):
         missing = jcli("context", ref, "0" * 16, "--all-nodes")
         assert (missing.code, missing.json()["error"]["reason"]) == (2, "entry_not_found")
+    # a unique prefix of the capture id, as capture:PREFIX takes it
+    prefixed = jcli("capture", JOB_ID[:10])
+    assert prefixed.code == 0 and prefixed.json()["capture"] == JOB_ID
     # a name that is neither a set nor a capture is still an unknown set
     unknown = jcli("entries", "nothing-here")
     assert unknown.code == 3 and unknown.json()["error"]["reason"] == "set_not_found"

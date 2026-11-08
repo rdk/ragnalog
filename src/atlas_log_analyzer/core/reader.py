@@ -43,8 +43,9 @@ class SourceFile:
 
     path: Path
     size: int
+    """Bytes of content (decompressed for a gzip file)."""
     xxh3: str
-    """xxh3-64 hex digest of the file content."""
+    """xxh3-64 hex digest of the file content (decompressed for a gzip file)."""
     rotation: int
     """``0`` for ``x.log``, ``N`` for ``x.log.N``; used to order rotated files oldest-first."""
 
@@ -62,13 +63,25 @@ class Line:
 
 
 def file_digest(path: Path | str) -> tuple[int, str]:
-    """Return ``(size, xxh3-64 hex)`` of a file's content."""
+    """Return ``(size, xxh3-64 hex)`` of a file's content.
+
+    A gzip file counts by its decompressed content, so ``x.log.3.gz`` is the same
+    source as the ``x.log.3`` it was made from (a set ingested both ways is one set).
+
+    Raises:
+        DamagedFileError: A gzip file that is truncated or corrupt.
+
+    """
     h = xxhash.xxh3_64()
     size = 0
-    with open(path, "rb") as f:
-        while chunk := f.read(_CHUNK):
-            h.update(chunk)
-            size += len(chunk)
+    gz = is_gzip(path)
+    try:
+        with gzip.open(path, "rb") if gz else open(path, "rb") as f:
+            while chunk := f.read(_CHUNK):
+                h.update(chunk)
+                size += len(chunk)
+    except (EOFError, gzip.BadGzipFile, zlib.error) as exc:
+        raise DamagedFileError(f"damaged gzip file {Path(path).name}: {exc}") from exc
     return size, h.hexdigest()
 
 

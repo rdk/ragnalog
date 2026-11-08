@@ -102,6 +102,31 @@ def densest_hours(counts: Mapping[int, int], width: int) -> tuple[int, int]:
     return best_at
 
 
+STORED_EXAMPLES = 3
+"""Example ids a group stores (``groups.examples``); more are looked up in the entries."""
+
+
+def _spread_examples(logset: LogSet, signatures: list[str], n: int) -> dict[str, list[str]]:
+    """Per group: its first ``n - 1`` entries in time (then file) order and its latest."""
+    df = (
+        logset.entries_lazy()
+        .select("id", "signature", "ts")
+        .with_row_index("_row")
+        .filter(pl.col("signature").is_in(signatures))
+        .sort(["ts", "_row"], nulls_last=True)
+        .group_by("signature", maintain_order=True)
+        .agg(pl.col("id").head(n - 1).alias("head"), pl.col("id").last().alias("last"))
+        .collect()
+    )
+    out: dict[str, list[str]] = {}
+    for sig, head, last in df.iter_rows():
+        ids = list(head)
+        if last not in ids:
+            ids.append(last)
+        out[sig] = ids[:n]
+    return out
+
+
 def _timeline_and_hourly(
     logset: LogSet, signatures: list[str], filtered: bool
 ) -> tuple[dict[str, Any], dict[str, list[list[int]]]]:
@@ -287,7 +312,9 @@ def build_payload(
         compare: Baseline log set; adds a ``compare`` block from ``diff(compare, logset)``.
         min_level: Only groups of this level or more severe (also applied to the comparison).
             The overview (``stats``, ``timeline``) always covers the whole set.
-        examples: Example entries per group (taken from ``groups.examples``); 0 = none.
+        examples: Example entries per group (``groups.examples``, which holds the first two
+            and the latest; above that many: the first ``examples - 1`` and the latest of
+            the group's entries); 0 = none.
         max_raw: Truncate each example's ``raw`` to this many characters; 0 = no limit.
         max_groups: Keep only the largest groups (by count); ``None`` = all.
         entries_url: URL template for fetching more entries of a group (the page replaces
@@ -327,6 +354,10 @@ def build_payload(
     groups = to_records(gdf)
     signatures = [g["signature"] for g in groups]
     present = set(signatures)
+    if examples > STORED_EXAMPLES and signatures:
+        spread = _spread_examples(logset, signatures, examples)
+        for g in groups:
+            g["examples"] = spread.get(g["signature"], g["examples"])
     filtered = len(signatures) < logset.manifest.group_count
 
     timeline, hourly = _timeline_and_hourly(logset, signatures, filtered)

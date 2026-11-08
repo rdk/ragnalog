@@ -143,7 +143,7 @@ Error codes, with the CLI's exit code and the web API's HTTP status (one table i
 | Code | Exit | HTTP | Meaning |
 |---|---|---|---|
 | `usage` | 1 | 400 | Bad option or argument (parse error, unexpected argument, `brief` with `columns`, a page over the API's cap). |
-| `invalid_value` | 1 | 400 | A value that does not parse or is out of range (time, column, limit, bucket); in the CLI also sets that are not comparable. |
+| `invalid_value` | 1 | 400 | A value that is not valid for its option or out of range (time, column, limit, bucket; a number option given no number is `usage`); in the CLI also sets that are not comparable. |
 | `invalid_level` | 1 | 400 | Unknown level name. |
 | `unknown_format` | 1 | 400 | Unknown format name. |
 | `sql_error` | 1 | 400 | DuckDB rejected the SQL of `query`. |
@@ -234,7 +234,7 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 |---|---|
 | `--level L[,L…]` | Exact level(s), case-insensitive: `ERROR`, `WARN,ERROR`. Names: `TRACE`, `DEBUG`, `INFO`, `WARN` (also `WARNING`), `ERROR`, `FATAL` and `UNKNOWN` (entries whose header could not be parsed: `parse_error` rows, level 0). Anything else (also `SEVERE`, `FINE`) → error `invalid_level` (`--level: unknown level 'SEVERE'; …`). The web API and `LogSet` use the same parser (`store/levels.py`). |
 | `--min-level L` | This level or more severe (one name, as `--level`; `UNKNOWN` entries are never included). |
-| `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. |
+| `--logger X` | Logger name or package prefix: `c.a.jira` matches `c.a.jira.Foo`. Jira writes all but the last three parts of a logger as initials, so a prefix also matches those forms: `com.atlassian.jira` matches `c.a.jira.index.Builder` and `c.a.j.issue.index.Finder`. |
 | `--since T` / `--until T` | ISO 8601 (`2026-10-29T09:00`, naive = UTC), a date (`2026-10-29` = midnight UTC), or a duration `Ns`/`Nm`/`Nh`/`Nd` **before the last entry of the set** (`2h` = the last two hours of the log, not of the wall clock). `since` inclusive, `until` exclusive. For `groups` the filter is on the group's time span: `last_seen >= since` (the group has at least one entry at/after `since`) and `first_seen < until`; the group's `count` still covers the whole set. Anything else → error `invalid_value`. |
 | `--with-exception` | `groups`, `entries`: only rows that carry an exception (`exception_type` not null), at any level — a DEBUG entry with a stack trace is found although `--min-level WARN` hides it. |
 | `--exception TEXT` | `groups`, `entries`: case-insensitive substring of `exception_type` (the outermost exception of the chain; `Caused by:` types are not searched). |
@@ -248,7 +248,9 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 
 Parse files/directories/ZIP files (directories: non-recursive `*.log*`; rotated
 `x.log.N` read oldest first; a gzip file such as `x.log.3.gz` is read decompressed,
-in its place among the rotations) into a log set, or one set per cluster node. A
+in its place among the rotations, and counts by its decompressed content: its
+`size` and digest are those of `x.log.3`, so a set ingested once gzipped and once
+plain is one set) into a log set, or one set per cluster node. A
 directory (or ZIP) with no log file of its own that a format recognises is
 searched two levels down for directories that hold some: a support ZIP's
 `application-logs/` (not `tomcat-logs/`), `node1/application-logs/`, an

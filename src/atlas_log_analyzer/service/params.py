@@ -229,7 +229,8 @@ class GroupQuery:
         level: Only these levels, e.g. ERROR or WARN,ERROR (TRACE DEBUG INFO WARN ERROR FATAL;
             UNKNOWN = entries whose header could not be parsed).
         min_level: Only this level or more severe, e.g. WARN.
-        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
+        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo; com.atlassian.jira
+            also the forms Jira abbreviates, c.a.jira.index.X and c.a.j.issue.index.X).
         since: Only groups with an entry at/after this time (last_seen >= since): ISO 8601
             (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry.
         until: Only groups first seen before this time (same forms as --since).
@@ -289,7 +290,8 @@ class EntryQuery:
             groups --coarse).
         level: Only these levels, e.g. ERROR or WARN,ERROR.
         min_level: Only this level or more severe.
-        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo).
+        logger: Logger name or package prefix (c.a.jira matches c.a.jira.Foo; com.atlassian.jira
+            also the forms Jira abbreviates, c.a.jira.index.X and c.a.j.issue.index.X).
         user: Only this user (exact).
         thread: Only this thread (exact).
         request_id: Only this request id (exact; the Jira request context, e.g. 540x101x1).

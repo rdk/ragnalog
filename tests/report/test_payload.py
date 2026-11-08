@@ -5,6 +5,7 @@ from __future__ import annotations
 import itertools
 import json
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -163,6 +164,28 @@ def test_examples_option(store: Store) -> None:
     none = build_payload(store.open("sample"), examples=0)
     assert none["entries"] == {}
     assert all(g["examples"] == [] for g in none["groups"])
+
+
+def test_more_examples_than_stored_come_from_the_entries(tmp_path: Path) -> None:
+    """Groups store 3 examples; a larger --examples shows the first N-1 and the latest."""
+    from atlas_log_analyzer.store.pipeline import ingest_paths
+
+    log = tmp_path / "atlassian-jira.log"
+    log.write_text(
+        "".join(
+            f"2026-10-29 10:00:{i:02d},000+0100 exec-{i} ERROR anon [org.acme.A] boom {i}\n"
+            for i in range(9)
+        ),
+        encoding="utf-8",
+    )
+    ls = ingest_paths(Store(tmp_path / "store"), [log]).logset
+    rows = ls.entries(columns=["id"])["id"].to_list()
+    assert len(rows) == 9 and ls.manifest.group_count == 1
+    p = build_payload(ls, examples=6)
+    (g,) = p["groups"]
+    assert g["examples"] == [*rows[:5], rows[-1]]
+    assert all(i in p["entries"] for i in g["examples"])
+    assert len(build_payload(ls, examples=20)["groups"][0]["examples"]) == 9
 
 
 def test_max_raw_truncates(store: Store) -> None:

@@ -301,7 +301,7 @@ def favicon() -> Response:
 def report_asset(name: str) -> Response:
     """Serve the report's own CSS/JS so the web app and the static file share one code base."""
     if name not in REPORT_ASSETS:
-        return Response(status_code=404)
+        return Response(f"no report asset {name!r}\n", 404, media_type="text/plain")
     media = "text/css" if name.endswith(".css") else "text/javascript"
     return Response(
         asset_text(name),

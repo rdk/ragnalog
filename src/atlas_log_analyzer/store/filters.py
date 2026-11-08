@@ -99,12 +99,43 @@ def _level_filters(level: LevelSpec | None, min_level: LevelSpec | None) -> list
     return out
 
 
+JIRA_FULL_PARTS = 3
+"""Trailing parts Jira writes a logger with in full; the ones before are cut to an initial."""
+
+
+def logger_forms(logger: str) -> list[tuple[str, int]]:
+    """Return ``logger`` and the forms with its leading packages cut to their initial.
+
+    Jira writes a logger with all but its last three parts abbreviated, so one package
+    appears as ``c.a.jira.index.Builder`` and as ``c.a.j.issue.index.Finder``:
+    ``com.atlassian.jira`` gives ``c.atlassian.jira``, ``c.a.jira`` and ``c.a.j``. Each
+    form comes with the number of parts it cut; a logger written that way has at least
+    :data:`JIRA_FULL_PARTS` more.
+    """
+    parts = logger.split(".")
+    forms = [(logger, 0)]
+    for cut in range(1, len(parts) + 1):
+        if not parts[cut - 1]:
+            break
+        form = ".".join([p[0] for p in parts[:cut]] + parts[cut:])
+        if form != logger:
+            forms.append((form, cut))
+    return forms
+
+
 def _logger_filter(logger: str) -> pl.Expr:
-    """Exact logger name, or any logger in that package (``com.foo`` matches ``com.foo.Bar``)."""
+    """Exact logger name, or any logger in that package (``com.foo`` matches ``com.foo.Bar``).
+
+    Also in the abbreviated forms Jira writes (:func:`logger_forms`).
+    """
     import polars as pl
 
     col = pl.col("logger").cast(pl.String)
-    return (col == logger) | col.str.starts_with(logger + ".")
+    dots = col.str.count_matches(".", literal=True)
+    cond = (col == logger) | col.str.starts_with(logger + ".")
+    for form, cut in logger_forms(logger)[1:]:
+        cond = cond | (col.str.starts_with(form + ".") & (dots >= cut + JIRA_FULL_PARTS - 1))
+    return cond
 
 
 def _icontains(column: str, text: str) -> pl.Expr:
@@ -139,7 +170,8 @@ class GroupFilter:
     Attributes:
         level: Exact level(s): a :data:`LevelSpec` (``"WARN,ERROR"``, a ``LogLevel``, ...).
         min_level: Lowest level to include (one level; ``UNKNOWN`` rows are excluded).
-        logger: Logger name; also matches loggers below it (``com.foo`` → ``com.foo.Bar``).
+        logger: Logger name; also matches loggers below it (``com.foo`` → ``com.foo.Bar``),
+            also as Jira abbreviates them (``com.foo`` → ``c.foo.Bar``, ``c.f.x.y.Bar``).
         since: Keep groups seen at or after this time (``last_seen >= since``; naive = UTC).
         until: Keep groups first seen before this time (``first_seen < until``).
         with_exception: Keep groups whose ``exception_type`` is not null (any level).

@@ -98,3 +98,31 @@ def test_context_bounds(jcli: Invoke, mini: str) -> None:
 def test_table_shows_offset(cli: Invoke, mini: str, store_dir: Path) -> None:
     res = cli("--output", "table", "--store", store_dir, "groups", mini, "--offset", "2")
     assert "offset=2" in res.stderr
+
+
+def test_large_results_stream_the_same_documents(
+    jcli: Invoke, mini: str, store_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Above STREAM_ABOVE rows are serialised a batch at a time; the output is the same."""
+    from atlas_log_analyzer.store import logset
+
+    def outputs() -> list[object]:
+        docs: list[object] = [
+            jcli("entries", mini, "--limit", "0", "--max-raw", "20").json(),
+            jcli("show", mini, jcli("groups", mini).json()["items"][0]["signature"]).json(),
+            jcli("query", mini, "select id, level, ts, variables from entries").json(),
+        ]
+        docs.append(jcli("--output", "jsonl", "entries", mini, "--limit", "0").jsonl())
+        return docs
+
+    whole = outputs()
+    monkeypatch.setattr(logset, "STREAM_ABOVE", 1)
+    streamed = outputs()
+    assert streamed == whole
+    assert any(e.get("body_truncated") for e in whole[0]["items"])  # type: ignore[index]
+
+    from atlas_log_analyzer.store import Store
+
+    rows = logset.RecordStream(Store(store_dir).open(mini).entries(), batch=3)
+    assert len(rows) == len(list(rows)) and rows[-1] == list(rows)[-1]
+    assert rows[1:4] == list(rows)[1:4]

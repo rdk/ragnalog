@@ -15,7 +15,7 @@ import dataclasses
 import os
 import re
 import sys
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import date, datetime
 from enum import Enum
 from pathlib import Path
@@ -135,10 +135,18 @@ def _enc_hook(obj: Any) -> Any:
         return {f.name: getattr(obj, f.name) for f in dataclasses.fields(obj)}
     if isinstance(obj, bytes):
         return obj.decode("utf-8", errors="replace")
+    if isinstance(obj, Sequence):  # a RecordStream (rows serialised in batches)
+        return list(obj)
     raise NotImplementedError(f"cannot encode {type(obj).__name__} as JSON")
 
 
 _ENCODER = msgspec.json.Encoder(enc_hook=_enc_hook, decimal_format="number")
+
+
+def _batches(rows: object) -> Iterator[list[dict[str, Any]]] | None:
+    """Return the batches of a ``RecordStream`` (rows serialised on demand); ``None`` for a list."""
+    batches = getattr(rows, "batches", None)
+    return batches() if callable(batches) and isinstance(rows, Sequence) else None
 
 
 def encode_json(obj: Any, *, indent: int = 0) -> str:
@@ -561,8 +569,12 @@ class Output:
 
         """
         full = {"schema": schema, **doc}
+        batches = _batches(doc.get(items)) if items is not None else None
         if self.mode == "json":
-            self.write_line(encode_json(full, indent=2 if self.is_tty() else 0))
+            if batches is not None and items is not None and not self.is_tty():
+                self._stream_json(full, items, batches)
+            else:
+                self.write_line(encode_json(full, indent=2 if self.is_tty() else 0))
             return
         if self.mode == "jsonl":
             rows = jsonl_rows
@@ -570,6 +582,9 @@ class Output:
                 rows = doc[items]
             if rows is None:
                 self.write_line(encode_json(full))
+            elif jsonl_rows is None and batches is not None:
+                for batch in batches:
+                    self.out.write("".join(encode_json(row) + "\n" for row in batch))
             else:
                 self.out.write("".join(encode_json(row) + "\n" for row in rows))
             return
@@ -593,6 +608,19 @@ class Output:
             return
         for tbl in mapping_tables(doc, title=title):
             console.print(tbl)
+
+    def _stream_json(
+        self, full: Mapping[str, Any], items: str, batches: Iterator[list[dict[str, Any]]]
+    ) -> None:
+        """Write ``full`` as compact JSON with its ``items`` encoded a batch at a time (last)."""
+        head = encode_json({k: v for k, v in full.items() if k != items})
+        self.out.write(head[:-1] + ("," if len(head) > 2 else "") + encode_json(items) + ":[")
+        first = True
+        for batch in batches:
+            if batch:
+                self.out.write(("" if first else ",") + ",".join(encode_json(r) for r in batch))
+                first = False
+        self.out.write("]}\n")
 
     def document(
         self,

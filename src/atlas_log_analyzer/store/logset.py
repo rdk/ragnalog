@@ -12,9 +12,11 @@ Directory layout::
 from __future__ import annotations
 
 import re
+from bisect import bisect_right
+from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import Any, Unpack
+from typing import Any, Unpack, overload
 
 import polars as pl
 
@@ -148,12 +150,83 @@ def to_records(df: pl.DataFrame) -> list[dict[str, Any]]:
     return _kv_to_dicts(df.to_dicts(), _kv_columns(df))
 
 
+STREAM_ABOVE = 20_000
+"""Rows above which :func:`records` serialises in batches (more than an API page holds)."""
+
+
+class RecordStream(Sequence[dict[str, Any]]):
+    """The rows of a DataFrame as :func:`to_records` gives them, serialised in batches.
+
+    A whole large set as Python dicts takes about 15 times its JSON size; this keeps
+    one batch at a time, for writers that stream (the CLI's json/jsonl output).
+    ``each`` post-processes every batch (e.g. capping texts). It is a read-only
+    sequence: ``len`` is the row count, iteration and indexing serialise on demand.
+    """
+
+    def __init__(
+        self,
+        df: pl.DataFrame,
+        *,
+        batch: int = 2048,
+        each: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+    ) -> None:
+        self.df = df
+        self.batch = max(1, batch)
+        self.each = each
+
+    def __len__(self) -> int:
+        return self.df.height
+
+    def batches(self) -> Iterator[list[dict[str, Any]]]:
+        """Yield the rows a batch at a time."""
+        for start in range(0, self.df.height, self.batch):
+            rows = to_records(self.df.slice(start, self.batch))
+            yield self.each(rows) if self.each is not None else rows
+
+    def __iter__(self) -> Iterator[dict[str, Any]]:
+        for rows in self.batches():
+            yield from rows
+
+    @overload
+    def __getitem__(self, index: int) -> dict[str, Any]: ...
+    @overload
+    def __getitem__(self, index: slice) -> list[dict[str, Any]]: ...
+    def __getitem__(self, index: int | slice) -> dict[str, Any] | list[dict[str, Any]]:
+        if isinstance(index, slice):
+            start, stop, step = index.indices(self.df.height)
+            rows = to_records(self.df[start:stop:step] if step != 1 else self.df[start:stop])
+            return self.each(rows) if self.each is not None else rows
+        if index < 0:
+            index += self.df.height
+        if not 0 <= index < self.df.height:
+            raise IndexError(index)
+        rows = to_records(self.df.slice(index, 1))
+        return (self.each(rows) if self.each is not None else rows)[0]
+
+
+def records(
+    df: pl.DataFrame,
+    *,
+    each: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
+    stream_above: int | None = None,
+) -> list[dict[str, Any]] | RecordStream:
+    """Return :func:`to_records` of ``df``; a :class:`RecordStream` above ``stream_above`` rows.
+
+    ``stream_above`` defaults to :data:`STREAM_ABOVE`.
+    """
+    if df.height > (STREAM_ABOVE if stream_above is None else stream_above):
+        return RecordStream(df, each=each)
+    rows = to_records(df)
+    return each(rows) if each is not None else rows
+
+
 class LogSet:
     """A stored log set: manifest plus lazy access to its Parquet files."""
 
     def __init__(self, path: Path, manifest: LogSetManifest) -> None:
         self.path = path
         self.manifest = manifest
+        self._rg_starts: tuple[int, list[int]] | None = None
 
     def __repr__(self) -> str:
         return f"LogSet(id={self.manifest.id!r}, name={self.manifest.name!r}, path={self.path!r})"
@@ -331,15 +404,59 @@ class LogSet:
 
         """
         cond = entry_filter(where, filters).predicate()
-        lf = self.entries_lazy()
+        # order and page on (ts, row) alone, then read only the page's rows: sorting every
+        # column of a large set to return 100 rows held its whole text in memory
+        keys = self.entries_lazy().with_row_index("_row")
         if cond is not None:
-            lf = lf.filter(cond)
-        lf = lf.sort("ts", maintain_order=True)
+            keys = keys.filter(cond)
+        keys = keys.select("ts", "_row").sort("ts", maintain_order=True)
         if offset or limit is not None:
-            lf = lf.slice(offset, limit)
+            keys = keys.slice(offset, limit)
+        page = keys.select("_row").collect()
+        return self.rows_at(page["_row"].to_list(), columns)
+
+    def rows_at(self, rows: list[int], columns: list[str] | None = None) -> pl.DataFrame:
+        """Return the entries at file positions ``rows`` (0-based), in that order.
+
+        Only the row groups holding them are read (with ``columns``), so a page of a
+        large set costs about one row group, not the whole file.
+        """
+        lf = self.entries_lazy()
         if columns is not None:
             lf = lf.select(columns)
-        return lf.collect()
+        if not rows:
+            return lf.head(0).collect()
+        bounds = self._row_group_starts()
+        parts: list[pl.DataFrame] = []
+        by_group: dict[int, list[int]] = {}
+        for r in sorted(set(rows)):
+            by_group.setdefault(bisect_right(bounds, r) - 1, []).append(r)
+        for g, members in by_group.items():
+            start = bounds[g]
+            size = (bounds[g + 1] if g + 1 < len(bounds) else members[-1] + 1) - start
+            chunk = lf.slice(start, size).collect()
+            parts.append(chunk.with_row_index("_row", offset=start)[[r - start for r in members]])
+        found = pl.concat(parts, rechunk=True)  # ascending, unique rows
+        unique = sorted(set(rows))
+        if rows != unique:
+            at = {r: i for i, r in enumerate(unique)}
+            found = found[[at[r] for r in rows]]
+        return found.drop("_row")
+
+    def _row_group_starts(self) -> list[int]:
+        """First row of every row group of ``entries.parquet`` (cached per file version)."""
+        import pyarrow.parquet as pq
+
+        key = self.entries_path.stat().st_mtime_ns
+        if self._rg_starts is not None and self._rg_starts[0] == key:
+            return self._rg_starts[1]
+        meta = pq.ParquetFile(str(self.entries_path)).metadata
+        starts, at = [], 0
+        for i in range(meta.num_row_groups):
+            starts.append(at)
+            at += meta.row_group(i).num_rows
+        self._rg_starts = (key, starts)
+        return starts
 
     def count_entries(
         self, *, where: EntryFilter | None = None, **filters: Unpack[EntryFilterArgs]

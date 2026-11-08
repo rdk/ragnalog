@@ -143,7 +143,8 @@ def capture_from_ref(sets: Sets, ref: str, *, front: Front) -> Capture:
 
     A set opens its capture; a set without a ``capture`` becomes a capture of one node
     (its ``node``, else its name, else its id) without an id. A ``ref`` that names no set
-    but is exactly a capture id (as ``captures`` and the pages print it) is that capture.
+    but is a capture id or a unique prefix of one (as ``captures`` and the pages print
+    it) is that capture.
 
     Raises:
         OpError: Reasons ``capture_not_found``, ``ambiguous_capture``, ``set_not_found``,
@@ -159,9 +160,17 @@ def capture_from_ref(sets: Sets, ref: str, *, front: Front) -> Capture:
         try:
             ls = open_set(sets, ref, front=front)
         except OpError as exc:
-            info = get_capture(sets, ref) if exc.reason == "set_not_found" else None
-            if info is None:
+            if exc.reason != "set_not_found":
                 raise
+            info = get_capture(sets, ref)
+            if info is None:
+                # a capture id prefix, as capture:PREFIX takes it (ambiguous: say so)
+                try:
+                    info = resolve_capture(sets, f"capture:{ref}", front=front)
+                except OpError as cap_exc:
+                    if cap_exc.reason == "capture_not_found":
+                        raise exc from None
+                    raise
         else:
             m = ls.manifest
             info = get_capture(sets, m.capture) if m.capture is not None else None

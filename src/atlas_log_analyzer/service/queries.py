@@ -11,7 +11,7 @@ serialised once, by :func:`~atlas_log_analyzer.store.logset.to_records` (timesta
 from __future__ import annotations
 
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -75,10 +75,15 @@ type ManifestSummary = Callable[[LogSetManifest], dict[str, int]]
 file with pyarrow only; the web app uses its cache)."""
 
 
-def _records(df: Any) -> list[dict[str, Any]]:
-    from atlas_log_analyzer.store.logset import to_records
+def _records(df: Any, cap: TextCap | None = None) -> Sequence[dict[str, Any]]:
+    """Serialise rows; above 20,000 as a :class:`~atlas_log_analyzer.store.logset.RecordStream`.
 
-    return to_records(df)
+    A whole set (``--limit 0``, ``query``) is serialised a batch at a time while the CLI
+    writes it, instead of every row as a dict at once; ``cap`` cuts texts per batch.
+    """
+    from atlas_log_analyzer.store.logset import records
+
+    return records(df, each=cap.rows if cap is not None else None)
 
 
 def _name(ls: LogSet) -> str:
@@ -168,7 +173,7 @@ def entries(
     where = _where(ls, q, front)
     df = ls.entries(where=where, limit=page.limit, offset=page.offset, columns=columns)
     total = df.height if page.complete(df.height) else ls.count_entries(where=where)
-    items = cap.rows(_records(df))
+    items = _records(df, cap)
     nxt = page.offset + len(items)
     return {
         "schema": "entries.v1",
@@ -238,7 +243,7 @@ def show(
     row = ls.group(signature)
     if row is not None and sel.brief:
         row = {k: row[k] for k in GROUP_BRIEF}
-    items = cap.rows(_records(df))
+    items = _records(df, cap)
     return {
         "schema": "entries.v1",
         "logset": ls.manifest.id,
@@ -286,7 +291,7 @@ def group(
             hint=hint("group_not_found", front, set=_name(ls), id=ls.manifest.id),
         )
     where = EntryFilter(coarse_signature=signature) if coarse else EntryFilter(signature=signature)
-    items = cap.rows(_records(ls.entries(where=where, limit=limit, columns=columns)))
+    items = _records(ls.entries(where=where, limit=limit, columns=columns), cap)
     if sel.brief:
         row = {k: row[k] for k in (*GROUP_BRIEF, "signatures") if k in row}
     return {
@@ -330,7 +335,7 @@ def context(
         )
     at = df["id"].to_list().index(entry_id)
     thread = df["thread"][at]
-    items = cap.rows(_records(df if columns is None else df.select(columns)))
+    items = _records(df if columns is None else df.select(columns), cap)
     doc = {
         "schema": "entries.v1",
         "logset": ls.manifest.id,
