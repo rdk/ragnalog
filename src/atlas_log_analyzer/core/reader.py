@@ -238,7 +238,8 @@ def _raw_lines(
     try:
         yield from _read_lines(path, encoding, max_line_bytes, max_bytes)
     except (EOFError, gzip.BadGzipFile, zlib.error) as exc:
-        raise DamagedFileError(f"damaged gzip file {path}: {exc}") from exc
+        # the name only: a web upload's spool path is not the user's (nor to be shown)
+        raise DamagedFileError(f"damaged gzip file {Path(path).name}: {exc}") from exc
 
 
 def _read_lines(

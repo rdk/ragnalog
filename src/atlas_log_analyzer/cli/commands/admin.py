@@ -214,10 +214,11 @@ def serve(
             reload=True,
         )
         return
-    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
-
     # on loopback only loopback names: a page that rebinds its own name here cannot read it
-    extra = frozenset(h.lower() for h in settings.allowed_hosts or ())
+    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS, _host_name
+
+    # as the Host check compares them: no port, no brackets ("logs.example.org:443")
+    extra = frozenset(_host_name(h.strip()) for h in settings.allowed_hosts or ())
     hosts = LOOPBACK_HOSTS | extra if host.strip("[]").lower() in LOOPBACK_HOSTS else None
     app = create_app(settings, warm=True, hosts=hosts)
     uvicorn.run(app, host=host, port=port, log_level="info")

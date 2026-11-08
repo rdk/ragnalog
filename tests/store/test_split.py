@@ -403,8 +403,9 @@ def test_node_folders_under_one_folder_split_by_dir(tmp_path: Path) -> None:
 
 
 def test_a_job_json_above_the_input_is_not_its_capture(tmp_path: Path) -> None:
-    """An old export's job.json in the parent folder (other nodes) is not today's capture."""
-    old = job_json(["OLDA", "OLDB"], job_id="2020-01-01_00-00-00-000_OLD")
+    """An old export's job.json in the parent folder is not today's capture, though it
+    names the same nodes (a cluster keeps its node names)."""
+    old = job_json(job_id="2020-01-01_00-00-00-000_OLD")
     (tmp_path / "job.json").write_text(old, "utf-8")
     today = tmp_path / "today"
     today.mkdir()
@@ -432,3 +433,13 @@ def test_one_nodes_log_folders_stay_one_set(tmp_path: Path) -> None:
         d.mkdir(parents=True)
         (d / "atlassian-jira.log").write_text(node_lines("NODE1", 0), encoding="utf-8")
     assert plan_split([tmp_path / "case"]).kind is None
+
+
+def test_node_folders_named_like_logs_still_split(tmp_path: Path) -> None:
+    """case/export/{logs-node1, logs-node2}: node folders, though their names start with logs."""
+    for node in ("logs-node1", "logs-node2"):
+        d = tmp_path / "case" / "export" / node
+        d.mkdir(parents=True)
+        (d / "atlassian-jira.log").write_text(node_lines("NODE1", 0), encoding="utf-8")
+    split = plan_split([tmp_path / "case"])
+    assert split.kind == "dir" and [n.node for n in split.nodes] == ["logs-node1", "logs-node2"]

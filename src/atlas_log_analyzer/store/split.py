@@ -406,8 +406,8 @@ def _log_dirs(directory: Path, depth: int) -> list[Path]:
     return [d for c in _subdirs(directory) for d in _log_dirs(c, depth - 1)]
 
 
-_LOG_DIR_NAMES = ("application-logs", "tomcat-logs", "logs", "log")
-"""Names (and prefixes) of the log folders of one node, never node folders themselves."""
+_LOG_DIR_NAME = re.compile(r"(?:application|tomcat)-logs(?:[-_.]archive)?|logs?", re.IGNORECASE)
+"""Whole names of one node's log folders (``application-logs-archive``), never node folders."""
 
 
 def _groups(directory: Path) -> dict[Path, list[Path]]:
@@ -425,7 +425,7 @@ def _groups(directory: Path) -> dict[Path, list[Path]]:
         # the candidates, not the one folder (which would merge the nodes into one set);
         # not when they are one node's log folders (application-logs, ...-archive)
         ((child, found),) = groups.items()
-        named_like_logs = any(d.name.lower().startswith(_LOG_DIR_NAMES) for d in found)
+        named_like_logs = all(_LOG_DIR_NAME.fullmatch(d.name) for d in found)
         if len(found) >= 2 and child not in found and not named_like_logs:
             return {d: [d] for d in found}
     return groups
@@ -471,14 +471,16 @@ def _inputs(paths: Sequence[Path]) -> _Inputs:
                 search.append(d)
                 files.update(dict.fromkeys(_logs(d)))
             # job.json in the input, its log directories or their parents below the input
-            # (an export's logs/ beside job.json); above the input (export/logs given) only
-            # when it names the nodes of these files: not a stray old export
+            # (an export's logs/ beside job.json); above the input only in that layout
+            # (export/logs given) and when it names these files' nodes: a stray old export
+            # of the same cluster above today's folder names the same nodes
             parents = [d.parent for d in log_dirs if d != path and d.parent != path.parent]
             for d in (path, *log_dirs, *parents):
                 if (job := d / JOB_FILE).is_file() and job not in jobs:
                     jobs.append(job)
             above = path.parent / JOB_FILE
-            if above.is_file() and above not in jobs and _names_files(above, files):
+            in_export = path.name.lower() == "logs"
+            if in_export and above.is_file() and above not in jobs and _names_files(above, files):
                 jobs.append(above)
         elif path.is_file() and path.name.lower() == JOB_FILE:
             jobs.append(path)

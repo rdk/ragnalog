@@ -1081,7 +1081,8 @@ OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
 `ATLAS_LOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
 reloading process through these environment variables. At startup the newest
 capture's cluster page payload is built in the background (its first open is a
-cache hit). On a loopback `--host` only loopback `Host` names are answered, and
+cache hit). On a loopback `--host` only loopback `Host` names (and the
+`--allowed-host` names, `ATLAS_LOG_ALLOWED_HOSTS`) are answered, and
 requests that change something from a page of another site are refused (see
 `docs/webapp.md`, Security). Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
 second `serve` on a store that is being served fails with `store_error`.

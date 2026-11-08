@@ -155,9 +155,12 @@ def _set_result(doc: dict[str, Any], *, of_capture: bool = False) -> None:
     if info["existing"]:
         out.info(f"{who}log set {doc['id']} already exists; use --overwrite to rebuild it")
     else:
+        # the set's entries: parsed ones less the duplicates shared by several files
+        dup = info["parsed_entries"] - doc["entry_count"]
         out.info(
-            f"{who}ingested {info['parsed_entries']:,} entries into {doc['id']} "
+            f"{who}ingested {doc['entry_count']:,} entries into {doc['id']} "
             f"({doc['group_count']:,} groups) in {info['elapsed_s']:.1f} s"
+            + (f"; {dup:,} duplicate entries skipped" if dup > 0 else "")
         )
     if not of_capture:
         for warning in info["warnings"]:

@@ -1047,11 +1047,11 @@
     return [...best.values()].sort((x, y) => x.b - y.b);
   }
   const xmLabel = (m, k) => `Cross-node moment ${binRange(m.b, k)}: ` +
-    m.nodes.map((o) => `${NLABEL(o.n)} ${fmt(o.e)} errors (×${ratioText(o.x)} its usual)`).join(", ") +
+    m.nodes.map((o) => `${NLABEL(o.n)} ${fmt(o.e)} errors in its peak ${binLabel(1)} (×${ratioText(o.x)} its usual)`).join(", ") +
     ". Opens the merged log ±30 s around its busiest moment.";
   function xmTip(m, k) {
     return `<div class="tt-h">Cross-node moment · ${esc(binRange(m.b, k))}</div>` +
-      m.nodes.map((o) => `<div class="tt-r"><b>${fmt(o.e)}</b>${nodeBadge(o.n)}<span>errors, ×${esc(ratioText(o.x))} its usual</span></div>`).join("") +
+      m.nodes.map((o) => `<div class="tt-r"><b>${fmt(o.e)}</b>${nodeBadge(o.n)}<span>errors in the peak ${esc(binLabel(1))}, ×${esc(ratioText(o.x))} its usual</span></div>`).join("") +
       `<div class="muted tt-note">Two or more nodes log more than 3× their usual errors at once (usual: the median of a node's ${esc(binLabel(1))}s with errors). Click: the window moves here and the merged log opens ±30 s on all nodes around the busiest moment.</div>`;
   }
   /** A cross-node moment: window on its bin, then ±30 s on all nodes around its busiest moment
