@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import gzip
 import re
 from collections.abc import Generator, Iterable, Iterator
 from dataclasses import dataclass
@@ -16,6 +17,7 @@ __all__ = [
     "SourceFile",
     "discover_sources",
     "file_digest",
+    "is_gzip",
     "iter_lines",
     "iter_raw_lines",
     "iter_sources",
@@ -24,6 +26,8 @@ __all__ = [
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
 _STEM_RE = re.compile(r"^(?P<stem>.+?)\.log", re.IGNORECASE)
+GZIP_MAGIC = bytes((0x1F, 0x8B))
+"""First two bytes of a gzip file."""
 LOG_GLOB = "*.log*"
 """Names of the log files :func:`discover_sources` reads from a directory."""
 _CHUNK = 1 << 18
@@ -66,10 +70,20 @@ def file_digest(path: Path | str) -> tuple[int, str]:
     return size, h.hexdigest()
 
 
+def is_gzip(path: Path | str) -> bool:
+    """Tell whether ``path`` is a gzip file (``x.log.3.gz``): by its first two bytes."""
+    try:
+        with open(path, "rb") as f:
+            return f.read(2) == GZIP_MAGIC  # REPLACEME"
+    except OSError:
+        return False
+
+
 def _rotation(path: Path) -> tuple[str, int]:
-    m = _ROTATION_RE.match(path.name)
+    name = path.name[:-3] if path.name.lower().endswith(".gz") else path.name
+    m = _ROTATION_RE.match(name)
     if m is None:
-        return path.name, 0
+        return name, 0
     return m.group("base"), int(m.group("n"))
 
 
@@ -192,6 +206,10 @@ def iter_raw_lines(
     that is still being written parses exactly as far as it was hashed
     (:attr:`SourceFile.size`); a line cut by that limit ends there.
 
+    A gzip file (a rotated ``x.log.3.gz``) is read decompressed, whole (``max_bytes``
+    counts compressed bytes, and a compressed log is finished); offsets count the
+    decompressed bytes.
+
     Raises:
         ValueError: ``max_line_bytes`` is not positive.
 
@@ -220,8 +238,9 @@ def _raw_lines(
     head: list[bytes] = []
     kept = 0
     skipped = 0
-    left = -1 if max_bytes is None else max(0, max_bytes)
-    with open(path, "rb") as f:
+    gz = is_gzip(path)
+    left = -1 if max_bytes is None or gz else max(0, max_bytes)
+    with gzip.open(path, "rb") if gz else open(path, "rb") as f:
         while left and (block := f.read(_CHUNK if left < 0 else min(_CHUNK, left))):
             if left > 0:
                 left -= len(block)

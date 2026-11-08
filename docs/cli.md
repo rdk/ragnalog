@@ -246,7 +246,8 @@ blank value (`--since ""`, `?logger=`) means the filter is not set.
 ### `ingest PATH... [--format F] [--name N] [--frames N] [--overwrite] [--mine] [--force] [--node N] [--cluster C] [--capture ID] [--split auto|prefix|dir|none]`
 
 Parse files/directories/ZIP files (directories: non-recursive `*.log*`; rotated
-`x.log.N` read oldest first) into a log set, or one set per cluster node. A
+`x.log.N` read oldest first; a gzip file such as `x.log.3.gz` is read decompressed,
+in its place among the rotations) into a log set, or one set per cluster node. A
 directory (or ZIP) with no log file of its own that a format recognises is
 searched two levels down for directories that hold some: a support ZIP's
 `application-logs/` (not `tomcat-logs/`), `node1/application-logs/`, an

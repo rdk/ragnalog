@@ -40,7 +40,8 @@ def ingest(
     """Parse log files into a stored log set (one per cluster node) and print its manifest.
 
     PATHs are files, directories or ZIP files (directories are scanned
-    non-recursively for *.log*; rotated files x.log.N are read oldest first; a
+    non-recursively for *.log*; rotated files x.log.N (also gzipped, x.log.N.gz)
+    are read oldest first; a
     ZIP is extracted into the store, job.json and *.log* files only, at most
     32 GiB, and removed afterwards). Files found in a directory that the format
     does not recognise in their first 200 lines (access, GC or JSON logs next

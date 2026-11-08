@@ -268,9 +268,11 @@ def _tracked(
 ) -> Iterator[LogEntry]:
     total = sum(s.size for s in sources)
     base: dict[str, int] = {}
+    sizes: dict[str, int] = {}
     acc = 0
     for s in sources:
         base[str(s.path)] = acc
+        sizes[str(s.path)] = s.size
         acc += s.size
     for item in entries:
         counter.entries += 1
@@ -281,7 +283,10 @@ def _tracked(
             progress(
                 IngestProgress(
                     entries=counter.entries,
-                    bytes_read=min(total, base.get(src.path, 0) + src.offset),
+                    # a gzip file's offsets count decompressed bytes: stay within the file
+                    bytes_read=min(
+                        total, base.get(src.path, 0) + min(src.offset, sizes.get(src.path, 0))
+                    ),
                     bytes_total=total,
                     current_file=src.path,
                 )

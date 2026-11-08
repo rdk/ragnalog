@@ -211,3 +211,27 @@ def test_side_logs_extend_a_main_stem_in_the_same_directory(tmp_path: Path) -> N
         "log/Atlassian-Jira-Slow-Queries.log",
         "node/NODE1_atlassian-jira-security.log",
     }
+
+
+def test_gzip_rotations_read_decompressed_in_order(tmp_path: Path) -> None:
+    """A rotated x.log.N.gz reads like x.log.N: decompressed, ordered by N."""
+    import gzip
+
+    from atlas_log_analyzer.core.reader import discover_sources, is_gzip
+
+    text = "line one\nline two\n"
+    (tmp_path / "app.log").write_text("newest\n", encoding="utf-8")
+    (tmp_path / "app.log.1").write_text("middle\n", encoding="utf-8")
+    with gzip.open(tmp_path / "app.log.2.gz", "wb") as f:
+        f.write(text.encode())  # bytes: text mode would write CRLF on Windows
+    found = discover_sources([tmp_path])
+    assert [(s.path.name, s.rotation) for s in found] == [
+        ("app.log.2.gz", 2),
+        ("app.log.1", 1),
+        ("app.log", 0),
+    ]
+    gz = found[0]
+    assert is_gzip(gz.path) and not is_gzip(found[1].path)
+    # max_bytes (the compressed size it was hashed at) does not cut a finished gzip file
+    lines = list(iter_raw_lines(gz.path, max_bytes=gz.size))
+    assert lines == [(1, 0, "line one"), (2, 9, "line two")]
