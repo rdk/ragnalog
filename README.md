@@ -2,7 +2,7 @@
 
 Parse, group and compare application log files — Jira Data Center first.
 
-**Status:** 0.1 — Jira Data Center format.
+**Status:** 0.2 — Jira Data Center format. See [CHANGELOG.md](CHANGELOG.md).
 
 ## What you get
 
@@ -32,17 +32,38 @@ prints JSON when piped, with documented schemas and exit codes.
 
 ## Install
 
-Requires Python 3.14 and [uv](https://docs.astral.sh/uv/).
+Requires Python 3.14 and [uv](https://docs.astral.sh/uv/). Install a release
+(tags `vX.Y.Z`, notes in [CHANGELOG.md](CHANGELOG.md)) straight from GitHub:
 
 ```sh
-uv tool install .           # install the `atlas-log` command
-uv tool install '.[mine]'   # with the optional Drain3 template mining
-uv tool install '.[web]'    # with the web app (atlas-log serve)
+uv tool install "atlas-log-analyzer[web] @ git+https://github.com/rdk/atlas-log-analyzer@v0.2.0"
 atlas-log --help
+```
 
+`[web]` adds the web app (`atlas-log serve`), `[mine]` the optional Drain3
+template mining; leave the extras out for the CLI alone. Each GitHub release also
+carries the wheel (`uv tool install ./atlas_log_analyzer-0.2.0-py3-none-any.whl`).
+From a checkout:
+
+```sh
+uv tool install '.[web]'    # the `atlas-log` command with the web app
 uv sync --all-extras --dev  # development environment (.venv)
 uv run atlas-log --help
 ```
+
+### Container
+
+Each release publishes an image that runs the web app on port 8321 with the store
+in the volume `/data`:
+
+```sh
+docker run -d -p 8321:8321 -v atlas-log:/data   -e ATLAS_LOG_TOKEN="$(openssl rand -hex 16)" ghcr.io/rdk/atlas-log-analyzer:0.2.0
+docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro"   ghcr.io/rdk/atlas-log-analyzer:0.2.0 ingest /in --name prod-1030   # any CLI command
+```
+
+The container listens on all interfaces, so set `ATLAS_LOG_TOKEN` (without it,
+`serve` warns at startup) and open the pages once with `?token=…`. Build it
+yourself with `docker build -t atlas-log .`.
 
 ## Quick start (humans)
 

@@ -1,0 +1,71 @@
+name: Release
+
+# Push a tag vX.Y.Z (equal to project.version, with a "## [X.Y.Z]" section in
+# CHANGELOG.md): builds the wheel and sdist, publishes a GitHub release with them and
+# that section as notes, and pushes the container image to ghcr.io.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.14"
+
+      - name: Version and notes
+        id: meta
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          project=$(python3 -c 'import tomllib; print(tomllib.load(open("pyproject.toml", "rb"))["project"]["version"])')
+          if [ "$version" != "$project" ]; then
+            echo "tag $GITHUB_REF_NAME does not match project.version $project" >&2
+            exit 1
+          fi
+          awk -v head="## [$version]" '
+            index($0, head) == 1 { on = 1; next }
+            on && (index($0, "## [") == 1 || $0 ~ /^\[[^]]+\]: /) { exit }
+            on { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! grep -q '[^[:space:]]' "$RUNNER_TEMP/notes.md"; then
+            echo "CHANGELOG.md has no section for $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: uv build --out-dir dist
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >
+          gh release create "$GITHUB_REF_NAME" dist/*
+          --title "atlas-log-analyzer ${{ steps.meta.outputs.version }}"
+          --notes-file "$RUNNER_TEMP/notes.md"
+
+      - name: Container image
+        shell: bash
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker build -t "$image:${{ steps.meta.outputs.version }}" -t "$image:latest" .
+          docker push "$image:${{ steps.meta.outputs.version }}"
+          docker push "$image:latest"
