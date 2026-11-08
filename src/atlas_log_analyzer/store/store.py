@@ -106,6 +106,7 @@ def _source_infos(
     sources: list[SourceFile], stats: dict[str, SourceStats]
 ) -> tuple[SourceInfo, ...]:
     """Match writer statistics (keyed by ``entry.source.path``) to the input files."""
+    from atlas_log_analyzer.store.split import shown_path
     from atlas_log_analyzer.store.writer import SourceStats
 
     normalised = {_norm(k): v for k, v in stats.items()}
@@ -114,7 +115,7 @@ def _source_infos(
         st = stats.get(str(sf.path)) or normalised.get(_norm(str(sf.path))) or SourceStats()
         out.append(
             SourceInfo(
-                path=str(sf.path),
+                path=shown_path(str(sf.path)),  # a ZIP member as zip/member: the spool goes
                 size=sf.size,
                 xxh3=sf.xxh3,
                 first_ts=st.first_ts,

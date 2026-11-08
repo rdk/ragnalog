@@ -125,6 +125,7 @@ def ingest(
     the error is ``missing_dependency``.
     """
     from atlas_log_analyzer.store.pipeline import ingest_sources
+    from atlas_log_analyzer.store.split import shown_path
 
     _check_frames(frames, front)
     try:
@@ -140,7 +141,7 @@ def ingest(
         )
     except ImportError as exc:
         raise _missing_mine(exc, front) from exc
-    skipped = tuple(str(s.path) for s in selection.skipped)
+    skipped = tuple(shown_path(str(s.path)) for s in selection.skipped)
     return _document(dataclasses.replace(result, skipped=skipped))
 
 
@@ -257,6 +258,7 @@ def _size(sources: Sequence[SourceFile]) -> str:
 
 def _single(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc:
     from atlas_log_analyzer.store.pipeline import ingest_sources
+    from atlas_log_analyzer.store.split import shown_path
     from atlas_log_analyzer.store.store import logset_id
 
     selection = _select(split, o)
@@ -285,7 +287,7 @@ def _single(store: Store, split: Split, target: IngestTarget, o: _Options) -> Do
     warnings += _hint_warnings(selection.fmt, selection.sources, m, o.front, split=False)
     result = dataclasses.replace(
         result,
-        skipped=tuple(str(s.path) for s in selection.skipped),
+        skipped=tuple(shown_path(str(s.path)) for s in selection.skipped),
         warnings=(*result.warnings, *warnings),
     )
     return _document(result, m)
@@ -296,6 +298,7 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
 
     from atlas_log_analyzer.service.captures import capture_id, get_capture
     from atlas_log_analyzer.store.pipeline import NoSourcesFound, ingest_sources
+    from atlas_log_analyzer.store.split import shown_path
     from atlas_log_analyzer.store.store import logset_id
 
     selection = _select(split, o)
@@ -308,7 +311,7 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
             sources[node].append(src)
     for src in selection.skipped:
         if (node := node_of.get(src.path)) is not None:
-            skipped[node].append(str(src.path))
+            skipped[node].append(shown_path(str(src.path)))
     warnings = list(split.warnings)
     for node, found in sources.items():
         if not found:

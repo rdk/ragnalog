@@ -250,7 +250,9 @@ Parse files/directories/ZIP files (directories: non-recursive `*.log*`; rotated
 directory (or ZIP) with no log file of its own that a format recognises is
 searched two levels down for directories that hold some: a support ZIP's
 `application-logs/` (not `tomcat-logs/`), `node1/application-logs/`, an
-export's `logs/` beside `job.json`. The id is derived from the file digests:
+export's `logs/` beside `job.json`. A file from a ZIP is recorded (manifest
+`sources`, `ingest.skipped`) as `<zip path>/<member>`: the extracted copy is
+removed after the ingest. The id is derived from the file digests:
 re-ingesting the same files prints the existing manifest
 (`ingest.existing: true`) unless `--overwrite`. Format detection sniffs the
 first 200 lines of each file (named files first) until a format recognises

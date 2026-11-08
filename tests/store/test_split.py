@@ -360,3 +360,21 @@ def test_a_cancelled_zip_ingest_leaves_nothing_in_the_spool(tmp_path: Path) -> N
         ingest_paths(store, inputs, progress=cancel, progress_every=1)
     # the parser is closed before the spool is removed: on Windows an open file would stay
     assert not spool.exists()
+
+
+def test_zip_members_are_recorded_as_zip_paths(tmp_path: Path) -> None:
+    """The spool is gone after the ingest: manifests and skipped lists name the ZIP."""
+    from atlas_log_analyzer.service.ingest import ingest_paths
+    from atlas_log_analyzer.store import Store
+    from atlas_log_analyzer.store.split import shown_path
+
+    members = dict(_support_members())
+    members["application-logs/access.log"] = b"10.0.0.1 - - [01/Nov/2026] GET / 200\n" * 3
+    archive = _zip(tmp_path / "support.zip", members)
+    store = Store(tmp_path / "store")
+    doc = ingest_paths(store, [archive], front="cli")
+    paths = [s.path for s in store.open(doc["id"]).manifest.sources]
+    zip_path = str(archive)
+    assert paths and all(p.startswith(zip_path + "/application-logs/") for p in paths)
+    assert doc["ingest"]["skipped"] == [zip_path + "/application-logs/access.log"]
+    assert shown_path(str(tmp_path / "x.log")) == str(tmp_path / "x.log")  # outside a ZIP

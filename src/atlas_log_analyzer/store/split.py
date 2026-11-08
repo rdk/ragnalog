@@ -27,6 +27,7 @@ import uuid
 import zlib
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from dataclasses import dataclass
 from itertools import islice
 from pathlib import Path
@@ -200,6 +201,25 @@ def _descend(root: Path) -> Path:
             return current
 
 
+_ARCHIVES: ContextVar[dict[str, str] | None] = ContextVar("atlas_log_archives", default=None)
+"""Extracted directory -> its ZIP, while :func:`expand_archives` runs (this thread)."""
+
+
+def shown_path(path: str) -> str:
+    """``path`` as recorded for people: a file extracted from a ZIP as ``<zip>/<member>``.
+
+    The spool directory is removed after the ingest, so a manifest or ``ingest.skipped``
+    naming it would point nowhere; other paths are returned unchanged.
+    """
+    archives = _ARCHIVES.get()
+    if archives:
+        for extracted in sorted(archives, key=len, reverse=True):
+            if path.startswith(extracted) and path[len(extracted) : len(extracted) + 1] in "/\\":
+                rest = path[len(extracted) :].lstrip("/\\").replace("\\", "/")
+                return f"{archives[extracted]}/{rest}" if rest else archives[extracted]
+    return path
+
+
 @contextmanager
 def expand_archives(
     paths: Sequence[Path], spool: Path, *, max_bytes: int = MAX_ZIP_BYTES
@@ -219,7 +239,8 @@ def expand_archives(
         return
     root = spool / uuid.uuid4().hex[:12]
     budget = [max_bytes]
-    archives: dict[str, str] = {}  # extracted directory -> the ZIP, for error messages
+    archives: dict[str, str] = {}  # extracted directory -> the ZIP, for messages and paths
+    token = _ARCHIVES.set(archives)
     try:
         out: list[Path] = []
         used: set[str] = set()
@@ -241,6 +262,7 @@ def expand_archives(
         _name_archives(exc, archives)
         raise
     finally:
+        _ARCHIVES.reset(token)
         shutil.rmtree(root, ignore_errors=True)
         with suppress(OSError):
             spool.rmdir()  # only when empty: another ingest may use it
