@@ -824,7 +824,7 @@
     if (!(S.q || S.lg || S.ex || S.hx)) return null;
     const rows = LIST.filter((x) => !x.gone && x.hourly.length && !isMuted(x));
     if (!rows.length || rows.length >= view(S.view).rows.length) return null;
-    return { key: ["f", S.view, S.q, S.lg, S.ex, S.hx, S.lv.size, rows.length].join("|"), name: `${fmt(rows.length)} listed group${rows.length === 1 ? "" : "s"}`, rows };
+    return { key: ["f", S.view, S.q, S.lg, S.ex, S.hx, [...S.lv].sort().join(","), S.t ? S.t.join("-") : "", rows.length].join("|"), name: `${fmt(rows.length)} listed group${rows.length === 1 ? "" : "s"}`, rows };
   }
   const overlayKey = () => { const o = overlaySpec(); return o ? o.key : ""; };
   const LV_TITLE = { ERROR: "ERROR and FATAL", DEBUG: "DEBUG and TRACE", OTHER: "Unknown level" };
@@ -1746,7 +1746,7 @@
   /** Overview tiles; with a time window each also tells how much of it falls in the window. */
   function renderTiles() {
     WKEY = S.t ? S.t.join("-") : "";
-    const tk = WKEY + "|" + [...S.mute].sort().join(",") + "|" + S.lv.size;
+    const tk = WKEY + "|" + [...S.mute].sort().join(",") + "|" + [...S.lv].sort().join(",");
     if (tilesKey === tk) return;
     tilesKey = tk;
     const st = D.stats || {};
