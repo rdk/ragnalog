@@ -79,13 +79,18 @@ writes one self-contained HTML file (no network access needed; open it from a
 file share or send it by e-mail): timeline by level, filterable group table,
 per-group drawer with example entries, stack traces and the matching CLI
 commands, and — with `--compare` — new / vanished / changed groups against a
-baseline. The view (filters, selected group) is kept in the URL, so a link
-with its `#…` part reopens the same view. See `docs/report.md`.
+baseline. Drag across the timeline for a time window and sort by *Spike* ("what
+started at 14:00?"); hover a bar for the groups it is made of; mute a noisy group
+(`m`) so the errors stay readable; a lane marks the hours where new groups first
+appear (a deploy, an incident); the drawer lists the groups that *move with* the
+open one. Times show in UTC or your time zone (`z`). The view (filters, window,
+selected group) is kept in the URL, so a link with its `#…` part reopens the same
+view. See `docs/report.md`.
 
 ![HTML report](docs/img/report.png)
 
-<!-- Screenshot placeholder: docs/img/report.png must be made from a fixture
-     (e.g. tests/fixtures/jira/sample.log), never from real logs. -->
+<!-- docs/img/report.png is made from the fixture tests/fixtures/jira/sample.log
+     (atlas-log report sample, a group open), never from real logs. -->
 
 ## Web app
 
@@ -103,8 +108,10 @@ next to it. Everything is also JSON under `/api` (OpenAPI at `/docs`);
 `GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call — the
 same `triage.v1` document as `atlas-log triage SET`. A cluster export (one set
 per node) opens on its **cluster page** `/captures/cluster:NAME`: the nodes side
-by side, their events on one time axis, the groups by node and the merged log
-(the static twin: `atlas-log report cluster:NAME`). See `docs/webapp.md` and
+by side, their events on one time axis, a lane of the moments when several nodes
+log far more errors than usual at once, an errors-only view, the groups by node,
+how the nodes interact and the merged log (the static twin:
+`atlas-log report cluster:NAME`). See `docs/webapp.md` and
 `docs/cluster.md`.
 
 ## Agent workflow

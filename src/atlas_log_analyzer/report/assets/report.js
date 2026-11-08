@@ -697,10 +697,18 @@
       parts.push(`<g class="ov-lane">${cells.join("")}</g>`);
       if (ovMax >= 0.06 * yMax) {
         const yOf = (v) => r1(bottom0 - (plotH * Math.min(v, yMax)) / yMax);
+        // one stepped outline per run of bins with entries, down to the baseline at its ends:
+        // no line along the baseline where the group is silent (it read as a second axis)
         let d = "";
+        const base = r1(bottom0);
         for (let b = 0; b < nb; b++) {
-          const x0 = r1(padL + b * slot), x1 = r1(padL + (b + 1) * slot), y = yOf(ovb[b]);
-          d += (b ? `L${x0} ${y}` : `M${x0} ${y}`) + `L${x1} ${y}`;
+          if (!ovb[b]) continue;
+          d += `M${r1(padL + b * slot)} ${base}`;
+          for (; b < nb && ovb[b]; b++) {
+            const y = yOf(ovb[b]);
+            d += `L${r1(padL + b * slot)} ${y}L${r1(padL + (b + 1) * slot)} ${y}`;
+          }
+          d += `L${r1(padL + b * slot)} ${base}`;
         }
         parts.push(`<path class="ov-halo" d="${d}"/><path class="ov-line" d="${d}"/>`);
         parts[svgAt] = parts[svgAt].replace("<svg ", `<svg class="has-ov" `);
