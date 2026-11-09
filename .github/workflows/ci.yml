@@ -5,6 +5,11 @@ on:
     branches: ["**"]
   pull_request:
   workflow_call:  # release.yml runs the checks first
+    inputs:
+      ref:
+        description: "The ref to check out (default: the triggering ref)"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -24,6 +29,8 @@ jobs:
         python-version: ["3.14"]
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v6
@@ -75,6 +82,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Build
         run: docker build -t atlas-log:ci .
