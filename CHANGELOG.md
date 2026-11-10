@@ -10,6 +10,43 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-10
+
+A redesign of the web UI and the HTML reports, and a new page listing all
+entries of a group. The CLI, the JSON documents and the stored formats are
+unchanged, so sets built by 0.2.x stay comparable.
+
+### Added
+
+- Entries page: `/sets/{ref}/entries` and `/captures/{ref}/entries` list every
+  entry of a group (or any filter of `entries`) in a table, opened in a new tab
+  from "All N entries ↗" in a group's drawer. A time histogram where dragging or
+  clicking sets the window, a click on a thread, user, node or level adds it as a
+  filter, rows open the full entry card; the URL holds the view.
+- Full screen width toggle on every page (`w`; remembered): no centred frame and
+  a wider drawer.
+- Drawer: a drag handle to resize it (remembered; double-click resets), section
+  links that follow scrolling.
+- Entry cards show the logger in brackets as the log writes it.
+
+### Changed
+
+- One layout system on every page: compact controls and rows, consistent spacing.
+- Header in two rows: a breadcrumb with the set's views (Report, Triage, Entries,
+  Cluster view, Compare) as tabs, then the title with the settings (time zone,
+  theme, width, help). IDs & CLI and the JSON download moved to a "⋯" menu.
+- Text kinds: loggers (package muted), exceptions, times, thread and user values,
+  identifiers and template placeholders each have one look on every page; the
+  entry message is set apart from its metadata and tools.
+- Stack traces and raw entries are not wrapped (long lines scroll) and use a
+  slightly smaller font.
+- Dark theme is lighter, with WCAG AA contrast for text and links; level colours
+  are shared by badges, filter chips and charts, INFO is blue-tinted.
+- Sticky filter bars and table headers work at every width; Reset is disabled
+  until something is filtered; empty and loading states say what to do.
+- CI and release workflows use Node 24 actions (`actions/checkout@v5`,
+  `astral-sh/setup-uv@v7`).
+
 ## [0.2.1] - 2026-11-08
 
 The first published release (0.2.0 was tagged, but its container image did not
