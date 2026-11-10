@@ -2,30 +2,35 @@
 {% block title %}Log sets · atlas-log{% endblock %}
 {% macro set_row(s, capture=None) %}
     <tr data-set="{{ s.id }}"{% if capture %} class="capture-member" data-member-of="{{ capture }}"{% endif %}>
-      <td>
-        {% if capture %}<span class="node-chip" title="Cluster node">{{ s.node or "?" }}</span>{% endif %}
-        <a class="set-name" href="/sets/{{ s.id }}">{{ s.name or s.id }}</a>
-        <div class="set-meta muted small"><span class="mono">{{ s.id }}</span><span>{{ s.format }}</span><span>{{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }}</span><span>{{ s.bytes|size }}</span>{% if s.node and not capture %}<span>node {{ s.node }}</span>{% endif %}</div>
+      <td class="c-set">
+        <a class="set-name" href="/sets/{{ s.id }}" data-tip-k="wa-set">{{ s.name or s.id }}</a>
+        <div class="set-meta">{% if capture %}<span class="node-chip" title="Cluster node">{{ s.node or "?" }}</span>{% endif %}<span>{{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }}</span><span>{{ s.bytes|size }}</span>{% if s.node and not capture %}<span>node {{ s.node }}</span>{% endif %}</div>
       </td>
-      <td class="when"><span class="nowrap">{{ s.first_ts|range(s.last_ts) }}</span>{% if strips[s.id] %}<a class="strip-link" href="/sets/{{ s.id }}" data-href="/sets/{{ s.id }}" tabindex="-1">{{ strips[s.id] }}</a>{% endif %}</td>
-      <td class="num">{{ s.entry_count|num }}</td>
-      <td class="num">{{ s.group_count|num }}</td>
-      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}–{% endif %}</td>
-      <td class="num">{% if s.summary %}<span class="lv-dot lv-dot-WARN"></span>{{ s.summary.warnings|num }}{% else %}–{% endif %}</td>
-      <td class="triage" data-triage="{{ s.id }}"{% if capture %} data-node="{{ s.node or s.name or s.id }}"{% endif %}><span class="muted">checking…</span></td>
+      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ s.first_ts|range(s.last_ts) }}</span>{% if strips[s.id] %}<a class="strip-link" href="/sets/{{ s.id }}" data-href="/sets/{{ s.id }}" tabindex="-1">{{ strips[s.id] }}</a>{% endif %}</div></td>
+      <td class="num c-entries">{{ s.entry_count|num }}</td>
+      <td class="num c-groups">{{ s.group_count|num }}</td>
+      <td class="num c-err"{% if s.summary %} data-tip-k="wa-levels"{% endif %}>{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}<span class="none">–</span>{% endif %}</td>
+      <td class="num c-warn"{% if s.summary %} data-tip-k="wa-levels"{% endif %}>{% if s.summary %}<span class="lv-dot lv-dot-WARN"></span>{{ s.summary.warnings|num }}{% else %}<span class="none">–</span>{% endif %}</td>
+      <td class="triage" data-triage="{{ s.id }}"{% if capture %} data-node="{{ s.node or s.name or s.id }}"{% endif %}><span class="pending">checking…</span></td>
       <td class="actions">
-        <a class="btn small" href="/sets/{{ s.id }}">Report</a>
+        <a class="btn small act-report" href="/sets/{{ s.id }}">Report</a>
         <a class="btn small" href="/sets/{{ s.id }}/triage">Triage</a>
         <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the store">Delete</button>
       </td>
     </tr>
 {% endmacro %}
+{% block nav %}<span class="crumb-sep" aria-hidden="true">/</span><span class="crumb-here" aria-current="page">Log sets</span>{% endblock %}
 {% block main %}
 <header class="page-head">
   <div>
     <h1>Log sets</h1>
-    <p class="muted">Store <span class="mono">{{ store }}</span> · {{ sets|length }} set{{ "" if sets|length == 1 else "s" }}</p>
+    <p class="page-meta">{{ sets|length }} set{{ "" if sets|length == 1 else "s" }}<span class="dot">·</span><button type="button" class="tip-btn info" data-tip-k="wa-ref" data-tip-ref="tip-store" aria-label="Store location">store</button><span class="dot">·</span>Open a set's report, or triage it against the previous one.</p>
   </div>
+  <div class="page-tools">{% include "_tools.html" %}</div>
+  <template id="tip-store">
+    <div class="atip-h">Store</div>
+    <div class="atip-sub atip-mono">{{ store }}</div>
+  </template>
 </header>
 
 {% if sets %}
@@ -33,13 +38,13 @@
 <table class="sets"{% if axis %} data-axis-lo="{{ axis.lo }}" data-axis-hi="{{ axis.hi }}" data-axis-bucket="{{ axis.bucket }}"{% endif %}>
   <thead>
     <tr>
-      <th>Set</th>
-      <th class="when">Log time range <span class="muted" data-tz-name>UTC</span>{% if axis %}<span class="strip-axis muted" aria-hidden="true"><span>{{ axis.lo_text }}</span><span>{{ axis.hi_text }}</span></span>{% endif %}</th>
-      <th class="num">Entries</th>
-      <th class="num">Groups</th>
-      <th class="num">Errors</th>
-      <th class="num">Warnings</th>
-      <th>vs previous set</th>
+      <th class="c-set">Set</th>
+      <th class="when"><div class="when-row"><span>Log time range <span class="tz" data-tz-name>UTC</span></span>{% if axis %}<span class="strip-axis" aria-hidden="true"><span>{{ axis.lo_text }}</span><span>{{ axis.hi_text }}</span></span>{% endif %}</div></th>
+      <th class="num c-entries">Entries</th>
+      <th class="num c-groups">Groups</th>
+      <th class="num c-err">Errors</th>
+      <th class="num c-warn">Warnings</th>
+      <th class="triage">vs previous set</th>
       <th class="actions"><span class="sr-only">Actions</span></th>
     </tr>
   </thead>
@@ -47,18 +52,17 @@
   {% for row in rows %}
   {% if row.capture %}{% set c = row.capture %}
     <tr class="capture-row" data-capture="{{ c.id }}">
-      <td>
-        <a class="set-name" href="/captures/capture:{{ c.id|urlencode }}">{{ c.cluster or "Capture" }}</a>
-        <span class="muted small">{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span>
-        <div class="set-meta muted small"><span>capture <span class="mono">{{ c.id }}</span></span><span>{{ c.bytes|size }}</span></div>
+      <td class="c-set">
+        <a class="set-name" href="/captures/capture:{{ c.id|urlencode }}" data-tip-k="wa-capture">{{ c.cluster or "Capture" }}</a>
+        <div class="set-meta"><span>capture</span><span>{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span><span>{{ c.bytes|size }}</span></div>
       </td>
       {% set ck = "capture:" ~ c.id %}
-      <td class="when"><span class="nowrap">{{ c.first_ts|range(c.last_ts) }}</span>{% if strips[ck] %}<a class="strip-link" href="/captures/{{ ck|urlencode }}" data-href="/captures/{{ ck|urlencode }}" tabindex="-1">{{ strips[ck] }}</a>{% endif %}</td>
-      <td class="num">{{ c.entry_count|num }}</td>
-      <td class="num"><span class="muted">–</span></td>
-      <td class="num">{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}–{% endif %}</td>
-      <td class="num">{% if c.warnings is not none %}<span class="lv-dot lv-dot-WARN"></span>{{ c.warnings|num }}{% else %}–{% endif %}</td>
-      <td class="triage" data-capture-verdict="{{ c.id }}"><span class="muted">checking…</span></td>
+      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ c.first_ts|range(c.last_ts) }}</span>{% if strips[ck] %}<a class="strip-link" href="/captures/{{ ck|urlencode }}" data-href="/captures/{{ ck|urlencode }}" tabindex="-1">{{ strips[ck] }}</a>{% endif %}</div></td>
+      <td class="num c-entries">{{ c.entry_count|num }}</td>
+      <td class="num c-groups"><span class="none">–</span></td>
+      <td class="num c-err"{% if c.errors is not none %} data-tip-k="wa-levels"{% endif %}>{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}<span class="none">–</span>{% endif %}</td>
+      <td class="num c-warn"{% if c.warnings is not none %} data-tip-k="wa-levels"{% endif %}>{% if c.warnings is not none %}<span class="lv-dot lv-dot-WARN"></span>{{ c.warnings|num }}{% else %}<span class="none">–</span>{% endif %}</td>
+      <td class="triage" data-capture-verdict="{{ c.id }}"><span class="pending">checking…</span></td>
       <td class="actions">
         <a class="btn small" href="/captures/capture:{{ c.id|urlencode }}">Cluster view</a>
       </td>
@@ -69,11 +73,11 @@
   </tbody>
 </table>
 </div>
+<script type="application/json" id="sets-data">{{ sets|tojson }}</script>
 {% else %}
 <section class="card empty">
   <h2>No log sets yet</h2>
-  <p class="muted">Upload Jira <span class="mono">atlassian-jira.log*</span> files below, or ingest from a shell:</p>
-  <pre class="cmd">atlas-log --store {{ store }} ingest path/to/logs --name prod-2026-10-29</pre>
+  <p class="muted">Upload Jira <span class="mono">atlassian-jira.log*</span> files below.</p>
 </section>
 {% endif %}
 
@@ -82,18 +86,23 @@
   <form id="upload-form" enctype="multipart/form-data">
     <label class="drop" id="drop">
       <input type="file" name="files" id="files" multiple required>
-      <span class="drop-text"><strong>Choose files</strong> or drop them here. Rotated files (<span class="mono">.log.1</span>, <span class="mono">.log.2</span>…) are fine; a cluster log export <span class="mono">.zip</span> becomes one set per node, a support <span class="mono">.zip</span> one set of its application logs. Gzipped rotations (<span class="mono">.log.3.gz</span>) are read as they are.</span>
-      <span class="drop-list muted" id="drop-list"></span>
+      <span class="drop-text"><strong>Choose files</strong> or drop them here</span>
+      <span class="drop-hint" title="A cluster log export .zip becomes one set per node, a support .zip one set of its application logs. Gzipped rotations (.log.3.gz) are read as they are.">Rotated files (<span class="mono">.log.1</span>, <span class="mono">.log.2</span>…), <span class="mono">.gz</span> and <span class="mono">.zip</span> exports are fine.</span>
+      <span class="drop-list" id="drop-list"></span>
     </label>
     <div class="upload-row">
-      <label class="sel">Name <input type="text" name="name" placeholder="e.g. prod-2026-10-29" maxlength="128"></label>
-      <label class="sel">Cluster <input type="text" name="cluster" placeholder="e.g. jira-prod" maxlength="128"></label>
-      <label class="sel"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
-      <label class="sel"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
+      <label class="field">Name <input type="text" name="name" placeholder="e.g. prod-2026-10-29" maxlength="128"></label>
+      <label class="field">Cluster <input type="text" name="cluster" placeholder="e.g. jira-prod" maxlength="128"></label>
+      <label class="check" title="Run Drain3 over the group templates and store proposals of groups to merge (needs the mine extra)"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
+      <label class="check" title="Files ingested before keep their existing set; this rebuilds it (and renames it to the name given)"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
       <span class="grow"></span>
-      <button class="btn primary" type="submit">Upload &amp; ingest</button>
+      <button class="btn small primary" type="submit">Upload &amp; ingest</button>
     </div>
   </form>
+  <details class="disclose">
+    <summary>Ingest from a shell</summary>
+    <pre class="cmd">atlas-log --store {{ store }} ingest path/to/logs --name prod-2026-10-29</pre>
+  </details>
   <div class="job" id="job" hidden>
     <div class="job-head"><strong id="job-state">queued</strong> <span class="muted" id="job-detail"></span>
       <button type="button" class="btn small link" id="job-cancel">Cancel</button></div>

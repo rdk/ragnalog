@@ -109,12 +109,15 @@
     if (r >= 1) return r.toFixed(1).replace(/\.0$/, "");
     return r.toPrecision(2);
   }
+  /** "12%", "0.4%", "<0.1%": a share in [0, 1]. */
+  const pctText = (x) => (!(x > 0) ? "0%" : x >= 0.1 ? Math.round(x * 100) + "%" : x >= 0.001 ? (x * 100).toFixed(1) + "%" : "<0.1%");
+  const { loggerHtml, excHtml, tsHtml, kvHtml, nilHtml } = AtlasEntryCard;
   const PH = /&lt;([A-Z][A-Z0-9_]*|\*)&gt;/g;
   const REPEATED = /^\s*([^\w\s]){2,}\s*$|^\s*[^\w\s]{6,}\s*$/;
   const tplHtml = (t) =>
     t && REPEATED.test(t)
       ? `<span class="rep" title="${esc(t)}">(repeated characters)</span>`
-      : esc(t).replace(PH, (m, n) => `<span class="ph">${n.toLowerCase()}</span>`);
+      : logInline(t).replace(PH, (m, n) => `<span class="ph">${n.toLowerCase()}</span>`);
   function shortLogger(l) {
     if (!l) return "";
     const parts = String(l).split(".");
@@ -126,6 +129,15 @@
   const shellArg = (s) => (/^[\w.:@%+=,/-]+$/.test(s) ? s : "'" + String(s).replace(/'/g, "'\\''") + "'");
   const trunc = (s, n) => (str(s).length > n ? str(s).slice(0, n - 1) + "…" : str(s));
   const plural = (n, one, many) => `${fmt(n)} ${n === 1 ? one : many || one + "s"}`;
+  // rich tooltips (tips.js runs before this script): secondary detail lives in them, built on
+  // hover for table rows (data-tip-k, builders registered below) or up front for fixed parts
+  const TIPS = window.AtlasTips || null;
+  const tipCard = (o) => (TIPS ? TIPS.card(o) : "");
+  /** A value for tipCard that is markup already (badges, glyphs, escaped templates). */
+  const trusted = (html) => ({ html });
+  /** ` data-tip="…"`: a tooltip card built now. */
+  const tipAttr = (o) => ` data-tip="${esc(tipCard(o))}"`;
+  const mono = (s) => trusted(`<span class="atip-mono">${esc(s)}</span>`);
 
   // ---------------------------------------------------------------- levels
   const BUCKETS = ["ERROR", "WARN", "INFO", "DEBUG", "OTHER"];
@@ -729,9 +741,9 @@
     const nb = Math.ceil(NB / k);
     const slot = plotW / nb;
     const bw = Math.min(24, Math.max(2, slot - GAP));
-    const RULER = WIN ? 26 : 6, LANE = 24, ROWGAP = 14, AXIS = 22;
-    const XM = MULTI ? 16 : 0; // the cross-node moments lane above the first node
-    const BAND = N <= 2 ? 116 : N <= 4 ? 88 : N <= 8 ? 64 : 48;
+    const RULER = WIN ? 14 : 4, LANE = 18, ROWGAP = 6, AXIS = 20;
+    const XM = MULTI ? 14 : 0; // the cross-node moments lane above the first node
+    const BAND = N <= 2 ? 52 : N <= 4 ? 64 : N <= 8 ? 56 : 44;
     const rowTop = (i) => RULER + XM + i * (LANE + BAND + ROWGAP);
     const bottomAll = rowTop(N - 1) + LANE + BAND;
     const H = bottomAll + AXIS;
@@ -785,13 +797,11 @@
     if (WIN) {
       const x0 = clampX(xOfMs(WIN[0])), x1 = clampX(xOfMs(WIN[1]));
       if (x1 > x0) {
-        const label = `${WIN_NAME} ${rangeText(WIN[0], WIN[1], tsShort, tsShort)} (${spanText(WIN[1] - WIN[0])})`;
-        const right = x0 > padL + plotW * 0.6;
-        P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x1)}" y1="19" y2="19"/>`);
-        P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x0)}" y1="14" y2="24"/><line class="win-line" x1="${r1(x1)}" x2="${r1(x1)}" y1="14" y2="24"/>`);
-        P.push(`<text class="win-lbl" x="${r1(right ? x1 : x0 + 2)}" y="11" text-anchor="${right ? "end" : "start"}">${esc(label)}</text>`);
+        // the bracket of the capture's window; its range is in the header
+        P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x1)}" y1="9" y2="9"/>`);
+        P.push(`<line class="win-line" x1="${r1(x0)}" x2="${r1(x0)}" y1="4" y2="14"/><line class="win-line" x1="${r1(x1)}" x2="${r1(x1)}" y1="4" y2="14"/>`);
         for (const x of [x0, x1]) {
-          if (x > padL + 1 && x < xEnd - 1) P.push(`<line class="win-edge" x1="${r1(x) + 0.5}" x2="${r1(x) + 0.5}" y1="24" y2="${bottomAll}"/>`);
+          if (x > padL + 1 && x < xEnd - 1) P.push(`<line class="win-edge" x1="${r1(x) + 0.5}" x2="${r1(x) + 0.5}" y1="14" y2="${bottomAll}"/>`);
         }
       }
     }
@@ -799,7 +809,9 @@
     const XMS = MULTI ? crossMoments(rows, nb, k) : [];
     if (XM) {
       const y = RULER + 3;
-      P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end">together<title>Cross-node moments: the ${esc(binLabel(k))}s holding a ${esc(binLabel(1))} in which two or more nodes log more than 3× their own usual errors (the median of their ${esc(binLabel(1))}s with errors). Click one, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment.</title></text>`);
+      P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end"${tipAttr({ h: "Cross-node moments",
+        body: esc(`The ${binLabel(k)}s holding a ${binLabel(1)} in which two or more nodes log more than 3× their own usual errors (the median of their ${binLabel(1)}s with errors).`),
+        note: "Click a mark, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment." })}>together</text>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${y + 5.5}" y2="${y + 5.5}"/>`);
       for (const m of XMS) {
         const x = padL + m.b * slot + Math.max(0, (slot - Math.max(3, bw)) / 2);
@@ -814,10 +826,11 @@
       r.laneY = laneY;
       r.bTop = bTop;
       r.bBot = bBot;
-      P.push(`<g class="${ncls(n)}">`);
-      P.push(`<rect class="nsw" x="4" y="${laneY - 5}" width="10" height="10" rx="2"/>`);
+      P.push(`<g class="${ncls(n)} row-id"${tipAttr(nodeTip(n))}>`);
+      P.push(`<rect class="row-id-hit" x="0" y="${r.top}" width="${padL - 40}" height="${LANE}"/>`);
+      P.push(`<rect class="nsw" x="4" y="${laneY - 4.5}" width="9" height="9" rx="2"/>`);
       P.push(`<text class="row-lbl" x="19" y="${laneY + 4}">${esc(NLABEL(n))}</text>`);
-      P.push(`<text class="row-sub" x="${19 + 8 * NLABEL(n).length + 6}" y="${laneY + 4}">${esc(trunc(n, 9))}<title>${esc(n)}</title></text>`);
+      P.push(`<text class="row-sub" x="${19 + 8 * NLABEL(n).length + 6}" y="${laneY + 4}">${esc(trunc(n, 9))}</text>`);
       P.push(`</g>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${laneY + 0.5}" y2="${laneY + 0.5}"/>`);
       // no logs: outside the node's coverage, and its gaps
@@ -957,24 +970,33 @@
       band: svg.querySelector(".hover-band"), brush: svg.querySelector(".brush"),
       binAt: (clientX) => Math.max(0, Math.min(nb - 1, Math.floor((clientX - svg.getBoundingClientRect().left - padL) / slot))),
     };
-    $("tl-title").textContent = `${ERR ? "Errors (ERROR and FATAL)" : "Entries"} per ${binLabel(k)}${ERR ? "" : " by level"}, one band per node`;
+    $("tl-title").innerHTML = `${ERR ? "Errors" : "Entries"} per ${esc(binLabel(k))} <span class="h-sub">${ERR ? "ERROR and FATAL" : "by level"}</span>`;
+    $("tl-title").title = "One band per node; the columns are stacked by level. Drag across a band to select a time window.";
     bindTimeline(TLG);
     showWindow(TLG);
     renderTlLegend();
   });
 
+  /** A node at a glance: name, set, entries, errors, coverage (the timeline's row labels). */
+  function nodeTip(n) {
+    const c = obj(CN.get(n)), set = setOf(n), cov = COVT[n];
+    return { h: trusted(`${nodeBadge(n)} ${esc(n)}`), sub: set.name || set.id || null,
+      rows: [["Entries", fmt(num(c.entries) || NSUM[n])], ["Errors", isNum(c.errors) ? fmt(c.errors) : "", c.errors > 0 ? "e" : ""],
+        ["Warnings", isNum(c.warnings) ? fmt(c.warnings) : ""], ["Coverage", cov ? rangeText(cov[0], cov[1]) : "no entries"],
+        ["Gaps", GAPS[n].length ? plural(GAPS[n].length, "gap") : ""]] };
+  }
   function renderTlLegend() {
     $("tl-legend").innerHTML = BUCKETS.filter((b) => (S.y !== "err" || b === "ERROR") && NODES.some((n) => LEV[n][b].some((v) => v > 0))).map((b) =>
       `<span title="${esc(LV_TITLE[b])}"><i class="sw sw-${b}"></i>${b}</span>`).join("") +
       `<span title="Time a node has no logs for: before its oldest or after its newest entry, and gaps"><svg width="12" height="12" aria-hidden="true"><rect class="nolog-bg" width="12" height="12"/><rect class="nolog" width="12" height="12"/></svg>no logs</span>`;
     const counts = new Map();
     for (const e of EVENTS) counts.set(e.kind, (counts.get(e.kind) || 0) + 1);
-    const ev = KINDS.map((kd) => `<span class="ev-key${kd === "job_run" && !S.jobs ? " off" : ""}" title="${esc(kd === "job_run" && !S.jobs ? "job runs are hidden from the lanes: Job runs button" : kd)}">${glyphKey(kd)}${esc(kindLabel(kd))} <span class="muted">${fmt(counts.get(kd))}</span></span>`);
+    const ev = KINDS.map((kd) => `<span class="ev-key${kd === "job_run" && !S.jobs ? " off" : ""}" title="${esc(kd === "job_run" && !S.jobs ? "Job runs are hidden from the lanes: the Job runs button shows them" : `${kindCount(kd, counts.get(kd) || 0)} on all nodes (${kd})`)}">${glyphKey(kd)}${esc(kindLabel(kd))} <span class="n">${fmt(counts.get(kd))}</span></span>`);
     const arrows = EVENTS.some((e) => e.subject && e.subject !== e.node && NIDX.has(e.subject)) || MENT.length;
-    if (arrows) ev.push(`<span class="ev-key" title="An entry on one node names another node: arrow from the reporting node to the node it names">↕ mention (from the node that logs it to the node it names)</span>`);
+    if (arrows) ev.push(`<span class="ev-key" title="An entry on one node names another node: the arrow goes from the node that logs it to the node it names">↕ mention</span>`);
     $("tl-events").innerHTML = ev.length
-      ? `<span class="muted">Event lanes:</span>` + ev.join("")
-      : `<span class="muted">No cluster events detected in this capture.</span>`;
+      ? ev.join("")
+      : `<span class="lg-k">No cluster events detected in this capture.</span>`;
   }
   function showWindow(geo, range) {
     if (!geo) return;
@@ -998,10 +1020,11 @@
   }
   function eventTip(list) {
     const shown = list.slice(0, 6).map((e) =>
-      `<div class="tt-e"><div>${glyphKey(e.kind)} <b>${esc(kindLabel(e.kind))}</b> ${nodeBadge(e.node)}${e.subject ? ` → ${nodeBadge(e.subject)}` : ""} <span class="muted">${esc(tsSec(e.ts))}</span></div>` +
+      `<div class="tt-e"><div class="tt-eh">${glyphKey(e.kind)}<b>${esc(kindLabel(e.kind))}</b>${nodeBadge(e.node)}${e.subject ? `<span class="tt-arr">→</span>${nodeBadge(e.subject)}` : ""}<span class="tt-ts">${esc(tsSec(e.ts))}</span></div>` +
       (e.text ? `<div class="tt-x">${esc(trunc(e.text, 180))}</div>` : "") + `</div>`).join("");
-    return `<div class="tt-h">${esc(list.length === 1 ? "Event" : list.length + " events")} · click to open the merged log here</div>${shown}` +
-      (list.length > 6 ? `<div class="muted">+${fmt(list.length - 6)} more</div>` : "");
+    return `<div class="tt-h">${esc(list.length === 1 ? "Event" : list.length + " events")}</div>${shown}` +
+      (list.length > 6 ? `<div class="tt-more">+${fmt(list.length - 6)} more</div>` : "") +
+      `<div class="tt-note">Click to open the merged log here</div>`;
   }
   function bandTip(geo, row, b) {
     const r = geo.rows[row];
@@ -1121,7 +1144,11 @@
         return;
       }
       const row = rowOf(t);
-      if (row < 0) return;
+      if (row < 0) {
+        tip.hidden = true;
+        geo.band.setAttribute("visibility", "hidden");
+        return;
+      }
       const b = geo.binAt(e.clientX);
       geo.band.setAttribute("x", r1(geo.padL + b * geo.slot));
       geo.band.setAttribute("visibility", "visible");
@@ -1205,7 +1232,7 @@
       ["pct", "% of node", "Each node's counts as a percentage of its entries in the range: compare distributions across nodes of different volume"],
       ["err", "Errors", "Only the ERROR and FATAL entries, one y-scale for every node: errors stay visible next to a flood of warnings"]];
     const tl = !!NB && NODES.length > 0 && isNum(TA);
-    $("tl-y").innerHTML = tl ? `<span class="lbl">y</span>` + modes.map(([k, label, title]) =>
+    $("tl-y").innerHTML = tl ? `<span class="lbl">Scale</span>` + modes.map(([k, label, title]) =>
       `<button type="button" data-y="${k}" aria-pressed="${S.y === k}" title="${esc(title)}">${label}</button>`).join("") : "";
     $("tl-y").hidden = !tl;
     const ab = $("tl-arrows");
@@ -1223,7 +1250,7 @@
     if (!NB) {
       w.innerHTML = "";
     } else if (!S.t) {
-      w.innerHTML = `<span class="muted">Drag across any band to narrow every view to a time window</span>${seg}`;
+      w.innerHTML = `<span class="muted">Drag across a band to select a time window</span>${seg}`;
     } else {
       const rg = tRange();
       let entries = 0, errors = 0;
@@ -1257,24 +1284,30 @@
   function renderHeader() {
     const name = CAP.cluster || CAP.capture || "cluster";
     $("c-title").textContent = name;
-    $("c-capture").textContent = CAP.cluster && CAP.capture ? "capture " + CAP.capture : "";
-    $("c-nodes").innerHTML = NODES.map((n) => {
-      const set = setOf(n);
-      const href = URLS && URLS.set_report && set.id ? urlFill(URLS.set_report, { set: set.id }) : "";
-      return `<span class="nchip">${nodeBadge(n)}<span>${esc(n)}</span>` +
-        (href ? `<a href="${esc(href)}" title="Report of ${esc(set.name || set.id)}">report ↗</a>` : "") + `</span>`;
-    }).join("");
+    // label, value, detail: the window range is what to read, the rest is quiet
     const meta = [];
-    if (WIN) meta.push(`${WIN_NAME}: ${rangeText(WIN[0], WIN[1])} (${spanText(WIN[1] - WIN[0])})`);
-    else if (WMODE) meta.push(`window: ${WMODE}`);
-    meta.push(plural(NODES.length, "node"));
+    if (WIN) {
+      const name = WIN_NAME.replace(/^./, (c) => c.toUpperCase());
+      meta.push(`<span class="m-item"${tipAttr({ h: name, rows: [["From", `${tsFull(isoOf(WIN[0]))} ${zAt(WIN[0])}`],
+        ["To", `${tsFull(isoOf(WIN[1]))} ${zAt(WIN[1])}`], ["Length", spanText(WIN[1] - WIN[0])]] })}>` +
+        `<span class="m-k">${esc(name)}</span> <span class="m-v">${esc(rangeText(WIN[0], WIN[1]))}</span> ` +
+        `<span class="m-k">${esc(spanText(WIN[1] - WIN[0]))}</span></span>`);
+    } else if (WMODE) meta.push(`<span class="m-item"><span class="m-k">window</span> <span class="m-v">${esc(WMODE)}</span></span>`);
     const trunc_ = num(OPTS.truncated_groups);
-    meta.push(trunc_ > 0 ? `showing ${fmt(ROWS.length)} of ${fmt(ROWS.length + trunc_)} groups` : plural(ROWS.length, "group"));
+    meta.push(trunc_ > 0
+      ? `<span class="m-item m-k" title="${esc(`The ${fmt(ROWS.length)} largest groups are on this page; ${fmt(trunc_)} smaller ones are left out.`)}">${fmt(ROWS.length)} of ${fmt(ROWS.length + trunc_)} groups</span>`
+      : `<span class="m-item m-k">${esc(plural(ROWS.length, "group"))}</span>`);
     for (const s of arr(CAP.skew)) {
       if (!s || !isNum(s.offset_ms)) continue;
-      meta.push(`clock skew ${NLABEL(str(s.a))}↔${NLABEL(str(s.b))} ≈ ${lagText(s.offset_ms)}${isNum(s.pairs) ? ` (${plural(s.pairs, "pair")})` : ""}, estimate, not applied`);
+      const a = str(s.a), b = str(s.b);
+      meta.push(`<span class="m-item m-k"${tipAttr({ h: `Clock skew ${NLABEL(a)} ↔ ${NLABEL(b)}`,
+        rows: [[trusted(nodeBadge(a)), a], [trusted(nodeBadge(b)), b], [`${NLABEL(b)} − ${NLABEL(a)}`, lagText(s.offset_ms)], ["From", isNum(s.pairs) ? plural(s.pairs, "event pair") : ""]],
+        note: "The median time between matching cluster events on the two nodes: an estimate, the times on this page are not corrected." })}>` +
+        `clock skew ${esc(NLABEL(a))}↔${esc(NLABEL(b))} ≈ ${esc(lagText(s.offset_ms))}</span>`);
     }
-    $("c-meta").textContent = meta.join(" · ");
+    $("c-meta").innerHTML = meta.join(`<span class="m-sep" aria-hidden="true">·</span> `);
+    $("c-ctx").textContent = name;
+    $("c-ctx").title = (CAP.capture ? `Capture ${CAP.capture}` : name) + " (click: back to the top)";
   }
   function evCounts(c) {
     const ev = c.events;
@@ -1289,8 +1322,9 @@
     return { total: own.length, kinds: [...m].sort((a, b) => b[1] - a[1]) };
   }
   let cardsKey = null;
+  /** One slim row per node: the numbers to compare across nodes; the rest is in the name's tooltip. */
   const renderCards = guard(function renderCards() {
-    // the node filter too: it presses a card's "Groups on N" button
+    // the node filter too: it presses a row's name button
     const key = WKEY + "|" + S.nd;
     if (cardsKey === key) return;
     cardsKey = key;
@@ -1299,7 +1333,7 @@
       const c = obj(CN.get(n));
       const set = setOf(n);
       const href = URLS && URLS.set_report && set.id ? urlFill(URLS.set_report, { set: set.id }) : "";
-      let entries = c.entries, errors = c.errors, warnings = c.warnings, eph = c.errors_per_hour, note = "";
+      let entries = c.entries, errors = c.errors, warnings = c.warnings, eph = c.errors_per_hour;
       if (rg && NB) {
         entries = 0; errors = 0; warnings = 0;
         for (let i = S.t[0]; i <= S.t[1]; i++) {
@@ -1310,71 +1344,139 @@
         const cov = COVT[n];
         const hrs = cov ? Math.max(0, Math.min(rg[1], cov[1]) - Math.max(rg[0], cov[0])) / 3.6e6 : 0;
         eph = hrs > 0 ? errors / hrs : null;
-        note = `<span class="nc-win">in window</span>`;
       }
       const ev = evCounts({ ...c, node: n });
       const own = rg ? (EVN[n] || []).filter((e) => inRange(e.ms, rg)) : null;
       const evTotal = own ? own.length : ev.total;
-      const jobs = own ? own.filter((e) => e.kind === "job_run").length
-        : ev.kinds ? num((ev.kinds.find(([k]) => k === "job_run") || [])[1]) : (EVN[n] || []).filter((e) => e.kind === "job_run").length;
-      const evHtml = esc(fmt(evTotal)) + (jobs ? ` <small>(${esc(kindCount("job_run", jobs))})</small>` : "");
+      const kinds = own ? [...own.reduce((m, e) => m.set(e.kind, (m.get(e.kind) || 0) + 1), new Map())].sort((x, y) => y[1] - x[1]) : ev.kinds;
+      // exact values, the whole capture's numbers in a window, and the events by kind are in each number's tooltip
+      const inWin = rg ? " in the window" : "";
+      const whole = (v) => (rg && isNum(v) ? ["Whole capture", fmt(v), "m"] : null);
+      const share = (v) => (isNum(v) && entries > 0 ? ["Share of entries", pctText(v / entries)] : null);
       const stats = [
-        ["Entries", isNum(entries) ? compact(entries) : "—", fmt(entries)],
-        ["Errors", isNum(errors) ? compact(errors) : "—", fmt(errors)],
-        ["Warnings", isNum(warnings) ? compact(warnings) : "—", fmt(warnings)],
-        ["Errors / h", isNum(eph) ? (eph >= 100 ? fmt(Math.round(eph)) : String(r1(eph))) : "—", ""],
-        ["Events", evHtml, jobs ? `${fmt(evTotal)} events, ${kindCount("job_run", jobs)} among them` : "", true],
+        ["entries", isNum(entries) ? compact(entries) : "—", { h: `${NLABEL(n)} entries${inWin}`, rows: [["Entries", fmt(entries)], whole(c.entries)] }],
+        ["errors", isNum(errors) ? compact(errors) : "—", { h: `${NLABEL(n)} errors${inWin}`, rows: [["ERROR and FATAL", fmt(errors), errors > 0 ? "e" : ""], whole(c.errors), share(errors)] }, "e"],
+        ["warnings", isNum(warnings) ? compact(warnings) : "—", { h: `${NLABEL(n)} warnings${inWin}`, rows: [["WARN", fmt(warnings)], whole(c.warnings), share(warnings)] }, "w"],
+        ["errors/h", isNum(eph) ? (eph >= 100 ? fmt(Math.round(eph)) : String(r1(eph))) : "—", { h: `${NLABEL(n)} errors per hour${inWin}`,
+          rows: [["Errors / h", isNum(eph) ? String(r1(eph)) : ""], rg && isNum(c.errors_per_hour) ? ["Whole capture", String(r1(c.errors_per_hour)), "m"] : null],
+          note: `Errors divided by the hours ${rg ? "of the window " : ""}the node has logs for.` }, "", "q"],
+        ["events", fmt(evTotal), { h: `${NLABEL(n)} events${inWin}`,
+          rows: [...arr(kinds).map(([k, v]) => [trusted(`${glyphKey(k)}${esc(kindLabel(k))}`), fmt(v)])],
+          note: "Cluster events detected in the log: the node's event lane in the timeline, listed in Interactions." }, "", "q"],
       ];
       const cov = obj(c.coverage);
       const since = cov.since ?? c.first_ts, until = cov.until ?? c.last_ts;
       const gaps = GAPS[n];
-      const gapMs = gaps.reduce((a, [x, y]) => a + (y - x), 0);
+      const gapMs = gaps.reduce((x, [g0, g1]) => x + (g1 - g0), 0);
       const top = c.top_error && typeof c.top_error === "object" ? c.top_error : null;
-      const topRow = top ? GBY.get(str(top.signature)) : null;
       const baseline = c.baseline && typeof c.baseline === "object" ? c.baseline.name || c.baseline.id : c.baseline;
-      const rows = [];
-      rows.push(["Coverage", since ? `${esc(rangeText(parseTs(since), parseTs(until)))} (${esc(spanText(parseTs(until) - parseTs(since)))})` +
-        (gaps.length ? ` · <span title="${esc(gaps.map(([x, y]) => rangeText(x, y)).join("\n"))}">${plural(gaps.length, "gap")} (${esc(spanText(gapMs))})</span>` : " · no gaps")
-        : `<span class="muted">no entries</span>`]);
-      if (top) {
-        rows.push(["Top error", (topRow ? `<button type="button" class="tpl-btn" data-open="${esc(topRow.id)}" title="${esc(top.template)}">${tplHtml(trunc(top.template, 110))}</button>` : tplHtml(trunc(top.template, 110))) +
-          (isNum(top.count) ? ` <span class="muted">${fmt(top.count)}</span>` : "")]);
-      }
-      if (c.verdict != null || baseline) {
-        rows.push(["Triage", verdictChip(c.verdict) + (baseline ? `<span class="muted">vs ${esc(baseline)}</span>` : "")]);
-      }
-      if (ev.kinds && ev.kinds.length) {
-        rows.push(["Events", ev.kinds.slice(0, 5).map(([k, v]) => `${fmt(v)} ${esc(kindLabel(k))}`).join(" · ") + (ev.kinds.length > 5 ? " …" : "")]);
-      }
-      return `<article class="ncard ${ncls(n)}${S.nd === n ? " is-filter" : ""}" data-node="${esc(n)}">` +
-        `<div class="nc-head">${nodeBadge(n)}<b>${esc(n)}</b>` +
-        (set.name || set.id ? `<span class="muted mono" title="${esc(set.id)}">${esc(set.name || set.id)}</span>` : "") +
-        `<span class="grow"></span>` + (href ? `<a href="${esc(href)}">set report ↗</a>` : "") +
-        (MULTI ? `<button type="button" class="btn small toggle" data-node-filter="${esc(n)}" aria-pressed="${S.nd === n}" title="Show only groups seen on ${esc(n)}">Groups on ${esc(NLABEL(n))}</button>` : "") + `</div>` +
-        `<dl class="nc-stats">${stats.map(([k, v, t, html], i) => `<div title="${esc(t)}"><dt>${k}${i === 0 ? note : ""}</dt><dd>${html ? v : esc(v)}</dd></div>`).join("")}</dl>` +
-        rows.map(([k, v]) => `<div class="nc-row"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("") +
-        `</article>`;
+      const nameTip = tipCard({ h: trusted(`${nodeBadge(n)} ${esc(n)}`), sub: set.name || null,
+        rows: [["Set id", set.id && set.id !== set.name ? mono(set.id) : ""],
+          ["Logs from", since ? `${tsFull(since)} ${zAt(parseTs(since))}` : "no entries"],
+          ["Logs to", since ? `${tsFull(until)} ${zAt(parseTs(until))}` : ""],
+          ["Length", since ? spanText(parseTs(until) - parseTs(since)) : ""],
+          ["Gaps", since ? (gaps.length ? `${plural(gaps.length, "gap")}, ${spanText(gapMs)} in all` : "none") : ""],
+          ["Top error", top ? trusted(tplHtml(trunc(top.template, 110))) : ""],
+          ["Top error count", top && isNum(top.count) ? fmt(top.count) : ""],
+          ["Triage", c.verdict != null ? `${VERDICT[str(c.verdict)] || str(c.verdict).replace(/_/g, " ")}${baseline ? ` vs ${baseline}` : ""}` : ""]],
+        note: MULTI ? "Click to show only the groups seen on this node." : null });
+      const label = `${nodeBadge(n)}<span class="nr-nm">${esc(n)}</span>`;
+      const head = MULTI
+        ? `<button type="button" class="nr-name" data-node-filter="${esc(n)}" aria-pressed="${S.nd === n}" data-tip="${esc(nameTip)}">${label}</button>`
+        : `<span class="nr-name" data-tip="${esc(nameTip)}">${label}</span>`;
+      return `<div class="nrow ${ncls(n)}${S.nd === n ? " is-filter" : ""}" data-node="${esc(n)}">${head}` +
+        (rg ? `<span class="nc-win" title="The numbers count the time window only">in window</span>` : "") +
+        `<span class="nr-figs">${stats.map(([k, v, t, cls, opt]) => `<span class="nr-f${opt ? " opt" : ""}"${tipAttr(t)}>${cls === "e" || cls === "w" ? `<i class="lvdot lvdot-${cls}" aria-hidden="true"></i>` : ""}<b>${esc(v)}</b><small>${k}</small></span>`).join("")}</span>` +
+        (c.verdict != null ? `<span class="nr-v"${tipAttr({ h: "Triage", rows: [["Verdict", VERDICT[str(c.verdict)] || str(c.verdict).replace(/_/g, " ")], ["Baseline", baseline || ""]],
+          note: "The node's errors compared with the baseline set." })}>${verdictChip(c.verdict)}</span>` : "") +
+        (href ? `<a class="nr-link" href="${esc(href)}" title="${esc(`Report of the log set ${set.name || set.id}`)}" aria-label="Report of ${esc(n)}">↗</a>` : "") +
+        `</div>`;
     }).join("") || `<div class="empty">This capture has no nodes.</div>`;
   });
 
   // ---------------------------------------------------------------- groups table
   const PAGE = 100;
   const HEAT = NODES.length > 8;
+  // spread and lead: the uneven cases are chips in the node's colour, "all" is quiet text; the
+  // per-node rates and first-seen times behind them are in their tooltips (builders below)
   function spreadChip(r) {
+    const sig = ` data-sig="${esc(r.id)}" data-tip-k="cs"`;
     if (r.spread === "only") {
       const n = r.present[0] || r.top || "";
-      return `<span class="schip ${ncls(n)}" title="Seen only on ${esc(n)}"><i></i>only ${esc(NLABEL(n))}</span>`;
+      return `<span class="schip ${ncls(n)}"${sig}><i></i>only ${esc(NLABEL(n))}</span>`;
     }
     if (r.spread === "skewed") {
-      return `<span class="schip ${ncls(r.top)}" title="Rate (normalised by each node's volume) is ${r.skew != null ? "×" + ratioText(r.skew) : "much"} higher on ${esc(r.top)} than on the least affected node">${r.skew != null ? "×" + esc(ratioText(r.skew)) : "skewed"} ${esc(NLABEL(r.top))}</span>`;
+      return `<span class="schip ${ncls(r.top)}"${sig}><i></i>${r.skew != null ? "×" + esc(ratioText(r.skew)) : "skewed"} ${esc(NLABEL(r.top))}</span>`;
     }
-    return `<span class="schip s-all" title="Seen on ${r.present.length === NODES.length ? "all nodes" : plural(r.present.length, "node")} at similar rates${r.skew != null ? ` (max/min ×${ratioText(r.skew)})` : ""}">${r.present.length === NODES.length ? "all" : esc(r.present.map(NLABEL).join(" "))}</span>`;
+    return `<span class="spr-all"${sig}>${r.present.length === NODES.length ? "all" : esc(r.present.map(NLABEL).join(" "))}</span>`;
   }
   function leadChip(r) {
     if (r.first == null || r.present.length < 2) return "";
     if (r.lead == null) return "";
-    if (r.lead <= 0) return `<span class="schip s-all" title="First seen at the same time on several nodes">same time</span>`;
-    return `<span class="schip ${ncls(r.first)}" title="First seen on ${esc(r.first)}; the next node followed ${esc(spanText(r.lead))} later"><i></i>${esc(NLABEL(r.first))} first, ${esc(lagText(r.lead))}</span>`;
+    const sig = ` data-sig="${esc(r.id)}" data-tip-k="cl"`;
+    if (r.lead <= 0) return `<span class="lead s-same"${sig}>same time</span>`;
+    return `<span class="lead ${ncls(r.first)}"${sig}><i></i>${esc(NLABEL(r.first))} first <span class="lag">${esc(lagText(r.lead))}</span></span>`;
+  }
+  /** The group of a tipped element: its data-sig / data-open, else its table row's. */
+  function tipGroup(el) {
+    const tr = el.closest("tr[data-id]");
+    return GBY.get(el.dataset.sig || el.dataset.open || (tr ? tr.dataset.id : "")) || null;
+  }
+  /** Per 10,000 entries of node n (the whole capture's, or the window's): the volume-normalised rate. */
+  const nodeVol = (n) => (S.t ? NWT[n] : NODE_VOL[n]);
+  const per10k = (c, n) => (nodeVol(n) > 0 && c > 0 ? ratioText((c / nodeVol(n)) * 1e4) : "");
+  const atZ = (iso) => (iso ? `${tsFull(iso)} ${zAt(parseTs(iso))}` : "");
+  /** A group: its full template, numbers per node, spread, lead, logger, exception, signature. */
+  function groupTip(row) {
+    const r = V(row);
+    const rows = [[S.t ? "In window" : "Entries", S.t ? `${fmt(r.total)} of ${fmt(row.total)}` : fmt(row.total)]];
+    if (MULTI) NODES.forEach((n, i) => rows.push([trusted(nodeBadge(n)), r.counts[i] > 0 ? fmt(r.counts[i]) : "none", r.counts[i] > 0 ? "" : "m"]));
+    if (MULTI) rows.push(["Spread", spreadText(r)]);
+    if (MULTI && row.first != null && row.lead != null && row.present.length > 1) {
+      rows.push(["Lead", row.lead <= 0 ? "same time" : `${NLABEL(row.first)} first, next ${lagText(row.lead)}`]);
+    }
+    if (row.logger) rows.push(["Logger", mono(row.logger)]);
+    if (row.exc) rows.push(["Exception", mono(row.exc)]);
+    rows.push(["Signature", mono(row.sig)]);
+    return tipCard({ h: trusted(tplHtml(trunc(row.tpl, 420))), sub: row.lvl, rows });
+  }
+  function spreadText(r) {
+    if (r.spread === "only") return `only on ${NLABEL(r.present[0] || r.top || "")}`;
+    if (r.spread === "skewed") return `${r.skew != null ? "×" + ratioText(r.skew) : "much"} more often on ${NLABEL(r.top)}`;
+    return r.present.length === NODES.length ? "on every node at similar rates" : `on ${r.present.map(NLABEL).join(", ")} at similar rates`;
+  }
+  function spreadTip(row) {
+    const r = V(row);
+    const h = spreadText(r).replace(/^./, (c) => c.toUpperCase());
+    const rows = NODES.map((n, i) => [trusted(nodeBadge(n)), r.counts[i] > 0
+      ? `${fmt(r.counts[i])}` + (per10k(r.counts[i], n) ? ` · ${per10k(r.counts[i], n)} per 10k entries` : "") : "none", r.counts[i] > 0 ? "" : "m"]);
+    return tipCard({ h, sub: S.t ? "in the time window" : null, rows,
+      note: `The rate is per 10,000 entries of each node, so a busier node does not look skewed. ×N: the highest rate over the lowest; skewed from ×${ratioText(SKEW_MIN)}.` });
+  }
+  function leadTip(row) {
+    const seen = NODES.map((n) => [n, obj(row.pn[n]).first_seen]).filter(([, t]) => t).sort((x, y) => parseTs(x[1]) - parseTs(y[1]));
+    const t0 = seen.length ? parseTs(seen[0][1]) : NaN;
+    return tipCard({ h: row.lead <= 0 ? "First seen at the same time" : `First seen on ${NLABEL(row.first)}, the next node ${lagText(row.lead)} later`,
+      rows: seen.map(([n, t], i) => [trusted(nodeBadge(n)), i ? `${tsSec(t)} · ${lagText(parseTs(t) - t0)}` : tsSec(t)]),
+      note: S.t ? "Over the whole capture, not the time window." : `Times in ${TZ}.` });
+  }
+  /** One group on one node: its count, share, rates and first/last seen. */
+  function nodeCountTip(row, i) {
+    const n = NODES[i], p = obj(row.pn[n]), c = V(row).counts[i];
+    const rows = [];
+    if (S.t) rows.push(["In window", fmt(c)]);
+    rows.push([S.t ? "Whole capture" : "Entries", fmt(row.counts[i]), S.t ? "m" : ""]);
+    if (MULTI && row.total > 0) rows.push(["Share of group", pctText(row.counts[i] / row.total)]);
+    if (isNum(p.rate_per_hour) && row.counts[i] > 0) rows.push(["Per hour", String(r1(p.rate_per_hour))]);
+    if (per10k(c, n)) rows.push(["Per 10k entries", per10k(c, n)]);
+    rows.push(["First seen", atZ(p.first_seen)], ["Last seen", atZ(p.last_seen)]);
+    return tipCard({ h: trusted(`${nodeBadge(n)} ${esc(n)}`), sub: trunc(row.tpl, 90), rows });
+  }
+  if (TIPS) {
+    TIPS.register("cg", (el) => { const r = tipGroup(el); return r ? groupTip(r) : ""; });
+    TIPS.register("cs", (el) => { const r = tipGroup(el); return r ? spreadTip(r) : ""; });
+    TIPS.register("cl", (el) => { const r = tipGroup(el); return r ? leadTip(r) : ""; });
+    TIPS.register("cn", (el) => { const r = tipGroup(el); return r ? nodeCountTip(r, +el.dataset.n) : ""; });
   }
   function cellBar(c) {
     if (!(c > 0)) return 0;
@@ -1410,24 +1512,23 @@
       nodes = `<td class="c-heat"><div class="heat">${NODES.map((n, i) => {
         const c = r.counts[i];
         const a = c > 0 ? r1(0.18 + 0.82 * (Math.log10(c + 1) / Math.log10(mx + 1))) : 0;
-        return `<i class="${c > 0 ? "" : "z"}" style="opacity:${c > 0 ? a : 1}" title="${esc(NLABEL(n))} ${esc(n)}: ${fmt(c)}"></i>`;
+        return `<i class="${c > 0 ? "" : "z"}" style="opacity:${c > 0 ? a : 1}" data-tip-k="cn" data-n="${i}"></i>`;
       }).join("")}</div></td>`;
     } else {
       nodes = NODES.map((n, i) => {
         const c = r.counts[i];
-        const tip = S.t ? `${fmt(c)} in the window of ${fmt(row.counts[i])}` : fmt(c) + (isNum(obj(r.pn[n]).rate_per_hour) ? ` (${r1(r.pn[n].rate_per_hour)}/h)` : "");
-        return `<td class="c-n ${ncls(n)}" title="${esc(NLABEL(n))} ${esc(n)}: ${esc(tip)}">` +
+        return `<td class="c-n ${ncls(n)}" data-tip-k="cn" data-n="${i}">` +
           `<div class="cnt"><span class="num${c > 0 ? "" : " zero"}">${c > 0 ? fmt(c) : "·"}</span>` +
           (CMAX >= 100 ? `<span class="track"><i style="width:${r1(cellBar(c))}%"></i></span>` : "") + `</div></td>`;
       }).join("");
     }
     return `<tr data-id="${esc(r.id)}" class="${cls}" tabindex="-1">` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
-      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${tplHtml(r.tpl)}</span><span class="sub">${esc(shortLogger(r.logger))}${r.exc ? " · " + esc(shortExc(r.exc)) : ""}</span></td>` +
+      `<td class="c-tpl" data-tip-k="cg"><span class="tpl">${tplHtml(r.tpl)}</span><span class="sub">${loggerHtml(r.logger, true)}${r.exc ? " · " + excHtml(r.exc, true) : ""}</span></td>` +
       (S.t ? `<td class="c-total" title="${fmt(r.total)} in the window of ${fmt(row.total)} in total">${fmt(r.total)}<small class="of">of ${esc(compact(row.total))}</small></td>`
         : `<td class="c-total">${fmt(r.total)}</td>`) + nodes +
       (!MULTI ? "" : `<td class="c-spread">${spreadChip(r)}</td>` +
-        (S.t ? `<td class="c-lead is-whole" title="Lead over the whole capture, not the time window">${leadChip(row)}</td>` : `<td class="c-lead">${leadChip(r)}</td>`)) + `</tr>`;
+        (S.t ? `<td class="c-lead is-whole">${leadChip(row)}</td>` : `<td class="c-lead">${leadChip(r)}</td>`)) + `</tr>`;
   }
   function pagerHtml(pages) {
     if (pages <= 1) return "";
@@ -1459,16 +1560,18 @@
       else {
         const chips = activeFilters().map(([k, label]) =>
           `<button type="button" class="fchip" data-clear="${k}" title="Remove this filter">${esc(label)} <span aria-hidden="true">×</span></button>`).join("");
-        empty.innerHTML = `<div>No groups match the filters.</div>` + (chips ? `<div class="fchips">${chips}</div>` : "") +
-          `<button type="button" class="btn" data-clear="all">Reset filters</button>`;
+        empty.innerHTML = `<div>No group matches all of these filters. Remove one to see more.</div>` + (chips ? `<div class="fchips">${chips}</div>` : "") +
+          `<button type="button" class="btn" data-clear="all">Remove all filters</button>`;
       }
     }
     let entries = 0;
     for (const r of LIST) entries += V(r).total;
     const shown = LIST.length ? `${fmt(start + 1)}–${fmt(start + page.length)} of ` : "";
-    $("t-summary").textContent = `${shown}${fmt(LIST.length)} groups` + (LIST.length < ROWS.length ? ` (of ${fmt(ROWS.length)} in this report)` : "") +
-      ` · ${fmt(entries)} entries` + (S.t ? " in the window" : "") +
-      (num(OPTS.truncated_groups) > 0 ? ` · ${fmt(OPTS.truncated_groups)} smaller groups not in the report` : "");
+    const sep = `<span class="m-sep" aria-hidden="true">·</span>`;
+    $("t-summary").innerHTML = `<span class="s-main">${shown}${fmt(LIST.length)} groups</span>` +
+      (LIST.length < ROWS.length ? ` (of ${fmt(ROWS.length)} in this report)` : "") +
+      `${sep}${fmt(entries)} entries` + (S.t ? " in the window" : "") +
+      (num(OPTS.truncated_groups) > 0 ? `${sep}${fmt(OPTS.truncated_groups)} smaller groups not in the report` : "");
     const pg = pagerHtml(pages);
     $("pager-top").innerHTML = pg;
     $("pager-bottom").innerHTML = pg;
@@ -1505,152 +1608,65 @@
   // ---------------------------------------------------------------- drawer
   let drawnKey = null;
   let drawerStale = false; // the drawn group's data changed (examples arrived): redraw in place
-  const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${title}</h3>${body}</section>`;
+  /** Web app: the link in the head of the examples section (set by drawerHtml for its group). */
+  let EX_ALL = "";
+  /** A section head: the label, its count (a trailing "(…)") muted, then the action at the right. */
+  const secHead = (title) => {
+    const m = /^(.*?) \((.+)\)$/.exec(title);
+    return m ? `${m[1]} <span class="sec-n">${m[2]}</span>` : title;
+  };
+  const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${secHead(title)}${id === "d-s-examples" ? EX_ALL : ""}</h3>${body}</section>`;
+  /** Web app: "All N entries ↗", the group's entries on all nodes in a table in a new tab; inside a window, its entries only. */
+  function allEntriesLink(r) {
+    if (!WEB_LOG || !r.sig) return "";
+    const p = new URLSearchParams();
+    p.set("signature", r.sig);
+    const rg = tRange();
+    if (rg) {
+      p.set("since", isoOf(rg[0]));
+      p.set("until", isoOf(rg[1]));
+    }
+    const n = rg ? winOf(r).total : r.total;
+    const href = URLS.entries.replace(/^\/api\//, "/");
+    return `<a class="d-all" href="${esc(href + "?" + p.toString())}" target="_blank" rel="noopener" title="Every entry of this group on all nodes${rg ? " inside the selected window" : ""}, as a table in a new tab">All ${fmt(n)} ${n === 1 ? "entry" : "entries"}${rg ? " in window" : ""} ↗</a>`;
+  }
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   const iconCopy = (text, what) =>
     `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
-  // @entry-card: msgHtml … showAllLines (tests/report/test_entry_card.py runs this part with node)
-  function msgHtml(message, vars) {
-    message = str(message);
-    let out = "", pos = 0;
-    for (const v of arr(vars)) {
-      if (!v) continue;
-      const i = message.indexOf(v, pos);
-      if (i < 0) continue;
-      out += esc(message.slice(pos, i)) + `<mark>${esc(v)}</mark>`;
-      pos = i + String(v).length;
-    }
-    return out + esc(message.slice(pos));
-  }
-  // Java stack traces: tokenize the plain text, escape each piece (as report.js).
-  const T_FRAME = /^(\s*)at\s+(.+?)\((.*)\)\s*$/;
-  const T_MORE = /^\s*\.\.\.\s*\d+\s+(more|common frames omitted)\b/;
-  const T_HEAD = /^(\s*)((?:Caused by|Suppressed):\s*)?([A-Za-z_$][\w$]*(?:\.[\w$]+)*\.[A-Z][\w$]*|[A-Z][\w$]*(?:Exception|Error|Throwable))(?::\s?(.*))?$/;
-  const LIB = /^(?:[\w.]*\/\/?)?(?:java\.|javax\.|jakarta\.|jdk\.|sun\.|com\.sun\.|org\.springframework\.|org\.apache\.)/;
-  const FOLD_KEEP = Infinity; // every line of an entry is shown; library frames are only dimmed
-  function frameHtml(ln) {
-    const m = T_FRAME.exec(ln);
-    const q = m[2];
-    const parts = q.split(".");
-    const tail = parts.length > 2 ? parts.slice(-2).join(".") : q;
-    const pkg = parts.length > 2 ? parts.slice(0, -2).join(".") + "." : "";
-    const app = !LIB.test(q);
-    const html = `<div class="fr${app ? " fr-app" : ""}">${esc(m[1])}<span class="t-at">at </span>` +
-      `<span class="t-pkg">${esc(pkg)}</span><span class="t-cm">${esc(tail)}</span>` +
-      `<span class="t-loc">(<span class="t-fl">${esc(m[3])}</span>)</span></div>`;
-    return { html, app };
-  }
-  function traceHtml(lines) {
-    let html = "", frames = [];
-    const flush = () => {
-      if (!frames.length) return;
-      const hidden = frames.filter((f, i) => i >= FOLD_KEEP && !f.app).length;
-      const body = frames.map((f, i) => (i >= FOLD_KEEP && !f.app ? f.html.replace('class="fr', 'class="fr fr-x') : f.html)).join("");
-      html += hidden
-        ? `<div class="fold">${body}<button type="button" class="unfold" data-unfold="${hidden}">show ${fmt(hidden)} more frame${hidden === 1 ? "" : "s"}</button></div>`
-        : body;
-      frames = [];
-    };
-    for (const ln of lines) {
-      if (T_FRAME.test(ln)) { frames.push(frameHtml(ln)); continue; }
-      if (T_MORE.test(ln)) {
-        frames.push({ html: `<div class="fr t-more">${esc(ln)}</div>`, app: true });
-        continue;
-      }
-      flush();
-      const h = T_HEAD.exec(ln);
-      if (h) {
-        html += `<div class="t-head">${esc(h[1])}${h[2] ? `<span class="t-kw">${esc(h[2])}</span>` : ""}` +
-          `<span class="t-exc">${esc(h[3])}</span>${h[4] != null ? `<span class="t-msg">: ${esc(h[4])}</span>` : ""}</div>`;
-      } else {
-        html += `<div class="ln">${esc(ln) || "&nbsp;"}</div>`;
-      }
-    }
-    flush();
-    return html;
-  }
-  const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
-  const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
-  const RAW_VIEW = new Set(); // ids of the entries shown as their exact text
-  /** The exact text of an entry as in the log file: banner lines before it, then its raw. */
-  const fullText = (e) => {
-    const pre = str(e.preamble) || str(obj(e.context).preamble);
-    return (pre ? pre + "\n" : "") + str(e.raw);
-  };
-  /** Web app: the full raw entry as plain text (opens in a new tab). */
-  const rawUrl = (id, e) => (URLS && URLS.raw && e.set != null ? urlFill(URLS.raw, { set: e.set, id }) : "");
-  /** Lines after the header line of a raw entry, trailing white space dropped. */
-  function bodyLines(raw) {
-    const nl = raw.indexOf("\n");
-    return nl < 0 ? [] : raw.slice(nl + 1).trimEnd().split("\n");
-  }
-  /** Banner lines attached before the entry (report.v1 `preamble`, entries.v1 `context.preamble`). */
-  function preambleHtml(e) {
-    const text = str(e.preamble) || str(obj(e.context).preamble);
-    if (!text) return "";
-    const lines = text.split("\n");
-    return `<div class="e-pre"><span class="k">banner line${lines.length === 1 ? "" : "s"} before this entry</span>` +
-      lines.map((ln) => `<div class="ln">${esc(ln)}</div>`).join("") + `</div>`;
-  }
-  /** One entry (report.v1 entry shape plus node/set, or an entries.v1 row) with its actions. */
-  function entryHtml(id, e) {
-    e = obj(e);
-    const raw = str(e.raw);
-    const all = bodyLines(raw);
-    const cut = all.length > BODY_LINES && !FULL_BODIES.has(str(id));
-    const body = cut ? all.slice(0, BODY_LINES) : all;
-    const meta = [["", tsFull(e.ts) + " " + TZ], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
-      .filter((x) => x[1]);
-    const src = e.source_path || (typeof e.source === "string" ? e.source : "");
-    const sig = str(e.signature) || ESIG.get(str(id)) || "";
-    const node = str(e.node);
-    const canCtx = node && e.set != null && e.ts;
-    return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${node ? nodeBadge(node) : ""}${badge(e.level_name, levelNum(e.level_name))}` +
-      meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div>` + (RAW_VIEW.has(str(id)) ? `<pre class="e-raw">${esc(fullText(e))}</pre>` : `${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
-      (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
-      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "")) +
-      `<div class="e-foot">` + (src ? `<span class="mono" title="${esc(src)}">${esc(basename(src))}${e.source_line != null ? ":" + esc(e.source_line) : ""}</span>` : "") +
-      (e.raw_truncated ? `<span class="muted">${URLS && URLS.examples ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
-      `<span class="grow"></span>` +
-      (canCtx ? `<button type="button" class="btn small" data-ctx="${esc(str(e.set) + "~" + id)}" data-cts="${esc(e.ts)}" title="What every node logged within 30 s of this entry">±30 s on all nodes</button>` : "") +
-      (sig && GBY.has(sig) && sig !== S.sig ? `<button type="button" class="btn small" data-open="${esc(sig)}">Open group</button>` : "") +
-      `<button type="button" class="btn small" data-raw-view="${esc(id)}" aria-pressed="${RAW_VIEW.has(str(id))}" title="Show the exact text of the entry as in the log file, every line">${RAW_VIEW.has(str(id)) ? "Formatted" : "Raw"}</button>` +
-      (rawUrl(id, e) ? `<a class="btn small" href="${esc(rawUrl(id, e))}" target="_blank" rel="noopener" title="The full entry as plain text in a new tab">Open raw ↗</a>` : "") +
-      `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
-  }
-  /** The raw text of an entry on the page: an example, or a row of the merged log. */
+  // entry cards: the code is shared with the report page and the entries page (entry-card.js)
+  const { logInline, msgHtml, traceHtml, entryHtml, toggleRaw, showAllLines, fullText } = AtlasEntryCard.create({
+    badge: (name, level) => badge(name, level),
+    nodeBadge: (n) => nodeBadge(n),
+    bucketOf: (level) => bucketOf(level),
+    levelNum: (name) => levelNum(name),
+    tsFull: (iso) => tsFull(iso),
+    tz: () => TZ,
+    entry: (id) => entryOf(id),
+    /** Web app: the full raw entry as plain text (opens in a new tab). */
+    rawUrl: (id, e) => (URLS && URLS.raw && e.set != null ? urlFill(URLS.raw, { set: e.set, id }) : ""),
+    fullLoads: () => !!(URLS && URLS.examples),
+    /** Context on all nodes and a link to the entry's group. */
+    actions: (id, e) => {
+      const sig = str(e.signature) || ESIG.get(str(id)) || "";
+      const node = str(e.node);
+      return (node && e.set != null && e.ts ? `<button type="button" class="btn small" data-ctx="${esc(str(e.set) + "~" + id)}" data-cts="${esc(e.ts)}" title="What every node logged within 30 s of this entry">±30 s on all nodes</button>` : "") +
+        (sig && GBY.has(sig) && sig !== S.sig ? `<button type="button" class="btn small" data-open="${esc(sig)}">Open group</button>` : "");
+    },
+  });
+  /** The entry of a card: an example, or a row of the merged log. */
   const entryOf = (id) => ENTRIES[id] || (VIEW.find((r) => r.id === id) || {}).e || {};
   function rawOf(id) {
     return fullText(obj(entryOf(id)));
   }
-  /** "Raw" / "Formatted": redraw one card in the other view. */
-  function toggleRaw(btn) {
-    const id = btn.dataset.rawView;
-    if (RAW_VIEW.has(id)) RAW_VIEW.delete(id); else RAW_VIEW.add(id);
-    const card = btn.closest(".entry");
-    if (card) card.outerHTML = entryHtml(id, entryOf(id));
-  }
-  /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
-  function showAllLines(btn) {
-    const id = btn.dataset.allLines;
-    FULL_BODIES.add(id);
-    const card = btn.closest(".entry");
-    const pre = card && card.querySelector(".e-body");
-    if (pre) pre.innerHTML = traceHtml(bodyLines(str(obj(entryOf(id)).raw)));
-    const more = btn.closest(".e-more");
-    if (more) more.remove();
-  }
-  // @entry-card-end
   function nodeTable(r) {
     const w = S.t ? winOf(r) : null;
     const rows = NODES.map((n, i) => {
       const p = obj(r.pn[n]);
       const c = r.counts[i];
       const wc = w ? `<td class="r"><b>${w.counts[i] > 0 ? fmt(w.counts[i]) : "·"}</b></td>` : "";
-      return `<tr><td>${nodeBadge(n)} ${esc(n)}</td>${wc}<td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
+      return `<tr><td>${nodeBadge(n)}<span class="nm">${esc(n)}</span></td>${wc}<td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
         `<td class="r">${isNum(p.rate_per_hour) && c > 0 ? esc(r1(p.rate_per_hour)) : ""}</td>` +
-        `<td>${esc(ts16(p.first_seen))}</td><td>${esc(ts16(p.last_seen))}</td></tr>`;
+        `<td class="t">${tsHtml(ts16(p.first_seen))}</td><td class="t">${tsHtml(ts16(p.last_seen))}</td></tr>`;
     }).join("");
     return `<div class="d-nodes-wrap"><table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
       `<th class="r">Per hour</th><th>First seen (${esc(TZ)})</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
@@ -1680,18 +1696,54 @@
     }
     return out.length ? out.join("") : `<div class="muted">No co-bursts, mentions or events involve this group.</div>`;
   }
+  /** The atlas-log commands for one group of this capture. */
+  function groupCmds(r) {
+    const cmds = [
+      `atlas-log matrix ${CAPREF} --signature ${r.sig}`,
+      `atlas-log timeline ${CAPREF} --by-node --signature ${r.sig}`,
+      `atlas-log entries ${CAPREF} --signature ${r.sig} --limit 50`,
+    ];
+    for (const n of r.present) cmds.push(`atlas-log show ${setRef(n)} ${r.sig}`);
+    return cmds;
+  }
+  /** The dialog behind "Identifiers & CLI": the capture id, the log sets, the commands, the open group. */
+  function renderIds() {
+    const line = (k, text) => `<div class="id-row"><span class="k">${esc(k)}</span><code>${esc(text)}</code>${copyBtn(text)}</div>`;
+    const out = [`<section><h3>Capture</h3>`];
+    if (CAP.capture) out.push(line("Capture id", CAP.capture));
+    if (CAP.cluster) out.push(line("Cluster", CAP.cluster));
+    out.push(`</section>`);
+    const sets = NODES.map((n) => ({ n, set: setOf(n) })).filter((x) => x.set.name || x.set.id);
+    if (sets.length) {
+      out.push(`<section><h3>Log sets</h3>` + sets.map(({ n, set }) =>
+        `<div class="id-row"><span class="k">${nodeBadge(n)}</span><code>${esc(set.name || set.id)}</code>${copyBtn(set.name || set.id)}</div>` +
+        (set.id && set.name && set.id !== set.name ? `<div class="id-row id-sub"><span class="k">id</span><code>${esc(set.id)}</code>${copyBtn(set.id)}</div>` : "")).join("") + `</section>`);
+    }
+    const cmds = ["capture", "matrix", "events", "interactions", "timeline"].map((c) => `atlas-log ${c} ${CAPREF}` + (c === "timeline" ? " --by-node" : ""));
+    cmds.push(`atlas-log entries ${CAPREF} --limit 50`, `atlas-log report ${CAPREF} --out report.html`);
+    out.push(`<section><h3>Commands for this capture</h3><div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div></section>`);
+    const sel = S.sig ? GBY.get(S.sig) : null;
+    if (sel) {
+      out.push(`<section><h3>Open group</h3>${line("Signature", sel.sig)}<div class="cli">` +
+        groupCmds(sel).map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div></section>`);
+    }
+    $("ids-body").innerHTML = out.join("");
+  }
   function drawerHtml(r, inList) {
     const out = [];
     if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
     out.push(`<div class="d-head">${badge(r.lvl, r.level)}${MULTI ? spreadChip(V(r)) + leadChip(r) : ""}</div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
-    if (r.logger) out.push(`<div class="d-sub mono">${esc(r.logger)}</div>`);
-    if (r.exc) out.push(`<div class="d-sub mono">${esc(r.exc)}</div>`);
-    out.push(`<div class="d-ids mono"><span><span class="k">sig</span> ${esc(r.sig)}${iconCopy(r.sig, "signature")}</span><span><span class="k">total</span> ${fmt(r.total)}</span>` +
-      (S.t ? `<span><span class="k">in window</span> ${fmt(winOf(r).total)}</span>` : "") + `</div>`);
+    if (r.exc || r.logger) {
+      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger">${loggerHtml(r.logger)}</span>` : ""}${r.exc ? `<span title="Exception">${excHtml(r.exc)}</span>` : ""}</div>`);
+    }
+    out.push(`<dl class="stats"><div class="k"><dt>Entries</dt><dd>${fmt(r.total)}</dd></div>` +
+      (S.t ? `<div><dt>In window</dt><dd>${fmt(winOf(r).total)}</dd></div>` : "") +
+      `<div><dt>Nodes</dt><dd>${fmt(r.counts.filter((c) => c > 0).length)}<span class="of"> of ${fmt(NODES.length)}</span></dd></div></dl>`);
     out.push(secId("d-s-nodes", "Per node", nodeTable(r)));
     out.push(secId("d-s-hourly", `Per ${esc(binLabel(1))} and node` + (S.t ? " (window shaded)" : ""),
       `<div class="d-legend">${NODES.filter((n, i) => r.counts[i] > 0 || NODES.length <= 8).map((n) => `<span class="${ncls(n)}"><i class="lkey"></i>${esc(NLABEL(n))} ${esc(n)}</span>`).join("")}</div><div class="d-chart" id="d-hourly"></div>`));
+    EX_ALL = allEntriesLink(r);
     const exNodes = NODES.filter((n) => arr(r.examples[n]).length);
     for (const n of Object.keys(r.examples)) if (!NIDX.has(n) && arr(r.examples[n]).length) exNodes.push(n);
     let exBody, exTitle = "Example entries per node";
@@ -1724,13 +1776,9 @@
     }
     out.push(secId("d-s-examples", exTitle, exBody));
     out.push(secId("d-s-links", "Co-bursts, mentions and events", relatedHtml(r)));
-    const cmds = [
-      `atlas-log matrix ${CAPREF} --signature ${r.sig}`,
-      `atlas-log timeline ${CAPREF} --by-node --signature ${r.sig}`,
-      `atlas-log entries ${CAPREF} --signature ${r.sig} --limit 50`,
-    ];
-    for (const n of r.present) cmds.push(`atlas-log show ${setRef(n)} ${r.sig}`);
-    out.push(secId("d-s-cli", "CLI", `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`));
+    out.push(`<details class="d-sec d-idcli" id="d-s-cli"><summary>Identifiers &amp; CLI</summary>` +
+      `<div class="cli"><div><span class="k">Signature</span><code class="ident">${esc(r.sig)}</code>${copyBtn(r.sig)}</div></div>` +
+      `<div class="cli">` + groupCmds(r).map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div></details>`);
     return out.join("");
   }
   // drawer chart: null clips automatically (max > 4 × p95), true/false is the user's choice
@@ -1878,7 +1926,9 @@
     dr.hidden = false;
     document.body.classList.add("drawer-open");
     const idx = LIST.findIndex((x) => x.id === S.sig);
-    $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
+    $("d-pos").innerHTML = `<b>${idx >= 0 ? fmt(idx + 1) : "–"}</b> of ${fmt(LIST.length)}`;
+    const r0 = GBY.get(S.sig);
+    $("d-bar-id").innerHTML = r0 ? `${badge(r0.lvl, r0.level)}<span class="d-bar-tpl" title="${esc(r0.tpl)}">${esc(r0.tpl)}</span>` : "";
     const key = [S.sig, S.t, S.ex, idx >= 0].join("|");
     if (key === drawnKey && !drawerStale) return;
     const sameGroup = drawnKey && drawnKey.split("|")[0] === S.sig;
@@ -1906,7 +1956,7 @@
   const tplRef = (sig, tpl) => {
     const g = GBY.get(str(sig));
     const text = tplHtml(trunc(tpl || (g && g.tpl) || sig, 140));
-    return g ? `<button type="button" class="tplref" data-open="${esc(g.id)}" title="${esc(g.tpl)}">${text}</button>` : `<b>${text}</b>`;
+    return g ? `<button type="button" class="tplref" data-open="${esc(g.id)}" data-tip-k="cg">${text}</button>` : `<b>${text}</b>`;
   };
   /** The data-show of a co-burst: each group on its own node only (NODE:SIGNATURE; a side whose
    * node the page lacks: on any node). */
@@ -1941,9 +1991,9 @@
     const sig = str(s.signature), node = str(s.node);
     const g = GBY.get(sig);
     const tpl = str(s.template) || (g ? g.tpl : "");
-    const text = tpl ? tplHtml(tpl) : `<span class="mono">${esc(sig.slice(0, 8))}</span>`;
+    const text = tpl ? tplHtml(tpl) : `<span class="muted">group not on this page</span>`;
     const label = g
-      ? `<button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" title="${esc(tpl)}">${text}</button>`
+      ? `<button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" data-tip-k="cg">${text}</button>`
       : `<span class="ix-tpl" title="${esc(tpl || sig)}">${text}</span>`;
     const others = num(s.groups) - 1;
     const more = others > 0
@@ -1953,7 +2003,7 @@
   const eventSide = (s) => `<div class="ix-side">${nodeBadge(str(s.node))}<span class="ix-kind">${glyphKey(str(s.kind))}${esc(kindLabel(s.kind))}</span></div>`;
   const flowHead = (from, to, act) =>
     `<thead><tr><th class="c-from">${from}</th><th class="c-arr"><span class="sr-only">followed by</span></th><th class="c-to">${to}</th>` +
-    `<th class="c-hits">Followed</th><th class="c-lag" title="Median time from the first to the second">Median lag</th><th class="c-lift">Lift</th><th class="c-act">${act}</th></tr></thead>`;
+    `<th class="c-hits">Followed</th><th class="c-lag" title="Median time from the first to the second">Lag</th><th class="c-lift">Lift</th><th class="c-act">${act}</th></tr></thead>`;
   function coBurstRow(c) {
     const a = obj(c.a), b = obj(c.b);
     const hits = num(c.hits), of = num(c.of);
@@ -1985,10 +2035,10 @@
   /** One group behind a mention: its template, else a short signature with the text of one of its entries. */
   function mentionGroup(sig, from) {
     const g = GBY.get(sig);
-    if (g) return `<li><button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" title="${esc(g.tpl)}">${tplHtml(g.tpl)}</button></li>`;
+    if (g) return `<li><button type="button" class="tplref ix-tpl" data-open="${esc(g.id)}" data-tip-k="cg">${tplHtml(g.tpl)}</button></li>`;
     const ev = EVSIG.get(sig + "\n" + from) || EVSIG.get(sig);
     const show = esc(JSON.stringify({ ms: [sig], mn: NIDX.has(from) ? [from] : [] }));
-    return `<li class="ix-gone"><span class="sigchip" title="Signature ${esc(sig)}: not among the groups of this page">${esc(sig.slice(0, 8))}</span>` +
+    return `<li class="ix-gone"><span class="sigchip" title="Signature ${esc(sig)}: not among the groups of this page">off page</span>` +
       (ev ? `<span class="ix-tx" title="${esc(ev.text)}"><span class="muted">${esc(kindLabel(ev.kind))}:</span> ${esc(ev.text)}</span>`
         : `<span class="ix-tx muted">group not in this page</span>`) +
       `<button type="button" class="linkbtn" data-show='${show}' title="This group's entries on ${esc(from)} in the merged log">entries</button></li>`;
@@ -2000,7 +2050,9 @@
     if (!shown.length) return ok.length && rg ? `<span class="muted" title="Its examples fall outside the time window">none in window</span>` : "";
     return shown.slice(0, max).map((t) => `<button type="button" class="linkbtn ix-at" data-at="${esc(t)}" title="${esc(tsMs(t))} ${esc(TZ)}: open the merged log here">${esc(tsSec(t))}</button>`).join("");
   }
-  const ixHead = (title, n, sub) => `<div class="ix-head"><h3>${title} <span class="n">${fmt(n)}</span></h3>${sub ? `<span class="ix-sub">${sub}</span>` : ""}</div>`;
+  const ixHead = (title, n, sub, info, lead) => `<div class="ix-head"><h3>${title} <span class="n">${fmt(n)}</span></h3>` +
+    (info ? `<span class="ix-info" tabindex="0" role="note" aria-label="${esc(info.text)}"${tipAttr({ h: info.h || title, body: esc(info.text), note: info.note || null })}>i</span>` : "") +
+    (sub ? `<span class="ix-sub">${sub}</span>` : "") + `</div>` + (lead ? `<p class="ix-lead">${lead}</p>` : "");
   /** Events of one kind on one node in the same second: one row (a burst), in time order. */
   function foldEvents(evs) {
     const rows = [], at = new Map();
@@ -2020,8 +2072,8 @@
   /** One event row: the time is a button (keyboard), the row a click target (mouse). */
   function evRowHtml(e, cls) {
     const target = `data-at="${esc(e.ts)}" data-ae="${esc(e.entry)}"`;
-    return `<tr ${target}${cls ? ` class="${cls}"` : ""} title="Open the merged log at this event"><td class="c-ts"><button type="button" class="linkbtn ev-at" ${target}>${esc(tsMs(e.ts))}</button></td><td class="c-nd">${nodeBadge(e.node)}</td>` +
-      `<td class="c-kd">${glyphKey(e.kind)} ${esc(kindLabel(e.kind))}</td><td class="c-sb">${e.subject ? nodeBadge(e.subject) : ""}</td><td title="${esc(e.text)}">${esc(e.text)}</td></tr>`;
+    return `<tr ${target}${cls ? ` class="${cls}"` : ""}><td class="c-ts"><button type="button" class="linkbtn ev-at" ${target} title="${esc(`${tsFull(e.ts)} ${zAt(e.ms)}: open the merged log here`)}">${esc(tsMs(e.ts))}</button></td><td class="c-nd">${nodeBadge(e.node)}</td>` +
+      `<td class="c-kd">${glyphKey(e.kind)} ${esc(kindLabel(e.kind))}</td><td class="c-sb">${e.subject ? nodeBadge(e.subject) : ""}</td><td class="ev-tx" title="${esc(e.text)}">${esc(e.text)}</td></tr>`;
   }
   function evRowsHtml(f) {
     if (f.list.length === 1) return evRowHtml(f.list[0], "");
@@ -2029,7 +2081,7 @@
     const target = `data-at="${esc(e.ts)}" data-ae="${esc(e.entry)}"`;
     const subjects = [...new Set(f.list.map((x) => x.subject).filter(Boolean))];
     const texts = [...new Set(f.list.map((x) => x.text).filter(Boolean))];
-    return `<tr ${target} class="ev-burst" title="Open the merged log at the first of them"><td class="c-ts"><button type="button" class="linkbtn ev-at" ${target}>${esc(tsMs(e.ts))}</button></td><td class="c-nd">${nodeBadge(e.node)}</td>` +
+    return `<tr ${target} class="ev-burst"><td class="c-ts"><button type="button" class="linkbtn ev-at" ${target} title="${esc(`${tsFull(e.ts)} ${zAt(e.ms)}: open the merged log at the first of them`)}">${esc(tsMs(e.ts))}</button></td><td class="c-nd">${nodeBadge(e.node)}</td>` +
       `<td class="c-kd">${glyphKey(e.kind)} <b>${esc(kindCount(e.kind, n))}</b></td><td class="c-sb">${subjects.map(nodeBadge).join("")}</td>` +
       `<td class="ev-tx" title="${esc(texts.slice(0, 20).join("\n"))}"><button type="button" class="linkbtn ev-x" data-evx="${esc(f.key)}" aria-expanded="${open}">${open ? "hide" : "show all"}</button>${esc(texts[0] || "")}${texts.length > 1 ? ` <span class="muted">+${fmt(texts.length - 1)} other text${texts.length === 2 ? "" : "s"}</span>` : ""}</td></tr>` +
       (open ? f.list.map((x) => evRowHtml(x, "ev-sub")).join("") : "");
@@ -2052,12 +2104,16 @@
     // pairs seen often first: a pair seen once (1 of 1) has a huge lift and tells little
     const pairs = [...PAIRS].sort((x, y) => num(y.count) - num(x.count) || byStrength((p) => num(p.count))(x, y));
     out.push(`<section class="card ix-flows" aria-label="Co-bursts and event pairs">` +
-      ixHead("Co-bursts", COB.length, `a group bursting on one node, then one bursting on another within ${span} · strongest first` +
-        (always ? ` · ${always === cob.length && always > 1 ? "all" : fmt(always)} followed every time` : "") + (rg ? " · whole capture, not the window" : "")) +
+      ixHead("Co-bursts", COB.length, `strongest first` +
+        (always ? ` · ${always === cob.length && always > 1 ? "all" : fmt(always)} followed every time` : "") + (rg ? " · whole capture, not the window" : ""),
+        { text: `A group bursting on one node, then one bursting on another within ${spanText(DELTA_S * 1000)}. A burst starts at the first minute at or above the threshold after at least 10 quiet minutes.`,
+          note: "Followed: bursts of the first group followed by one of the second. Lift compares that with chance. +N: other groups of the node that burst with it." },
+        `Each row: when the group on the left bursts on one node, the group on the right bursts on another node within ${span}. "Followed" counts how many times.`) +
       (cob.length ? `<div class="ix-scroll"><table class="ix-t ix-flow">${flowHead("When this group bursts", `this one bursts within ${span}`, "")}<tbody>${cob.map(coBurstRow).join("")}</tbody></table></div>`
         : `<div class="muted">No group bursts on one node were followed by bursts on another more often than chance.</div>`) +
-      `<p class="note">A burst starts at the first minute at or above the threshold after at least 10 quiet minutes. Followed: bursts of the first group followed by one of the second; lift compares that with chance; +N: other groups of the node that burst with it.</p>` +
-      ixHead("Event pairs", PAIRS.length, "an event on one node, then one on another within 60 s · most often first" + (rg ? " · counts: whole capture" : "")) +
+      ixHead("Event pairs", PAIRS.length, "most often first" + (rg ? " · counts: whole capture" : ""),
+        { text: "A cluster event on one node, then one on another node within 60 s.", note: "Followed: events of the first kind followed by the second. Lift compares that with chance." },
+        "Each row: when the event on the left happens on one node, the event on the right happens on another node within 60 s.") +
       (pairs.length ? `<div class="ix-scroll"><table class="ix-t ix-flow">${flowHead("When this event", "this follows within 60 s", "Examples")}<tbody>${pairs.map((p) => pairRow(p, rg)).join("")}</tbody></table></div>`
         : `<div class="muted">No events on one node were followed by events on another.</div>`) +
       `</section>`);
@@ -2090,9 +2146,10 @@
     }
     const truncated = num(OPTS.truncated_groups);
     const goneNote = gone
-      ? ` Groups shown by a short signature are not among the ${fmt(ROWS.length)} groups of this page${truncated > 0 ? ` (the largest of ${fmt(ROWS.length + truncated)})` : ""}: the text is one of their entries, "entries" lists them in the merged log.`
-      : "";
-    const cards = [`<section class="card" aria-label="Mentions">${ixHead("Mentions", MENT.length, "")}${mx}<p class="note">An entry on one node naming another member node. Counts cover the whole capture window.${goneNote}</p></section>`];
+      ? `Groups shown by a short signature are not among the ${fmt(ROWS.length)} groups of this page${truncated > 0 ? ` (the largest of ${fmt(ROWS.length + truncated)})` : ""}: the text is one of their entries, "entries" lists them in the merged log.`
+      : null;
+    const cards = [`<section class="card" aria-label="Mentions">${ixHead("Mentions", MENT.length, "node names node · whole capture",
+      { text: "An entry on one node naming another member node. Counts cover the whole capture window.", note: goneNote })}${mx}</section>`];
     // concurrent jobs and sessions: compact tables
     let smax = 1;
     for (const j of JOBS) smax = Math.max(smax, num(j.slots));
@@ -2261,10 +2318,14 @@
     const open = LOG.open.has(r.id);
     const cls = (open ? " is-open" : "") + (i === LOG.cur ? " is-cur" : "") +
       (S.ctx && S.ctx.split("~")[1] === r.id ? " is-anchor" : "") + (LOG.atId === r.id ? " is-at" : "");
-    return `<div class="ml-row lvb-${r.bucket}${cls}" data-i="${i}" role="listitem">` +
-      `<div class="ml-line" role="button" tabindex="${i === tabRow() ? 0 : -1}" aria-expanded="${open}" title="${open ? "Collapse" : "Show the raw entry"}"><span class="ml-ts">${esc(tsMs(r.ts))}</span>${nodeBadge(r.node)}${badge(r.level_name, r.lvl)}` +
-      `<span class="ml-lg" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</span><span class="ml-msg">${esc(r.message)}</span></div>` +
+    return `<div class="ml-row lvb-${r.bucket} ${ncls(r.node)}${cls}" data-i="${i}" role="listitem">` +
+      `<div class="ml-line" role="button" tabindex="${i === tabRow() ? 0 : -1}" aria-expanded="${open}"><span class="ml-ts">${mlTime(r.ts)}</span>${nodeBadge(r.node)}${badge(r.level_name, r.lvl)}` +
+      `<span class="ml-lg" title="${esc(r.logger)}">${loggerHtml(r.logger, true)}</span><span class="ml-msg" title="${esc(r.message.length > 400 ? r.message.slice(0, 400) + "…" : r.message)}">${esc(r.message)}</span></div>` +
       (open ? `<div class="ml-detail">${entryHtml(r.id, { ...r.e, node: r.node, set: r.set, ts: r.ts, signature: r.sig })}</div>` : "") + `</div>`;
+  }
+  /** "10-29 11:47:26.303" with the date quiet: rows of one moment read by their time. */
+  function mlTime(ts) {
+    return tsHtml(tsMs(ts));
   }
   /** Rows on screen: every loaded row (web), else the first LOG.shown of the view. */
   const shownCount = () => (WEB_LOG && !S.ctx ? VIEW.length : Math.min(VIEW.length, LOG.shown));
@@ -2331,7 +2392,8 @@
       ml.insertAdjacentHTML("beforeend", VIEW.slice(d.n, n).map((r, j) => mlRowHtml(r, d.n + j)).join(""));
     } else {
       ml.innerHTML = VIEW.slice(0, n).map(mlRowHtml).join("") ||
-        `<div class="empty">${(S.ctx ? LOG.ctxLoading : LOG.loading) ? "Loading…" : S.ctx ? "No entries within ±30 s in this report." : "No entries match."}</div>`;
+        ((S.ctx ? LOG.ctxLoading : LOG.loading) ? `<div class="empty loading" role="status">Loading the log…</div>`
+          : `<div class="empty">${S.ctx ? "No entries within ±30 s in this report." : "No entries match."}</div>`);
     }
     LOG.drawn = { base, n };
     // notes, chips, footer
@@ -2428,6 +2490,20 @@
   }
 
   // ---------------------------------------------------------------- update
+  /** What the views show now: the window, the node filter, the open group; "whole capture" when nothing narrows them. */
+  function renderScope() {
+    const chip = (attr, k, v, title) =>
+      `<button type="button" class="sc" ${attr} title="${esc(title)}"><span class="sc-k">${k}</span><span class="sc-v">${v}</span><span class="sc-x" aria-hidden="true">×</span></button>`;
+    const out = [];
+    const rg = tRange();
+    if (rg) out.push(chip('data-clear="t"', "Window", `${esc(rangeText(rg[0], rg[1]))} <span class="sc-m">${esc(spanText(rg[1] - rg[0]))}</span>`, "Show the whole capture (clear the window)"));
+    if (S.tab === "g" && S.nd) out.push(chip('data-clear="nd"', "Node", `${nodeBadge(S.nd)}`, `Groups seen on ${S.nd} only: show every node`));
+    const sel = S.tab === "g" && S.sig ? GBY.get(S.sig) : null;
+    if (sel) out.push(chip("data-unsel", "Group", `<span class="sc-tpl">${tplHtml(trunc(sel.tpl, 60))}</span>`, "Close the open group"));
+    const rst = $("f-reset");
+    if (rst) rst.disabled = !(activeFilters().length || S.sort !== "count" || S.sig || S.ml || S.mn || S.mq || S.ms.length);
+    $("c-scope").innerHTML = out.length ? out.join("") : `<span class="sc-all">Whole capture${MULTI ? ", all nodes" : ""}</span>`;
+  }
   function renderTabs() {
     for (const t of TABS) {
       const b = $("tab-" + t);
@@ -2439,6 +2515,7 @@
     $("p-log").hidden = S.tab !== "l";
     $("fg-row").hidden = S.tab !== "g";
     $("fl-row").hidden = S.tab !== "l";
+    renderScope();
     const af = activeFilters();
     $("f-print").textContent = af.length ? "Filters: " + af.map((x) => x[1]).join(" · ") : "";
   }
@@ -2491,10 +2568,25 @@
     foot.dataset.script = String(Math.round(T1 - T0));
     foot.dataset.paint = String(Math.round(T2));
   }
+  let stickyRO = null;
   function updateSticky() {
     const f = $("filters");
     const h = getComputedStyle(f).position === "sticky" ? f.offsetHeight : 0;
     document.documentElement.style.setProperty("--sticky-top", h + "px");
+    // the bar's height changes when it sticks (labels hide, rows reflow): the table header follows
+    if (!stickyRO && window.ResizeObserver) {
+      stickyRO = new ResizeObserver(() => {
+        const g = $("filters");
+        document.documentElement.style.setProperty("--sticky-top", (getComputedStyle(g).position === "sticky" ? g.offsetHeight : 0) + "px");
+      });
+      stickyRO.observe(f);
+    }
+    markStuck();
+  }
+  /** The bar shows the capture's name only while it is stuck to the top (its natural place scrolled away). */
+  function markStuck() {
+    const f = $("filters"), s = $("bar-sentinel");
+    if (f && s) f.classList.toggle("is-stuck", s.getBoundingClientRect().bottom < 0);
   }
 
   // ---------------------------------------------------------------- actions
@@ -2534,7 +2626,6 @@
   };
   function renderThemeBtn() {
     const b = $("btn-theme");
-    b.innerHTML = isDark() ? `<span aria-hidden="true">☀</span> Light` : `<span aria-hidden="true">☾</span> Dark`;
     b.title = isDark() ? "Switch to the light theme" : "Switch to the dark theme";
   }
   function toggleTheme() {
@@ -2547,7 +2638,7 @@
   function renderTzBtn() {
     const b = $("btn-tz");
     if (!b) return;
-    b.textContent = TZ;
+    (b.querySelector(".tz-t") || b).textContent = TZ;
     b.setAttribute("aria-pressed", String(TZL));
     b.title = TZL ? `Times in your time zone (${TZ}); click to show UTC` : "Times in UTC; click to show your time zone";
   }
@@ -2580,7 +2671,7 @@
     const was = !!S.sig && S.tab === "g";
     if (!was) opener = fromRow ? "" : focusKey(document.activeElement);
     commit({ sig: id, tab: "g" }, { keepPage: true });
-    if (!was) $("d-close").focus({ preventScroll: true });
+    if (!was) $("drawer").focus({ preventScroll: true });
   }
   /** Close the drawer (Esc, Close) and put the focus back on its opener, else the group's row, else the table. */
   function closeDrawer() {
@@ -2658,6 +2749,8 @@
     clearTimeout(mqTimer);
     $("f-search").value = "";
     $("l-search").value = "";
+    const sb = $(S.tab === "l" ? "l-search" : "f-search");
+    if (sb) sb.focus({ preventScroll: true });
     commit({ q: "", lv: new Set(DEFAULT_LV), sp: "any", nd: "", sort: "count", t: null, sig: "", ex: "", ml: "", mn: null, mq: "", ms: [], ctx: "", cts: "", at: "", ae: "", ek: new Set() });
   }
   const CLEAR = { q: { q: "" }, sp: { sp: "any" }, nd: { nd: "" }, t: { t: null } };
@@ -2709,6 +2802,81 @@
     return true;
   }
 
+  // ---- full screen width (the header's toggle, key w): the setting of every page of the app,
+  // applied to <html data-wide> by the page's head script before the first paint
+  const WIDE_KEY = "atlas-log-wide";
+  function renderWideBtn() {
+    const b = $("btn-wide");
+    if (!b) return;
+    const on = document.documentElement.hasAttribute("data-wide");
+    const t = on ? "Back to the centred page width (w)" : "Use the full screen width (w)";
+    b.setAttribute("aria-pressed", String(on));
+    if (b.hasAttribute("data-tip-text")) b.setAttribute("data-tip-text", t); else b.title = t;
+  }
+  function toggleWide() {
+    const on = !document.documentElement.hasAttribute("data-wide");
+    document.documentElement.toggleAttribute("data-wide", on);
+    try { localStorage.setItem(WIDE_KEY, on ? "1" : "0"); } catch { /* storage unavailable */ }
+    renderWideBtn();
+    window.dispatchEvent(new Event("resize"));  // the charts redraw at the new width
+  }
+
+  // ---- the drag handle between the table and the drawer: its width, remembered (double-click
+  // or Home resets it; arrow keys step 32 px)
+  const DRAWER_W_KEY = "atlas-log-drawer-w";
+  function initDrawerGrip() {
+    const dr = $("drawer");
+    if (!dr || dr.querySelector(".drawer-grip")) return;
+    const g = document.createElement("div");
+    g.className = "drawer-grip";
+    g.tabIndex = 0;
+    g.setAttribute("role", "separator");
+    g.setAttribute("aria-orientation", "vertical");
+    g.setAttribute("aria-label", "Resize the detail panel");
+    g.title = "Drag to resize; double-click to reset";
+    dr.prepend(g);
+    const body = document.body;
+    const clamp = (w) => Math.round(Math.max(360, Math.min(w, body.clientWidth - 440)));
+    const apply = (w, save) => {
+      if (w == null) body.style.removeProperty("--drawer-w");
+      else body.style.setProperty("--drawer-w", clamp(w) + "px");
+      if (save) {
+        try { if (w == null) localStorage.removeItem(DRAWER_W_KEY); else localStorage.setItem(DRAWER_W_KEY, String(clamp(w))); } catch { /* storage unavailable */ }
+        window.dispatchEvent(new Event("resize"));  // the hourly chart redraws at the new width
+      }
+    };
+    try { const v = +localStorage.getItem(DRAWER_W_KEY); if (v > 0) apply(v, false); } catch { /* storage unavailable */ }
+    let x0 = 0, w0 = 0;
+    const move = (e) => apply(w0 + (x0 - e.clientX), false);
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      x0 = e.clientX; w0 = dr.getBoundingClientRect().width;
+      g.setPointerCapture(e.pointerId);
+      body.classList.add("drawer-resizing");
+      g.addEventListener("pointermove", move);
+    });
+    const end = (e) => {
+      if (!body.classList.contains("drawer-resizing")) return;
+      g.removeEventListener("pointermove", move);
+      body.classList.remove("drawer-resizing");
+      try { g.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+      apply(dr.getBoundingClientRect().width, true);
+    };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+    g.addEventListener("dblclick", () => apply(null, true));
+    g.addEventListener("keydown", (e) => {
+      const w = dr.getBoundingClientRect().width;
+      if (e.key === "ArrowLeft") apply(w + 32, true);
+      else if (e.key === "ArrowRight") apply(w - 32, true);
+      else if (e.key === "Home") apply(null, true);
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
   function bind() {
     $("c-tabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
@@ -2750,6 +2918,13 @@
     $("f-node").onchange = (e) => commit({ nd: e.target.value });
     $("f-sort").onchange = (e) => commit({ sort: e.target.value });
     $("f-reset").onclick = resetAll;
+    $("c-ctx").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
+    $("c-scope").addEventListener("click", (e) => {
+      if (e.target.closest("[data-unsel]")) return commit({ sig: "" }, { keepPage: true });
+      const b = e.target.closest("[data-clear]");
+      if (b) clearFilter(b.dataset.clear);
+      return undefined;
+    });
     $("t-empty").addEventListener("click", (e) => {
       const b = e.target.closest("[data-clear]");
       if (b) clearFilter(b.dataset.clear);
@@ -2772,13 +2947,55 @@
     $("pager-top").addEventListener("click", pagerClick);
     $("pager-bottom").addEventListener("click", pagerClick);
     $("d-close").onclick = closeDrawer;
+    $("btn-wide").onclick = toggleWide;
+    initDrawerGrip();
+    const more = $("more-menu");
+    if (more) {
+      more.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) more.open = false; });
+      more.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !more.open) return;
+        e.stopPropagation();
+        more.open = false;
+        more.querySelector("summary").focus();
+      });
+      document.addEventListener("click", (e) => { if (more.open && !more.contains(e.target)) more.open = false; });
+    }
+    renderWideBtn();
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("d-nav").addEventListener("click", (e) => {
       const b = e.target.closest("[data-jump]");
       const t = b && document.getElementById(b.dataset.jump);
-      if (t) t.scrollIntoView({ block: "start", behavior: "smooth" });
+      if (!t) return;
+      if (t.tagName === "DETAILS") t.open = true;
+      // scroll the drawer only: the table and the selected row stay where they are
+      const body = $("drawer-body");
+      body.scrollTo({ top: t.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 6, behavior: "smooth" });
     });
+    {
+      // the bar names the group once the headline scrolled away; the nav marks the section in view
+      const body = $("drawer-body"), nav = $("d-nav"), drawer = $("drawer");
+      let spy = 0;
+      body.addEventListener("scroll", () => {
+        if (spy) return;
+        spy = requestAnimationFrame(() => {
+          spy = 0;
+          drawer.classList.toggle("scrolled", body.scrollTop > 48);
+          const y = body.getBoundingClientRect().top + 24;
+          let cur = null;
+          for (const b of nav.querySelectorAll("[data-jump]")) {
+            const t = document.getElementById(b.dataset.jump);
+            if (t && t.getBoundingClientRect().top <= y) cur = b;
+            b.classList.remove("on");
+          }
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 2) {
+            const vis = [...nav.querySelectorAll("[data-jump]:not([hidden])")];
+            cur = vis[vis.length - 1] || cur;
+          }
+          if (cur && body.scrollTop > 0) cur.classList.add("on");
+        });
+      }, { passive: true });
+    }
     for (const id of ["drawer-body", "c-cards", "p-inter", "p-log", "tl-sel", "tl-window", "c-timeline"]) {
       $(id).addEventListener("click", (e) => {
         if (id === "tl-sel") {
@@ -2893,19 +3110,26 @@
     };
     const help = $("help");
     $("btn-help").onclick = () => help.showModal();
+    const ids = $("ids");
+    $("btn-ids").onclick = () => { renderIds(); ids.showModal(); };
+    ids.addEventListener("click", (e) => {
+      const b = e.target.closest("[data-copy]");
+      if (b) copy(b.dataset.copy);
+      else if (e.target === ids) ids.close();
+    });
     document.addEventListener("keydown", (e) => {
       const t = e.target;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
       // Enter on a focused button or link is that control's, not the page shortcut's
       if (e.key === "Enter" && t instanceof Element && t.closest("button, a, summary, [role=tab], [contenteditable]")) return;
       if (e.key === "Escape") {
-        if (help.open) return;
+        if (help.open || ids.open) return;
         if (typing) { t.blur(); return; }
         if (S.tab === "g" && S.sig) closeDrawer();
         else if (S.tab === "l" && S.ctx) commit({ ctx: "", cts: "" }, { keepPage: true });
         return;
       }
-      if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open) return;
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open || ids.open) return;
       switch (e.key) {
         case "/": {
           e.preventDefault();
@@ -2915,6 +3139,7 @@
           inp.select();
           break;
         }
+        case "w": toggleWide(); break;
         case "j": e.preventDefault(); if (S.tab === "l") moveLog(1); else if (S.tab === "g") move(1); break;
         case "k": e.preventDefault(); if (S.tab === "l") moveLog(-1); else if (S.tab === "g") move(-1); break;
         case "Enter":
@@ -2937,6 +3162,7 @@
         default:
       }
     });
+    window.addEventListener("scroll", markStuck, { passive: true });
     let rz = 0;
     window.addEventListener("resize", () => {
       clearTimeout(rz);

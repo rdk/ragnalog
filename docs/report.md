@@ -91,7 +91,7 @@ The payload is documented in `docs/formats/report.v1.md`.
 
 ## 2. Page
 
-One file: `template.html` with `report.css` and `report.js` inlined and the
+One file: `template.html` with `report.css`, `entry-card.js`, `tips.js` and `report.js` inlined and the
 payload embedded as `<script type="application/json" id="report-data">`
 (`</` escaped as `<\/`). Vanilla JS and CSS, no framework, no build step; the
 assets live in `src/atlas_log_analyzer/report/assets/` and are read with
@@ -100,26 +100,60 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 ### Layout
 
 ```
-┌ header ───────────────────────────────────────────────────────────────────┐
-│ <name> · <id>  jira · 2026-10-24 03:44 → 10-29 02:45 (5d)  [theme] [data]│
-├ overview ─────────────────────────────────────────────────────────────────┤
-│ [712,674 entries] [2,953 groups] [146,548 errors] [507,600 warns] [0 unparsed]│
+<name>                                             [UTC] [theme] [width] [?] [⋯]
+712,674 entries · 2,953 groups · ● 146,548 errors · ● 507,600 warnings · jira · 10-24 03:44 → 10-29 02:45 UTC 5 d
+┌ overview card ────────────────────────────────────────────────────────────┐
+│ ENTRIES PER HOUR  ERROR WARN INFO DEBUG        Drag to select · Last 1h … │
 │ timeline: stacked bars per hour by level (status colors), hover tooltip,  │
 │           drag or "Last 1h/6h/24h/7d" for a time window: the table counts │
 │           only that window                                                │
-├ filters (one row) ────────────────────────────────────────────────────────┤
-│ [search template/logger/exception] [ERROR ✓][WARN ✓][INFO][DEBUG]          │
-│ [logger ▾] [exception ▾] [has exception] [sort: count ▾] [coarse] [merged] │
-│ compare: [all | new | vanished | changed]                                 │
-├ groups table ───────────────────────┬ detail drawer ──────────────────────┤
-│ count▁bar lvl logger template spark │ template, signature (copy),         │
+└───────────────────────────────────────────────────────────────────────────┘
+ filters (sticky; shows <name> and the scope once it sticks)
+ [search] [ERROR ✓][WARN ✓][INFO][DEBUG] [logger ▾] [exception ▾] [has exception]
+ [coarse] [merged] [all | new | vanished | changed]                  [sort] [reset]
+ 1-100 of 100 groups · N entries                                      [‹ Prev] Page 1 of 1 [Next ›]
+┌ groups table card (sticky header) ──┬ detail drawer ──────────────────────┐
+│ count▁bar lvl logger template spark │ ↑ ↓ 3 of 100 · level · template     │
 │ ...                                 │ stats, top users/threads/sources,   │
 │ (windowed rendering, 100 rows/page) │ hourly chart, merge siblings,       │
-│                                     │ compare delta, example entries with │
-│                                     │ highlighted variables & collapsible │
-│                                     │ stack traces, raw copy, CLI hint    │
+│                                     │ compare delta, example entries,     │
+│                                     │ ▸ Identifiers & CLI (collapsed)     │
 └─────────────────────────────────────┴─────────────────────────────────────┘
 ```
+
+Spacing and sizes come from the shared layout tokens (`:root` in `report.css`: a 4/8/12/16/24/32
+spacing scale, one page edge `--pad-x`, 28 px toolbar controls and 22 px controls inside cards,
+tables, the drawer and dialogs; table rows about 30 px); the report restyles no primitive, it only
+colours it. The page header, filter-bar controls, drawer and IDs & CLI dialog are shared with the
+cluster page. Its right side holds the settings as ghost icon buttons (time zone with its name,
+theme as a moon or sun that shows what a click switches to, full screen width, help) and last a
+"⋯" menu, *For scripts and agents*: *Identifiers & CLI commands…* and *Download the data*
+(the payload as JSON) — kept out of a human reader's way. In the web app a navigation row above the header carries the views; the
+standalone file has only the header.
+The page header sits on the page background: the name and the actions, then one meta line
+with the key figures (each with its tooltip; with a window it adds "N in window" notes), the
+set's format, time range and source count. The legend and the window controls share the
+overview card's head. The top is kept short (in the web app at 1500 x 1000 the table header
+is about 430 px down): hashes and the CLI are not shown by default. The "⋯" menu's
+*Identifiers & CLI commands…* opens a dialog with the set id, format, node, source files, the open group's signatures and the
+commands to reproduce the view (each with a copy button); in the drawer the same sits in a
+collapsed *Identifiers & CLI* part at the end, which also reveals the signatures in member lists.
+Orientation: the sticky filter bar adds the set name and the number of groups listed once it
+sticks (until then the header says it), the table header sticks under it (the stuck bar stays one
+row: below 1500 px it drops the view options and Reset, below 1200 px the facets, below 800 px
+the search; the scope line still names every active filter), the open row keeps a
+blue bar and tint (and is scrolled into view when the drawer opens or closes), and the drawer
+bar (40 px) names the open group and its position. A handle on the drawer's left edge resizes
+it (drag, or arrow keys when focused; double-click or Home resets; the width is remembered,
+the table keeps at least about 440 px). In the drawer the group's template is the
+headline (16 px), its logger and exception the subtitle, and the figures (entries, first and
+last seen, users, threads, sources; on the cluster page entries, in window, nodes) a quiet panel
+with the label above each value; section heads are a label, a muted count and an action at the
+right ("All N entries ↗"). Reset is dimmed and disabled until a filter, the sort
+order, the view or an open group differs from the default (the cluster page also counts the log
+filters; after it is used, focus moves to the search field); clicking the stuck bar's name and scope line scrolls back to the full filter bar. An
+empty table says that no group matches all filters and offers each active filter as a chip to
+remove, or "Remove all filters".
 
 ### Behaviour
 
@@ -134,8 +168,8 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   (those shorter than the set). `‹`/`›` and the keys `[`/`]` move the window by
   its own length; a click on the chart or "Clear" removes it. With a window the
   page answers "what happened in it":
-  - the window bar states its range and its entries, errors and warnings; the
-    tiles add "N in the window";
+  - the window bar states its range; the figures in the header add "N in window"
+    (entries, groups, errors, warnings);
   - the table keeps the groups with entries in the window, and its count column
     becomes *In window* (the whole-set total under it, "of 68.2K"). Count bars,
     sorting (count, first/last seen), level chip counts and the summary use the
@@ -195,12 +229,16 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
   to another set or node keeps the same hours; a window outside a set's range is
   dropped. Older links with bucket indices (`t=95-118`) still open.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
-  `Esc` closes the drawer (focus returns to its row), `c` copies the signature,
+  `Esc` closes the drawer (focus returns to its row), `w` toggles the full screen width,
+  `c` copies the signature,
   `m` mutes the selected group in the chart, `z` switches UTC / local time,
   `[`/`]` move the time window.
-- Every drawer shows the equivalent CLI commands
-  (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) so a
-  human can hand a finding to an agent verbatim.
+- Every drawer has the equivalent CLI commands
+  (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) in its
+  collapsed *Identifiers & CLI* part, so a human can hand a finding to an agent verbatim.
+- Full screen width: the header's ⤢ toggle (key `w`) drops the centred 1680 px frame, narrows
+  the page edge to 16 px and lets the drawer grow (up to half the screen, 1200 px). One setting
+  for every page of the app (`localStorage` `atlas-log-wide`), applied before the first paint.
 - Theme: follows `prefers-color-scheme`, toggle persisted in `localStorage`;
   all colors are CSS custom properties on `:root`.
 - Print: drawer and filters collapse; the table prints.
@@ -208,16 +246,49 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 ### Entry cards
 
 Every card has **Raw**: it switches the card to the entry's exact text as in the log file
-(the banner lines it carries first, every line, no formatting) and back with **Formatted**.
+(the banner lines it carries first, then every line, character for character, with the
+same token colours as the formatted view) and back with **Formatted**.
 In the web app, **Open raw ↗** opens the full entry as plain text in a new tab
 (`/api/sets/{set}/entries/{id}/raw`; `urls.raw` on the cluster page). **Copy raw** copies the
 same text.
 
 An example entry (the drawer's examples; on the cluster page also the merged
-log and the ±30 s context) is a card: level, time, thread, user, request, IP and
-URL; the message with the masked variables highlighted; the body as a stack
-trace (frames tokenised, library frames dimmed, nothing folded); the file and
-line; "Copy raw".
+log and the ±30 s context) is a card in three parts. The header strip is metadata, quiet:
+level, time (date and milliseconds muted), then label and value pairs for thread, user,
+request, IP and URL, each value in its log colour, and the logger in brackets as the log
+file writes it (`[c.a.j.issue.index.DefaultIndexManager]`: package muted, class name in
+the class colour). The message is the content, in its own block (ink, mono; the first line
+is the headline, continuation lines are quieter) with the masked variables highlighted, and
+its body as a stack trace (frames tokenised, library frames dimmed, nothing folded; in the
+drawer a long trace scrolls inside the card). Stack traces and the raw view are code: a little
+smaller than the message, never wrapped, a long line scrolls sideways. The footer is tooling behind a hairline: the
+file and line, then Raw, Open raw and Copy raw. Every kind of small text has one treatment on
+every page (`report.css`, "text kinds"; markup from `AtlasEntryCard.loggerHtml`, `excHtml`,
+`tsHtml`, `kvHtml`, `nilHtml`): a logger has its package muted and its class name in ink, an
+exception its class name in the exception colour, a time its date and milliseconds muted,
+identifiers (thread, signatures) are mono and muted, template placeholders are dashed italic
+chips, an empty value is a faint dash.
+
+Log text is formatted the same way on every page (`logInline`, `frameHtml` in
+`entry-card.js`: `AtlasEntryCard.create(hooks)`, which each page calls once with
+its own helpers: badges, the shown time zone, where an entry is looked up, the raw
+link and extra buttons such as the cluster page's "±30 s on all nodes"). A body with a stack trace
+is a dark code panel in both themes. In a frame the module, package (dimmed), class,
+method, file and line have their own colours, and so do the exception header's
+`Caused by:`, package and class. Platform and framework frames (JDK, Tomcat, Spring,
+OSGi, Atlassian plumbing such as `com.atlassian.plugin`, `.event`, `.jira.web`) are
+dimmed to one colour. Atlassian code and the libraries Jira ships stay plain. Any
+other package is taken for an app's own code (a third-party plugin) and marked with
+an accent bar. The message, the banner lines, the trace's other lines, the raw view
+and the group templates get the same tokens: quoted strings; URLs, host names and IP
+addresses, file paths (Unix, Windows, file names with a known extension) and
+`File.java:123` in one colour; qualified class names with the package dimmed,
+`Class.method(` calls and exception names; numbers with their unit (`1234 ms`,
+`12.5 MB`, `98%`, versions); timestamps, UUIDs, hex and request ids and issue keys in
+a quiet slate; `true`/`false`/`null`; the names in `key=value` dimmed; level words;
+SQL keywords when the text holds a statement. Numbers inside names (`exec-12`,
+`UTF-8`) and template placeholders stay as they are. Templates in tables and tooltips
+only dim the package.
 
 - A body of more than 500 lines shows its first 500 and a "show all N lines"
   button, which renders the rest in place from the raw the page already holds
@@ -230,9 +301,16 @@ line; "Copy raw".
   message, labelled "banner line before this entry". They are not part of
   `raw`.
 
-`tests/report/test_entry_card.py` runs the cards' code
-(`// @entry-card` … `// @entry-card-end` in `report.js` and `cluster.js`) in node
+`tests/report/test_entry_card.py` runs the cards' code (`entry-card.js`) in node
 on entries of a real payload.
+
+In the web app the drawer's "Example entries" head carries a right-aligned link
+**All N entries ↗** (a new tab) to the entries page (`docs/webapp.md`) with the
+group's signature (a coarse group: `coarse_signature`; merged Drain3 rows have none);
+with a time window selected the link adds `since`/`until` and reads "All N entries in
+window ↗". On the cluster page it opens the capture's page with the signature
+(all nodes). A standalone report file has no server, so it shows no link (its
+"Identifiers & CLI" part gives `atlas-log entries SET --signature SIG`).
 
 ### Visual rules (from the dataviz method)
 
@@ -258,7 +336,9 @@ src/atlas_log_analyzer/report/
 │                     render_cluster_html(payload=None, *, data_url, asset_base)
 └── assets/
     ├── template.html
-    ├── report.css
+    ├── report.css    colour tokens (light/dark), shared by every page
+    ├── tips.js       rich tooltips (data-tip, data-tip-k, titles), shared by every page
+    ├── entry-card.js entry cards and log text formatting, shared by report, cluster and entries pages
     ├── report.js
     ├── cluster.html  the cluster page (§5)
     ├── cluster.css
@@ -296,25 +376,33 @@ and `cluster.js` (placeholders `/*__REPORT_CSS__*/`, `/*__CLUSTER_CSS__*/`,
 file that works from `file://`. The web page is
 `render_cluster_html(None, data_url=…, asset_base="/assets/report/")`: `data-report-url`
 on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
-`cluster.js` under `asset_base` (the web app must serve those three via `asset_text`).
-`write_cluster_report(payload, path)` writes the static file. `cluster.js` shares no
-code with `report.js`; its formatting, stack-trace and column-chart helpers are copies.
+`entry-card.js`, `tips.js` and `cluster.js` under `asset_base` (the web app serves them via `asset_text`).
+`write_cluster_report(payload, path)` writes the static file. `cluster.js` shares the entry cards and log formatting with `report.js`
+(`entry-card.js`); its column-chart helpers are copies.
 
 **Layout.**
 
-- Header: cluster, capture id, one chip per node (colour swatch plus `N1 NODE1`; a
-  "report ↗" link when `urls.set_report` is set), window mode and range, node and group
-  counts, the clock-skew estimate ("estimate, not applied"), time zone toggle (UTC or
+- Header, one row: cluster, window mode and range, group counts, the clock-skew
+  estimate ("estimate, not applied"), time zone toggle (UTC or
   the browser's zone by its short name, as on the set report: every printed time, axis
   tick and tooltip follows it; same `localStorage` key, `tz=local|utc` in a link wins,
-  the window in the hash stays UTC), theme toggle, JSON download. A capture across a DST
+  the window in the hash stays UTC), theme toggle, full width, help, and the "⋯" menu
+  (identifiers & CLI, JSON download; for scripts and agents). A capture across a DST
   change names both zones (`CEST/CET`), and a range names each end's zone when they
   differ (`02:00 CEST – 02:00 CET`, the repeated hour); axis ticks follow the zone's
   wall clock (a skipped hour has no tick, a repeated hour one, dates only at midnight).
-- Node cards: entries, errors, warnings, errors/h, events with how many are job runs
-  (`709 (684 job runs)`; totals, or within the brushed window from the timeline),
-  coverage with gap count and length, top error (opens the group), triage verdict chip
-  and baseline, events by kind, "Groups on N1" (not with one node).
+- Hashes and the CLI are not shown by default. The "⋯" menu's *Identifiers & CLI
+  commands…* opens a dialog with the
+  capture id, the cluster, each node's log set (name and id), the capture's commands
+  and, when a group is open, its signature and commands, each with Copy. In the drawer
+  they are a collapsed *Identifiers & CLI* part (its section link opens it); `c` still
+  copies the open group's signature.
+- Node rows (one slim row per node, in the overview card above the timeline): colour
+  swatch and `N1 NODE1`, entries, errors, warnings, errors/h (totals, or within the
+  brushed window from the timeline), events with how many are job runs on wide pages,
+  triage verdict chip and the set report link (`urls.set_report`). The node name toggles
+  "groups on this node" (not with one node); its tooltip has coverage with gap count and
+  length, top error and the baseline.
 - Timeline: one SVG, one row per node on a shared time axis (ticks on the shown zone's
   hours and midnights). Each row is an event lane
   (a glyph per kind in ink colour; legend under the chart) above a band of columns
@@ -350,6 +438,12 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
   buckets are too coarse to time a lead inside a window. The drawer adds an *In window*
   column per node, and in the web app its examples are each node's first entries in
   the window.
+- The sticky bar: the tabs and the scope (chips for the window, the node filter and the
+  open group, each with × to clear it; "Whole capture, all nodes" when nothing narrows
+  the views), the filters in a second row; once it sticks it also names the capture. The
+  open row is marked with a blue edge. The drawer bar holds prev/next, the position
+  ("3 of 417"), the open group's level and template, and Close; the
+  section links are a row below it.
 - Tabs in the sticky bar:
   - *Groups by node*: level, template, total, one count-and-bar column per node in node
     colours (log scale; past 8 nodes a heat strip of one cell per node), `spread` chip
@@ -359,14 +453,14 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     100 rows per page. The drawer has per-node counts, rates and first/last seen,
     per-node lines over the timeline buckets (no line where a node has no logs), example
     entries per node in tabs (collapsible stack traces, "±30 s on all nodes"), the
-    co-bursts, mentions and events involving the group, and CLI commands
+    co-bursts, mentions and events involving the group, and, collapsed, the CLI commands
     (`atlas-log matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
     `show SET SIG` per node). With one node there are no spread or lead columns, no
     spread or node filter and no per-node sorts. The drawer bar stays on one line (its
     section links scroll).
   - *Interactions*: co-bursts and event pairs in one wide card, one row each; co-bursts
     strongest first (share of hits, then lift), event pairs most often first (a pair seen
-    once has a huge lift and tells little): source (node badge, template on up to two
+    once has a huge lift and tells little), each table with a one-line plain reading of a row: source (node badge, template on up to two
     lines, full text in its title, `+N` other groups that burst with it) → target, a hits
     meter ("7 / 8"), median lag, lift chip (above ×100 shown as `>×100`, the exact lift in
     its title), and "show in log" (co-bursts: each group on its own node in the merged
@@ -388,7 +482,7 @@ code with `report.js`; its formatting, stack-trace and column-chart helpers are 
     `aria-expanded`; the row with the cursor is the Tab stop, ↑/↓ move), expands the
     entry (raw, trace, "±30 s on all nodes", open group, copy raw). Filters: minimum
     level, nodes, search, and groups (set from the matrix, "entries", "show in log" or
-    "show me"). Static file: the payload's example entries, 200 rows at a time, with the
+    "show me"); its first page shows a spinner and "Loading the log…" until it arrives. Static file: the payload's example entries, 200 rows at a time, with the
     equivalent `atlas-log entries CAPTURE --since … --until …`. Web (`urls.entries` set):
     pages of 200 fetched from that URL with `since`, `until` (the window, or from 2 s
     before a clicked event, inside the window), `min_level`, `signature` (the groups,

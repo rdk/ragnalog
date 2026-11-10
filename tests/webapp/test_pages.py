@@ -35,7 +35,10 @@ def test_report_page_fetches_payload(client: TestClient) -> None:
     page = res.text
     assert f'data-report-url="/api/sets/{sid}/report?compare=auto&amp;examples=3"' in page
     assert '<script src="/assets/report/report.js"></script>' in page
-    assert 'class="shell"' in page and 'id="shell-set"' in page
+    assert 'class="crumbs"' in page and 'id="shell-set"' in page
+    assert f'href="/sets/{sid}/triage"' in page and 'aria-label="Views of this set"' in page
+    assert page.count('aria-current="page"') == 2  # the Report tab and the breadcrumb's last crumb
+    assert page.index('class="views"') < page.index('class="top"')  # the tabs are in the nav row
 
 
 def test_report_assets_served(client: TestClient) -> None:
@@ -50,7 +53,9 @@ def test_triage_page(client: TestClient) -> None:
     assert res.status_code == 200
     assert "Triage" in res.text and "sample" in res.text
     assert "New types" in res.text and "New exceptions" in res.text
-    assert "Baseline: given by the caller" in res.text
+    # the baseline's reason is in its tooltip (a <template> the page shows on hover/focus)
+    assert 'data-tip-ref="tip-baseline"' in res.text and '<template id="tip-baseline">' in res.text
+    assert "<li>given by the caller</li>" in res.text
 
 
 def test_triage_page_explains_no_baseline(client: TestClient) -> None:
@@ -216,3 +221,93 @@ def test_time_ranges_carry_their_utc_ends(client: TestClient) -> None:
     assert ">2026-10-29 10:00 → 11:30<" in str(
         _fmt_range("2026-10-29T10:00:00+00:00", "2026-10-29T11:30:00+00:00")
     )
+
+
+def _page_data(html: str) -> dict:  # type: ignore[type-arg]
+    import html as html_lib
+    import json
+
+    m = re.search(r"data-page='([^']*)'", html)
+    assert m, "no data-page"
+    data: dict = json.loads(html_lib.unescape(m[1]))  # type: ignore[type-arg]
+    return data
+
+
+def _first_page(html: str) -> dict:  # type: ignore[type-arg]
+    import json
+
+    m = re.search(r'<script type="application/json" id="e-first">(.*?)</script>', html, re.S)
+    assert m
+    doc: dict = json.loads(m[1])  # type: ignore[type-arg]
+    return doc
+
+
+def test_set_entries_page_embeds_the_first_rows(client: TestClient) -> None:
+    sid = client.get("/api/sets/mini").json()["id"]
+    sig = client.get("/api/sets/mini/groups?limit=1").json()["items"][0]["signature"]
+    res = client.get(f"/sets/mini/entries?signature={sig}")
+    assert res.status_code == 200 and "text/html" in res.headers["content-type"]
+    page = _page_data(res.text)
+    assert page["kind"] == "set" and page["api"] == f"/api/sets/{sid}/entries"
+    assert page["back"] == f"/sets/{sid}" and page["limit"] == 100
+    first = _first_page(res.text)
+    assert first["schema"] == "entries.v1" and first["items"]
+    assert {row["signature"] for row in first["items"]} == {sig}
+    api = client.get(f"/api/sets/mini/entries?signature={sig}&limit=100").json()
+    assert first["total"] == api["total"]
+    # the shared card code and the page script, in this order, after the shell's scripts
+    assert res.text.index("/assets/report/entry-card.js") < res.text.index("/static/entries.js")
+    assert 'id="e-search"' in res.text and 'class="crumbs"' in res.text
+
+
+def test_entries_page_without_filters_and_head(client: TestClient) -> None:
+    assert client.get("/sets/mini/entries").status_code == 200
+    head = client.head("/sets/mini/entries")
+    assert head.status_code == 200 and not head.content
+
+
+def test_entries_page_unknown_set_and_bad_filters_are_html_pages(client: TestClient) -> None:
+    html = {"Accept": "text/html"}
+    res = client.get("/sets/nope/entries", headers=html)
+    assert res.status_code == 404 and res.headers["content-type"].startswith("text/html")
+    bad = client.get("/sets/mini/entries?level=BOGUS", headers=html)
+    assert bad.status_code == 400 and bad.headers["content-type"].startswith("text/html")
+    assert "BOGUS" in bad.text
+    # a node filter applies to a capture only (the API's usage error, as a page)
+    assert client.get("/sets/mini/entries?node=N1", headers=html).status_code == 400
+    assert client.get("/captures/capture:nope/entries", headers=html).status_code == 404
+
+
+def test_capture_entries_page(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    res = client.get(f"/captures/capture:{JOB_ID}/entries")
+    assert res.status_code == 200
+    page = _page_data(res.text)
+    assert page["kind"] == "capture" and page["back"] == f"/captures/capture:{JOB_ID}"
+    assert page["api"] == f"/api/captures/capture:{JOB_ID}/entries"
+    assert set(page["nodes"]) == {"NODE1", "NODE2"} and page["name"] == "jira-test"
+    first = _first_page(res.text)
+    assert {row["node"] for row in first["items"]} <= {"NODE1", "NODE2"} and first["items"]
+    assert client.head(f"/captures/capture:{JOB_ID}/entries").status_code == 200
+    one = client.get(f"/captures/capture:{JOB_ID}/entries?node=NODE1")
+    assert {row["node"] for row in _first_page(one.text)["items"]} == {"NODE1"}
+
+
+def test_entry_card_asset_is_served_before_the_page_scripts(client: TestClient) -> None:
+    res = client.get("/assets/report/entry-card.js")
+    assert res.status_code == 200 and res.text == asset_text("entry-card.js")
+    assert "AtlasEntryCard" in res.text
+    report = client.get("/sets/mini").text
+    tags = [
+        '<script src="/assets/report/entry-card.js"></script>',
+        '<script src="/assets/report/tips.js"></script>',
+        '<script src="/assets/report/report.js"></script>',
+    ]
+    assert [report.index(t) for t in tags] == sorted(report.index(t) for t in tags)
+
+
+def test_drawers_link_to_the_entries_page_only_when_served() -> None:
+    """The link is built from the web app's URLs (``entries_url`` / ``urls``), absent in a file."""
+    report, cluster = asset_text("report.js"), asset_text("cluster.js")
+    assert "if (!ENTRIES_URL || !LS.id ||" in report and "/entries?" in report
+    assert "if (!WEB_LOG || !r.sig) return" in cluster and "URLS.entries.replace" in cluster

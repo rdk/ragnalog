@@ -83,9 +83,10 @@ def test_capture_page_and_set_report_links(client: TestClient, tmp_path: Path) -
     assert page.status_code == 200
     html = page.text
     assert f'data-report-url="/api/captures/{ref}/report"' in html
-    assert '<nav class="shell"' in html and "jira-test · capture" in html
+    assert '<nav class="crumbs"' in html and "jira-test · capture" in html
     first = job["capture"]["sets"][0]["id"]
     assert f'href="/sets/{first}"' in html  # node reports
+    assert 'aria-label="Views of this capture"' in html and 'class="node-link"' in html
     for name in ("report.css", "cluster.css", "cluster.js"):
         assert f"/assets/report/{name}" in html
         assert client.get(f"/assets/report/{name}").status_code == 200

@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% block title %}Token needed · atlas-log{% endblock %}
+{# the crumb line is just the way home: the h1 names the page #}
 {% block main %}
-<section class="card empty">
-  <h2>This server needs its token</h2>
+<header class="page-head">
+  <h1>This server needs its token</h1>
+  <div class="page-tools">{% include "_tools.html" %}</div>
+</header>
+<section class="card empty notice">
   <p class="muted">It was started with <span class="mono">--token</span>. Open any page once with
   <span class="mono">?token=…</span> added to the address; the browser then keeps it in a cookie.</p>
 </section>

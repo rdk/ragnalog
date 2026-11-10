@@ -19,10 +19,13 @@ from starlette.responses import HTMLResponse, Response
 from atlas_log_analyzer import __version__
 from atlas_log_analyzer.report import asset_text, render_cluster_html, render_html
 from atlas_log_analyzer.report.payload import MAX_TIMELINE_HOURS, densest_hours
-from atlas_log_analyzer.service import queries
+from atlas_log_analyzer.report.render import embed_json
+from atlas_log_analyzer.service import capture_queries, queries
 from atlas_log_analyzer.service.errors import OpError
+from atlas_log_analyzer.service.params import DEFAULT_MAX_RAW, EntryQuery, Page, Select, TextCap
 from atlas_log_analyzer.store.logset import LogSet
 from atlas_log_analyzer.webapp import api
+from atlas_log_analyzer.webapp.params import query_model
 from atlas_log_analyzer.webapp.state import AppState, get_state
 
 if TYPE_CHECKING:
@@ -40,12 +43,20 @@ __all__ = [
 router = APIRouter(default_response_class=HTMLResponse)
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 StateDep = Annotated[AppState, Depends(get_state)]
+EntryQ = Annotated[EntryQuery, Depends(query_model(EntryQuery))]
 templates = Jinja2Templates(
     directory=str(resources.files("atlas_log_analyzer.webapp") / "templates")
 )
 templates.env.globals["tool_version"] = __version__
 
-REPORT_ASSETS = ("report.css", "report.js", "cluster.css", "cluster.js")
+REPORT_ASSETS = (
+    "report.css",
+    "tips.js",
+    "entry-card.js",
+    "report.js",
+    "cluster.css",
+    "cluster.js",
+)
 
 
 def _fmt_int(value: Any) -> str:
@@ -310,21 +321,72 @@ def report_asset(name: str) -> Response:
     )
 
 
-def _shell(state: AppState, ref_id: str, extra: str = "") -> str:
+_SEP = '<span class="crumb-sep" aria-hidden="true">/</span>'
+_MENU = (
+    '<details class="crumb-menu"><summary aria-label="atlas-log menu" title="atlas-log menu">'
+    '</summary><div class="crumb-pop"><a href="/">Log sets</a>'
+    '<a href="/#upload">Ingest</a><a href="/docs">API</a></div></details>'
+)
+_HOME = '<a class="crumb-home" href="/">atlas-log</a>' + _MENU
+templates.env.globals["crumb_root"] = Markup(_HOME)
+
+
+def _crumbs(*parts: str, views: str = "") -> str:
+    """Build the navigation row: atlas-log (with its menu), ``parts``, then the view tabs."""
+    trail = '<div class="crumb-trail">' + _HOME + "".join(parts) + "</div>"
+    end = f'<div class="crumb-end">{views}</div>' if views else ""
+    return '<nav class="crumbs" aria-label="Breadcrumb">' + trail + end + "</nav>"
+
+
+def _here(text: str, extra: str = "") -> str:
+    return _SEP + f'<span class="crumb-here" aria-current="page">{text}{extra}</span>'
+
+
+_ICONS = {
+    "report": '<path d="M3.5 13V8.5M8 13V3M12.5 13V6"/>',
+    "triage": '<path d="M4 14V2.5M4 3h8l-1.8 2.8L12 8.6H4"/>',
+    "entries": '<path d="M6 4h7.5M6 8h7.5M6 12h7.5M2.5 4h.01M2.5 8h.01M2.5 12h.01"/>',
+    "cluster": (
+        '<circle cx="8" cy="3.8" r="1.7"/><circle cx="3.6" cy="12" r="1.7"/>'
+        '<circle cx="12.4" cy="12" r="1.7"/>'
+        '<path d="M7.1 5.3 4.5 10.5M8.9 5.3l2.6 5.2M5.3 12h5.4"/>'
+    ),
+    "compare": '<path d="M2.5 5.5h10M10 3l2.5 2.5L10 8M13.5 10.5h-10M6 8l-2.5 2.5L6 13"/>',
+}
+"""Stroke icons of the view tabs (16 x 16 viewBox, drawn by :func:`_views`)."""
+
+
+def _views(*items: tuple[str, str, str | None], label: str = "Views of this set") -> str:
+    """Build the view tabs from ``(icon, text, href)``; no ``href`` marks the current one."""
+    out = []
+    for icon, text, href in items:
+        body = (
+            '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" '
+            'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
+            f'{_ICONS[icon]}</svg><span class="v-l">{text}</span>'
+        )
+        if href is None:
+            out.append(f'<span class="view" aria-current="page" title="{text}">{body}</span>')
+        else:
+            out.append(f'<a class="view" href="{href}" title="{text}">{body}</a>')
+    return f'<nav class="views" aria-label="{label}">' + "".join(out) + "</nav>"
+
+
+templates.env.globals["view_tabs"] = lambda *items, **kw: Markup(_views(*items, **kw))
+
+
+def _set_crumb(state: AppState, ref_id: str) -> str:
+    """Build the set switcher crumb: a dropdown of every set, the current one selected."""
     options = []
     for m in state.manifests():
         label = html.escape(m.name or m.id)
         selected = " selected" if m.id == ref_id else ""
         options.append(f'<option value="{m.id}"{selected}>{label}</option>')
     return (
-        '<nav class="shell" aria-label="atlas-log">'
-        '<a class="shell-home" href="/">atlas-log</a>'
-        '<label class="shell-switch">Set <select id="shell-set">'
+        _SEP
+        + '<span class="crumb-sel"><select id="shell-set" aria-label="Log set">'
         + "".join(options)
-        + "</select></label>"
-        + extra
-        + '<span class="shell-gap"></span>'
-        '<a href="/#upload">Ingest</a><a href="/docs">API</a></nav>'
+        + "</select></span>"
     )
 
 
@@ -332,8 +394,15 @@ def _capture_href(capture_id: str) -> str:
     return "/captures/" + quote(f"capture:{capture_id}", safe=":@")
 
 
+def _capture_url(capture: Capture) -> str:
+    """Return the cluster page address (the base of its entries page)."""
+    if capture.id is not None:
+        return _capture_href(capture.id)
+    return f"/captures/{quote(capture.nodes[0].logset.id)}"
+
+
 def _node_switch(state: AppState, ls: LogSet) -> str:
-    """Node switcher and cluster link of a set's report when the set belongs to a capture."""
+    """Node crumb (a switcher) of a set's report when the set belongs to a capture."""
     capture = ls.manifest.capture
     if capture is None:
         return ""
@@ -345,32 +414,43 @@ def _node_switch(state: AppState, ls: LogSet) -> str:
         selected = " selected" if m.id == ls.manifest.id else ""
         options.append(f'<option value="{m.id}"{selected}>{label}</option>')
     return (
-        '<label class="shell-switch">Node <select id="shell-node">'
+        _SEP
+        + '<span class="crumb-sel"><select id="shell-node" aria-label="Cluster node">'
         + "".join(options)
-        + "</select></label>"
-        + f'<a href="{_capture_href(capture)}">Open cluster view</a>'
+        + "</select></span>"
+    )
+
+
+def _node_link(i: int, node: str, set_id: str, name: str) -> str:
+    """Chip linking a node's report: a dot in the node's cluster page colour and its name."""
+    colour = f"nc{i}" if i < 8 else "ncx"
+    return (
+        f'<a class="node-link" href="/sets/{quote(set_id)}" title="Report of {html.escape(name)}">'
+        f'<span class="nd {colour}"></span>{html.escape(node)}</a>'
     )
 
 
 def _capture_shell(capture: Capture) -> str:
-    """Navigation bar of the cluster page: back to the sets, the capture, its node reports."""
-    title = html.escape(capture.cluster or "Capture") + (
-        f" · capture {html.escape(capture.id)}" if capture.id else ""
-    )
+    """Navigation row of the cluster page: a framed group linking each node's report, the views."""
+    name = html.escape(capture.cluster or "Capture")
+    full = name + (f" · capture {html.escape(capture.id)}" if capture.id else "")
+    base = _capture_url(capture)
     nodes = "".join(
-        f'<a href="/sets/{quote(m.logset.id)}" title="Report of '
-        f'{html.escape(m.logset.manifest.name or m.logset.id)}">{html.escape(m.node)}</a>'
-        for m in capture.nodes
+        _node_link(i, m.node, m.logset.id, m.logset.manifest.name or m.logset.id)
+        for i, m in enumerate(capture.nodes)
     )
-    return (
-        '<nav class="shell" aria-label="atlas-log">'
-        '<a class="shell-home" href="/">atlas-log</a>'
-        '<a href="/">Sets</a>'
-        f'<span class="shell-capture">{title}</span>'
-        f'<span class="shell-nodes">Node reports: {nodes}</span>'
-        '<span class="shell-gap"></span>'
-        '<a href="/#upload">Ingest</a><a href="/docs">API</a></nav>'
+    views = _views(
+        ("cluster", "Cluster view", None),
+        ("entries", "Entries", base + "/entries"),
+        label="Views of this capture",
     )
+    if nodes:
+        views = (
+            '<nav class="node-links" aria-label="Node reports">'
+            f'<span class="views-label">Nodes</span>{nodes}</nav>' + views
+        )
+    crumb = _SEP + f'<span class="crumb-here" aria-current="page" title="{full}">{name}</span>'
+    return _crumbs(crumb, views=views)
 
 
 _HEAD = (
@@ -381,10 +461,10 @@ _HEAD = (
 _BODY = re.compile(r"<body[^>]*>")
 
 
-def _with_shell(page: str, shell: str) -> str:
-    """Add the web app's CSS/JS and navigation bar to a report page."""
+def _with_shell(page: str, crumbs: str) -> str:
+    """Add the web app's CSS/JS and the navigation row (crumbs, view tabs) to a report page."""
     page = page.replace("</head>", _HEAD + "</head>", 1)
-    return _BODY.sub(lambda m: m.group(0) + shell, page, count=1)
+    return _BODY.sub(lambda m: m.group(0) + crumbs, page, count=1)
 
 
 @router.head("/sets/{ref}", include_in_schema=False)  # uptime and link checkers
@@ -415,16 +495,29 @@ async def report_page(
         name=ls.manifest.name or ls.manifest.id,
     )
     base = None if compare in (None, "", "none") else compare
-    triage = f'<a href="/sets/{ls.manifest.id}/triage">Triage</a>' + (
-        f'<a href="/sets/{ls.manifest.id}">Without compare</a>'
-        if base
-        else f'<a href="/sets/{ls.manifest.id}?compare=auto">Compare with previous</a>'
+    sid = ls.manifest.id
+    views = _views(
+        ("report", "Report", None),
+        ("triage", "Triage", f"/sets/{sid}/triage"),
+        ("entries", "Entries", f"/sets/{sid}/entries"),
+        *(
+            (("cluster", "Cluster view", _capture_href(ls.manifest.capture)),)
+            if ls.manifest.capture
+            else ()
+        ),
+        *(
+            (("compare", "Without compare", f"/sets/{sid}"),)
+            if base
+            else (("compare", "Compare with previous", f"/sets/{sid}?compare=auto"),)
+        ),
     )
     # the switchers read every manifest (a stat each): off the event loop, as the open above
-    shell = await run_in_threadpool(
-        lambda: _shell(state, ls.manifest.id, _node_switch(state, ls) + triage)
+    crumbs = await run_in_threadpool(
+        lambda: _crumbs(
+            _set_crumb(state, sid), _node_switch(state, ls), _here("Report"), views=views
+        )
     )
-    return HTMLResponse(_with_shell(page, shell))
+    return HTMLResponse(_with_shell(page, crumbs))
 
 
 def _overlaps(capture: Capture) -> bool:
@@ -492,6 +585,88 @@ async def triage_page(
         request,
         "triage.html",
         {"t": doc, "sets": sets, "baseline_param": baseline, "min_level": min_level},
+    )
+
+
+ENTRIES_PAGE = 100
+"""Rows the entries page loads at a time (and embeds as its first page)."""
+
+
+def _entries_page(
+    request: Request,
+    doc: dict[str, Any],
+    *,
+    kind: str,
+    name: str,
+    ref: str,
+    api_url: str,
+    **more: Any,
+) -> Response:
+    """Render ``entries.html`` around the first page ``doc`` (``entries.v1``) of the query."""
+    page = {"kind": kind, "api": api_url, "limit": ENTRIES_PAGE, "ref": ref, "name": name, **more}
+    return templates.TemplateResponse(
+        request,
+        "entries.html",
+        {"name": name, "page": page, "first": Markup(embed_json(doc)), "kind": kind, "ref": ref},
+    )
+
+
+@router.head("/sets/{ref}/entries", include_in_schema=False)  # uptime and link checkers
+@router.get("/sets/{ref}/entries")
+async def set_entries_page(ref: str, request: Request, state: StateDep, q: EntryQ) -> Response:
+    """Table of the entries of a set, filtered by the query (``signature``, ``since``, ...).
+
+    The filters are those of ``GET /api/sets/{ref}/entries``; the page embeds the first
+    :data:`ENTRIES_PAGE` rows (so a bad filter is an error page, not an empty table) and
+    loads further rows from that API.
+    """
+
+    def build() -> tuple[dict[str, Any], LogSet]:
+        cap = TextCap.parse(None, default=DEFAULT_MAX_RAW, front="api")
+        doc = queries.entries(state, ref, q, Page(ENTRIES_PAGE, 0), Select(), cap, front="api")
+        return doc, state.open(ref)
+
+    doc, ls = await run_in_threadpool(build)
+    sid = ls.manifest.id
+    return _entries_page(
+        request,
+        doc,
+        kind="set",
+        name=ls.manifest.name or sid,
+        ref=sid,
+        api_url=f"/api/sets/{sid}/entries",
+        back=f"/sets/{sid}",
+        nodes={},
+    )
+
+
+@router.head("/captures/{ref}/entries", include_in_schema=False)  # uptime and link checkers
+@router.get("/captures/{ref}/entries")
+async def capture_entries_page(ref: str, request: Request, state: StateDep, q: EntryQ) -> Response:
+    """Table of the entries of a capture's nodes interleaved by time (as the set's page).
+
+    Rows carry their node; the window is the union of the nodes' logs unless ``since`` /
+    ``until`` give one. ``signature`` may be ``NODE:SIGNATURE`` and ``node`` may name nodes.
+    """
+
+    def build() -> tuple[dict[str, Any], Capture]:
+        cap = TextCap.parse(None, default=DEFAULT_MAX_RAW, front="api")
+        doc = capture_queries.entries(
+            state, ref, q, Page(ENTRIES_PAGE, 0), Select(), cap, window="union", front="api"
+        )
+        return doc, capture_queries.capture_from_ref(state, ref, front="api")
+
+    doc, capture = await run_in_threadpool(build)
+    target = capture.ref if capture.id is not None else capture.nodes[0].logset.id
+    return _entries_page(
+        request,
+        doc,
+        kind="capture",
+        name=capture.cluster or capture.ref,
+        ref=target,
+        api_url=f"/api/captures/{quote(target, safe=':@')}/entries",
+        back=_capture_url(capture),
+        nodes={m.node: m.logset.id for m in capture.nodes},
     )
 
 

@@ -12,45 +12,56 @@
   var m = /(?:^#|&)theme=(dark|light)(?:&|$)/.exec(location.hash);
   if (m) { t = m[1]; } else { try { t = localStorage.getItem("atlas-log-report-theme"); } catch (e) { t = null; } }
   if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+  try { if (localStorage.getItem("atlas-log-wide") === "1") { document.documentElement.setAttribute("data-wide", ""); } } catch (e) { /* storage unavailable */ }
 })();
 </script>
 <style>
 /*__REPORT_CSS__*/
 </style>
 </head>
-<body>
+<body class="report">
 <header class="top" id="top">
   <div class="top-id">
     <h1 id="set-name">atlas-log report</h1>
-    <span class="muted mono" id="set-id"></span>
   </div>
-  <div class="top-meta" id="set-meta"></div>
   <div class="top-actions">
-    <button type="button" class="btn" id="btn-help" title="Keyboard shortcuts (?)">? Shortcuts</button>
-    <button type="button" class="btn" id="btn-tz" aria-pressed="false" title="Show times in UTC or in your time zone">UTC</button>
-    <button type="button" class="btn" id="btn-theme" title="Switch theme">Theme</button>
-    <button type="button" class="btn" id="btn-data" title="Download the report.v1 payload as JSON">Data</button>
+    <span class="tool-btns" role="group" aria-label="Page settings">
+      <button type="button" class="btn" id="btn-tz" aria-pressed="false" title="Show times in UTC or in your time zone"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg><span class="tz-t">UTC</span></button>
+      <button type="button" class="btn icon" id="btn-theme" title="Switch theme" aria-label="Switch theme"><svg class="i-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z"/></svg><svg class="i-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1"/></svg></button>
+      <button type="button" class="btn icon" id="btn-wide" aria-pressed="false" title="Use the full screen width (w)" aria-label="Full screen width"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" class="btn icon" id="btn-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.4a1.7 1.7 0 1 1 2.4 1.5c-.5.3-.8.6-.8 1.2M8 11.4h.01"/></svg></button>
+      <details class="more-menu" id="more-menu">
+        <summary class="btn icon" title="Identifiers, CLI commands and the raw data, for scripts and agents" aria-label="More: identifiers, CLI and data"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg></summary>
+        <div class="menu">
+          <span class="menu-k">For scripts and agents</span>
+          <button type="button" class="menu-item" id="btn-ids">Identifiers &amp; CLI commands…</button>
+          <button type="button" class="menu-item" id="btn-data">Download the data <span class="muted">report.v1 JSON</span></button>
+        </div>
+      </details>
+    </span>
+  </div>
+  <div class="top-sub">
+    <div class="tiles" id="tiles"></div>
+    <div class="top-meta" id="set-meta"></div>
   </div>
 </header>
+<section class="overview card" aria-label="Overview">
+  <div class="card-head">
+    <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
+    <div class="legend" id="tl-legend"></div>
+    <div class="tl-window" id="tl-window"></div>
+    <div class="tl-clip" id="tl-clip"></div>
+  </div>
+  <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window"></div>
+</section>
 
 <main id="app">
-  <section class="overview" aria-label="Overview">
-    <div class="tiles" id="tiles"></div>
-    <div class="card timeline-card">
-      <div class="card-head">
-        <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
-        <div class="legend" id="tl-legend"></div>
-        <div class="tl-window" id="tl-window"></div>
-        <div class="tl-clip" id="tl-clip"></div>
-      </div>
-      <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window"></div>
-    </div>
-  </section>
-
   <section class="filters" id="filters" aria-label="Filters">
+   <div class="f-scope" id="f-scope" aria-hidden="true"></div>
    <div class="f-row">
-    <input type="search" id="f-search" placeholder="Search template, logger, exception — sig:abc" aria-label="Search" autocomplete="off" spellcheck="false">
+    <input type="search" id="f-search" placeholder="Search groups" title="Search the template, logger and exception; sig:PREFIX matches a signature" aria-label="Search" autocomplete="off" spellcheck="false">
     <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
+    <div class="f-grp" id="f-facets">
     <div class="facet" id="f-logger-wrap">
       <button type="button" class="btn facet-btn" id="f-logger" aria-haspopup="true" aria-expanded="false" aria-controls="f-logger-pop">Logger</button>
       <div class="pop" id="f-logger-pop" hidden></div>
@@ -60,15 +71,18 @@
       <div class="pop" id="f-exc-pop" hidden></div>
     </div>
     <button type="button" class="btn toggle" id="f-hasexc" aria-pressed="false">Has exception</button>
+    </div>
    </div>
    <div class="f-row">
+    <div class="f-grp" id="f-view">
     <button type="button" class="btn toggle" id="f-coarse" aria-pressed="false" title="Group by coarse signature (exception chain ignored)">Coarse</button>
     <button type="button" class="btn toggle" id="f-merged" aria-pressed="false" title="Apply Drain3 merge proposals" hidden>Merged</button>
     <div class="seg" id="f-compare" role="group" aria-label="Compare class" hidden></div>
-    <label class="sel f-end"><span>Sort</span>
+    <label class="sel"><span>Sort</span>
       <select id="f-sort" aria-label="Sort"></select>
     </label>
-    <button type="button" class="btn link" id="f-reset" title="Reset all filters, sort and view">Reset</button>
+    </div>
+    <button type="button" class="btn link f-end" id="f-reset" title="Reset all filters, sort and view">Reset</button>
    </div>
    <div class="print-only" id="f-print"></div>
   </section>
@@ -86,17 +100,17 @@
       <div class="empty" id="t-empty" hidden></div>
       <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
     </div>
-    <aside class="drawer" id="drawer" hidden aria-label="Group detail">
+    <aside class="drawer" id="drawer" tabindex="-1" hidden aria-label="Group detail">
       <div class="drawer-bar">
-        <button type="button" class="btn" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <button type="button" class="btn small icon" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <button type="button" class="btn small icon" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
         <span class="d-pos muted" id="d-pos" aria-live="polite"></span>
-        <button type="button" class="btn" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
-        <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
-          <button type="button" data-jump="d-s-stats">Stats</button><button type="button" data-jump="d-s-examples">Examples</button><button type="button" data-jump="d-s-hourly">Hourly</button><button type="button" data-jump="d-s-who">Who</button><button type="button" data-jump="d-s-rel">Related</button><button type="button" data-jump="d-s-cli">CLI</button>
-        </nav>
-        <span class="grow"></span>
-        <button type="button" class="btn" id="d-close" title="Close (Esc)">Close</button>
+        <span class="d-which" id="d-which"></span>
+        <button type="button" class="btn small" id="d-close" title="Close (Esc)">Close</button>
       </div>
+      <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
+        <button type="button" data-jump="d-s-stats">Stats</button><button type="button" data-jump="d-s-examples">Examples</button><button type="button" data-jump="d-s-hourly">Hourly</button><button type="button" data-jump="d-s-who">Who</button><button type="button" data-jump="d-s-rel">Related</button><button type="button" data-jump="d-s-cli">IDs &amp; CLI</button>
+      </nav>
       <div class="drawer-body" id="drawer-body"></div>
     </aside>
   </section>
@@ -105,6 +119,11 @@
 <footer class="foot" id="foot"></footer>
 <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
 <div class="toast" id="toast" hidden></div>
+<dialog id="ids" class="ids-dlg" aria-labelledby="ids-h">
+  <h2 id="ids-h">Identifiers &amp; CLI</h2>
+  <div id="ids-body"></div>
+  <form method="dialog"><button class="btn small" autofocus>Close</button></form>
+</dialog>
 <dialog id="help">
   <h2>Keyboard</h2>
   <dl class="keys">
@@ -112,6 +131,7 @@
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group</dd>
     <dt><kbd>Enter</kbd></dt><dd>Open the selected group</dd>
     <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
+    <dt><kbd>w</kbd></dt><dd>Full screen width / the centred page width (every page)</dd>
     <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
     <dt><kbd>m</kbd></dt><dd>Mute / unmute the selected group in the chart</dd>
     <dt><kbd>z</kbd></dt><dd>Times in UTC / in your time zone</dd>
@@ -121,7 +141,7 @@
   </dl>
   <p class="muted">Timeline: drag to filter groups to a time window, click to clear.
   The view (filters, sort, page, selection) is kept in the URL — bookmark or paste it.</p>
-  <form method="dialog"><button class="btn">Close</button></form>
+  <form method="dialog"><button class="btn small">Close</button></form>
 </dialog>
 <pre id="fatal" hidden></pre>
 <script type="application/json" id="report-data">__REPORT_DATA__</script>

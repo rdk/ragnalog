@@ -13,6 +13,10 @@ payload from ``<html data-report-url>``) and ``inline_assets=False`` (``<link>``
 The cluster page (:func:`render_cluster_html`, ``cluster-report.v1``) works the same way
 with ``cluster.html``: ``report.css`` then ``cluster.css`` (``/*__CLUSTER_CSS__*/``) and
 ``cluster.js`` (``/*__CLUSTER_JS__*/``), the payload in ``#cluster-data``.
+
+Both pages run ``entry-card.js`` (the shared entry cards) and ``tips.js`` (the shared rich
+tooltips) before their own script: inlined ahead of it in one ``<script>``, or linked as their own
+``<script src>`` just before it. The web app's entries page runs the same two files.
 """
 
 from __future__ import annotations
@@ -34,7 +38,20 @@ CLUSTER_SCHEMA = "cluster-report.v1"
 """Schema of the cluster page's payload (``docs/cluster.md`` §11.3)."""
 CLUSTER_CSS = "/*__CLUSTER_CSS__*/"
 CLUSTER_JS = "/*__CLUSTER_JS__*/"
-ASSETS = ("template.html", "report.css", "report.js", "cluster.html", "cluster.css", "cluster.js")
+TIPS_JS = "tips.js"
+ENTRY_JS = "entry-card.js"
+SHARED_JS = (ENTRY_JS, TIPS_JS)
+"""Scripts both pages run before their own: the entry card and the tooltips."""
+ASSETS = (
+    "template.html",
+    "report.css",
+    TIPS_JS,
+    ENTRY_JS,
+    "report.js",
+    "cluster.html",
+    "cluster.css",
+    "cluster.js",
+)
 
 _CSS_BLOCK = re.compile(r"<style>\s*/\*__REPORT_CSS__\*/\s*</style>")
 _JS_BLOCK = re.compile(r"<script>\s*/\*__REPORT_JS__\*/\s*</script>")
@@ -77,11 +94,14 @@ def _cluster_title(payload: dict[str, Any] | None, name: str | None = None) -> s
     return f"{name} · atlas-log cluster"
 
 
-def _inline(page: str, marker: str, name: str) -> str:
-    text = asset_text(name)
-    if "</" + "script" in text.lower() or "</style" in text.lower():
-        raise ValueError(f"{name} must not contain a closing script/style tag")
-    return _replace_once(page, marker, text)
+def _inline(page: str, marker: str, *names: str) -> str:
+    texts = []
+    for name in names:
+        text = asset_text(name)
+        if "</" + "script" in text.lower() or "</style" in text.lower():
+            raise ValueError(f"{name} must not contain a closing script/style tag")
+        texts.append(text)
+    return _replace_once(page, marker, "\n".join(texts))
 
 
 def _replace_once(text: str, marker: str, value: str) -> str:
@@ -96,6 +116,11 @@ def _sub_once(text: str, pattern: re.Pattern[str], value: str) -> str:
     if n != 1:
         raise ValueError(f"report template has no {pattern.pattern} block")
     return out
+
+
+def _script_tags(base: str, page_js: str) -> str:
+    """``<script src>`` of the shared scripts and ``page_js`` under the escaped ``base``."""
+    return "\n".join(f'<script src="{base}{name}"></script>' for name in (*SHARED_JS, page_js))
 
 
 def render_html(
@@ -130,7 +155,8 @@ def render_html(
         page = _replace_once(page, "<html", "<html" + attr)
     page = _replace_once(page, TITLE, html.escape(_title(payload, name)))
     if inline_assets:
-        css, js = asset_text("report.css"), asset_text("report.js")
+        css = asset_text("report.css")
+        js = "\n".join(asset_text(n) for n in (*SHARED_JS, "report.js"))
         for name, text in (("report.css", css), ("report.js", js)):
             if "</" + "script" in text.lower() or "</style" in text.lower():
                 raise ValueError(f"{name} must not contain a closing script/style tag")
@@ -139,7 +165,11 @@ def render_html(
     else:
         base = html.escape(asset_base, quote=True)
         page = _sub_once(page, _CSS_BLOCK, f'<link rel="stylesheet" href="{base}report.css">')
-        page = _sub_once(page, _JS_BLOCK, f'<script src="{base}report.js"></script>')
+        page = _sub_once(
+            page,
+            _JS_BLOCK,
+            _script_tags(base, "report.js"),
+        )
     # Data last, so text inside the payload is never taken for a placeholder.
     return _replace_once(page, DATA, "" if payload is None else embed_json(payload))
 
@@ -176,13 +206,17 @@ def render_cluster_html(
     if asset_base is None:
         page = _inline(page, CSS, "report.css")
         page = _inline(page, CLUSTER_CSS, "cluster.css")
-        page = _inline(page, CLUSTER_JS, "cluster.js")
+        page = _inline(page, CLUSTER_JS, *SHARED_JS, "cluster.js")
     else:
         base = html.escape(asset_base, quote=True)
         page = _sub_once(page, _CSS_BLOCK, f'<link rel="stylesheet" href="{base}report.css">')
         page = _sub_once(
             page, _CLUSTER_CSS_BLOCK, f'<link rel="stylesheet" href="{base}cluster.css">'
         )
-        page = _sub_once(page, _CLUSTER_JS_BLOCK, f'<script src="{base}cluster.js"></script>')
+        page = _sub_once(
+            page,
+            _CLUSTER_JS_BLOCK,
+            _script_tags(base, "cluster.js"),
+        )
     # Data last, so text inside the payload is never taken for a placeholder.
     return _replace_once(page, DATA, "" if payload is None else embed_json(payload))

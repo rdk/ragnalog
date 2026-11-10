@@ -22,6 +22,9 @@
   const ESC = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" };
   const esc = (s) => (s == null ? "" : String(s).replace(/[&<>"']/g, (c) => ESC[c]));
   const cmpStr = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  // rich tooltips (tips.js, loaded first); without it the details are simply not shown
+  const TIPS = window.AtlasTips || null;
+  const tipCard = (o) => (TIPS ? TIPS.card(o) : "");
 
   const UNITS = [[1e3, "K"], [1e6, "M"], [1e9, "B"]];
   function compact(n) {
@@ -72,12 +75,13 @@
     if (r >= 1) return r.toFixed(1);
     return r.toPrecision(2);
   }
+  const { loggerHtml, excHtml, tsHtml, kvHtml, nilHtml } = AtlasEntryCard;
   const PH = /&lt;([A-Z][A-Z0-9_]*|\*)&gt;/g;
   const REPEATED = /^\s*([^\w\s]){2,}\s*$|^\s*[^\w\s]{6,}\s*$/;
   const tplHtml = (t) =>
     t && REPEATED.test(t)
       ? `<span class="rep" title="${esc(t)}">(repeated characters)</span>`
-      : esc(t).replace(PH, (m, n) => `<span class="ph">${n.toLowerCase()}</span>`);
+      : logInline(t).replace(PH, (m, n) => `<span class="ph">${n.toLowerCase()}</span>`);
   function shortLogger(l) {
     if (!l) return "";
     const parts = l.split(".");
@@ -761,14 +765,18 @@
         const [ha, he] = binHours(b, geo.k, geo.off);
         const top = topIn(ha, he - 1, 3);
         if (top.length) {
-          rows.push(`<div class="tt-top">` + top.map(([r, c]) =>
+          rows.push(`<div class="tt-top"><div class="tt-k">Largest groups</div>` + top.map(([r, c]) =>
             `<div class="tt-g"><b>${fmt(c)}</b><i class="sw-${r.bucket}"></i><span>${esc(r.tpl || r.sig)}</span></div>`).join("") + `</div>`);
         }
       }
       if (geo.bornB && geo.bornB[b]) {
-        rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} (first seen; click the dot to list them)</span></div>`);
+        rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} first seen</span></div>` +
+          `<div class="tt-note">Click the dot under the axis to list them</div>`);
+      } else if (geo.top) {
+        rows.push(`<div class="tt-note">${S.t ? "Drag for another window; click to clear it" : "Drag to select a time window"}</div>`);
       }
       tip.innerHTML = `<div class="tt-h">${esc(binRange(b, geo.k, geo.off))}</div>${rows.join("")}`;
+      if (tip.hidden && window.AtlasTips) window.AtlasTips.hide();  // one tooltip at a time
       tip.hidden = false;
       placeTip(e);
     });
@@ -832,7 +840,7 @@
     const shown = BUCKETS.filter((b) => (((D.timeline || {}).levels || {})[b] || []).some((v) => v > 0));
     let html = shown.map((b) => {
       const on = !S.hl.has(b);
-      return `<button type="button" class="lg-item" data-hl="${b}" aria-pressed="${on}" title="${LV_TITLE[b] || b}: click to ${on ? "hide it in" : "show it in"} the chart; Shift-click to show only it"><i class="sw sw-${b}"></i>${b} ${fmt(TL_TOTALS[b] || 0)}</button>`;
+      return `<button type="button" class="lg-item" data-hl="${b}" aria-pressed="${on}" data-tip-k="rpt-lg" aria-label="${LV_TITLE[b] || b}: ${on ? "hide it in" : "show it in"} the chart"><i class="sw sw-${b}"></i><span class="lg-n">${b}</span><span class="lg-c">${fmt(TL_TOTALS[b] || 0)}</span></button>`;
     }).join("");
     if (S.mute.size) {
       let n = 0;
@@ -875,7 +883,7 @@
       for (const row of ov.rows) for (const [i, n] of row.hourly) if (i >= 0 && i < NH) data[i] += n;
       overlay = { data, name: ov.name };
     }
-    TL = drawColumns(el, series, { height: 200, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
+    TL = drawColumns(el, series, { height: 150, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
     $("tl-clip").innerHTML = clipBtn(TL);
@@ -938,27 +946,23 @@
     }).join("");
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
     if (!S.t) {
-      el.innerHTML = `<span class="muted">Drag across the chart to narrow the table to a time window</span>${seg}`;
+      el.innerHTML = `<span class="muted win-hint">Drag across the chart to select a time window</span>${seg}`;
       return;
     }
     const [a, b] = S.t;
     const end = new Date(parseTs(HOURS[b]) + 3.6e6).toISOString();
-    const lv = levelsIn(a, b);
-    let total = 0;
-    for (const k of BUCKETS) total += lv[k];
-    const what = [`${fmt(total)} entries`];
-    if (lv.ERROR) what.push(`<span class="w-err">${fmt(lv.ERROR)} errors</span>`);
-    if (lv.WARN) what.push(`${fmt(lv.WARN)} warnings`);
+    // the window's entries, errors and warnings are on the tiles and in the range's tooltip
+    const what = [];
     if (BIRTHS) {
       let born = 0;
       for (let h = a; h <= b; h++) born += BIRTHS.n[h];
       if (born) {
         what.push(S.sort === "first_seen"
-          ? `${fmt(born)} first seen here (listed first)`
+          ? `<span class="muted">${fmt(born)} first seen here (listed first)</span>`
           : `<button type="button" class="btn small link" data-sort-first title="Sort by first seen: the groups that started in the window come first">${fmt(born)} first seen here</button>`);
       }
     }
-    el.innerHTML = `<span class="win-what">Window <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> ${TZ} (${hoursText(b - a + 1)}) · ${what.join(" · ")}</span>` +
+    el.innerHTML = `<span class="win-what" data-tip-k="rpt-win"><span class="win-k">Window</span> <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> <span class="muted">${TZ} · ${hoursText(b - a + 1)}</span></span>${what.join("")}` +
       `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
       `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
       seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
@@ -1040,9 +1044,10 @@
     $("t-head").innerHTML = "<tr>" + COLS.map(([c, label0, key, tip0]) => {
       const wc = S.t ? WIN_COLS[c] : null;
       const label = (wc && wc[0]) || label0;
-      const tip = wc ? (c === "c-delta" ? `vs ${OTHERNAME}: ${wc[1]}` : wc[1]) : tip0;
+      // a tooltip only where it adds something: how a column counts, or a label cut short
+      const tip = wc ? (c === "c-delta" ? `vs ${OTHERNAME}: ${wc[1]}` : wc[1]) : tip0 || (c === "c-delta" ? label : "");
       const sorted = key && S.sort === key ? ` aria-sort="${key === "template" || key === "logger" || key === "first_seen" ? "ascending" : "descending"}"` : "";
-      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted} title="${esc(tip || label)}">${esc(label)}</th>`;
+      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted}${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)}</th>`;
     }).join("") + "</tr>";
   }
   /** ``html`` (escaped text and tags) with every match of the search text marked. */
@@ -1071,20 +1076,21 @@
     const cls = (r.id === S.sig ? "is-sel " : "") + (r.id === CUR ? "is-cur " : "") + (r.gone ? "is-gone " : "") + (isMuted(r) ? "is-muted" : "");
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
     const of = S.sort === "spike" && spikeOf(r) > 0
-      ? `<small class="of spk" title="${S.t ? "Rate in the window over the rate outside it" : "Busiest hour over the average hour of the set"}">×${esc(compact(spikeOf(r)))}</small>`
+      ? `<small class="of spk">×${esc(compact(spikeOf(r)))}</small>`
       : S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
     const last = S.t ? winOf(r).last : r.last ? { iso: r.last } : null;
-    const cTitle = S.t ? ` title="${fmt(n)} in the window of ${fmt(r.count)} in total"` : "";
+    // every cell's detail (full names, exact times, breakdowns) is a tooltip built on hover
+    // from the row: see registerTips
     return `<tr data-id="${esc(r.id)}" class="${cls}" tabindex="-1">` +
-      `<td class="c-count"${cTitle}><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
+      `<td class="c-count" data-tip-k="rpt-count"><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
-      `<td class="c-logger" title="${esc(r.logger)}">${esc(shortLogger(r.logger))}</td>` +
-      `<td class="c-tpl" title="${esc(r.tpl)}"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${markHtml(tplHtml(r.tpl), Q.text)}</span><span class="sub">${markHtml(esc(shortLogger(r.logger)), Q.text)}${r.exc ? " · " + markHtml(esc(shortExc(r.exc)), Q.text) : ""}</span></td>` +
-      `<td class="c-exc" title="${esc(r.exc)}">${r.exc ? `<span class="xc"><span class="xp">${esc(r.exc.slice(0, r.exc.lastIndexOf(".") + 1))}</span><span class="xs">${esc(shortExc(r.exc))}</span></span>` : ""}</td>` +
-      `<td class="c-spark">${spark(r)}</td>` +
-      `<td class="c-last" title="${esc(seenTitle(last))}">${esc(seenText(last))}</td>` +
-      `<td class="c-ut">${r.gone ? "" : fmt(r.users) + " / " + fmt(r.threads)}</td>` +
-      (CMP ? `<td class="c-delta"><span class="ab" title="${esc(abText(r.cmp))}">${abShort(r.cmp)}</span>${deltaChip(r.cmp)}</td>` : "") +
+      `<td class="c-logger" data-tip-k="rpt-logger">${loggerHtml(r.logger, true)}</td>` +
+      `<td class="c-tpl" data-tip-k="rpt-group"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${markHtml(tplHtml(r.tpl), Q.text)}</span><span class="sub">${markHtml(loggerHtml(r.logger, true), Q.text)}${r.exc ? " · " + markHtml(excHtml(r.exc, true), Q.text) : ""}</span></td>` +
+      `<td class="c-exc"${r.exc ? ` data-tip-k="rpt-exc"` : ""}>${r.exc ? excHtml(r.exc) : nilHtml()}</td>` +
+      `<td class="c-spark"${r.hourly.length ? ` data-tip-k="rpt-spark"` : ""}>${spark(r)}</td>` +
+      `<td class="c-last"${last ? ` data-tip-k="rpt-seen"` : ""}>${last ? tsHtml(seenText(last)) : nilHtml()}</td>` +
+      `<td class="c-ut"${r.gone ? "" : ` data-tip-k="rpt-ut"`}>${r.gone ? "" : `${fmt(r.users)}<span class="sl">/</span>${fmt(r.threads)}`}</td>` +
+      (CMP ? `<td class="c-delta" data-tip-k="rpt-delta"><span class="ab">${abShort(r.cmp)}</span>${deltaChip(r.cmp)}</td>` : "") +
       `</tr>`;
   }
   function pagerHtml(pages) {
@@ -1103,6 +1109,8 @@
     const empty = $("t-empty");
     empty.hidden = page.length > 0;
     $("t-head").hidden = !page.length;
+    $("groups").hidden = !page.length;  // no empty frame above the empty-state panel
+    $("groups").classList.toggle("no-track", v.max < 1000);  // counts only: a narrower column
     if (!page.length) {
       if (!v.rows.length) empty.textContent = "This report has no groups.";
       else if (S.cmp === "vanished" && S.t) {
@@ -1111,9 +1119,9 @@
       } else {
         const chips = activeFilters().map(([k, label]) =>
           `<button type="button" class="fchip" data-clear="${k}" title="Remove this filter">${esc(label)} <span aria-hidden="true">×</span></button>`).join("");
-        empty.innerHTML = `<div>No groups match the filters.</div>` +
+        empty.innerHTML = `<div>No group matches all of these filters. Remove one to see more.</div>` +
           (chips ? `<div class="fchips">${chips}</div>` : "") +
-          `<button type="button" class="btn" data-clear="all">Reset filters</button>`;
+          `<button type="button" class="btn" data-clear="all">Remove all filters</button>`;
       }
     }
     let entries = 0;
@@ -1125,6 +1133,29 @@
     const pg = pagerHtml(pages);
     $("pager-top").innerHTML = pg;
     $("pager-bottom").innerHTML = pg;
+    renderScope();
+  }
+  /** The sticky bar's own line: the set, how many groups are listed, the window and the active filters. */
+  function renderScope() {
+    const el = $("f-scope");
+    if (!el) return;
+    const name = LS.name || LS.id || "log set";
+    const n = `${fmt(LIST.length)} ${S.view === "sig" ? "groups" : "rows"}`;
+    const rest = activeFilters().map((x) => x[1]);
+    el.title = [name, n, ...rest].join(" · ") + " (click: back to the top)";
+    const r = $("f-reset");
+    if (r) r.disabled = !(rest.length || S.sort !== "count" || S.view !== "sig" || S.sig);
+    el.innerHTML = `<b>${esc(name)}</b><span class="sc-n">${esc(n)}</span>` +
+      (rest.length ? `<span class="sc-f">${esc(rest.join(" · "))}</span>` : "");
+  }
+  /** Marks the filter bar once it sticks, which shows its scope line. */
+  function updateStuck() {
+    const f = $("filters");
+    const top = parseFloat(getComputedStyle(f).top) || 0;
+    const on = getComputedStyle(f).position === "sticky" && f.getBoundingClientRect().top <= top + 0.5 && window.scrollY > 0;
+    if (f.classList.contains("is-stuck") === on) return;
+    f.classList.toggle("is-stuck", on);
+    updateSticky();
   }
 
   // ---------------------------------------------------------------- filter bar
@@ -1143,6 +1174,7 @@
   function resetAll() {
     clearTimeout(qTimer);
     $("f-search").value = "";
+    $("f-search").focus({ preventScroll: true });
     commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, sig: "" });
   }
   function clearFilter(k) {
@@ -1161,7 +1193,7 @@
       }
     }
     $("f-levels").innerHTML = BUCKETS.filter((b) => PRESENT.has(b)).map((b) =>
-      `<button type="button" class="chip" data-lv="${b}" aria-pressed="${S.lv.has(b)}" title="${b === "ERROR" ? "ERROR and FATAL" : b === "DEBUG" ? "DEBUG and TRACE" : b === "OTHER" ? "Unknown level / unparsed" : b}">` +
+      `<button type="button" class="chip" data-lv="${b}" aria-pressed="${S.lv.has(b)}" data-tip-k="rpt-chip">` +
       `<i class="sw sw-${b}"></i>${b}<span class="n">${fmt(lvCounts[b] || 0)}</span></button>`).join("");
     if (CMP) {
       const seg = $("f-compare");
@@ -1214,7 +1246,7 @@
     return root;
   }
   function treeItem(full, label, n, depth, twisty) {
-    return `<div class="tn" style="--d:${depth}">${twisty}<button type="button" class="tl${S.lg === full ? " on" : ""}" data-lg="${esc(full)}" title="${esc(full)}"><span class="t">${esc(label)}</span><span class="n">${fmt(n)}</span></button></div>`;
+    return `<div class="tn" style="--d:${depth}">${twisty}<button type="button" class="tl${S.lg === full ? " on" : ""}" data-lg="${esc(full)}" data-tip-k="rpt-lgnode"><span class="t">${esc(label)}</span><span class="n">${fmt(n)}</span></button></div>`;
   }
   function treeHtml(node, depth, autoOpen) {
     let kids = [...node.kids.values()].sort((a, b) => b.n - a.n || cmpStr(a.seg, b.seg));
@@ -1280,7 +1312,7 @@
     pop.querySelector(".pop-list").innerHTML =
       (S.ex ? `<button type="button" class="more" data-ex="">Clear exception filter</button>` : "") +
       all.slice(0, limit).map(([t, n]) =>
-        `<div class="tn"><button type="button" class="tl${S.ex === t ? " on" : ""}" data-ex="${esc(t)}" title="${esc(t)}"><span class="t">${esc(shortExc(t))} <span class="muted">${esc(t.slice(0, Math.max(0, t.lastIndexOf("."))))}</span></span><span class="n">${fmt(n)}</span></button></div>`).join("") +
+        `<div class="tn"><button type="button" class="tl${S.ex === t ? " on" : ""}" data-ex="${esc(t)}" data-tip-k="rpt-excitem"><span class="t">${esc(shortExc(t))} <span class="muted">${esc(t.slice(0, Math.max(0, t.lastIndexOf("."))))}</span></span><span class="n">${fmt(n)}</span></button></div>`).join("") +
       (all.length > limit ? `<button type="button" class="more" data-more="${esc("ex:" + q)}">${fmt(all.length - limit)} more…</button>` : "") +
       (all.length ? "" : `<div class="muted">No exception types.</div>`);
   }
@@ -1315,8 +1347,28 @@
   // ---------------------------------------------------------------- drawer
   let drawnKey = null;
   let DCHART = null;
-  const sec = (title, body) => `<section class="d-sec"><h3>${esc(title)}</h3>${body}</section>`;
-  const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${esc(title)}</h3>${body}</section>`;
+  /** A section head: the label, its count (a trailing "(…)") muted, then the action at the right. */
+  const secHead = (title) => {
+    const m = /^(.*?) \((.+)\)$/.exec(title);
+    return m ? `${esc(m[1])} <span class="sec-n">${esc(m[2])}</span>` : esc(title);
+  };
+  const sec = (title, body) => `<section class="d-sec"><h3>${secHead(title)}</h3>${body}</section>`;
+  /** Web app: the link in the head of the examples section (set by drawerHtml for its group). */
+  let EX_ALL = "";
+  const secId = (id, title, body) => `<section class="d-sec" id="${id}"><h3>${secHead(title)}${id === "d-s-examples" ? EX_ALL : ""}</h3>${body}</section>`;
+  /** Web app: "All N entries ↗", the group's entries in a table in a new tab; inside a window, its entries only. */
+  function allEntriesLink(r) {
+    if (!ENTRIES_URL || !LS.id || r.gone || r.kind === "merged" || !(r.kind === "coarse" ? r.coarse : r.sig)) return "";
+    const p = new URLSearchParams();
+    p.set(r.kind === "coarse" ? "coarse_signature" : "signature", r.kind === "coarse" ? r.coarse : r.sig);
+    if (S.t) {
+      p.set("since", HOURS[S.t[0]]);
+      p.set("until", new Date(parseTs(HOURS[S.t[1]]) + 3.6e6).toISOString());
+    }
+    const n = cnt(r);
+    const label = `All ${fmt(n)} ${n === 1 ? "entry" : "entries"}${S.t ? " in window" : ""} ↗`;
+    return `<a class="d-all" href="/sets/${encodeURIComponent(LS.id)}/entries?${esc(p.toString())}" target="_blank" rel="noopener" title="Every entry of this group${S.t ? " inside the selected window" : ""}, as a table in a new tab">${label}</a>`;
+  }
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   function mergeTops(rows, key) {
     const m = new Map();
@@ -1385,127 +1437,19 @@
     return `<ul class="members">` + rows.map((m) =>
       `<li><button type="button" data-open="${esc(m.id)}">${badge(m.lvl, m.level)}<span class="n">${fmt(m.count)}</span><span class="t" title="${esc(m.tpl)}">${tplHtml(m.tpl)}</span><span class="s">${esc(m.sig)}</span></button></li>`).join("") + `</ul>`;
   }
-  // @entry-card: msgHtml … showAllLines (tests/report/test_entry_card.py runs this part with node)
-  function msgHtml(message, vars) {
-    message = message || "";
-    let out = "", pos = 0;
-    for (const v of vars || []) {
-      if (!v) continue;
-      const i = message.indexOf(v, pos);
-      if (i < 0) continue;
-      out += esc(message.slice(pos, i)) + `<mark>${esc(v)}</mark>`;
-      pos = i + v.length;
-    }
-    return out + esc(message.slice(pos));
-  }
-  // Java stack traces: tokenize the plain text, escape each piece.
-  const T_FRAME = /^(\s*)at\s+(.+?)\((.*)\)\s*$/;
-  const T_MORE = /^\s*\.\.\.\s*\d+\s+(more|common frames omitted)\b/;
-  const T_HEAD = /^(\s*)((?:Caused by|Suppressed):\s*)?([A-Za-z_$][\w$]*(?:\.[\w$]+)*\.[A-Z][\w$]*|[A-Z][\w$]*(?:Exception|Error|Throwable))(?::\s?(.*))?$/;
-  const LIB = /^(?:[\w.]*\/\/?)?(?:java\.|javax\.|jakarta\.|jdk\.|sun\.|com\.sun\.|org\.springframework\.|org\.apache\.)/;
-  const FOLD_KEEP = Infinity; // every line of an entry is shown; library frames are only dimmed
-  function frameHtml(ln) {
-    const m = T_FRAME.exec(ln);
-    const q = m[2];
-    const parts = q.split(".");
-    const tail = parts.length > 2 ? parts.slice(-2).join(".") : q;
-    const pkg = parts.length > 2 ? parts.slice(0, -2).join(".") + "." : "";
-    const app = !LIB.test(q);
-    const html = `<div class="fr${app ? " fr-app" : ""}">${esc(m[1])}<span class="t-at">at </span>` +
-      `<span class="t-pkg">${esc(pkg)}</span><span class="t-cm">${esc(tail)}</span>` +
-      `<span class="t-loc">(<span class="t-fl">${esc(m[3])}</span>)</span></div>`;
-    return { html, app };
-  }
-  function traceHtml(lines) {
-    let html = "", frames = [];
-    const flush = () => {
-      if (!frames.length) return;
-      const hidden = frames.filter((f, i) => i >= FOLD_KEEP && !f.app).length;
-      const body = frames.map((f, i) => (i >= FOLD_KEEP && !f.app ? f.html.replace('class="fr', 'class="fr fr-x') : f.html)).join("");
-      html += hidden
-        ? `<div class="fold">${body}<button type="button" class="unfold" data-unfold="${hidden}">show ${fmt(hidden)} more frame${hidden === 1 ? "" : "s"}</button></div>`
-        : body;
-      frames = [];
-    };
-    for (const ln of lines) {
-      if (T_FRAME.test(ln)) { frames.push(frameHtml(ln)); continue; }
-      if (T_MORE.test(ln)) {
-        frames.push({ html: `<div class="fr t-more">${esc(ln)}</div>`, app: true });
-        continue;
-      }
-      flush();
-      const h = T_HEAD.exec(ln);
-      if (h) {
-        html += `<div class="t-head">${esc(h[1])}${h[2] ? `<span class="t-kw">${esc(h[2])}</span>` : ""}` +
-          `<span class="t-exc">${esc(h[3])}</span>${h[4] != null ? `<span class="t-msg">: ${esc(h[4])}</span>` : ""}</div>`;
-      } else {
-        html += `<div class="ln">${esc(ln) || "&nbsp;"}</div>`;
-      }
-    }
-    flush();
-    return html;
-  }
-  const BODY_LINES = 500; // a longer body shows its first BODY_LINES lines and a "show all" button
-  const FULL_BODIES = new Set(); // ids of the entries whose every line is shown
-  const RAW_VIEW = new Set(); // ids of the entries shown as their exact text
-  /** The exact text of an entry as in the log file: banner lines before it, then its raw. */
-  const fullText = (e) => {
-    const pre = e.preamble || (e.context && typeof e.context === "object" ? e.context.preamble : "") || "";
-    return (pre ? pre + "\n" : "") + (e.raw || "");
-  };
-  /** Web app: the full raw entry as plain text (opens in a new tab). */
-  const rawUrl = (id) => (ENTRIES_URL && LS.id ? `/api/sets/${encodeURIComponent(LS.id)}/entries/${encodeURIComponent(id)}/raw` : "");
-  /** Lines after the header line of a raw entry, trailing white space dropped. */
-  function bodyLines(raw) {
-    const nl = raw.indexOf("\n");
-    return nl < 0 ? [] : raw.slice(nl + 1).trimEnd().split("\n");
-  }
-  /** Banner lines attached before the entry (report.v1 `preamble`, entries.v1 `context.preamble`). */
-  function preambleHtml(e) {
-    const text = e.preamble || (e.context && typeof e.context === "object" ? e.context.preamble : "") || "";
-    if (!text) return "";
-    const lines = String(text).split("\n");
-    return `<div class="e-pre"><span class="k">banner line${lines.length === 1 ? "" : "s"} before this entry</span>` +
-      lines.map((ln) => `<div class="ln">${esc(ln)}</div>`).join("") + `</div>`;
-  }
-  function entryHtml(id, e) {
-    const raw = e.raw || "";
-    const all = bodyLines(raw);
-    const cut = all.length > BODY_LINES && !FULL_BODIES.has(id);
-    const body = cut ? all.slice(0, BODY_LINES) : all;
-    const meta = [["", tsFull(e.ts) + " " + TZ], ["thread", e.thread], ["user", e.user], ["request", e.request_id], ["ip", e.ip], ["url", e.url]]
-      .filter((x) => x[1]);
-    return `<article class="entry lvb-${bucketOf(levelNum(e.level_name))}"><div class="e-meta">${badge(e.level_name, levelNum(e.level_name))}` +
-      meta.map(([k, v]) => `<span>${k ? `<span class="k">${k}</span> ` : ""}<span class="v">${esc(v)}</span></span>`).join("") +
-      `</div>` + (RAW_VIEW.has(id) ? `<pre class="e-raw">${esc(fullText(e))}</pre>` : `${preambleHtml(e)}<div class="e-msg">${msgHtml(e.message, e.variables)}</div>` +
-      (body.length && body.some((l) => l.trim()) ? `<pre class="e-body trace">${traceHtml(body)}</pre>` : "") +
-      (cut ? `<div class="e-more"><button type="button" class="btn small" data-all-lines="${esc(id)}">show all ${fmt(all.length)} lines</button><span class="muted">first ${fmt(BODY_LINES)} shown</span></div>` : "")) +
-      `<div class="e-foot"><span class="mono" title="${esc(srcPath(e.source ?? e.source_path))}">${esc(basename(srcPath(e.source ?? e.source_path)))}:${esc(e.source_line)}</span>` +
-      (e.raw_truncated ? `<span class="muted">${ENTRIES_URL ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
-      `<span class="grow"></span>` +
-      `<button type="button" class="btn small" data-raw-view="${esc(id)}" aria-pressed="${RAW_VIEW.has(id)}" title="Show the exact text of the entry as in the log file, every line">${RAW_VIEW.has(id) ? "Formatted" : "Raw"}</button>` +
-      (rawUrl(id) ? `<a class="btn small" href="${esc(rawUrl(id))}" target="_blank" rel="noopener" title="The full entry as plain text in a new tab">Open raw ↗</a>` : "") +
-      `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
-  }
-  /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
-  /** "Raw" / "Formatted": redraw one card in the other view. */
-  function toggleRaw(btn) {
-    const id = btn.dataset.rawView;
-    if (RAW_VIEW.has(id)) RAW_VIEW.delete(id); else RAW_VIEW.add(id);
-    const card = btn.closest(".entry");
-    if (card && ENTRIES[id]) card.outerHTML = entryHtml(id, ENTRIES[id]);
-  }
-  function showAllLines(btn) {
-    const id = btn.dataset.allLines;
-    const e = ENTRIES[id];
-    FULL_BODIES.add(id);
-    const card = btn.closest(".entry");
-    const pre = card && card.querySelector(".e-body");
-    if (pre && e) pre.innerHTML = traceHtml(bodyLines(e.raw || ""));
-    const more = btn.closest(".e-more");
-    if (more) more.remove();
-  }
-  // @entry-card-end
+  // entry cards: the code is shared with the cluster page and the entries page (entry-card.js)
+  const { logInline, msgHtml, traceHtml, entryHtml, toggleRaw, showAllLines, fullText } = AtlasEntryCard.create({
+    badge: (name, level) => badge(name, level),
+    bucketOf: (level) => bucketOf(level),
+    levelNum: (name) => levelNum(name),
+    tsFull: (iso) => tsFull(iso),
+    tz: () => TZ,
+    entry: (id) => ENTRIES[id],
+    srcPath: (e) => srcPath(e.source ?? e.source_path),
+    /** Web app: the full raw entry as plain text (opens in a new tab). */
+    rawUrl: (id) => (ENTRIES_URL && LS.id ? `/api/sets/${encodeURIComponent(LS.id)}/entries/${encodeURIComponent(id)}/raw` : ""),
+    fullLoads: () => !!ENTRIES_URL,
+  });
   const LEVEL_NUM = { TRACE: 10, DEBUG: 20, INFO: 30, WARN: 40, ERROR: 50, FATAL: 60 };
   const levelNum = (name) => LEVEL_NUM[name] || 0;
 
@@ -1578,6 +1522,8 @@
   }
   const iconCopy = (text, what) =>
     `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
+  /** The drawer's "Identifiers & CLI" part is open (it also shows the member signatures). */
+  let IDS_OPEN = false;
   function drawerHtml(r, inList) {
     const out = [];
     if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
@@ -1590,33 +1536,44 @@
       `<button type="button" class="btn small" data-ticket title="Copy the group as Jira wiki markup: template, counts, first and last seen, the set and an example">Copy for ticket</button>` +
       `</span></div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
-    if (r.logger) out.push(`<div class="d-sub mono">${esc(r.logger)}</div>`);
-    if (r.exc) out.push(`<div class="d-sub mono">${esc(r.exc)}</div>`);
-    const ids = [];
-    if (r.kind === "sig") ids.push(["sig", r.sig, "signature"]);
-    if (r.kind !== "merged" && !r.gone && r.coarse !== r.sig) ids.push(["coarse", r.coarse, "coarse signature"]);
-    if (ids.length) {
-      out.push(`<div class="d-ids mono">` + ids.map(([k, v, w]) => `<span><span class="k">${k}</span> ${esc(v)}${iconCopy(v, w)}</span>`).join("") + `</div>`);
+    if (r.exc || r.logger) {
+      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger">${loggerHtml(r.logger)}</span>` : ""}${r.exc ? `<span title="Exception">${excHtml(r.exc)}</span>` : ""}</div>`);
     }
     let stats = "";
     if (!r.gone) {
+      // [label, value, tooltip card, class]: exact times and how a number is counted on hover
+      const at = (x, what) => (x ? tipCard({ h: what, rows: [["Time", tsFull(x.iso) + " " + TZ]],
+        note: x.approx ? seenTitle(x) : null }) : "");
+      const whole = (h, extra) => {
+        const n = [S.t ? "Over the whole set, not the window." : "", extra || ""].filter(Boolean).join(" ");
+        return tipCard({ h, note: n || null });
+      };
+      const many = r.members ? "The largest member's count: the members may share them." : "";
+      const T = (x) => ({ html: x ? tsHtml(x) : nilHtml() });
       let st;
       if (S.t) {
         const w = winOf(r);
-        st = [["In window", fmt(w.n), `${fmt(w.n)} of ${fmt(r.count)} entries`],
-          ["First in window", seenText(w.first, true) || "—", seenTitle(w.first)], ["Last in window", seenText(w.last, true) || "—", seenTitle(w.last)]];
-      } else st = [["Entries", fmt(r.count)], ["First seen", ts16(r.first)], ["Last seen", ts16(r.last)]];
-      st.push([r.members ? "Users (≥)" : "Users", fmt(r.users)], [r.members ? "Threads (≥)" : "Threads", fmt(r.threads)], ["Sources", fmt(r.nsrc)]);
-      stats += `<dl class="stats">` + st.map(([k, v, t]) => `<div${t ? ` title="${esc(t)}"` : ""}><dt>${k}</dt><dd>${esc(v)}</dd></div>`).join("") + `</dl>`;
-      if (S.t) stats += `<div class="muted small">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} ${TZ}. Users, threads and sources cover the whole set.</div>`;
+        st = [["In window", fmt(w.n), tipCard({ h: `${fmt(w.n)} of ${fmt(r.count)} entries`, note: "Entries of the group inside the time window" }), "k"],
+          ["First in window", T(seenText(w.first, true)), at(w.first, "First entry in the window")],
+          ["Last in window", T(seenText(w.last, true)), at(w.last, "Last entry in the window")]];
+      } else {
+        st = [["Entries", fmt(r.count), "", "k"], ["First seen", T(ts16(r.first)), at({ iso: r.first }, "First entry")],
+          ["Last seen", T(ts16(r.last)), at({ iso: r.last }, "Last entry")]];
+      }
+      st.push([r.members ? "Users (≥)" : "Users", fmt(r.users), whole("Distinct users", many)],
+        [r.members ? "Threads (≥)" : "Threads", fmt(r.threads), whole("Distinct threads", many)],
+        ["Sources", fmt(r.nsrc), whole("Source files with entries of the group", many)]);
+      stats += `<dl class="stats">` + st.map(([k, v, t, c]) => `<div${c ? ` class="${c}"` : ""}${t ? ` data-tip="${esc(t)}"` : ""}><dt>${k}</dt><dd>${v && v.html != null ? v.html : esc(v)}</dd></div>`).join("") + `</dl>`;
+      if (S.t) stats += `<div class="muted small d-whole">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} ${TZ}</div>`;
     }
     if (r.cmp) {
       const d = r.cmp.d;
       let note = "";
-      if (d && d.first_seen_a) note = `<div class="muted">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} ${TZ}</div>`;
-      stats += `<div class="cmp-row"><span class="muted">vs ${esc(OTHERNAME)}</span><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</div>${note}`;
+      if (d && d.first_seen_a) note = `<div class="muted small">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} ${TZ}</div>`;
+      stats += `<div class="cmp-row" data-tip-k="rpt-delta"><span class="muted">vs ${esc(OTHERNAME)}</span><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</div>${note}`;
     }
     out.push(`<section class="d-sec" id="d-s-stats">${stats}</section>`);
+    EX_ALL = allEntriesLink(r);
     const exIds = exampleIds(r);
     let ex = exIds.filter((id) => ENTRIES[id]);
     let pending = ENTRIES_URL && ex.length < exIds.length;
@@ -1652,7 +1609,7 @@
       out.push(`<section class="d-sec tops" id="d-s-who">` + tops.map(([t, items, fn, total, noun]) => `<div><h3>${t}</h3>${barList(items, fn, total, noun)}</div>`).join("") + `</section>`);
       const moves = movesWith(r, 6);
       if (moves.length) {
-        out.push(secId("d-s-rel", "Moves with", `<p class="muted small">Groups whose entries per hour rise and fall with this one (correlation r over the whole set): often the other half of the story.</p>` + movesList(moves)));
+        out.push(secId("d-s-rel", "Moves with", `<p class="muted small" title="Pearson's r of the entries per hour over the whole set, 0.6 and up">Groups that rise and fall with this one, hour by hour: often the other half of the story.</p>` + movesList(moves)));
       }
     }
     if (r.members) {
@@ -1668,7 +1625,12 @@
     const cmds = [`atlas-log show ${set} ${sig}`, `atlas-log entries ${set} --signature ${sig} --limit 50`];
     if (r.kind === "coarse") cmds.push(`atlas-log query ${set} "select signature, count, template from groups where coarse_signature = '${r.coarse}' order by count desc"`);
     if (r.kind === "merged") cmds.push(`atlas-log query ${set} "select signature, count, template from groups where signature in (${r.sigs.map((s) => `'${s}'`).join(", ")}) order by count desc"`);
-    out.push(secId("d-s-cli", "CLI", `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`));
+    const ids = [];
+    if (r.kind === "sig") ids.push(["sig", r.sig, "signature"]);
+    if (r.kind !== "merged" && !r.gone && r.coarse !== r.sig) ids.push(["coarse", r.coarse, "coarse signature"]);
+    out.push(`<details class="d-sec d-idcli" id="d-s-cli"${IDS_OPEN ? " open" : ""}><summary>Identifiers &amp; CLI</summary>` +
+      (ids.length ? `<div class="d-ids">` + ids.map(([k, v, w]) => `<span>${kvHtml(k, v).replace('class="v"', 'class="v ident"')}${iconCopy(v, w)}</span>`).join("") + `</div>` : "") +
+      `<div class="cli">` + cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div></details>`);
     return out.join("");
   }
   function drawHourly(r) {
@@ -1699,6 +1661,8 @@
     document.body.classList.add("drawer-open");
     const idx = LIST.findIndex((x) => x.id === S.sig);
     $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
+    const cur = lookup(S.sig);
+    $("d-which").innerHTML = cur ? `${badge(cur.lvl, cur.level)}<span class="t" title="${esc(cur.tpl)}">${tplHtml(cur.tpl)}</span>` : "";
     const key = S.view + "|" + S.sig + "|" + (S.t || "") + "|" + (idx >= 0) + "|" + TZ + "|" + [...S.mute].sort().join(",");
     if (key === drawnKey) return;
     const sameGroup = drawnKey && drawnKey.split("|")[1] === S.sig;
@@ -1706,6 +1670,7 @@
     const r = lookup(S.sig);
     const body = $("drawer-body");
     const top = body.scrollTop;
+    body.classList.toggle("show-ids", IDS_OPEN);
     body.innerHTML = r ? drawerHtml(r, idx >= 0) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
     // the section buttons of sections this group has (Related: only with "Moves with")
     for (const b of $("d-nav").querySelectorAll("[data-jump]")) b.hidden = !document.getElementById(b.dataset.jump);
@@ -1725,17 +1690,16 @@
     const lv = st.levels || {};
     const tr = st.time_range || {};
     $("set-name").textContent = LS.name || LS.id || "log set";
-    $("set-id").textContent = LS.name ? LS.id : "";
     const nsrc = (LS.sources || []).length;
     const opts = D.options || {};
-    const total = st.group_count ?? BASE.length;
-    $("set-meta").textContent = [
-      LS.format,
-      tr.first ? `${ts16(tr.first)} → ${tsShort(tr.last)} ${TZ} (${duration(tr.first, tr.last)})` : "no entries",
-      `${fmt(nsrc)} source file${nsrc === 1 ? "" : "s"}`,
-      st.parse_errors ? "" : "0 unparsed",
-      opts.truncated_groups > 0 ? `showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups` : "",
-    ].filter(Boolean).join(" · ");
+    // the set's facts, quiet; the exact span and the source files are in their tooltips
+    $("set-meta").innerHTML = [
+      LS.format ? `<span>${esc(LS.format)}</span>` : "",
+      tr.first ? `<span class="m-range" data-tip-k="rpt-meta" data-k="range">${esc(ts16(tr.first))} → ${esc(tsShort(tr.last))} ${esc(TZ)}</span>` +
+        ` <span class="m-dur">${esc(duration(tr.first, tr.last))}</span>` : "<span>no entries</span>",
+      `<span data-tip-k="rpt-meta" data-k="src">${fmt(nsrc)} source file${nsrc === 1 ? "" : "s"}</span>`,
+      opts.truncated_groups > 0 ? `<span class="m-warn">showing ${fmt(BASE.length)} of ${fmt(BASE.length + opts.truncated_groups)} groups</span>` : "",
+    ].filter(Boolean).join(`<span class="m-sep" aria-hidden="true">·</span>`);
     renderTiles();
     const sort = $("f-sort");
     sort.innerHTML = Object.entries(SORTS).map(([k, [label]]) => `<option value="${k}">${esc(label)}</option>`).join("");
@@ -1756,11 +1720,12 @@
     const groupsNote = BASE.length !== total
       ? `${fmt(BASE.length)} in this report` + (opts.min_level ? ` (${opts.min_level}+)` : "")
       : "";
+    // [key, label, value, note, window note, level swatch]; the breakdowns are in the tooltips
     const tiles = [
-      ["Entries", fmt(st.entry_count ?? LS.entry_count ?? 0), ""],
-      ["Groups", fmt(total), groupsNote],
-      ["Errors", fmt((lv.ERROR || 0) + (lv.FATAL || 0)), lv.FATAL ? `incl. ${fmt(lv.FATAL)} FATAL` : ""],
-      ["Warnings", fmt(lv.WARN || 0), ""],
+      ["entries", "Entries", fmt(st.entry_count ?? LS.entry_count ?? 0), ""],
+      ["groups", "Groups", fmt(total), groupsNote],
+      ["errors", "Errors", fmt((lv.ERROR || 0) + (lv.FATAL || 0)), lv.FATAL ? `incl. ${fmt(lv.FATAL)} FATAL` : "", "", "ERROR"],
+      ["warnings", "Warnings", fmt(lv.WARN || 0), "", "", "WARN"],
     ];
     if (S.t) {
       const wl = levelsIn(S.t[0], S.t[1]);
@@ -1769,20 +1734,337 @@
       let wg = 0;
       for (const r of BASE) if (winOf(r).n > 0) wg++;
       const win = [we, wg, wl.ERROR, wl.WARN];
-      for (let i = 0; i < 4; i++) tiles[i][3] = `${fmt(win[i])} in the window`;
+      for (let i = 0; i < 4; i++) tiles[i][4] = `${fmt(win[i])} in window`;
     }
-    if (st.parse_errors) tiles.push(["Unparsed", fmt(st.parse_errors), ""]);
-    let html = tiles.map(([l, v, n, w]) => `<div class="tile"><div class="label">${l}</div><div class="value">${esc(v)}</div>` +
-      (w ? `<div class="note win-note">${esc(w)}</div>` : "") + (n ? `<div class="note">${esc(n)}</div>` : "") + `</div>`).join("");
+    if (st.parse_errors) tiles.push(["unparsed", "Unparsed", fmt(st.parse_errors), ""]);
+    // one quiet line of figures: value, label, then the notes; the breakdowns are in the tooltips
+    let html = tiles.map(([k, l, v, n, w, sw]) => `<span class="tile" data-tip-k="rpt-tile" data-k="${k}">${sw ? `<i class="sw sw-${sw}"></i>` : ""}<b class="value">${esc(v)}</b> <span class="label">${l.toLowerCase()}</span>` +
+      (w ? `<span class="note win-note">${esc(w)}</span>` : "") + (n ? `<span class="note">${esc(n)}</span>` : "") + `</span>`).join(`<span class="m-sep" aria-hidden="true">·</span>`);
     if (CMPD) {
+      html += `<span class="m-sep" aria-hidden="true">·</span>`;
       const mini = [["new", CMPN.new, (CMPD.new || []).length], ["changed", CMPN.changed, (CMPD.changed || []).length],
         ["vanished", CMPN.vanished, (CMPD.vanished || []).length]];
-      const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k}: shown ${fmt(shown)} of ${fmt(n)}`);
-      html += `<div class="tile wide cmp-tile"><div class="label">Compared with ${esc(OTHERNAME)}${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</div>` +
-        `<div class="minis">` + mini.map(([k, n]) => `<div><div class="value">${fmt(n)}</div><div class="note">${k}</div></div>`).join("") + `</div>` +
-        `<div class="note">${fmt(CMPN.unchanged)} unchanged · groups of every level${S.lv.size < BUCKETS.length ? `; the filter below counts the levels it shows` : ""}${partial.length ? " · table " + esc(partial.join(", ")) : ""}</div></div>`;
+      const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k} ${fmt(shown)} of ${fmt(n)}`);
+      html += `<span class="tile cmp-tile"><span class="label" data-tip-k="rpt-tile" data-k="cmp">vs <span class="nm">${esc(OTHERNAME)}</span>${CMPD.min_level ? ` (${esc(CMPD.min_level)}+)` : ""}${baselineNote()}</span>` +
+        mini.map(([k, n]) => `<span class="mini" data-tip-k="rpt-tile" data-k="cmp-${k}"><b class="value">${fmt(n)}</b> <span class="label">${k}</span></span>`).join("") +
+        `<span class="note" data-tip-k="rpt-tile" data-k="cmp">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · the table lists " + esc(partial.join(", ")) : ""}</span></span>`;
     }
     $("tiles").innerHTML = html;
+  }
+
+  // ---------------------------------------------------------------- tooltips
+  // Builders for data-tip-k: run on hover only, from the row or control under the pointer, so
+  // the table stays light; they hold what the cells leave out (full names, exact times,
+  // breakdowns, how a number is counted).
+  const ALL_ENTRIES = (D.stats || {}).entry_count ?? LS.entry_count ?? 0;
+  const pct = (n, d) => {
+    if (!(d > 0) || !n) return "0%";
+    const p = (100 * n) / d;
+    return p < 0.1 ? "<0.1%" : (p < 10 ? p.toFixed(1) : p.toFixed(0)) + "%";
+  };
+  const exact = (iso) => (iso ? tsFull(iso) + " " + TZ : "—");
+  const hourAt = (i) => ts16(HOURS[i]) + " " + TZ;
+  /** "8,883 at 10-29 11:00 UTC": the busiest hour of a [hour, count] peak. */
+  const peakText = (p) => `${fmt(p[1])} at ${tsShort(HOURS[p[0]])} ${TZ}`;
+  /** [hour index, count] of the busiest hour of an hourly [[i, n], ...] list, or null. */
+  function peakOf(hourly) {
+    let pi = -1, pc = 0;
+    for (const [i, c] of hourly) if (c > pc) { pc = c; pi = i; }
+    return pi < 0 ? null : [pi, pc];
+  }
+  /** The same for a dense per-hour array. */
+  function peakArr(arr) {
+    let pi = -1, pc = 0, hours = 0;
+    for (let i = 0; i < arr.length; i++) {
+      if (arr[i] > 0) hours++;
+      if (arr[i] > pc) { pc = arr[i]; pi = i; }
+    }
+    return { peak: pi < 0 ? null : [pi, pc], hours };
+  }
+  /** Entries of the whole timeline (muted groups included) in hours [a, b]. */
+  function entriesIn(a, b) {
+    const levels = (D.timeline || {}).levels || {};
+    let t = 0;
+    for (const k of BUCKETS) for (let i = a; i <= b && i < (levels[k] || []).length; i++) t += levels[k][i] || 0;
+    return t;
+  }
+  const rowOf = (el) => {
+    const tr = el.closest("[data-id]");
+    return lookup(tr ? tr.dataset.id : S.sig);
+  };
+  const tplTip = (t) => (t && REPEATED.test(t) ? esc(t) : tplHtml(t)) || '<span class="m">(no message)</span>';
+  const monoTip = (s) => ({ html: `<span class="atip-mono">${esc(s)}</span>` });
+  /** A larger per-hour chart of a row for its tooltip, the window shaded. */
+  function bigSpark(r) {
+    const W = 300, H = 54, k = Math.max(1, Math.ceil(NH / 100)), nb = Math.ceil(NH / k), bw = W / nb;
+    const bins = new Float64Array(nb);
+    let max = 0;
+    for (const [i, n] of r.hourly) {
+      const b = Math.floor(i / k);
+      bins[b] += n;
+      if (bins[b] > max) max = bins[b];
+    }
+    let d = "";
+    const w = bw >= 3 ? bw - 1 : bw;
+    for (let b = 0; b < nb; b++) {
+      if (!bins[b]) continue;
+      const h = Math.max(1.5, ((H - 2) * bins[b]) / max);
+      d += `M${r1(b * bw)} ${H}v-${r1(h)}h${r1(w)}v${r1(h)}Z`;
+    }
+    const win = S.t ? `<rect class="spark-win" x="${r1(Math.floor(S.t[0] / k) * bw)}" y="0" width="${r1((Math.floor(S.t[1] / k) + 1 - Math.floor(S.t[0] / k)) * bw)}" height="${H}"/>` : "";
+    return `<svg class="rtip-spark" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">${win}<path d="${d}"/></svg>` +
+      `<div class="rtip-axis"><span>${esc(tsShort(HOURS[0]))}</span><span>${esc(TZ)} · ${k === 1 ? "1 hour" : k + " hours"} a bar</span><span>${esc(tsShort(HOURS[NH - 1]))}</span></div>`;
+  }
+  /** Top values (users, threads) of a row as tooltip rows. */
+  function topRows(r, key, n) {
+    return mergeTops(r.members || [r], key).slice(0, n).map((x) => [x.value == null ? "(none)" : String(x.value), fmt(x.count)]);
+  }
+  /** Groups and entries of the view's rows that pass the filters (but `skip`) and `pick`. */
+  function tally(skip, pick) {
+    let groups = 0, entries = 0;
+    for (const x of view(S.view).rows) {
+      if (!pick(x) || !match(x, skip)) continue;
+      groups++;
+      entries += cnt(x);
+    }
+    return { groups, entries };
+  }
+  const tallyRows = (t) => [["Groups", fmt(t.groups)], [S.t ? "Entries in the window" : "Entries", fmt(t.entries)]];
+  const FILTERED = () => (S.q || S.lg || S.ex || S.hx || S.t || (CMP && S.cmp !== "all") || !sameSet(S.lv, DEFAULT_LV));
+
+  function registerTips() {
+    if (!TIPS) return;
+    const T = TIPS.register;
+    // ---- table cells
+    T("rpt-group", (el) => {
+      const r = rowOf(el);
+      if (!r) return "";
+      const rows = [];
+      if (r.gone) rows.push(["Entries", `none here; ${fmt(r.cmp.a)} in ${OTHERNAME}`]);
+      else {
+        rows.push(["Entries", fmt(r.count) + (S.t ? ` · ${fmt(winOf(r).n)} in the window` : "")]);
+        rows.push(["First seen", exact(r.first)], ["Last seen", exact(r.last)]);
+      }
+      if (r.exc) rows.push(["Exception", monoTip(r.exc)]);
+      if (r.members) rows.push([r.kind === "merged" ? "Merged" : "Coarse group of", `${r.members.length} signatures`]);
+      else rows.push(["Signature", monoTip(r.sig)]);
+      if (r.kind === "sig" && r.coarse !== r.sig && !r.gone) rows.push(["Coarse", monoTip(r.coarse)]);
+      return TIPS.card({
+        h: { html: tplTip(r.tpl) },
+        sub: r.logger ? monoTip(r.logger) : null,
+        rows,
+        note: `Click to open · c copies the signature${r.gone ? "" : " · m mutes it in the chart"}`,
+      });
+    });
+    T("rpt-count", (el) => {
+      const r = rowOf(el);
+      if (!r) return "";
+      const rows = [];
+      const p = peakOf(r.hourly);
+      if (S.t) {
+        const n = winOf(r).n;
+        rows.push(["Whole set", fmt(r.count)], ["Share of the window", pct(n, entriesIn(S.t[0], S.t[1]))]);
+      }
+      if (!r.gone) rows.push(["Share of the set", pct(r.count, ALL_ENTRIES)]);
+      if (p) rows.push(["Busiest hour", peakText(p)]);
+      if (r.hourly.length) rows.push(["Hours with entries", `${fmt(r.hourly.length)} of ${fmt(NH)}`]);
+      const sp = spikeOf(r);
+      if (sp > 0) rows.push(["Spike", "×" + (sp >= 1000 ? compact(sp) : ratioText(sp)), sp >= 10 ? "e" : ""]);
+      if (r.cmp && !r.gone) rows.push([`In ${OTHERNAME}`, fmt(r.cmp.a)]);
+      return TIPS.card({
+        h: r.gone ? `No entries here` : `${fmt(cnt(r))} entries${S.t ? " in the window" : ""}`,
+        rows,
+        note: (sp > 0 ? (S.t ? "Spike: the rate in the window over the rate outside it. " : "Spike: the busiest hour over the average hour. ") : "") +
+          "The bar is on a log scale, smallest to largest group" + (S.t ? " in the window." : "."),
+      });
+    });
+    T("rpt-logger", (el) => {
+      const r = rowOf(el);
+      if (!r || !r.logger) return "";
+      const t = tally("lg", (x) => x.logger === r.logger);
+      return TIPS.card({ h: r.logger.slice(r.logger.lastIndexOf(".") + 1), sub: r.logger.includes(".") ? monoTip(r.logger) : null, rows: tallyRows(t),
+        note: "Groups of this logger the filters list. Filter by a logger or a package: the Logger menu" });
+    });
+    T("rpt-exc", (el) => {
+      const r = rowOf(el);
+      if (!r || !r.exc) return "";
+      const t = tally("ex", (x) => x.exc === r.exc);
+      return TIPS.card({ h: shortExc(r.exc), sub: r.exc.includes(".") ? monoTip(r.exc) : null, rows: tallyRows(t),
+        note: "Groups with this exception the filters list. Filter: the Exception menu" });
+    });
+    T("rpt-spark", (el) => {
+      const r = rowOf(el);
+      if (!r || !r.hourly.length) return "";
+      const p = peakOf(r.hourly);
+      const rows = [];
+      if (p) rows.push(["Busiest hour", peakText(p)]);
+      rows.push(["Hours with entries", `${fmt(r.hourly.length)} of ${fmt(NH)}`]);
+      if (S.t) rows.push(["In the window", fmt(winOf(r).n)]);
+      const kv = '<dl class="atip-kv">' + rows.map(([k, v]) => `<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>";
+      return TIPS.card({ h: "Entries per hour", body: bigSpark(r) + kv, note: S.t ? "Shaded: the time window" : null });
+    });
+    T("rpt-seen", (el) => {
+      const r = rowOf(el);
+      if (!r || r.gone) return "";
+      const rows = [["First seen", exact(r.first)], ["Last seen", exact(r.last)]];
+      if (r.first && r.last) rows.push(["Seen over", duration(r.first, r.last) || "—"]);
+      let note = null;
+      if (S.t) {
+        const w = winOf(r);
+        rows.push(["First in window", seenText(w.first, true) || "—"], ["Last in window", seenText(w.last, true) || "—"]);
+        if ((w.first && w.first.approx) || (w.last && w.last.approx)) note = "\"xx\": " + seenTitle({ approx: true });
+      }
+      return TIPS.card({ h: S.t ? "Last entry in the window" : "Last entry", rows, note });
+    });
+    T("rpt-ut", (el) => {
+      const r = rowOf(el);
+      if (!r || r.gone) return "";
+      const rows = [["Distinct users", fmt(r.users)], ["Distinct threads", fmt(r.threads)], ["Source files", fmt(r.nsrc)]];
+      const users = topRows(r, "top_users", 3), threads = topRows(r, "top_threads", 3);
+      const list = (title, items) => (items.length
+        ? `<div class="rtip-k">${esc(title)}</div><dl class="atip-kv">` + items.map(([k, v]) => `<dt class="rtip-v">${esc(k)}</dt><dd>${esc(v)}</dd>`).join("") + "</dl>"
+        : "");
+      return TIPS.card({
+        h: "Users and threads", rows,
+        body: list("Top users", users) + list("Top threads", threads) || null,
+        note: (S.t ? "Over the whole set, not the window. " : "") + (r.members ? "Coarse and merged rows: the largest member's counts" : "") || null,
+      });
+    });
+    T("rpt-delta", (el) => {
+      const r = rowOf(el);
+      if (!r || !r.cmp) return "";
+      const c = r.cmp;
+      const h = c.cls === "new" ? "New: not in the baseline" : c.cls === "vanished" ? "Vanished: only in the baseline"
+        : c.a === c.b ? "As often as in the baseline" : `${c.b > c.a ? "More" : "Less"} often than in the baseline`;
+      const rows = [["Baseline", fmt(c.a)], ["This set", fmt(c.b)]];
+      if (c.a && c.b && c.a !== c.b) rows.push(["Change", `${c.b > c.a ? "+" : "−"}${fmt(Math.abs(c.b - c.a))} (×${ratioText(c.b / c.a)})`, c.b > c.a ? "e" : ""]);
+      const d = c.d;
+      if (d && d.first_seen_a) rows.push(["Seen in the baseline", `${ts16(d.first_seen_a)} → ${tsShort(d.last_seen_a)} ${TZ}`]);
+      const tr = (D.stats || {}).time_range || {};
+      if (OTHER_SPAN && tr.first) rows.push(["Spans", `baseline ${OTHER_SPAN}, this set ${duration(tr.first, tr.last)}`]);
+      return TIPS.card({ h, sub: `Baseline: ${OTHERNAME}`, rows,
+        note: "Whole sets, not the time window" + (MOSTLY_NEW ? ". Most groups are new: the baseline may cover a shorter or different period" : "") });
+    });
+    // ---- filters
+    T("rpt-chip", (el) => {
+      const b = el.dataset.lv;
+      const t = tally("lv", (x) => x.bucket === b);
+      return TIPS.card({ h: LV_TITLE[b] || b, rows: [...tallyRows(t), ["In the table", S.lv.has(b) ? "shown" : "hidden", S.lv.has(b) ? "" : "m"]],
+        note: (FILTERED() ? "Counted with the other filters. " : "") + "Click to show or hide · Shift-click: only this level" });
+    });
+    T("rpt-lgnode", (el) => {
+      const full = el.dataset.lg;
+      const t = tally("lg", (x) => x.logger === full || x.logger.startsWith(full + "."));
+      return TIPS.card({ h: full.slice(full.lastIndexOf(".") + 1) || full, sub: full.includes(".") ? monoTip(full) : null, rows: tallyRows(t),
+        note: "Click to list this logger and the loggers under it" });
+    });
+    T("rpt-excitem", (el) => {
+      const ex = el.dataset.ex;
+      const t = tally("ex", (x) => x.exc === ex);
+      return TIPS.card({ h: shortExc(ex), sub: ex.includes(".") ? monoTip(ex) : null, rows: tallyRows(t), note: "Click to list the groups with this exception" });
+    });
+    // ---- timeline
+    T("rpt-lg", (el) => {
+      const b = el.dataset.hl;
+      const arr = levelData()[b] || [];
+      const { peak, hours } = peakArr(arr);
+      let all = 0;
+      for (const k of BUCKETS) all += TL_TOTALS[k] || 0;
+      const rows = [["Entries", fmt(TL_TOTALS[b] || 0)], ["Share of the chart", pct(TL_TOTALS[b] || 0, all)]];
+      if (peak) rows.push(["Busiest hour", peakText(peak)]);
+      rows.push(["Hours with entries", `${fmt(hours)} of ${fmt(NH)}`]);
+      if (S.t) rows.push(["In the window", fmt(levelsIn(S.t[0], S.t[1])[b] || 0)]);
+      const on = !S.hl.has(b);
+      return TIPS.card({ h: LV_TITLE[b] || b, rows,
+        note: (S.mute.size ? "Muted groups left out. " : "") + (on ? "Click to hide it in the chart · Shift-click: only this level" : "Hidden in the chart: click to show it") });
+    });
+    T("rpt-win", () => {
+      if (!S.t) return "";
+      const [a, b] = S.t;
+      const lv = levelsIn(a, b);
+      let total = 0;
+      for (const k of BUCKETS) total += lv[k];
+      const rows = [["From", hourAt(a)], ["To", ts16(new Date(parseTs(HOURS[b]) + 3.6e6).toISOString()) + " " + TZ], ["Entries", fmt(total)]];
+      if (lv.ERROR) rows.push(["Errors", fmt(lv.ERROR), "e"]);
+      if (lv.WARN) rows.push(["Warnings", fmt(lv.WARN)]);
+      if (BIRTHS) {
+        let born = 0;
+        for (let h = a; h <= b; h++) born += BIRTHS.n[h];
+        rows.push(["Groups first seen", fmt(born)]);
+      }
+      return TIPS.card({ h: `Time window · ${hoursText(b - a + 1)}`, rows,
+        note: (S.mute.size ? "Muted groups left out. " : "") + "[ and ] move it by its own length; a click on the chart clears it" });
+    });
+    // ---- overview
+    T("rpt-meta", (el) => {
+      const tr = (D.stats || {}).time_range || {};
+      if (el.dataset.k === "range") {
+        return TIPS.card({ h: "Time span of the set", rows: [["First entry", exact(tr.first)], ["Last entry", exact(tr.last)],
+          ["Span", duration(tr.first, tr.last)], ["Hours in the chart", fmt(NH)]],
+          note: TZL ? "Times in your time zone: z or the time zone button shows UTC" : "Times in UTC: z or the UTC button shows your time zone" });
+      }
+      const paths = SRC_PATHS.filter(Boolean);
+      const shown = paths.slice(0, 12).map((p) => `<div class="rtip-file">${esc(basename(p))}</div>`).join("");
+      return TIPS.card({ h: `${fmt(paths.length)} source file${paths.length === 1 ? "" : "s"}`,
+        rows: [["Node", LS.node], ["Cluster", LS.cluster], ["Format", LS.format]],
+        body: shown ? `<div class="rtip-files">${shown}${paths.length > 12 ? `<div class="m">and ${fmt(paths.length - 12)} more</div>` : ""}</div>` : null });
+    });
+    T("rpt-tile", (el) => tileTip(el.dataset.k));
+  }
+  function tileTip(k) {
+    const st = D.stats || {};
+    const lv = st.levels || {};
+    const tr = st.time_range || {};
+    const win = S.t ? levelsIn(S.t[0], S.t[1]) : null;
+    const byBucket = (b) => {
+      let n = 0;
+      for (const r of BASE) if (r.bucket === b) n++;
+      return n;
+    };
+    const peakRow = (b) => {
+      const { peak } = peakArr(((D.timeline || {}).levels || {})[b] || []);
+      return peak ? ["Busiest hour", peakText(peak)] : null;
+    };
+    if (k === "entries") {
+      const order = ["FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"];
+      const names = [...order.filter((x) => lv[x]), ...Object.keys(lv).filter((x) => !order.includes(x) && lv[x])];
+      return tipCard({ h: "Entries by level", rows: [...names.map((x) => [x, `${fmt(lv[x])} · ${pct(lv[x], ALL_ENTRIES)}`, x === "ERROR" || x === "FATAL" ? "e" : ""]),
+        st.parse_errors ? ["Unparsed lines", fmt(st.parse_errors)] : null, ["From", exact(tr.first)], ["To", exact(tr.last)]],
+        note: win ? "Window numbers leave muted groups out" : null });
+    }
+    if (k === "groups") {
+      let exc = 0;
+      for (const r of BASE) if (r.exc) exc++;
+      const rows = BUCKETS.filter((b) => byBucket(b)).map((b) => [LV_TITLE[b] || b, fmt(byBucket(b)), b === "ERROR" ? "e" : ""]);
+      rows.push(["With an exception", fmt(exc)]);
+      if (MERGES.length) rows.push(["Drain3 merge proposals", fmt(MERGES.length)]);
+      const total = st.group_count ?? BASE.length;
+      if (BASE.length !== total) rows.push(["In this report", `${fmt(BASE.length)} of ${fmt(total)}`]);
+      return tipCard({ h: "Signature groups by level", rows,
+        note: "A group is one message template with its logger and exception chain. Coarse ignores the chain" });
+    }
+    if (k === "errors" || k === "warnings") {
+      const b = k === "errors" ? "ERROR" : "WARN";
+      const n = k === "errors" ? (lv.ERROR || 0) + (lv.FATAL || 0) : lv.WARN || 0;
+      const rows = [["Share of the entries", pct(n, ALL_ENTRIES)], ["Groups", fmt(byBucket(b))]];
+      if (k === "errors" && lv.FATAL) rows.unshift(["ERROR", fmt(lv.ERROR || 0), "e"], ["FATAL", fmt(lv.FATAL), "e"]);
+      rows.push(peakRow(b));
+      if (win) rows.push(["In the window", fmt(win[b] || 0)]);
+      return tipCard({ h: k === "errors" ? "ERROR and FATAL entries" : "WARN entries", rows });
+    }
+    if (k === "unparsed") return tipCard({ h: "Unparsed lines", note: "Lines the format did not recognise as the start of an entry or as part of one" });
+    if (k && k.startsWith("cmp")) {
+      const what = { "cmp-new": `Groups in this set that ${OTHERNAME} does not have`, "cmp-changed": "Groups in both sets with a different count",
+        "cmp-vanished": `Groups of ${OTHERNAME} with no entries here` }[k];
+      const o = OTHER || {};
+      const rows = [["Baseline", o.name || o.id], ["Its entries", o.entry_count != null ? fmt(o.entry_count) : null],
+        ["Its span", o.first_ts ? `${ts16(o.first_ts)} → ${tsShort(o.last_ts)} ${TZ}` : null],
+        ["This set", tr.first ? `${ts16(tr.first)} → ${tsShort(tr.last)} ${TZ}` : null], ["Unchanged", fmt(CMPN.unchanged)]];
+      return tipCard({ h: what || `Compared with ${OTHERNAME}`, rows,
+        note: "Groups of every level" + (CMPD && CMPD.min_level ? ` from ${CMPD.min_level}` : "") +
+          (S.lv.size < BUCKETS.length ? "; the compare filter counts the levels the table shows" : "") + ". Pick new, changed or vanished in the filter bar" });
+    }
+    return "";
   }
 
   // ---------------------------------------------------------------- update
@@ -1812,12 +2094,58 @@
     if (TL) showWindow(TL);
     renderDrawer();
     updateSticky();
+    updateStuck();
+    if ((S.sig || "") !== lastSig) {
+      lastSig = S.sig || "";
+      const id = lastSig || prevSig;
+      if (id) requestAnimationFrame(() => {
+        const tr = [...$("t-body").rows].find((x) => x.dataset.id === id);
+        if (tr) tr.scrollIntoView({ block: "nearest" });
+      });
+    }
+    if (S.sig) prevSig = S.sig;
     restoreFocus(fk);
   }
+  let lastSig = "", prevSig = "", stuckRaf = 0;
+  /** The "IDs & CLI" dialog: the set's identifiers, its source files and the commands to reproduce the view. */
+  function renderIds() {
+    const row = (k, v, copyText) => `<div class="ids-row"><span class="k">${k}</span><span class="v mono">${esc(v)}</span>${copyText ? iconCopy(copyText, k) : ""}</div>`;
+    const facts = [["Set id", LS.id, LS.id], ["Name", LS.name], ["Format", LS.format], ["Node", LS.node], ["Cluster", LS.cluster],
+      ["Unparsed lines", String((D.stats || {}).parse_errors || 0)], ["Generated", D.generated_at ? ts16(D.generated_at) + " " + TZ : ""], ["Tool", D.tool_version ? "atlas-log " + D.tool_version : ""]]
+      .filter((x) => x[1]).map((x) => row(x[0], x[1], x[2])).join("");
+    const paths = SRC_PATHS.filter(Boolean);
+    const files = paths.length ? `<h3>${fmt(paths.length)} source file${paths.length === 1 ? "" : "s"}</h3><ul class="ids-files mono">` +
+      paths.map((x) => `<li title="${esc(x)}">${esc(x)}</li>`).join("") + `</ul>` : "";
+    const win = S.t ? ` --since ${HOURS[S.t[0]]} --until ${new Date(parseTs(HOURS[S.t[1]]) + 3.6e6).toISOString()}` : "";
+    const cmds = [`atlas-log set ${SETREF}`, `atlas-log groups ${SETREF}${win} --limit 50`, `atlas-log stats ${SETREF}`, `atlas-log timeline ${SETREF}${win}`];
+    if (CMPD) cmds.push(`atlas-log triage ${SETREF} --baseline ${OTHERREF}`);
+    const sel = S.sig && lookup(S.sig);
+    let grp = "";
+    if (sel) {
+      const sigs = [];
+      if (sel.kind === "sig") sigs.push(["signature", sel.sig]);
+      if (sel.kind !== "merged" && !sel.gone && sel.coarse !== sel.sig) sigs.push(["coarse signature", sel.coarse]);
+      const sg = sel.members ? sel.members[0].sig : sel.sig;
+      const set = sel.gone ? OTHERREF : SETREF;
+      grp = `<h3>Open group</h3>` + sigs.map(([k, v]) => row(k, v, v)).join("") +
+        `<div class="cli"><div><code>${esc(`atlas-log show ${set} ${sg}`)}</code>${copyBtn(`atlas-log show ${set} ${sg}`)}</div></div>`;
+    }
+    $("ids-body").innerHTML = `<div class="ids-facts">${facts}</div>${grp}${files}<h3>CLI</h3><div class="cli">` +
+      cmds.map((c) => `<div><code>${esc(c)}</code>${copyBtn(c)}</div>`).join("") + `</div>`;
+  }
+  let stickyRO = null;
   function updateSticky() {
     const f = $("filters");
     const h = getComputedStyle(f).position === "sticky" ? f.offsetHeight : 0;
     document.documentElement.style.setProperty("--sticky-top", h + "px");
+    // the bar's height changes when it sticks (scope line, hidden items): the table header follows
+    if (!stickyRO && window.ResizeObserver) {
+      stickyRO = new ResizeObserver(() => {
+        const g = $("filters");
+        document.documentElement.style.setProperty("--sticky-top", (getComputedStyle(g).position === "sticky" ? g.offsetHeight : 0) + "px");
+      });
+      stickyRO.observe(f);
+    }
   }
 
   // ---------------------------------------------------------------- actions
@@ -1857,7 +2185,6 @@
   };
   function renderThemeBtn() {
     const b = $("btn-theme");
-    b.innerHTML = isDark() ? `<span aria-hidden="true">☀</span> Light` : `<span aria-hidden="true">☾</span> Dark`;
     b.title = isDark() ? "Switch to the light theme" : "Switch to the dark theme";
   }
   function toggleTheme() {
@@ -1870,7 +2197,7 @@
   function renderTzBtn() {
     const b = $("btn-tz");
     if (!b) return;
-    b.textContent = TZ;
+    (b.querySelector(".tz-t") || b).textContent = TZ;
     b.setAttribute("aria-pressed", String(TZL));
     b.title = TZL ? `Times in your time zone (${TZ}); click to show UTC` : "Times in UTC; click to show your time zone";
   }
@@ -1899,7 +2226,7 @@
     CUR = id;
     const was = !!S.sig;
     commit({ sig: id }, { keepPage: true });
-    if (!was) $("d-close").focus({ preventScroll: true });
+    if (!was) $("drawer").focus({ preventScroll: true });
   }
   /** Mute or unmute a row's signatures in the chart (all of them when any is not muted). */
   function toggleMute(r) {
@@ -1957,6 +2284,81 @@
     if (tr) tr.scrollIntoView({ block: "nearest" });
   }
 
+  // ---- full screen width (the header's toggle, key w): the setting of every page of the app,
+  // applied to <html data-wide> by the page's head script before the first paint
+  const WIDE_KEY = "atlas-log-wide";
+  function renderWideBtn() {
+    const b = $("btn-wide");
+    if (!b) return;
+    const on = document.documentElement.hasAttribute("data-wide");
+    const t = on ? "Back to the centred page width (w)" : "Use the full screen width (w)";
+    b.setAttribute("aria-pressed", String(on));
+    if (b.hasAttribute("data-tip-text")) b.setAttribute("data-tip-text", t); else b.title = t;
+  }
+  function toggleWide() {
+    const on = !document.documentElement.hasAttribute("data-wide");
+    document.documentElement.toggleAttribute("data-wide", on);
+    try { localStorage.setItem(WIDE_KEY, on ? "1" : "0"); } catch { /* storage unavailable */ }
+    renderWideBtn();
+    window.dispatchEvent(new Event("resize"));  // the charts redraw at the new width
+  }
+
+  // ---- the drag handle between the table and the drawer: its width, remembered (double-click
+  // or Home resets it; arrow keys step 32 px)
+  const DRAWER_W_KEY = "atlas-log-drawer-w";
+  function initDrawerGrip() {
+    const dr = $("drawer");
+    if (!dr || dr.querySelector(".drawer-grip")) return;
+    const g = document.createElement("div");
+    g.className = "drawer-grip";
+    g.tabIndex = 0;
+    g.setAttribute("role", "separator");
+    g.setAttribute("aria-orientation", "vertical");
+    g.setAttribute("aria-label", "Resize the detail panel");
+    g.title = "Drag to resize; double-click to reset";
+    dr.prepend(g);
+    const body = document.body;
+    const clamp = (w) => Math.round(Math.max(360, Math.min(w, body.clientWidth - 440)));
+    const apply = (w, save) => {
+      if (w == null) body.style.removeProperty("--drawer-w");
+      else body.style.setProperty("--drawer-w", clamp(w) + "px");
+      if (save) {
+        try { if (w == null) localStorage.removeItem(DRAWER_W_KEY); else localStorage.setItem(DRAWER_W_KEY, String(clamp(w))); } catch { /* storage unavailable */ }
+        window.dispatchEvent(new Event("resize"));  // the hourly chart redraws at the new width
+      }
+    };
+    try { const v = +localStorage.getItem(DRAWER_W_KEY); if (v > 0) apply(v, false); } catch { /* storage unavailable */ }
+    let x0 = 0, w0 = 0;
+    const move = (e) => apply(w0 + (x0 - e.clientX), false);
+    g.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      x0 = e.clientX; w0 = dr.getBoundingClientRect().width;
+      g.setPointerCapture(e.pointerId);
+      body.classList.add("drawer-resizing");
+      g.addEventListener("pointermove", move);
+    });
+    const end = (e) => {
+      if (!body.classList.contains("drawer-resizing")) return;
+      g.removeEventListener("pointermove", move);
+      body.classList.remove("drawer-resizing");
+      try { g.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+      apply(dr.getBoundingClientRect().width, true);
+    };
+    g.addEventListener("pointerup", end);
+    g.addEventListener("pointercancel", end);
+    g.addEventListener("dblclick", () => apply(null, true));
+    g.addEventListener("keydown", (e) => {
+      const w = dr.getBoundingClientRect().width;
+      if (e.key === "ArrowLeft") apply(w + 32, true);
+      else if (e.key === "ArrowRight") apply(w - 32, true);
+      else if (e.key === "Home") apply(null, true);
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+  }
+
   function bind() {
     $("tl-window").addEventListener("click", (e) => {
       const b = e.target.closest("button");
@@ -1994,6 +2396,7 @@
     $("f-merged").onclick = () => commit({ view: S.view === "merged" ? "sig" : "merged", sig: "" });
     $("f-sort").onchange = (e) => commit({ sort: e.target.value });
     $("f-reset").onclick = resetAll;
+    $("f-scope").addEventListener("click", () => window.scrollTo({ top: 0, behavior: "smooth" }));
     $("t-empty").addEventListener("click", (e) => {
       const b = e.target.closest("[data-clear]");
       if (b) clearFilter(b.dataset.clear);
@@ -2049,6 +2452,20 @@
     $("pager-top").addEventListener("click", pagerClick);
     $("pager-bottom").addEventListener("click", pagerClick);
     $("d-close").onclick = closeDrawer;
+    $("btn-wide").onclick = toggleWide;
+    initDrawerGrip();
+    const more = $("more-menu");
+    if (more) {
+      more.addEventListener("click", (e) => { if (e.target.closest(".menu-item")) more.open = false; });
+      more.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !more.open) return;
+        e.stopPropagation();
+        more.open = false;
+        more.querySelector("summary").focus();
+      });
+      document.addEventListener("click", (e) => { if (more.open && !more.contains(e.target)) more.open = false; });
+    }
+    renderWideBtn();
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
     $("drawer-body").addEventListener("click", (e) => {
@@ -2097,10 +2514,39 @@
     });
     window.atlasTheme = toggleTheme;
     renderThemeBtn();
+    {
+      // the drawer: the bar names the group once the headline scrolled away; the nav marks the section in view
+      const body = $("drawer-body"), nav = $("d-nav"), drawer = $("drawer");
+      let spy = 0;
+      body.addEventListener("scroll", () => {
+        if (spy) return;
+        spy = requestAnimationFrame(() => {
+          spy = 0;
+          drawer.classList.toggle("scrolled", body.scrollTop > 48);
+          const y = body.getBoundingClientRect().top + 24;
+          let cur = null;
+          for (const b of nav.querySelectorAll("[data-jump]")) {
+            const t = document.getElementById(b.dataset.jump);
+            if (t && t.getBoundingClientRect().top <= y) cur = b;
+            b.classList.remove("on");
+          }
+          if (body.scrollTop + body.clientHeight >= body.scrollHeight - 2) {
+            const vis = [...nav.querySelectorAll("[data-jump]:not([hidden])")];
+            cur = vis[vis.length - 1] || cur;
+          }
+          if (cur && body.scrollTop > 0) cur.classList.add("on");
+        });
+      }, { passive: true });
+    }
     $("d-nav").addEventListener("click", (e) => {
       const b = e.target.closest("[data-jump]");
       const t = b && document.getElementById(b.dataset.jump);
-      if (t) t.scrollIntoView({ block: "start", behavior: "smooth" });
+      if (t && t.tagName === "DETAILS") t.open = true;
+      if (!t) return;
+      // scroll the drawer only: the table and the selected row stay where they are
+      const body = $("drawer-body");
+      const y = t.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 6;
+      body.scrollTo({ top: y, behavior: "smooth" });
     });
     $("btn-data").onclick = () => {
       const blob = new Blob([JSON.stringify(D)], { type: "application/json" });
@@ -2113,21 +2559,38 @@
     };
     const help = $("help");
     $("btn-help").onclick = () => help.showModal();
+    const idsDlg = $("ids");
+    $("btn-ids").onclick = () => { renderIds(); idsDlg.showModal(); };
+    idsDlg.addEventListener("click", (e) => {
+      const t = e.target.closest("[data-copy]");
+      if (t) copy(t.dataset.copy);
+      else if (e.target === idsDlg) idsDlg.close();
+    });
+    // the drawer's "Identifiers & CLI" part also reveals the member signatures
+    $("drawer-body").addEventListener("toggle", (e) => {
+      if (!e.target.classList || !e.target.classList.contains("d-idcli")) return;
+      IDS_OPEN = e.target.open;
+      $("drawer-body").classList.toggle("show-ids", IDS_OPEN);
+    }, true);
+    window.addEventListener("scroll", () => {
+      if (!stuckRaf) stuckRaf = requestAnimationFrame(() => { stuckRaf = 0; updateStuck(); });
+    }, { passive: true });
     document.addEventListener("keydown", (e) => {
       const t = e.target;
       const typing = t instanceof HTMLInputElement || t instanceof HTMLSelectElement || t instanceof HTMLTextAreaElement;
       // Enter on a focused button or link is that control's, not the page shortcut's
       if (e.key === "Enter" && t instanceof Element && t.closest("button, a, summary, [role=tab], [contenteditable]")) return;
       if (e.key === "Escape") {
-        if (help.open) return;
+        if (help.open || idsDlg.open) return;
         if (closePops()) return;
         if (typing) { t.blur(); return; }
         if (S.sig) closeDrawer();
         return;
       }
-      if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open) return;
+      if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open || idsDlg.open) return;
       switch (e.key) {
         case "/": e.preventDefault(); $("f-search").focus(); $("f-search").select(); break;
+        case "w": toggleWide(); break;
         case "j": e.preventDefault(); move(1); break;
         case "k": e.preventDefault(); move(-1); break;
         case "Enter": if (CUR && !S.sig) open(CUR); break;
@@ -2156,6 +2619,7 @@
           if (r && !r.gone) drawHourly(r);
         }
         updateSticky();
+        updateStuck();
       }, 150);
     });
   }
@@ -2164,6 +2628,7 @@
   if (S.theme === "dark" || S.theme === "light") document.documentElement.setAttribute("data-theme", S.theme);
   setZone(S.tz ? S.tz === "local" : TZL);
   renderTzBtn();
+  registerTips();
   renderOverview();
   bind();
   renderTimeline();

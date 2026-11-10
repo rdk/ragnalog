@@ -24,7 +24,9 @@ from .cluster_data import load_payload, with_nodes
 EVIL = 'x</script><script>alert(1)</script> <!-- y --> </SCRIPT> "q" & <b>'
 ROOT_IDS = (
     "c-title",
-    "c-nodes",
+    "c-ov",
+    "c-scope",
+    "ids",
     "c-cards",
     "c-timeline",
     "tl-y",
