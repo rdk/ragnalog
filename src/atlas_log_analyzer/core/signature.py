@@ -41,8 +41,13 @@ __all__ = [
     "exception_message_key",
 ]
 
-SIGNATURE_VERSION = 1
-"""Bump when the canonical-parts algorithm changes; recorded in manifests."""
+SIGNATURE_VERSION = 2
+"""Bump when the canonical-parts algorithm changes; recorded in manifests.
+
+2: trailing white space of the title and of exception message keys is dropped (the same
+message with and without a trailing space was two groups); a part holding the separator
+``\\x1f`` is escaped, so parts can never run into each other.
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,12 +114,20 @@ class Signature:
     """Variables extracted from the message while masking."""
 
 
+def _escaped(part: str) -> str:
+    r"""Return ``part`` with ``\x1e`` and the separator ``\x1f`` escaped by ``\x1e``."""
+    if "\x1e" not in part and "\x1f" not in part:
+        return part
+    return part.replace("\x1e", "\x1e\x1e").replace("\x1f", "\x1e\x1f")
+
+
 def exception_message_key(exc: ExceptionInfo) -> str:
     """Return the (unmasked) part of an exception message that participates in signatures."""
     message = exc.message
     if not message:
         return ""
     first, sep, rest = message.partition("\n")
+    first = first.rstrip()
     if sep and first.endswith(":"):
         for line in rest.split("\n"):
             if line.strip():
@@ -148,12 +161,13 @@ class Signer:
         """Return the text masked into the template: the message, or the body's lead line.
 
         The lead line stands in only with ``titles_from_body`` and a message that is
-        empty or white space; the entry's ``message`` itself is never changed.
+        empty or white space; the entry's ``message`` itself is never changed. Trailing
+        white space is dropped (it would split one message into two groups).
         """
         message = entry.message
         if self.titles_from_body and (not message or message.isspace()):
-            return lead_line(entry.body)
-        return message
+            return lead_line(entry.body).rstrip()
+        return message.rstrip()
 
     def sign(self, entry: LogEntry) -> Signature:
         """Compute the signature of ``entry``."""
@@ -210,5 +224,6 @@ class Signer:
         if not template.strip() and exc_parts:
             exc_type, exc_message = exc_parts[0]
             display = f"{exc_type}: {exc_message}" if exc_message else exc_type
-        digest = xxhash.xxh3_64_hexdigest("\x1f".join(parts).encode("utf-8", "surrogatepass"))
+        joined = "\x1f".join(_escaped(p) for p in parts)
+        digest = xxhash.xxh3_64_hexdigest(joined.encode("utf-8", "surrogatepass"))
         return Signature(digest, display, tuple(parts), variables)

@@ -32,7 +32,7 @@
 </div>
 <div class="ent-line">
   <p class="ent-sum" id="e-sum" role="status" aria-live="polite">Loading…</p>
-  <span class="ent-keys muted small">j / k move · Enter opens · Esc closes · / searches</span>
+  <span class="ent-keys muted small">j / k move · Enter opens · Esc closes · / searches · <button type="button" class="btn small link" id="e-keys-btn">? keys</button></span>
 </div>
 <div class="table-wrap ent-table">
   <table class="groups ent-t" id="e-table" aria-label="Entries">
@@ -45,6 +45,20 @@
   <button type="button" class="btn" id="e-load">Load more</button>
 </div>
 <div class="toast ent-toast" id="e-toast" role="status" hidden></div>
+<dialog id="e-help" aria-labelledby="e-help-h">
+  <h2 id="e-help-h">Keyboard</h2>
+  <dl class="keys">
+    <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd> <kbd>&darr;</kbd> <kbd>&uarr;</kbd></dt><dd>Next / previous entry</dd>
+    <dt><kbd>Home</kbd> <kbd>End</kbd></dt><dd>First / last loaded entry</dd>
+    <dt><kbd>Enter</kbd> <kbd>Space</kbd></dt><dd>Open / close the selected entry</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close the open entry / leave search</dd>
+    <dt><kbd>w</kbd></dt><dd>Full screen width / the centred page width (every page)</dd>
+    <dt><kbd>z</kbd></dt><dd>Times in UTC / in your time zone</dd>
+    <dt><kbd>?</kbd></dt><dd>This help</dd>
+  </dl>
+  <form method="dialog"><button class="btn small" autofocus>Close</button></form>
+</dialog>
 </div>
 <script type="application/json" id="e-first">{{ first }}</script>
 <script defer src="/assets/report/entry-card.js"></script>

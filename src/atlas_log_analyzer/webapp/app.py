@@ -28,6 +28,8 @@ __all__ = ["LOOPBACK_HOSTS", "create_app", "served_hosts"]
 LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
 """Host names a server bound to loopback answers (anything else: a DNS rebinding page)."""
 _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
+SMALL_BODY = 64 * 1024
+"""Largest body of a request other than an upload (label, cancel, delete: a few fields)."""
 
 
 def _host_name(header: str) -> str:
@@ -156,7 +158,11 @@ def create_app(
             given = request.query_params.get("token")
             if given is not None and request.method == "GET" and not path.startswith("/api"):
                 # a page opened with ?token=: keep it in a cookie and drop it from the URL
-                response = RedirectResponse(str(request.url.remove_query_params("token")), 303)
+                # relative: no Host header ends up in the Location
+                rest = request.url.remove_query_params("token").query
+                # one leading slash: "//host" would be a protocol-relative URL
+                target = "/" + path.lstrip("/") + (f"?{rest}" if rest else "")
+                response = RedirectResponse(target, 303)
                 response.set_cookie(
                     api.TOKEN_COOKIE, given, httponly=True, samesite="strict", path="/"
                 )
@@ -173,6 +179,19 @@ def create_app(
                 return error_response(OpError("http", "an upload needs Content-Length"), 411)
             if int(length) > upload_limit + (1 << 20):
                 message = f"upload exceeds {settings.max_upload_mb} MiB"
+                return error_response(OpError("payload_too_large", message))
+            if (refusal := api.upload_refusal(state, int(length))) is not None:
+                err, status, headers = refusal
+                refused = error_response(err, status)
+                refused.headers.update(headers)
+                return refused
+        elif request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            # other bodies are a few form fields: cap them before anything reads them
+            length = request.headers.get("content-length", "")
+            if "transfer-encoding" in request.headers and not length:
+                return error_response(OpError("http", "a request body needs Content-Length"), 411)
+            if length.isdigit() and int(length) > SMALL_BODY:
+                message = f"request body exceeds {SMALL_BODY // 1024} KiB"
                 return error_response(OpError("payload_too_large", message))
         return await call_next(request)
 

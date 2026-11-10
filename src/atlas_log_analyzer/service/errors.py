@@ -30,6 +30,7 @@ __all__ = [
     "Front",
     "OpError",
     "Reason",
+    "damaged_file",
     "flag",
     "from_exception",
     "hint",
@@ -332,8 +333,8 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
     ``FormatNotDetected`` and ``NotInFormat``, ``AmbiguousSignature``,
     ``IncompatibleSets``, ``InvalidLevel``, ``UnknownFormatError``,
     ``FileNotFoundError``, a refused path (``PermissionError``, ``IsADirectoryError``,
-    ``NotADirectoryError``, ``FileExistsError``: ``store_error``) and, last, any
-    ``StoreError`` or ``ValueError``.
+    ``NotADirectoryError``, ``FileExistsError``: ``store_error``), a Parquet reader's error
+    on a damaged set file (``store_error``) and, last, any ``StoreError`` or ``ValueError``.
     """
     if isinstance(exc, OpError):
         return exc
@@ -379,6 +380,24 @@ def from_exception(exc: BaseException, front: Front) -> OpError | None:
         what = exc.strerror or _message(exc) or type(exc).__name__
         where = exc.filename
         return OpError("store_error", f"{what}: {where}" if where is not None else what)
+    if damaged_file(exc):
+        return OpError("store_error", f"a file of the log set is damaged or unreadable: {exc}")
     if isinstance(exc, ValueError):
         return OpError("invalid_value", str(exc))
     return None
+
+
+_READ_ERRORS: Final = (
+    ("polars.exceptions", "ComputeError"),
+    ("pyarrow.lib", "ArrowException"),
+    ("duckdb", "IOException"),
+    ("duckdb", "InvalidInputException"),
+)
+"""Errors of the Parquet readers (polars, pyarrow, DuckDB) when a set file is damaged."""
+
+
+def damaged_file(exc: BaseException) -> bool:
+    """Whether ``exc`` is a Parquet reader's error about a file it could not read."""
+    if "parquet" not in str(exc).lower():
+        return False
+    return any(_is(exc, module, name) for module, name in _READ_ERRORS)

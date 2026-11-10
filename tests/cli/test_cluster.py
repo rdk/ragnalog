@@ -323,3 +323,17 @@ def test_a_failed_split_keeps_sets_that_existed(
     assert jcli("ingest", archive, "--overwrite").code == 3
     kept = {s["id"] for s in jcli("sets").json()["items"]}
     assert kept == {s["id"] for s in before}
+
+
+def test_reingest_under_another_capture_keeps_the_sets_capture(
+    jcli: Invoke, tmp_path: Path
+) -> None:
+    for node in ("NODE1", "NODE2"):
+        write_node_files(tmp_path / "flat", node)
+    first = jcli("ingest", tmp_path / "flat", "--capture", "cap-a")
+    assert first.code == 0, first.stdout
+    again = jcli("ingest", tmp_path / "flat", "--capture", "cap-b")
+    assert again.code == 0, again.stdout
+    doc = again.json()
+    assert doc["capture"]["capture"] == "cap-a"
+    assert any("--capture" in w or "capture" in w for w in doc["warnings"])

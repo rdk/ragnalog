@@ -22,11 +22,14 @@ their stored ``raw`` text by the format itself.
 
 from __future__ import annotations
 
+import dataclasses
+import itertools
 from bisect import bisect_left
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import polars as pl
@@ -47,11 +50,17 @@ from atlas_log_analyzer.core.formats.base import (
     banner_window_ms,
     titles_from_body,
 )
+from atlas_log_analyzer.core.grouping import SignedEntry
 from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
-from atlas_log_analyzer.core.parser import MAX_BANNERS
+from atlas_log_analyzer.core.parser import MAX_BANNERS, ORPHAN_ERROR
 from atlas_log_analyzer.core.pipeline import Recipe
 from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA
-from atlas_log_analyzer.store.writer import COMPRESSION, _entries_encodings
+from atlas_log_analyzer.store.writer import (
+    COMPRESSION,
+    EntriesWriter,
+    _entries_encodings,
+    _row_to_entry,
+)
 
 __all__ = ["DERIVED_COLUMNS", "resign_entries"]
 
@@ -69,13 +78,25 @@ _REBUILT_COLUMNS = {
 }
 """Context columns of a re-built entry (the writer's well-known context keys)."""
 _WELL_KNOWN = frozenset(WELL_KNOWN_CONTEXT_KEYS)
-_REBUILD_HINT = pl.col("body").fill_null("").str.contains("Suppressed: ", literal=True) | (
-    pl.col("user").fill_null("").str.contains(" ", literal=True) & pl.col("request_id").is_null()
+_REBUILD_HINT = (
+    pl.col("body").fill_null("").str.contains("Suppressed: ", literal=True)
+    | (
+        pl.col("user").fill_null("").str.contains(" ", literal=True)
+        & pl.col("request_id").is_null()
+    )
+    | pl.col("body").fill_null("").str.contains(r"\n[ \t]*\n|Exception in thread ")
 )
 """Rows an older format version may have built differently from the same text: a
-suppressed exception (before jira@3 its own ``Caused by:`` joined the main chain) and
-a user with a space, request context unsplit (``Automation Robot 1x2x3 …`` was the
-user). Re-building any other row would give it back unchanged."""
+suppressed exception (before jira@3 its own ``Caused by:`` joined the main chain), a
+user with a space, request context unsplit (``Automation Robot 1x2x3 …`` was the
+user), and a blank line or the ``Exception in thread`` prefix in the body (before
+jira@4 either cut or hid the exception chain). Re-building any other row would give
+it back unchanged."""
+_SPLIT_CANDIDATES = pl.col("raw").fill_null("").str.contains("\n", literal=True) & ~pl.col(
+    "parse_error"
+).fill_null("").str.contains("truncated", literal=True)
+"""Rows that may hold a line the format now reads as a header (:func:`_split_file`); a
+truncated entry is left as stored (the lines it lost cannot be split)."""
 _EPOCH = datetime(1970, 1, 1, tzinfo=UTC)
 _ALNUM = "[0-9A-Za-z]"
 """Blank and banner messages hold no ASCII letter or digit: the polars pre-filter of
@@ -383,6 +404,145 @@ def _rebuild_file(src: Path, dst: Path, fmt: LogFormat) -> bool:
     return True
 
 
+def _utf8_len(text: str) -> int:
+    return len(text) if text.isascii() else len(text.encode("utf-8", "surrogatepass"))
+
+
+def _split_plan(src: Path, fmt: LogFormat) -> dict[int, tuple[list[int], int]]:
+    """Rows holding lines ``fmt`` now reads as headers: row -> (their indexes, EOL width).
+
+    The line-ending width (2 for CRLF files: the reader drops the CR) is what the next
+    stored row of the same file says is between the two header offsets; 1 when unsure.
+    """
+    df = (
+        pl.scan_parquet(src)
+        .with_row_index("_row")
+        .with_columns(
+            pl.col("source_path").shift(-1).alias("_next_path"),
+            pl.col("source_offset").shift(-1).alias("_next_offset"),
+        )
+        .filter(_SPLIT_CANDIDATES)
+        .select("_row", "raw", "source_path", "source_offset", "_next_path", "_next_offset")
+        .collect()
+    )
+    plan: dict[int, tuple[list[int], int]] = {}
+    is_header = fmt.is_header
+    for row, raw, path, offset, next_path, next_offset in df.iter_rows():
+        lines = raw.split("\n")
+        points = [k for k in range(1, len(lines)) if is_header(lines[k])]
+        if not points:
+            continue
+        eol = 1
+        if next_path == path and next_offset is not None and offset is not None:
+            gap = next_offset - offset - sum(_utf8_len(t) for t in lines)
+            if gap == 2 * len(lines):
+                eol = 2
+        plan[int(row)] = (points, eol)
+    return plan
+
+
+def _split_entry(
+    entry: LogEntry, points: Sequence[int], eol: int, fmt: LogFormat
+) -> list[LogEntry]:
+    """``entry`` cut at the header lines ``points`` of its raw text, each part built by ``fmt``.
+
+    The first part keeps what the parser and the banners gave the stored entry (an
+    orphan's ``parse_error``, a ``preamble``); each part's line and byte offset follow
+    from the lines before it, as the parser counts them.
+    """
+    lines = entry.raw.split("\n")
+    bounds = [0, *points, len(lines)]
+    out: list[LogEntry] = []
+    offset = entry.source.offset
+    for a, b in itertools.pairwise(bounds):
+        part = lines[a:b]
+        source = SourceRef(entry.source.path, entry.source.line + a, offset)
+        if a == 0:
+            header = fmt.parse_header(part[0]) if entry.parse_error is None else None
+            built = fmt.build(header, part[0], part[1:], source)
+            if entry.parse_error == ORPHAN_ERROR:
+                built = dataclasses.replace(built, parse_error=ORPHAN_ERROR)
+            preamble = entry.context.get(CTX_PREAMBLE)
+            if preamble is not None:
+                ctx = MappingProxyType({**built.context, CTX_PREAMBLE: preamble})
+                built = dataclasses.replace(built, context=ctx)
+        else:
+            built = fmt.build(fmt.parse_header(part[0]), part[0], part[1:], source)
+        out.append(built)
+        offset += sum(_utf8_len(t) + eol for t in part)
+    return out
+
+
+def _split_file(src: Path, dst: Path, recipe: Recipe) -> bool:
+    """Write ``dst``: ``src`` with entries that hold a header line split (``False``: none).
+
+    An older format version may have read a header as a continuation line (jira@3:
+    a request URL with ``[``) and glued its entry onto the previous one. The stored raw
+    text holds every line, so the entries are cut again where the format now sees a
+    header; rows, row groups and every other row are kept as stored.
+    """
+    fmt = recipe.fmt
+    plan = _split_plan(src, fmt)
+    if not plan:
+        return False
+    rows = sorted(plan)
+    scratch = dst.with_name(f"{dst.stem}.part{dst.suffix}")
+    read = 0
+    try:
+        with (
+            pq.ParquetFile(str(src)) as pf,
+            pq.ParquetWriter(
+                str(dst),
+                ENTRIES_SCHEMA,
+                compression=COMPRESSION,
+                write_statistics=True,
+                **_entries_encodings(),
+            ) as writer,
+        ):
+            for i in range(pf.num_row_groups):
+                table = pf.read_row_group(i)
+                lo, hi = read, read + table.num_rows
+                read = hi
+                mine = rows[bisect_left(rows, lo) : bisect_left(rows, hi)]
+                if mine:
+                    parts: list[pa.Table] = []
+                    start = 0
+                    for row in mine:
+                        at = row - lo
+                        parts.append(table.slice(start, at - start))
+                        entry = _row_to_entry(_one_row(table, at), fmt.name)
+                        points, eol = plan[row]
+                        parts.append(_split_table(entry, points, eol, recipe, scratch))
+                        start = at + 1
+                    parts.append(table.slice(start))
+                    table = pa.concat_tables(parts).unify_dictionaries().combine_chunks()
+                writer.write_table(table, row_group_size=max(table.num_rows, 1))
+    finally:
+        scratch.unlink(missing_ok=True)
+    return True
+
+
+def _one_row(table: pa.Table, at: int) -> dict[str, Any]:
+    """Return row ``at`` of ``table`` in the form ``writer._row_to_entry`` takes."""
+    one = table.slice(at, 1)
+    ts_at = one.schema.get_field_index("ts")
+    one = one.set_column(ts_at, "ts", one.column(ts_at).cast(pa.int64()))
+    row: dict[str, Any] = one.to_pylist()[0]
+    return row
+
+
+def _split_table(
+    entry: LogEntry, points: Sequence[int], eol: int, recipe: Recipe, scratch: Path
+) -> pa.Table:
+    """Return the parts of one split entry as rows of :data:`ENTRIES_SCHEMA` (signed)."""
+    sign_both = recipe.signer().sign_both
+    with EntriesWriter(scratch, dedupe=False) as writer:
+        writer.write(
+            SignedEntry(e, *sign_both(e)) for e in _split_entry(entry, points, eol, recipe.fmt)
+        )
+    return pq.read_table(str(scratch), schema=ENTRIES_SCHEMA)
+
+
 def rename_sources(src: Path, dst: Path, names: Mapping[str, str]) -> None:
     """Write ``dst`` = ``src`` with the ``source_path`` values in ``names`` renamed.
 
@@ -451,13 +611,17 @@ def resign_entries(
 
     """
     banners = reassemble if attach is None else attach
+    split = dst.with_name(f"{dst.stem}.split{dst.suffix}")
     rebuilt = dst.with_name(f"{dst.stem}.rebuilt{dst.suffix}")
-    if reassemble and _rebuild_file(src, rebuilt, recipe.fmt):
-        try:
-            return _resign(rebuilt, dst, recipe, format_name, banners, max_banners)
-        finally:
-            rebuilt.unlink(missing_ok=True)
-    return _resign(src, dst, recipe, format_name, banners, max_banners)
+    try:
+        if reassemble and _split_file(src, split, recipe):
+            src = split
+        if reassemble and _rebuild_file(src, rebuilt, recipe.fmt):
+            src = rebuilt
+        return _resign(src, dst, recipe, format_name, banners, max_banners)
+    finally:
+        split.unlink(missing_ok=True)
+        rebuilt.unlink(missing_ok=True)
 
 
 def _resign(

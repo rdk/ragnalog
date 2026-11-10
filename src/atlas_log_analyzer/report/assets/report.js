@@ -1049,8 +1049,8 @@
       const label = (wc && wc[0]) || label0;
       // a tooltip only where it adds something: how a column counts, or a label cut short
       const tip = wc ? (c === "c-delta" ? `vs ${OTHERNAME}: ${wc[1]}` : wc[1]) : tip0 || (c === "c-delta" ? label : "");
-      const sorted = key && S.sort === key ? ` aria-sort="${key === "template" || key === "logger" || key === "first_seen" ? "ascending" : "descending"}"` : "";
-      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted}${tip ? ` title="${esc(tip)}"` : ""}>${esc(label)}</th>`;
+      const sorted = !key ? "" : ` aria-sort="${S.sort === key ? (key === "template" || key === "logger" || key === "first_seen" ? "ascending" : "descending") : "none"}"`;
+      return `<th class="${c}${key ? " sortable" : ""}"${key ? ` data-sort="${key}"` : ""}${sorted}${tip ? ` title="${esc(tip)}"` : ""}>${key ? `<button type="button" class="th-sort" data-sort="${key}">${esc(label)}</button>` : esc(label)}</th>`;
     }).join("") + "</tr>";
   }
   /** ``html`` (escaped text and tags) with every match of the search text marked. */
@@ -1080,7 +1080,7 @@
     const multi = r.members ? `<span class="badge-m" title="${r.members.length} signatures">${r.members.length}×</span>` : "";
     const of = S.sort === "spike" && spikeOf(r) > 0
       ? `<small class="of spk">×${esc(compact(spikeOf(r)))}</small>`
-      : S.t ? `<small class="of">of ${esc(compact(r.count))}</small>` : "";
+      : S.t ? `<small class="of"> / ${esc(compact(r.count))}</small>` : "";
     const last = S.t ? winOf(r).last : r.last ? { iso: r.last } : null;
     // every cell's detail (full names, exact times, breakdowns) is a tooltip built on hover
     // from the row: see registerTips
@@ -1114,6 +1114,7 @@
     $("t-head").hidden = !page.length;
     $("groups").hidden = !page.length;  // no empty frame above the empty-state panel
     $("groups").classList.toggle("no-track", v.max < 1000);  // counts only: a narrower column
+    $("groups").classList.toggle("in-win", !!S.t); // "N / total" on one line: a wider column
     if (!page.length) {
       if (!v.rows.length) empty.textContent = "This report has no groups.";
       else if (S.cmp === "vanished" && S.t) {

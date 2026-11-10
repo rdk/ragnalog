@@ -16,7 +16,7 @@ from dataclasses import replace
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from atlas_log_analyzer.service.errors import Front, OpError, flag, hint
+from atlas_log_analyzer.service.errors import Front, OpError, damaged_file, flag, hint
 from atlas_log_analyzer.service.params import (
     EntryQuery,
     GroupQuery,
@@ -140,13 +140,15 @@ def groups(
     df = ls.groups(where=where, coarse=coarse, sort=sort, limit=page.limit, offset=page.offset)
     total = df.height if page.complete(df.height) else ls.count_groups(where=where, coarse=coarse)
     items = _records(df if columns is None else df.select(columns))
+    nxt = page.offset + len(items)
     return {
         "schema": "groups.v1",
         "logset": ls.manifest.id,
         "count": len(items),
         "total": total,
         "offset": page.offset,
-        "truncated": page.offset + len(items) < total,
+        "next_offset": nxt if nxt < total else None,
+        "truncated": nxt < total,
         "items": items,
     }
 
@@ -375,11 +377,27 @@ def frames(
     return {"schema": "frames.v1", **doc}
 
 
+def _has_group(ls: LogSet, signature: str) -> bool:
+    import polars as pl
+
+    groups = ls.groups_lazy().filter(pl.col("signature") == signature).head(1).collect()
+    return groups.height > 0
+
+
 def timeline(sets: Sets, ref: str, q: EntryQuery, *, bucket: str, front: Front) -> Doc:
     """``timeline.v1``: entry counts per ``bucket`` (``1h``, ``15m``, ``1d`` …)."""
     q.check(front=front)
     ls = open_set(sets, ref, front=front)
     where = _where(ls, q, front)
+    sig = where.signature
+    if sig is not None and "," not in sig and not _has_group(ls, sig):
+        raise OpError.because(  # as show and the capture form say (not an empty timeline)
+            "group_not_found",
+            front,
+            f"no group {where.signature!r} in log set {ls.manifest.id}",
+            hint=hint("group_not_found", front, set=_name(ls), id=ls.manifest.id),
+        )
+    bucket = bucket.strip()
     try:
         items = ls.histogram(bucket, where=where)
     except ValueError as exc:  # filters are valid: the bucket is not
@@ -497,10 +515,22 @@ def query(sets: Sets, ref: str, sql: str, *, front: Front) -> Doc:
     import duckdb
     import polars as pl
 
+    if not sql.strip():
+        raise OpError("usage", 'give the SQL to run (e.g. "select count(*) from entries")')
+    try:
+        statements = len(duckdb.extract_statements(sql))
+    except duckdb.Error:
+        statements = 1  # let the run report the syntax error
+    if statements > 1:
+        raise OpError(
+            "usage", f"give one SQL statement, not {statements} (separate queries run one by one)"
+        )
     ls = open_set(sets, ref, front=front)
     try:
         df = ls.sql(sql)
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
+        if damaged_file(exc):  # a damaged set file, not the SQL: store_error
+            raise
         message = str(exc).strip()
         views = [v for v in view_fields() if v != "merges" or ls.merges_path.exists()]
         raise OpError("sql_error", message, hint=sql_hint(message, views)) from exc

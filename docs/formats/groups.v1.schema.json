@@ -30,6 +30,17 @@
       "description": "More rows follow (offset + count < total).",
       "type": "boolean"
     },
+    "next_offset": {
+      "description": "Where the next page starts; null on the last.",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
     "items": {
       "description": "groups.v1 rows (all columns unless --columns).",
       "type": "array",
@@ -45,6 +56,7 @@
     "total",
     "offset",
     "truncated",
+    "next_offset",
     "items"
   ],
   "$defs": {

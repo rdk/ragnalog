@@ -74,16 +74,27 @@ def capture(
     out.document(doc, items=None, table=lambda console: render.capture(console, doc))
 
 
+_SET_ONLY = (
+    "level",
+    "min_level",
+    "coarse_signature",
+    "logger",
+    "user",
+    "thread",
+    "request_id",
+    "contains",
+    "with_exception",
+    "exception",
+)
+"""Entry filters the timeline of a capture lacks."""
+
+
 def timeline(
     ref: str,
     /,
     *,
+    q: Annotated[EntryQuery, Parameter(name="*")] = params.ALL_ENTRIES,
     bucket: str = "1h",
-    signature: str | None = None,
-    level: str | None = None,
-    min_level: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
     window: Literal["overlap", "union"] | None = None,
     by_node: bool = False,
 ) -> None:
@@ -111,29 +122,36 @@ def timeline(
     capture, --window with a set, or an ambiguous signature prefix; 2 unknown
     capture or group; 3 unknown set or store error.
 
+    A set takes all the filters of `entries` (--level, --min-level, --logger,
+    --user, --thread, --request-id, --contains, --with-exception, --exception,
+    --coarse-signature, --signature, --since, --until), so the chart of a
+    filtered listing counts what the listing shows. A capture takes only
+    --signature, --since and --until; any other filter is a usage error.
+
     Args:
         ref: Log set, or capture (capture:ID, cluster:NAME[@YYYY-MM-DD]).
+        q: Entry filters (the options --signature to --exception, see EntryQuery; a capture
+            takes --signature, --since and --until only).
         bucket: Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d).
-        signature: Only entries of this group (signature or unique prefix).
-        level: A set only: only these levels, e.g. ERROR or WARN,ERROR.
-        min_level: A set only: only this level or more severe.
-        since: From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the
-            last entry.
-        until: Up to this time (same forms as --since).
         window: overlap or union (a capture only; default overlap).
         by_node: Per node of the set's capture (a set in no capture: that one node).
 
     """
     store, out = ctx.store(), ctx.out()
     if by_node or cq.names_capture(store, ref):
-        if blank(level) or blank(min_level):
-            raise OpError(
-                "usage",
-                "--level and --min-level apply to the timeline of a set, not of a capture",
-                hint="use --signature for one group",
-            )
-        w = CaptureWindow(window=window or "overlap", since=since, until=until)
-        doc = cq.timeline(store, ref, w, bucket=bucket, signature=signature, front="cli")
+        if blank(q.node) is not None:
+            raise OpError("usage", "--node does not apply to a timeline")
+        for name in _SET_ONLY:
+            value = getattr(q, name)
+            if value is True or (isinstance(value, str) and blank(value) is not None):
+                flag = "--" + name.replace("_", "-")
+                raise OpError(
+                    "usage",
+                    f"{flag} applies to the timeline of a set, not of a capture",
+                    hint="use --signature for one group",
+                )
+        w = CaptureWindow(window=window or "overlap", since=q.since, until=q.until)
+        doc = cq.timeline(store, ref, w, bucket=bucket, signature=q.signature, front="cli")
         out.document(doc, items=None, table=lambda console: render.cluster_timeline(console, doc))
         return
     if window is not None:
@@ -144,7 +162,6 @@ def timeline(
         )
     from atlas_log_analyzer.service import queries
 
-    q = EntryQuery(signature=signature, level=level, min_level=min_level, since=since, until=until)
     doc = queries.timeline(store, ref, q, bucket=bucket, front="cli")
     out.document(doc, columns=("bucket", "count"), title=f"timeline of {doc['logset']}")
 

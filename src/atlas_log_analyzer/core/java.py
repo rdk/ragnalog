@@ -19,6 +19,10 @@ the ``Suppressed:`` line itself: they describe secondary failures (typically fro
 ``close()``) and would otherwise make the chain of the primary failure unstable.
 Only the first chain in a text is parsed; text after it is ignored.
 
+The JVM's ``Exception in thread "main" `` prefix of an uncaught exception is skipped.
+Among the frames, blank lines are skipped when the chain goes on after them (a frame,
+``... N more``, ``Caused by:`` or ``Suppressed:``); otherwise they end it.
+
 Among the frames, a mangled frame line (characters lost when a log was copied out
 of a terminal or chat window: an indented ``at …`` that does not parse, or a line
 ending like a frame, ``…bar(Foo.java:64)``) is skipped instead of ending the
@@ -95,6 +99,8 @@ def is_app_frame(location: str, app_packages: Sequence[str] | None = None) -> bo
 
 _TYPE = r"[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)+"
 _HEADER_RE = re.compile(rf"(?P<type>{_TYPE})(?::(?: (?P<msg>.*)|$)|$)")
+_IN_THREAD_RE = re.compile(r'Exception in thread "[^"]*" ')
+"""The JVM's prefix of an uncaught exception (``Exception in thread "main" x.Y: …``)."""
 _CAUSED_RE = re.compile(rf"\s*Caused by: (?P<type>{_TYPE})(?::(?: ?(?P<msg>.*))?)?$")
 _FRAME_RE = re.compile(
     r"\s+at (?:(?P<module>[\w.@-]+)/(?:[\w.@-]*/)?)?(?P<loc>[^\s(]+)\((?P<src>[^)]*)\)"
@@ -148,7 +154,8 @@ def _find_start(lines: Sequence[str]) -> tuple[int, re.Match[str]] | None:
         line = lines[i]
         if not line or line[0] in " \t":
             continue
-        m = _HEADER_RE.match(line)
+        prefix = _IN_THREAD_RE.match(line) if line.startswith("Exception in thread ") else None
+        m = _HEADER_RE.match(line, prefix.end() if prefix is not None else 0)
         if m is None:
             continue
         simple = m.group("type").rsplit(".", 1)[-1]
@@ -201,9 +208,17 @@ def _parse(lines: Sequence[str]) -> tuple[ExceptionInfo, ...]:
     omitted = 0
     in_frames = False
     skip_indent = -1
+    blank_until = -1  # blank lines among the frames, up to this index, are skipped
 
     for i in range(start + 1, len(lines)):
         line = lines[i]
+        if in_frames and not line.strip():
+            if i < blank_until:
+                continue
+            j = _next_filled(lines, i)
+            if j < len(lines) and _continues(lines[j]):
+                blank_until = j  # a blank line inside the chain: the trace goes on
+                continue
         c = line[:1]
         if skip_indent >= 0:
             indent = len(line) - len(line.lstrip()) if c in _WS else 0
@@ -255,6 +270,18 @@ def _parse(lines: Sequence[str]) -> tuple[ExceptionInfo, ...]:
         has_msg = True
     chain.append(_exc(exc_type, has_msg, msg_lines, frames, omitted))
     return tuple(chain)
+
+
+def _next_filled(lines: Sequence[str], i: int) -> int:
+    """Index of the first line at or after ``i`` that is not blank (``len(lines)``: none)."""
+    while i < len(lines) and not lines[i].strip():
+        i += 1
+    return i
+
+
+def _continues(line: str) -> bool:
+    """Whether ``line`` goes on with a chain: a frame, ``... N more``, a cause or suppressed."""
+    return _is_marker(line) or line.lstrip().startswith("Caused by: ")
 
 
 def _exc(

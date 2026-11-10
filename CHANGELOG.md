@@ -10,6 +10,51 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+Parsing, masking and signatures change (format `jira@4`, signatures `sig2`, masking
+`mask3`): sets built before are `stale` and not comparable with new ones until
+`atlas-log upgrade --all` rebuilds them from their stored entries (no log files
+needed).
+
+### Fixed
+
+- A header whose request URL holds a `[` (`url: /a/[b]/c`) was glued onto the previous
+  entry; `upgrade` splits such entries again.
+- Exception chains after the JVM's `Exception in thread "main"` prefix, and chains with a
+  blank line before `Caused by:`, are parsed whole.
+- The same message with and without trailing white space is one group.
+- Masking: IPv6 addresses (`<IP>`), JSON Web Tokens (`<TOKEN>`), the user name in home
+  paths (`<USER>`), emails with `'` and `user@localhost`; an IPv4 address needs numbers
+  up to 255.
+- Rotated files with a date stamp (`x.log.20261101`) are read oldest first.
+- Store: an overwrite interrupted between its two renames is restored on the next start;
+  a long ingest's temporary folder is not swept; a set with an unreadable manifest is
+  listed as a warning (`sets`, the web index) and can be removed.
+- A damaged Parquet file of a set is `store_error` (exit 3); `timeline` of an unknown
+  group exits 2; a time window that runs backwards, `context --window` below 0, an empty
+  or multi-statement `query`, and an `ingest --name` with `:`, `/` or `\` are refused.
+- Re-ingesting a split upload under another `--capture` no longer fails.
+- Web app: server paths are cut from error messages, the access log prints
+  `token=***`, request bodies other than uploads are capped at 64 KiB, uploads are
+  refused when the disk is nearly full (507) or 8 jobs are waiting (503), finished jobs
+  are kept up to 100, the token redirect is relative, long upload names are shortened.
+- UI: keyboard focus stays on pagers and header buttons after re-renders, `/` with the
+  stuck narrow filter bar, `c` on a merged row, Esc closes a tooltip first, the cluster
+  merged log's time header follows the zone, the entries page handles relative times.
+
+### Added
+
+- `timeline` takes the filters of `entries` (`--thread`, `--user`, `--contains`, …) for a
+  set, and the entries page's chart applies them.
+- `groups.v1` has `next_offset`, like `entries.v1`.
+- Entries page: `?` keyboard help and `z` for the time zone; sortable column headers are
+  buttons (keyboard, `aria-sort`).
+
+### Changed
+
+- The "in window" count reads `N / total` on one line; the cluster drawer is more compact.
+- `diff --level` names the flag you typed in its errors; it means "this level and above".
+- A blank `--store ""` is ignored, like a blank `ATLAS_LOG_STORE`.
+
 ## [0.3.0] - 2026-11-10
 
 A redesign of the web UI and the HTML reports, and a new page listing all

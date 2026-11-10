@@ -57,8 +57,8 @@ class Versionless:
 
 
 def test_key_of_the_default_recipe() -> None:
-    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@3|L+G+E+F0|sig1|mask2"
-    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@3|L+G+E+F2|sig1|mask2"
+    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@4|L+G+E+F0|sig2|mask3"
+    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@4|L+G+E+F2|sig2|mask3"
 
 
 def test_extra_rules_add_a_digest() -> None:
@@ -77,7 +77,7 @@ def test_format_version_is_optional() -> None:
     assert format_version(fmt) == 1 and Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@1|")
     fmt.version = 3  # type: ignore[attr-defined]
     assert Recipe(fmt, DEFAULT_SPEC).key.startswith("versionless@3|")
-    assert format_version(JiraFormat()) == JiraFormat.version == 3
+    assert format_version(JiraFormat()) == JiraFormat.version == 4
     registry.register(Versionless())
     try:
         assert registry.get("versionless").name == "versionless"
@@ -100,20 +100,20 @@ def test_stages_equal_the_hand_built_chain(spec: SignatureSpec) -> None:
 
 def test_recipe_key_parts_and_differences() -> None:
     key = recipe_key("jira", 1, "L+G+E+F0", mask_rules_version=1)
-    assert key == "jira@1|L+G+E+F0|sig1|mask1"
+    assert key == "jira@1|L+G+E+F0|sig2|mask1"
     assert recipe_key("jira", 2, "L+G+E+F0", mask_rules_version=3, rules="ab") == (
-        "jira@2|L+G+E+F0|sig1|mask3|rules:ab"
+        "jira@2|L+G+E+F0|sig2|mask3|rules:ab"
     )
     assert recipe_differences(key, key) == []
-    diffs = recipe_differences(key, "jira@1|L+G+E+F2|sig1|mask2")
+    diffs = recipe_differences(key, "jira@1|L+G+E+F2|sig2|mask2")
     assert diffs == ["signature_spec: L+G+E+F0 != L+G+E+F2", "mask_rules_version: mask1 != mask2"]
     assert recipe_differences(key, key + "|rules:ab") == ["rules: none != ab"]
-    assert recipe_differences(key, "jira@2|L+G+E+F0|sig1|mask1") == ["format: jira@1 != jira@2"]
+    assert recipe_differences(key, "jira@2|L+G+E+F0|sig2|mask1") == ["format: jira@1 != jira@2"]
 
 
 def test_key_format_version() -> None:
-    assert key_format_version("jira@2|L+G+E+F0|sig1|mask1") == 2
-    assert key_format_version("acme.v2@13|L+G+E+F0|sig1|mask1|rules:ab") == 13
+    assert key_format_version("jira@2|L+G+E+F0|sig2|mask1") == 2
+    assert key_format_version("acme.v2@13|L+G+E+F0|sig2|mask1|rules:ab") == 13
     assert key_format_version("jira|L+G+E+F0") is None
     assert key_format_version("") is None
 

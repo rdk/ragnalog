@@ -391,6 +391,7 @@ class Groups(Struct, kw_only=True, tag_field="schema", tag="groups.v1"):
     total: Annotated[int, _d("Matching groups before offset/limit.")]
     offset: Annotated[int, _d("Echo of --offset.")]
     truncated: Annotated[bool, _d("More rows follow (offset + count < total).")]
+    next_offset: Annotated[int | None, _d("Where the next page starts; null on the last.")]
     items: Annotated[list[GroupRow], _d("groups.v1 rows (all columns unless --columns).")]
 
 

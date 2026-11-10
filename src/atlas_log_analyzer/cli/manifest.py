@@ -51,32 +51,31 @@ __all__ = [
 ]
 
 WORKFLOW: tuple[tuple[str, str], ...] = (
-    ("ingest PATH... --name N", "parse logs into a stored set"),
-    ("triage LOGSET", "new kinds of errors since the previous set?"),
-    ("groups LOGSET --brief", "groups by count; --with-exception: any stack trace"),
+    ("ingest PATH... --name N", "parse logs into a set"),
+    ("triage LOGSET", "new errors since the previous set?"),
+    ("groups LOGSET --brief", "by count; --with-exception: stack traces"),
     ("show LOGSET SIGNATURE --brief", "entries of one group"),
-    ("frames LOGSET SIGNATURE", "its stack trace, application frames first"),
-    ("context LOGSET ENTRY_ID", "what the thread did around one entry"),
+    ("frames LOGSET SIGNATURE", "its stack trace, app frames first"),
+    ("context LOGSET ENTRY_ID", "thread activity around an entry"),
     ("entries LOGSET --request-id ID", "one request"),
-    ("diff SET_A SET_B --rate", "compare two sets of any length"),
+    ("diff SET_A SET_B --rate", "compare two sets"),
 )
 """The usual order of commands with a one-line purpose (hand-written)."""
 
 WHEN: tuple[tuple[str, str], ...] = (
-    ("capture cluster:NAME", "cluster nodes side by side, verdict per node"),
+    ("capture cluster:NAME", "nodes side by side, verdict each"),
     ("matrix CAPTURE --spread only", "groups on one node only"),
-    ("events CAPTURE", "what each node did, when"),
-    ("interactions CAPTURE", "how the nodes affect each other"),
-    ("query LOGSET SQL", "aggregates no command gives (DuckDB SQL)"),
-    ("batch", "several commands in one process"),
-    ("sets --brief", "what is in the store"),
+    ("events CAPTURE", "what each node did"),
+    ("interactions CAPTURE", "node-to-node effects"),
+    ("query LOGSET SQL", "custom aggregates (DuckDB SQL)"),
+    ("batch", "several commands, one process"),
 )
 """Commands outside the workflow and when to use them (hand-written); commands the app
 does not have are left out."""
 
 NOTES: tuple[str, ...] = (
     'JSON on a pipe: "schema" names the document, listings have "items"',
-    "errors: error.v1 on stdout with a hint",
+    "errors: error.v1 on stdout",
     'paging: "truncated"; next --offset = offset + count',
     "times: ISO 8601, YYYY-MM-DD or 2h/1d before the last entry",
 )

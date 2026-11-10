@@ -12,6 +12,7 @@ from atlas_log_analyzer.cli import params, render
 from atlas_log_analyzer.service import compare as service_compare
 from atlas_log_analyzer.service import ingest as service_ingest
 from atlas_log_analyzer.service.errors import OpError
+from atlas_log_analyzer.service.params import blank
 
 # polars, DuckDB, rich and the ingest pipeline are imported by the code that needs them.
 
@@ -23,7 +24,8 @@ def diff(
     set_b: str,
     /,
     *,
-    min_level: Annotated[str | None, Parameter(name=["--min-level", "--level"])] = None,
+    min_level: str | None = None,
+    level: str | None = None,
     coarse: bool = False,
     force: bool = False,
     limit: int = 50,
@@ -64,6 +66,8 @@ def diff(
         set_a: Baseline log set (id, id prefix or name).
         set_b: Log set to compare against the baseline.
         min_level: Only groups of this level or more severe (e.g. ERROR).
+        level: Alias of --min-level: this level and above (unlike `entries --level`,
+            which matches exactly).
         coarse: Compare by coarse signature (exception chain ignored).
         force: Compare even if signature versions or specs differ.
         limit: Maximum rows per section (new, vanished, changed); 0 = all.
@@ -71,6 +75,10 @@ def diff(
             rate_ratio, for sets of different length.
 
     """
+    if blank(level) is not None:
+        if blank(min_level) is not None:
+            raise OpError("usage", "give --min-level or its alias --level, not both")
+        min_level = params.level(level, "level")
     doc = service_compare.diff(
         ctx.store(),
         set_a,

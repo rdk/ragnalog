@@ -235,7 +235,9 @@ remove, or "Remove all filters".
   `c` copies the signature (a merged row: its first member's),
   `m` mutes the selected group in the chart, `z` switches UTC / local time,
   `n`/`p` page, `[`/`]` move the time window, `?` lists the keys. `Esc` first dismisses an
-  open tooltip.
+  open tooltip. Sortable column headers hold a real button (Tab to it, `Enter`/`Space`
+  sorts) and carry `aria-sort` (`none` on the others); the focus stays on the header after
+  the table re-renders.
 - Every drawer has the equivalent CLI commands
   (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) in its
   collapsed *Identifiers & CLI* part, so a human can hand a finding to an agent verbatim.

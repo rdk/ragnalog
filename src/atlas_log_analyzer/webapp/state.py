@@ -18,7 +18,14 @@ from atlas_log_analyzer.report import build_payload
 from atlas_log_analyzer.service.views import set_activity, set_summary
 from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.logset import MANIFEST_FILE, LogSet, LogSetManifest
-from atlas_log_analyzer.store.store import UNSET, Label, Store, StoreError
+from atlas_log_analyzer.store.store import (
+    UNSET,
+    AmbiguousLogSet,
+    Label,
+    LogSetNotFound,
+    Store,
+    StoreError,
+)
 from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
 from atlas_log_analyzer.webapp.settings import Settings
 
@@ -199,9 +206,16 @@ class AppState:
             for m in self.manifests()
         )
 
-    def remove(self, ref: str) -> LogSet:
-        """Delete a set and drop its cached data."""
-        ls = self.store.open(ref)
+    def remove(self, ref: str) -> LogSet | None:
+        """Delete a set and drop its cached data (``None``: a set with an unreadable manifest)."""
+        try:
+            ls = self.store.open(ref)
+        except LogSetNotFound, AmbiguousLogSet:
+            raise
+        except StoreError:  # `Store.remove` still deletes such a set by its directory name
+            self.store.remove(ref)
+            self.invalidate(ref)
+            return None
         self.store.remove(ls.manifest.id)
         self.invalidate(ls.manifest.id)
         return ls

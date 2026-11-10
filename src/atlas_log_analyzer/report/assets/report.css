@@ -464,9 +464,15 @@ table.groups th:first-child { border-top-left-radius: var(--r-lg); padding-left:
 table.groups th:last-child { border-top-right-radius: var(--r-lg); padding-right: var(--s4); }
 table.groups th.sortable { cursor: pointer; }
 table.groups th.sortable:hover { color: var(--ink); }
-table.groups th[aria-sort] { color: var(--ink); }
-table.groups th[aria-sort]::after { content: " ↓"; color: var(--muted); }
+table.groups th[aria-sort]:not([aria-sort="none"]) { color: var(--ink); }
+table.groups th[aria-sort]:not([aria-sort="none"])::after { content: " ↓"; color: var(--muted); }
 table.groups th[aria-sort="ascending"]::after { content: " ↑"; }
+table.groups th .th-sort {
+  font: inherit; color: inherit; letter-spacing: inherit; text-transform: inherit; text-align: inherit;
+  background: none; border: 0; padding: 0; margin: 0; cursor: pointer; max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom;
+}
+table.groups th .th-sort:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 3px; }
 table.groups td:first-child { padding-left: var(--s4); }
 table.groups td:last-child { padding-right: var(--s4); }
 table.groups td {
@@ -1093,8 +1099,8 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report table.groups tbody tr { scroll-margin-top: calc(var(--sticky-top) + var(--s5)); scroll-margin-bottom: var(--s4); }
 .report table.groups th { box-shadow: 0 1px 0 var(--grid); }
 .report table.groups th.sortable:hover { color: var(--ink-2); }
-.report table.groups th[aria-sort] { color: var(--ink); }
-.report table.groups th[aria-sort]::after { color: var(--blue); }
+.report table.groups th[aria-sort]:not([aria-sort="none"]) { color: var(--ink); }
+.report table.groups th[aria-sort]:not([aria-sort="none"])::after { color: var(--blue); }
 .report table.groups tbody tr:last-child td:first-child { border-bottom-left-radius: var(--r-lg); }
 .report table.groups tbody tr:last-child td:last-child { border-bottom-right-radius: var(--r-lg); }
 .report table.groups tbody tr.is-sel { background: var(--sel); }
@@ -1106,6 +1112,14 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report th.c-delta { width: 178px; }
 @container (max-width: 700px) { .report th.c-delta { width: 96px; } }
 .report table.no-track th.c-count { width: 84px; }
+/* in a window: "605,488 / 1.2M" on one line, never wrapped */
+.report table.in-win th.c-count { width: 196px; }
+.report table.in-win.no-track th.c-count { width: 132px; }
+.report table.in-win .cnt .num { flex: 0 0 108px; white-space: nowrap; } /* bars stay aligned */
+.report table.in-win.no-track .cnt .num { flex-basis: auto; }
+.report table.in-win .cnt .num .of { display: inline; font-size: 11px; }
+@container (max-width: 700px) { .report table.in-win th.c-count { width: 132px; } }
+@container (max-width: 460px) { .report table.in-win th.c-count { width: 112px; } }
 .report td.c-count .num { color: var(--ink); font-weight: 500; }
 .report .cnt { gap: var(--s3); }
 .report .track { height: 4px; }

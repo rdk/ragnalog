@@ -32,6 +32,9 @@
     <div class="atip-sub atip-mono">{{ store }}</div>
   </template>
 </header>
+{% if unreadable %}
+<p class="muted" id="unreadable-sets">Not listed, manifest unreadable: {% for name, reason in unreadable %}<span class="mono">{{ name }}</span> ({{ reason }}){{ ", " if not loop.last else "" }}{% endfor %}. Run <span class="mono">atlas-log remove NAME</span> (or <span class="mono">DELETE /api/sets/NAME</span>) with the directory name to clear this.</p>
+{% endif %}
 
 {% if sets %}
 <div class="card table-wrap">

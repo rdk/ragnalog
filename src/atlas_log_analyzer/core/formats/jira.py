@@ -69,10 +69,13 @@ HEADER_RE = re.compile(
     r" (?P<thread>.+?)"
     r"(?: url: (?P<url>.+?))?"
     r" (?P<level>TRACE|DEBUG|INFO|WARN|ERROR|FATAL)"
-    r" +(?:(?P<ctx>[^\[\s][^\[]*?) +)?"
+    r" +(?:(?P<ctx>[^\[\s](?:[^\[]|(?<! )\[|\[(?![^\]\s]+\]))*?) +)?"
     r"\[(?P<logger>[^\]\s]+)\] ?(?P<msg>.*)"
 )
 """Anchored header regex; ``thread``/``url``/``ctx`` are lazy, ``LEVEL`` and ``[logger]`` anchor.
+
+``[logger]`` is the first `` [TOKEN]`` after the level: ``ctx`` may hold a ``[`` that
+follows no space (a request URL ``/a/[b]/c``) or that opens no token (``[a b]``).
 
 The definition of a header. Parsing uses :func:`match_header`, which returns the
 same groups in linear time: the regex backtracks quadratically on long lines that
@@ -95,33 +98,42 @@ type HeaderGroups = tuple[str, str, str | None, str, str | None, str, str]
 """``(ts, thread, url, level, ctx, logger, msg)`` as ``HEADER_RE.match(line).groups()``."""
 
 
+def _logger_at(line: str, start: int) -> tuple[int, re.Match[str]] | None:
+    """Find the first `` [TOKEN]`` at or after ``start``: the ``[``'s index and the match."""
+    at = line.find(" [", start - 1)
+    while at >= 0:
+        m = _LOGGER_RE.match(line, at + 1)
+        if m is not None:
+            return at + 1, m
+        at = line.find(" [", at + 2)
+    return None
+
+
 def _tails(line: str, start: int) -> Iterator[tuple[int, str, str | None, str, str]]:
     """Yield ``(pos, level, ctx, logger, msg)`` of each level token that can end a header.
 
     Level tokens (`` LEVEL`` at ``pos >= start``) are tried left to right; one can end
     a header when the rest of :data:`HEADER_RE` (``ctx`` and ``[logger]``) follows it.
-    ``ctx`` cannot contain ``[``, so ``[logger]`` is the first ``[`` after the level;
-    candidates that share it share its verdict, which keeps the scan linear.
+    ``[logger]`` is the first `` [TOKEN]`` after the level (:func:`_logger_at`);
+    candidates that share it share its verdict, and each search starts past the last
+    one, which keeps the scan linear.
     """
     bracket = -1
     logger_m: re.Match[str] | None = None
     for m in _LEVEL_TOKEN_RE.finditer(line, start):
         q = m.end()  # the space after the level
         if bracket < q:
-            bracket = line.find("[", q)
-            if bracket < 0:
+            found = _logger_at(line, q)
+            if found is None:
                 return
-            logger_m = _LOGGER_RE.match(line, bracket)
-            if line[bracket - 1] != " ":
-                logger_m = None
-        if logger_m is None:
-            continue
+            bracket, logger_m = found
+        assert logger_m is not None
         spaces = _SPACES_RE.match(line, q)
         j = spaces.end() if spaces is not None else q
         if j == bracket:
             ctx = None
-        elif line[j].isspace():
-            continue  # ctx must not start with whitespace
+        elif line[j].isspace() or line[j] == "[":
+            continue  # ctx must not start with whitespace or "["
         else:
             ctx = line[j:bracket].rstrip(" ")
         yield m.start(), m.group(1), ctx, logger_m.group(1), line[logger_m.end() :]
@@ -263,7 +275,7 @@ class JiraFormat:
 
     name = "jira"
     description = "Jira Data Center atlassian-jira.log"
-    version = 3
+    version = 4
     """Bump when :data:`JIRA_RULES` or the entries this format builds change.
 
     2: banners attached to the next entry, titles from the body of entries whose
@@ -271,6 +283,9 @@ class JiraFormat:
     3: the request context of a user whose name has a space (``Automation Robot
     1x2x3 …``) is split into its fields; a suppressed exception's own causes stay
     out of the main chain. ``upgrade`` re-builds such entries from their raw text.
+    4: a header whose request context holds a ``[`` (``url: /a/[b]/c``) is a header (it
+    was glued onto the previous entry: ``upgrade`` splits it off again); exception chains
+    skip the ``Exception in thread "…" `` prefix and blank lines inside the chain.
     """
     banners_since = 2
     """Version 2 started attaching banners (:func:`~.base.banners_since`)."""

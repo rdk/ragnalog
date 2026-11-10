@@ -726,3 +726,13 @@ def test_old_zip_spool_entries_are_swept(tmp_path: Path) -> None:
     os.utime(fresh, (past, past))
     store._tmp_dir("other")
     assert not spool.exists()  # empty spool removed too
+
+
+def test_remove_a_set_with_a_corrupt_manifest(built: Built) -> None:
+    path = built.logset.path
+    (path / MANIFEST_FILE).write_text("{", encoding="utf-8")
+    assert built.store.list() == []
+    built.store.remove(path.name)
+    assert not path.exists()
+    with pytest.raises(StoreError):
+        built.store.remove("../elsewhere")

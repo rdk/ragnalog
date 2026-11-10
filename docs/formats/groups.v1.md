@@ -47,6 +47,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `total` | `integer` | yes | Matching groups before offset/limit. |
 | `offset` | `integer` | yes | Echo of --offset. |
 | `truncated` | `boolean` | yes | More rows follow (offset + count < total). |
+| `next_offset` | `integer \| null` | yes | Where the next page starts; null on the last. |
 | `items` | `list<GroupRow>` | yes | groups.v1 rows (all columns unless --columns). |
 
 ### `GroupRow`

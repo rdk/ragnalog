@@ -101,6 +101,16 @@ def _missing_mine(exc: ImportError, front: Front) -> OpError:
     )
 
 
+def _check_name(name: str | None, front: Front) -> None:
+    """Refuse a set name that reads as a path or a reference of another kind (``capture:X``)."""
+    if name is not None and any(c in name for c in ":/\\"):
+        raise OpError(
+            "invalid_value",
+            f"{flag('name', front)} must not contain ':', '/' or '\\' (it would read as a "
+            f"capture reference or a path): {name!r}",
+        )
+
+
 def _check_frames(frames: int | None, front: Front) -> None:
     if frames is not None and frames < 0:
         raise OpError("invalid_value", f"{flag('frames', front)} must be >= 0")
@@ -128,6 +138,7 @@ def ingest(
     from atlas_log_analyzer.store.split import shown_path
 
     _check_frames(frames, front)
+    _check_name(name, front)
     try:
         result = ingest_sources(
             store,
@@ -212,6 +223,7 @@ def ingest_paths(
     if not path_list:
         raise OpError("usage", "at least one PATH is required")
     _check_frames(frames, front)
+    _check_name(name, front)
     target = (target or IngestTarget()).checked(front=front)
     opts = _Options(
         fmt=fmt,
@@ -337,6 +349,7 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
     done_bytes = done_entries = 0
     docs: list[Doc] = []
     created: list[str] = []  # sets this run added: removed again if it does not finish
+    kept: list[str | None] = []  # the capture each set ended up in
     try:
         for node, found in members:
             old = _by_id(manifests, ids[node])
@@ -369,12 +382,19 @@ def _split(store: Store, split: Split, target: IngestTarget, o: _Options) -> Doc
             )
             warnings.extend(f"{node}: {w}" for w in result.warnings)
             docs.append(_document(result, m))
+            kept.append(m.capture)
             done_bytes += sum(s.size for s in found)
             done_entries += result.parsed_entries
     except BaseException:
         _roll_back(store, created)
         raise
+    # sets that existed keep their capture (--capture is then ignored, with a warning)
     info = get_capture(store, capture)
+    for other in kept:
+        if info is None and other:
+            info = get_capture(store, other)
+    if info is None:
+        raise OpError("store_error", f"capture {capture} has no set after the split")
     return {
         "schema": "ingest-capture.v1",
         "capture": msgspec.to_builtins(info),
@@ -628,8 +648,18 @@ class Removable(Sets, Protocol):
 
 
 def remove(sets: Removable, ref: str, *, front: Front) -> Doc:
-    """``remove.v1``: delete a set (its directory and every file)."""
-    ls = open_set(sets, ref, front=front)
+    """``remove.v1``: delete a set (its directory and every file).
+
+    A set whose ``manifest.json`` cannot be read is removed by its directory name
+    (``name`` is then null); an unknown reference stays ``set_not_found``.
+    """
+    from atlas_log_analyzer.store.store import StoreError
+
+    try:
+        ls = open_set(sets, ref, front=front)
+    except StoreError:  # not found and ambiguous references became OpErrors in open_set
+        sets.remove(ref)  # raises StoreError again unless ref names such a directory
+        return {"schema": "remove.v1", "removed": ref, "name": None}
     sets.remove(ls.manifest.id)
     return {"schema": "remove.v1", "removed": ls.manifest.id, "name": ls.manifest.name}
 

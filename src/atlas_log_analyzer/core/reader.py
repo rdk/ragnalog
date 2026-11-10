@@ -28,6 +28,8 @@ __all__ = [
 
 _ROTATION_RE = re.compile(r"^(?P<base>.+)\.(?P<n>\d+)$")
 _STEM_RE = re.compile(r"^(?P<stem>.+?)\.log", re.IGNORECASE)
+_DATE_SUFFIX_MIN = 100_000
+"""A rotation suffix this large (six digits or more) is a date stamp, not a counter."""
 GZIP_MAGIC = bytes((0x1F, 0x8B))
 """First two bytes of a gzip file."""
 LOG_GLOB = "*.log*"
@@ -106,7 +108,8 @@ def discover_sources(paths: Iterable[Path | str], *, glob: str = LOG_GLOB) -> li
     """Expand files and directories into sources, ordered oldest-first.
 
     Directories are searched (non-recursively) with ``glob``. Rotated files
-    (``x.log.N``) sort by descending ``N`` so that ``x.log`` comes last. Files
+    (``x.log.N``) sort by descending ``N`` so that ``x.log`` comes last; a date stamp
+    (``x.log.20261101``, six digits or more) sorts ascending, oldest first. Files
     of different rotation families are ordered by the modification time of
     their oldest member, then by name. Duplicate paths are listed once.
 
@@ -131,14 +134,19 @@ def discover_sources(paths: Iterable[Path | str], *, glob: str = LOG_GLOB) -> li
         base, n = _rotation(path)
         families.setdefault((path.parent, base), []).append((n, path))
 
+    def age(member: tuple[int, Path]) -> tuple[int, int]:
+        # a date stamp (x.log.20261101, 6+ digits) counts up with time, a counter down
+        n = member[0]
+        return (0, n) if n >= _DATE_SUFFIX_MIN else (1, -n)
+
     def family_key(item: tuple[tuple[Path, str], list[tuple[int, Path]]]) -> tuple[float, str]:
         (parent, base), members = item
-        oldest = max(members)[1]
+        oldest = min(members, key=age)[1]
         return oldest.stat().st_mtime, str(parent / base)
 
     ordered: list[SourceFile] = []
     for _, members in sorted(families.items(), key=family_key):
-        for n, path in sorted(members, key=lambda m: -m[0]):
+        for n, path in sorted(members, key=age):
             size, digest = file_digest(path)
             ordered.append(SourceFile(path, size, digest, n))
     return ordered

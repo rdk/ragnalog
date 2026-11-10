@@ -149,7 +149,11 @@ class Settings:
             ValueError: A number that does not parse, or one below 1.
 
         """
-        given = {k: v for k, v in (flags or {}).items() if v is not None and v != ""}
+        given = {
+            k: v
+            for k, v in (flags or {}).items()
+            if v is not None and (v.strip() if isinstance(v, str) else True) != ""
+        }
         values: dict[str, Any] = {}
         for var in ENV_VARS:
             text = (env or {}).get(var.name, "").strip()

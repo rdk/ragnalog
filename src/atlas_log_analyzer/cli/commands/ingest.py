@@ -104,7 +104,7 @@ def ingest(
         format: Format name (see `formats`); default: detected from the first 200 lines
             of the first file a format recognises (named files first).
         name: Human-readable alias for the set, usable wherever SET is expected; with a
-            split, the prefix of the sets' names.
+            split, the prefix of the sets' names. No ':', '/' or backslash.
         frames: Add the top N stack frames to signatures (finer groups); default 0.
         overwrite: Rebuild the set if one with the same id already exists.
         mine: Propose group merges with Drain3 (needs extra "mine": uv sync --extra mine).

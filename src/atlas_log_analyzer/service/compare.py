@@ -81,9 +81,9 @@ def choose_baseline(
     """Resolve a baseline reference: ``auto`` (ranked), ``none`` or blank (none), or a set."""
     from atlas_log_analyzer.store.triage import explicit_baseline, rank_baselines
 
-    if ref is None or ref.strip() in ("", "none"):
+    if ref is None or ref.strip().lower() in ("", "none"):
         return None, None
-    if ref == "auto":
+    if ref.strip().lower() == "auto":
         choice = rank_baselines(sets.manifests(), ls.manifest)
         found = choice.manifest
         return (open_set(sets, found.id, front=front) if found is not None else None), choice

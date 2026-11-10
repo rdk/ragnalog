@@ -19,7 +19,6 @@ import io
 import os
 import sys
 from collections.abc import Callable, Iterable, Sequence
-from pathlib import Path
 from typing import Annotated, Any
 
 from cyclopts import App, CycloptsError, Group, Parameter, UnusedCliTokensError
@@ -113,7 +112,7 @@ def _load_all() -> None:
 def _meta(
     *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     output: Annotated[OutputMode | None, Parameter(group=GLOBAL)] = None,
-    store: Annotated[Path | None, Parameter(group=GLOBAL)] = None,
+    store: Annotated[str | None, Parameter(group=GLOBAL)] = None,
     quiet: Annotated[bool, Parameter(group=GLOBAL, negative="")] = False,
     width: Annotated[int | None, Parameter(group=GLOBAL)] = None,
     color: Annotated[ColorMode, Parameter(group=GLOBAL)] = "auto",

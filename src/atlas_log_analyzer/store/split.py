@@ -35,6 +35,7 @@ from typing import Any, Final, Literal
 
 from atlas_log_analyzer.core.paths import windows_safe
 from atlas_log_analyzer.core.reader import LOG_GLOB, iter_raw_lines
+from atlas_log_analyzer.store.fresh import keep_fresh
 
 __all__ = [
     "JOB_FILE",
@@ -144,8 +145,13 @@ def extract_zip(archive: Path, target: Path, *, budget: list[int]) -> int:
         members: list[tuple[Any, list[str]]] = []
         seen: set[tuple[str, ...]] = set()
         for info in zf.infolist():
+            # members that are never extracted are not judged: a note named "12:30.txt"
+            # beside the logs must not fail the archive
+            last = info.filename.replace("\\", "/").rstrip("/").rsplit("/", 1)[-1]
+            if not _regular(info) or not _wanted(last):
+                continue
             parts = _member_parts(info.filename)
-            if not parts or not _regular(info) or not _wanted(parts[-1]):
+            if not parts or not _wanted(parts[-1]):
                 continue
             key = tuple(p.lower() for p in parts)
             if key in seen:
@@ -266,20 +272,21 @@ def expand_archives(
     try:
         out: list[Path] = []
         used: set[str] = set()
-        for path in paths:
-            if not _is_zip(path):
-                out.append(path)
-                continue
-            stem = safe_node(path.stem)
-            while stem.lower() in used:
-                stem = f"{stem}_"
-            used.add(stem.lower())
-            target = root / stem
-            target.mkdir(parents=True)
-            archives[str(target)] = archives[str(target.resolve())] = str(path)
-            extract_zip(path, target, budget=budget)
-            out.append(_descend(target))
-        yield out
+        with keep_fresh(root):  # the store's sweep judges the spool by this directory's mtime
+            for path in paths:
+                if not _is_zip(path):
+                    out.append(path)
+                    continue
+                stem = safe_node(path.stem)
+                while stem.lower() in used:
+                    stem = f"{stem}_"
+                used.add(stem.lower())
+                target = root / stem
+                target.mkdir(parents=True)
+                archives[str(target)] = archives[str(target.resolve())] = str(path)
+                extract_zip(path, target, budget=budget)
+                out.append(_descend(target))
+            yield out
     except Exception as exc:
         _name_archives(exc, archives)
         raise
@@ -636,6 +643,13 @@ def plan_split(paths: Sequence[Path], mode: SplitMode = "auto") -> Split:
     nested = len(paths) == 1 and len(dirs) == 1 and len(inputs.groups.get(dirs[0], {})) > 1
     if mode == "prefix" or (mode == "auto" and not nested):
         nodes, rest, shared = _by_prefix(files)
+        if mode == "auto" and len(nodes) > 1 and shared:
+            # auto decides on the files a format reads: GC logs named <date>_<time>.log
+            # must not pass for nodes (and push the real logs out as "no node")
+            real, _, shared = _by_prefix([f for f in files if _recognised(f)])
+            keep = {n.node for n in real}
+            rest = [*rest, *(f for n in nodes if n.node not in keep for f in n.files)]
+            nodes = [n for n in nodes if n.node in keep]
         if (mode == "prefix" and nodes) or (len(nodes) > 1 and shared):
             return Split("prefix", tuple(nodes), search, job, (*warnings, *_unassigned(rest)))
         if mode == "prefix":

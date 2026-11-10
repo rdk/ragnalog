@@ -443,3 +443,20 @@ def test_node_folders_named_like_logs_still_split(tmp_path: Path) -> None:
         (d / "atlassian-jira.log").write_text(node_lines("NODE1", 0), encoding="utf-8")
     split = plan_split([tmp_path / "case"])
     assert split.kind == "dir" and [n.node for n in split.nodes] == ["logs-node1", "logs-node2"]
+
+
+def test_members_that_are_not_extracted_are_not_judged(tmp_path: Path) -> None:
+    archive = _zip(
+        tmp_path / "x.zip",
+        {"NODE1_atlassian-jira.log": b"a\n", "notes/12:30 dump.txt": b"n", "../readme.md": b"r"},
+    )
+    assert extract_zip(archive, tmp_path / "out", budget=[1 << 20]) == 1
+
+
+def test_gc_logs_with_a_time_suffix_are_no_nodes(tmp_path: Path) -> None:
+    write_node_files(tmp_path, "NODE1", parts=2, prefix=False)
+    for day in ("2026-01-01", "2026-02-01"):
+        name = f"atlassian-jira-gc-{day}_03-00-00.log"
+        (tmp_path / name).write_text("[0.001s][info][gc] Using G1\n", encoding="utf-8")
+    split = plan_split([tmp_path])
+    assert split.kind is None and split.nodes == ()

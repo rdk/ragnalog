@@ -19,10 +19,14 @@ from dataclasses import dataclass
 
 __all__ = ["GENERIC_RULES", "MASK_RULES_VERSION", "MaskRule", "Masker"]
 
-MASK_RULES_VERSION = 2
+MASK_RULES_VERSION = 3
 """Bump whenever a change to built-in rules alters templates; recorded in manifests.
 
 2: an IP address that ends a sentence (``from 10.0.0.1.``) is masked whole.
+3: IPv6 addresses (``fe80::1``, eight groups) are ``<IP>``; an IPv4 address needs numbers
+up to 255; JSON Web Tokens (``eyJ…``) are ``<TOKEN>``; an email's local part may hold
+``'`` (``o'neil@…``) and ``user@localhost`` is an email; the user name in a home path
+(``C:\\Users\\NAME``, ``/home/NAME``, ``/Users/NAME``) is ``<USER>``.
 """
 _CACHE_TEXT_MAX = 4096
 """Longest text the masker caches (65,536 texts of this size stay under 300 MB)."""
@@ -52,8 +56,29 @@ GENERIC_RULES: Sequence[MaskRule] = (
         r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b",
     ),
     MaskRule.make("url", r"(?<![\w.+-])[a-zA-Z][a-zA-Z0-9+.-]*://[^\s'\"<>]*[^\s'\"<>.,;:)\]]"),
-    MaskRule.make("email", r"(?<![\w.+-])[\w.+-]+@[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}\b"),
-    MaskRule.make("ip", r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?::\d{1,5})?(?!\w|\.\w)"),
+    MaskRule.make("token", r"(?<![\w-])eyJ[\w-]{10,}(?:\.[\w-]+){0,2}"),
+    MaskRule.make(
+        "email",
+        r"(?<![\w.+-])(?<!\w')\w[\w.+'-]*@(?:[\w-]+(?:\.[\w-]+)*\.[a-zA-Z]{2,}|localhost)\b",
+    ),
+    MaskRule.make(
+        "ip6",
+        r"(?<![\w:.])(?=[0-9A-Fa-f:]*\d)"  # a digit: "Dead::beef" is no address
+        r"(?:(?:[0-9A-Fa-f]{1,4}:){7}[0-9A-Fa-f]{1,4}"
+        r"|(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?::(?:[0-9A-Fa-f]{1,4}(?::[0-9A-Fa-f]{1,4})*)?)"
+        r"(?:%\w+)?(?![\w:])",
+        "<IP>",
+    ),
+    MaskRule.make(
+        "ip",
+        r"(?<![\w.])(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)"
+        r"(?::\d{1,5})?(?!\w|\.\w)",
+    ),
+    MaskRule.make(
+        "home",
+        r"(?i:(?<=\\users\\)|(?<=\\\\users\\\\)|(?<=/users/)|(?<=/home/))[^\\/\s'\"<>:|]+",
+        "<USER>",
+    ),
     MaskRule.make("hex", r"\b(?:0x[0-9a-fA-F]+|(?=[0-9a-fA-F]*\d)[0-9a-fA-F]{8,})\b"),
     MaskRule.make(
         "user",
@@ -74,7 +99,8 @@ GENERIC_RULES: Sequence[MaskRule] = (
 
 ``user`` masks the identifier that follows a user-naming key (``uid:``, ``user=``,
 ``userName:``, ``sAMAccountName:``, ``login:``; case-insensitive), since account names
-otherwise look like ordinary words (``LDAP UID: JDOEXAMP``).
+otherwise look like ordinary words (``LDAP UID: JDOEXAMP``). ``home`` masks the user
+name in a home path (``C:\\Users\\NAME``, ``/home/NAME``); ``token`` JSON Web Tokens.
 ``id`` masks identifiers that start with a letter or ``_`` and contain a run of at least
 three digits (``KB001_0000687992_5_1``, ``JIRAUSER12345``). ``num`` masks standalone
 numbers (``42``, ``-1``, ``3.5``) and numbers that end a token (``thread-8``, ``id=42``)

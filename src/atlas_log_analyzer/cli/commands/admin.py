@@ -129,10 +129,14 @@ def remove(logset: str, /) -> None:
 
     Output (json): {"schema": "remove.v1", "removed": id, "name": str | null}
 
+    A set whose manifest.json cannot be read is removed by its directory name
+    ("name" is then null).
+
     Exit codes: 0 ok; 3 unknown set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name (the directory name when the
+            manifest cannot be read).
 
     """
     doc = service_ingest.remove(ctx.store(), logset, front="cli")
@@ -211,6 +215,8 @@ def serve(
             "reach this port can read, upload and delete log sets (pass --token, or set "
             "ATLAS_LOG_TOKEN)"
         )
+    from atlas_log_analyzer.webapp.logs import log_config
+
     if reload:
         # the reloading child builds its settings from the environment alone
         os.environ.update(settings.to_env())
@@ -220,11 +226,12 @@ def serve(
             host=host,
             port=port,
             reload=True,
+            log_config=log_config(),
         )
         return
     hosts = served_hosts(host, settings.allowed_hosts)
     app = create_app(settings, warm=True, hosts=hosts)
-    uvicorn.run(app, host=host, port=port, log_level="info")
+    uvicorn.run(app, host=host, port=port, log_level="info", log_config=log_config())
 
 
 def version() -> None:
@@ -254,6 +261,7 @@ def batch() -> int:
     to stdout, in input order: its usual document, or error.v1 when it fails
     (a line that is not a JSON array of strings, a global option, --help, or
     batch/parse/serve, which do not write one document, are usage errors).
+    Every error message starts with "line N:".
     Blank lines are skipped. A failed line never stops the batch.
     Use it to avoid the start-up cost of the CLI (about 0.45 s per call) when
     an agent runs several commands.
@@ -314,10 +322,23 @@ def _batch_line(outer: ctx.Context, number: int, line: str) -> str:
 
     with ctx.use(ctx.Context(inner, outer.settings)) as here:
         dispatch(argv, here, unexpected=_internal_error)
-    text = buffer.getvalue().strip()
+    text = _numbered(buffer.getvalue().strip(), number)
     if not _one_document(text):  # e.g. --raw text
         return refused(f"{argv[0]} did not write one JSON document")
     return text
+
+
+def _numbered(text: str, number: int) -> str:
+    """Start the message of an ``error.v1`` document with ``line N:``."""
+    try:
+        doc = json.loads(text)
+        error = doc["error"]
+        if doc["schema"] != "error.v1" or str(error["message"]).startswith("line "):
+            return text
+        error["message"] = f"line {number}: {error['message']}"
+    except ValueError, KeyError, TypeError:
+        return text
+    return encode_json(doc)
 
 
 def _one_document(text: str) -> bool:

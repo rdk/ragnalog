@@ -20,11 +20,33 @@ from atlas_log_analyzer.service.params import IngestTarget
 from atlas_log_analyzer.store.pipeline import IngestProgress
 from atlas_log_analyzer.store.store import Store, StoreError
 
-__all__ = ["UPLOADS_DIR", "Job", "JobCancelled", "JobManager", "JobState", "safe_filename"]
+__all__ = [
+    "KEEP_FINISHED",
+    "MAX_ACTIVE_JOBS",
+    "UPLOADS_DIR",
+    "Job",
+    "JobCancelled",
+    "JobManager",
+    "JobState",
+    "safe_filename",
+]
 
 JobState = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 UPLOADS_DIR = ".uploads"
 """Spool directory inside the store (ignored by store listings: it starts with a dot)."""
+MAX_ACTIVE_JOBS = 8
+"""Queued plus running jobs: one more upload is refused (503)."""
+KEEP_FINISHED = 100
+"""Finished jobs kept for ``GET /api/jobs``; older ones are forgotten."""
+
+
+def _scrubbed(error: dict[str, Any]) -> dict[str, Any]:
+    """Return an ``error.v1`` body without server paths in its message (spool, store)."""
+    from atlas_log_analyzer.webapp.errors import scrub_paths
+
+    if isinstance(error.get("message"), str):
+        error = {**error, "message": scrub_paths(error["message"])}
+    return error
 
 
 def safe_filename(name: str) -> str:
@@ -191,10 +213,27 @@ class JobManager:
             if job.state == "queued":  # its future was cancelled, so _run never ran
                 self._finish(job, "cancelled")
 
+    def active_count(self) -> int:
+        """Return the number of queued and running jobs."""
+        with self._lock:
+            return sum(j.state in ("queued", "running") for j in self._jobs.values())
+
     def _finish(self, job: Job, state: JobState) -> None:
         job.state = state
         job.finished_at = _now()
         shutil.rmtree(self.spool / job.id, ignore_errors=True)
+        self._prune()
+
+    def _prune(self) -> None:
+        """Forget the oldest finished jobs beyond :data:`KEEP_FINISHED`."""
+        with self._lock:
+            done = sorted(
+                (j.id for j in self._jobs.values() if j.state not in ("queued", "running")),
+                reverse=True,
+            )
+            for job_id in done[KEEP_FINISHED:]:
+                del self._jobs[job_id]
+                self._futures.pop(job_id, None)
 
     def _run(self, job: Job, paths: list[Path]) -> None:
         if job.cancel_requested:
@@ -219,12 +258,12 @@ class JobManager:
             return
         except (OpError, StoreError, OSError, ValueError, LookupError) as exc:
             err = from_exception(exc, "api") or OpError("store_error", str(exc))
-            job.error = err.envelope()["error"]
+            job.error = _scrubbed(err.envelope()["error"])
             self._finish(job, "failed")
             return
         except Exception as exc:  # anything else must still end the job, not leave it running
             err = OpError("internal_error", f"{type(exc).__name__}: {exc}")
-            job.error = err.envelope()["error"]
+            job.error = _scrubbed(err.envelope()["error"])
             self._finish(job, "failed")
             return
         if doc["schema"] == "ingest-capture.v1":  # a split: result is its first set
@@ -236,10 +275,12 @@ class JobManager:
         job.entries = sum(int(s["entry_count"]) for s in sets)
         job.bytes_read = job.bytes_total
         job.current_file = None
-        if self._on_done is not None:
-            for item in sets:
-                self._on_done(str(item["id"]))
-        self._finish(job, "succeeded")
+        try:
+            if self._on_done is not None:  # cache invalidation: must not leave the job running
+                for item in sets:
+                    self._on_done(str(item["id"]))
+        finally:
+            self._finish(job, "succeeded")
 
     def _ingest(
         self, job: Job, paths: list[Path], progress: Callable[[IngestProgress], None]

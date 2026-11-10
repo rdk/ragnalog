@@ -288,6 +288,7 @@ def index(request: Request, state: StateDep) -> Response:
             "store": doc["store"],
             "strips": strips,
             "axis": axis,
+            "unreadable": state.store.unreadable(),
         },
     )
 

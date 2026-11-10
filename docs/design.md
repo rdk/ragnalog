@@ -220,7 +220,7 @@ rule set is unchanged.
 
 Everything that decides a signature is one `Recipe(fmt, spec, extra_rules)`
 (`core/pipeline.py`), which builds the masker, signer and grouper and names
-them in a key such as `jira@3|L+G+E+F0|sig1|mask2`: format name and version
+them in a key such as `jira@4|L+G+E+F0|sig2|mask3`: format name and version
 (a format's optional integer `version`, default 1, read with `getattr` so the
 registry's `isinstance` check still accepts formats without it), spec,
 `SIGNATURE_VERSION`, `MASK_RULES_VERSION`, plus `|rules:<xxh3>` of extra
@@ -528,7 +528,15 @@ Struct fails it.
   name at the same moment. Renames and deletes of set directories retry on
   `PermissionError` (Windows refuses them while a reader has a file open);
   `remove` renames the set to `.trash-*` first, so it disappears at once and a
-  failure leaves it intact. The web app holds `<store>/.server.lock` (one
+  failure leaves it intact (an interrupted removal stays removed). An overwrite
+  moves the old set to `.replaced-<id>-*` before installing the new one; if the
+  process dies between the two renames, the next sweep (start of any write)
+  renames it back. The sweep deletes `.tmp-*`, `.replaced-*`, `.trash-*` and
+  `.spool/<id>` older than a day by directory mtime, so a running ingest touches
+  its tmp and spool directories every few minutes (`store/fresh.py`). A set
+  whose `manifest.json` cannot be read is not listed; `Store.unreadable()` names
+  it, `sets` warns on stderr and the web index shows a notice (`atlas-log remove NAME`
+  or `DELETE /api/sets/NAME` with the directory name clears it). The web app holds `<store>/.server.lock` (one
   server per store).
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
   reports sniff confidence per format; `parse` always emits JSONL; an empty

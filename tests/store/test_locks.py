@@ -126,3 +126,13 @@ def test_writes_work_without_a_lock_file(store: Store, monkeypatch: pytest.Monke
     built = build(store, ["x.log"], WEIGHTS_A, name="x")
     store.remove("x")
     assert store.list() == [] and built.logset.manifest.name == "x"
+
+
+def test_overwrite_that_keeps_failing_is_a_store_error(
+    built: Built, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _flaky_replace(monkeypatch, failures=100)
+    with pytest.raises(StoreError, match="in use"):
+        build(built.store, ["a.log", "b.log", "c.log"], WEIGHTS_A, overwrite=True)
+    monkeypatch.undo()
+    assert [m.name for m in built.store.list()] == ["prod-a"]

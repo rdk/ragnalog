@@ -311,15 +311,23 @@
     if (Q.get("coarse_signature") || sigs.length > 1) return null;
     const sig = (sigs[0] || "").replace(/^.*:/, "");
     const node = sigs[0] && sigs[0].includes(":") ? sigs[0].split(":")[0] : Q.get("node") || "";
-    return { sig, node, level: Q.get("level") || "", min: Q.get("min_level") || "", since: Q.get("since") || "", until: Q.get("until") || "" };
+    const spec = { sig, node, level: Q.get("level") || "", min: Q.get("min_level") || "", since: Q.get("since") || "", until: Q.get("until") || "" };
+    for (const k of EXTRA) spec[k] = Q.get(k) || "";
+    return spec;
   }
+  /** Entry filters the set timeline API takes besides group, level and window (a capture's lacks them). */
+  const EXTRA = ["thread", "user", "request_id", "logger", "contains", "exception", "with_exception"];
   const timelineUrl = (spec, bucket) => {
     const p = new URLSearchParams({ bucket });
     if (spec.sig) p.set("signature", spec.sig);
     if (spec.since) p.set("since", spec.since);
     if (spec.until) p.set("until", spec.until);
     if (CAPTURE) p.set("window", "union");
-    else { if (spec.level) p.set("level", spec.level); if (spec.min) p.set("min_level", spec.min); }
+    else {
+      if (spec.level) p.set("level", spec.level);
+      if (spec.min) p.set("min_level", spec.min);
+      for (const k of EXTRA) if (spec[k]) p.set(k, spec[k]);
+    }
     return PAGE.api.replace(/\/entries$/, "/timeline") + "?" + p.toString();
   };
   /** Map of bucket start (ms) to count, from a timeline.v1 or cluster-timeline.v1 document. */
@@ -427,9 +435,10 @@
     host.innerHTML = parts.join("");
     HG = { svg: host.firstElementChild, slot, nb };
     const total = counts.reduce((a, b) => a + b, 0);
-    // the timeline API counts by group, level and node only: say so when other filters narrow the table
-    const unseen = ["thread", "user", "request_id", "logger", "contains", "exception"].filter((k) => Q.get(k));
-    if (isOn(Q.get("with_exception"))) unseen.push("with_exception");
+    // a capture's timeline API counts by group, level and node only: say so when other filters narrow the table
+    const unseen = [];
+    if (CAPTURE) unseen.push(...EXTRA.filter((k) => k !== "with_exception" && Q.get(k)));
+    if (CAPTURE && isOn(Q.get("with_exception"))) unseen.push("with_exception");
     if (CAPTURE) unseen.push(...["level", "min_level"].filter((k) => Q.get(k)));
     const note = unseen.length ? ` · <span class="muted" title="The chart counts the group${CAPTURE ? " and node" : ", level and node"} only; the table also applies the other filters">not filtered by ${esc(unseen.map((k) => k.replace("_", " ")).join(", "))}</span>` : "";
     $("e-hist-what").innerHTML = `per ${SIZE_WORD[HIST.name]} · peak <span class="n">${fmt(peak)}</span> · <span class="n">${fmt(total)}</span> in view${note}`;
@@ -638,8 +647,10 @@
       const f = ev.target.closest && ev.target.closest(".kv.f, .node-chip.f");
       if (f && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); addFilter(f.dataset.f, f.dataset.v); }
     });
+    const zb = $("shell-tz");
     document.addEventListener("keydown", (ev) => {
       if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
+      if (document.querySelector("dialog[open]")) return;
       const tag = (ev.target.tagName || "").toLowerCase();
       if (ev.key === "Escape") {
         if (tag === "input") { ev.target.blur(); return; }
@@ -648,6 +659,10 @@
         if (tr && tr.getAttribute("aria-expanded") === "true") { expand(tr, false); setCur(CUR, true); }
         else for (const r of all) if (r.getAttribute("aria-expanded") === "true") expand(r, false);
         return;
+      }
+      if (tag !== "input" && tag !== "textarea" && tag !== "select" && !ev.target.isContentEditable) {
+        if (ev.key === "?") { ev.preventDefault(); $("e-help").showModal(); return; }
+        if (ev.key === "z" && zb) { ev.preventDefault(); zb.click(); return; }
       }
       if (tag === "input" || tag === "textarea" || tag === "select" || tag === "button" || tag === "a" || ev.target.isContentEditable) return;
       if (ev.target.closest && ev.target.closest(".ent-card")) return;
@@ -660,7 +675,6 @@
       } else if (ev.key === "Home") { ev.preventDefault(); setCur(0, true); }
       else if (ev.key === "End") { ev.preventDefault(); setCur(rows().length - 1, true); }
     });
-    const zb = $("shell-tz");
     // after webapp.js has switched the zone (its listener is added later than this one)
     if (zb) zb.addEventListener("click", () => setTimeout(() => { renderZone(); redrawRows(); drawHist(); }, 0));
     window.addEventListener("popstate", () => {
@@ -673,6 +687,8 @@
       const bar = $("e-bar");
       new ResizeObserver(() => document.documentElement.style.setProperty("--sticky-top", bar.offsetHeight + "px")).observe(bar);
     }
+    const hb = $("e-keys-btn");
+    if (hb) hb.addEventListener("click", () => $("e-help").showModal());
     renderChips();
     let first = null;
     try { first = JSON.parse($("e-first").textContent); } catch (e) { first = null; }

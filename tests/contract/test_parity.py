@@ -166,6 +166,21 @@ CASES: list[Case] = [
         "/api/sets/edge/entries?signature={sig}&contains=script",
     ),
     Case(
+        "timeline-entry-filters",
+        [
+            "timeline",
+            "sample",
+            "--bucket",
+            "1d",
+            "--with-exception",
+            "--contains",
+            "at ",
+            "--logger",
+            "com",
+        ],
+        "/api/sets/sample/timeline?bucket=1d&with_exception=true&contains=at%20&logger=com",
+    ),
+    Case(
         "entries-columns",
         ["entries", "sample", "--columns", "id,ts,level_name", "--limit", "5", "--offset", "3"],
         "/api/sets/sample/entries?columns=id,ts,level_name&limit=5&offset=3",

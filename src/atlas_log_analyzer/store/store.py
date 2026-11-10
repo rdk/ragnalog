@@ -13,6 +13,7 @@ from contextlib import contextmanager, suppress
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Final, Literal
 
@@ -26,6 +27,7 @@ from atlas_log_analyzer.core.masking import MASK_RULES_VERSION
 from atlas_log_analyzer.core.pipeline import Recipe, format_version, key_format_version
 from atlas_log_analyzer.core.reader import SourceFile
 from atlas_log_analyzer.core.signature import SIGNATURE_VERSION, SignatureSpec
+from atlas_log_analyzer.store.fresh import Heartbeat
 from atlas_log_analyzer.store.locks import FileLock
 from atlas_log_analyzer.store.manifest import (
     ENTRIES_FILE,
@@ -163,8 +165,15 @@ def _spool_renames(ls: LogSet) -> dict[str, str]:
     return out
 
 
+REPLACED_PREFIX = ".replaced-"
+"""Prefix of the copy of a set that an overwrite moved aside (see ``Store._install``)."""
 LEFTOVER_AGE_S = 24 * 3600
 """Age after which a ``.tmp-*``/``.trash-*`` directory counts as left over (see ``_sweep``)."""
+
+
+def _plain_id(ref: str) -> bool:
+    """Whether ``ref`` is a bare directory name inside the store (no path, no dot file)."""
+    return bool(ref) and not ref.startswith(".") and not any(c in ref for c in "/\\:")
 
 
 def _retry[T](action: Callable[[], T]) -> T:
@@ -279,6 +288,24 @@ class Store:
         """
         manifests = [m for _, m in self._load_all()]
         return sorted(manifests, key=lambda m: m.created_at, reverse=True)
+
+    def unreadable(self) -> builtins.list[tuple[str, str]]:
+        """Directories that hold a ``manifest.json`` this version cannot read, sorted by name.
+
+        Each item is ``(directory name, short reason)``. :meth:`list` skips these sets;
+        ``remove(<directory name>)`` deletes one.
+        """
+        out = []
+        for d in sorted(self._set_dirs()):
+            if self._cached(d) is None:
+                try:
+                    LogSetManifest.read(d)
+                except (OSError, ValueError) as exc:
+                    reason = str(exc).splitlines()[0] if str(exc) else type(exc).__name__
+                else:
+                    reason = "unreadable manifest"
+                out.append((d.name, reason[:200]))
+        return out
 
     def set_dir(self, set_id: str) -> Path:
         """Directory of the set with id ``set_id`` (whether or not it exists)."""
@@ -395,20 +422,47 @@ class Store:
         tmp.mkdir()
         return tmp
 
-    def _sweep(self) -> None:
-        """Delete what a killed write or ingest left a day ago or more.
+    def _restore_replaced(self) -> None:
+        """Put back the set an interrupted overwrite moved aside (see :meth:`_install`).
 
-        That is ``.tmp-*``/``.trash-*`` directories and the entries of the ZIP spool
-        (``.spool/<id>``, extracted when the ingest started). A running write touches
-        its own directory far more often than that; readers already skip these
-        directories, this only gives the disk space back.
+        A ``.replaced-<id>-*`` directory with no ``<id>`` beside it means the process
+        died between the two renames; the newest copy becomes ``<id>`` again. Runs
+        under the write lock, so no install of this store is half done meanwhile.
+        """
+        found: dict[str, list[Path]] = {}
+        for d in self.root.iterdir():
+            if d.name.startswith(REPLACED_PREFIX) and d.is_dir():
+                found.setdefault(d.name[len(REPLACED_PREFIX) :].rsplit("-", 1)[0], []).append(d)
+        if not found:
+            return
+        with suppress(StoreError), self._writing():
+            for set_id, copies in found.items():
+                final = self.root / set_id
+                if final.exists() or not _plain_id(set_id):
+                    continue
+                newest = max(copies, key=lambda p: p.stat().st_mtime_ns)
+                with suppress(OSError):
+                    _retry(partial(os.replace, newest, final))
+
+    def _sweep(self) -> None:
+        """Restore interrupted overwrites, then delete what a killed write left a day ago.
+
+        An overwrite moves the old set to ``.replaced-<id>-*`` before installing the new
+        one; when ``<id>`` is missing that copy is renamed back, since the process died
+        between the renames (an interrupted ``remove`` leaves ``.trash-*``, which stays
+        removed). The rest is ``.tmp-*``/``.replaced-*``/``.trash-*`` directories and the
+        entries of the ZIP spool (``.spool/<id>``, extracted when the ingest started),
+        judged by the directory's mtime. Writing files inside a directory does not change
+        it, so a running ingest keeps its directories fresh itself (``store/fresh.py``).
+        Readers already skip these directories, this only gives the disk space back.
         """
         from atlas_log_analyzer.store.split import SPOOL_DIR
 
+        self._restore_replaced()
         cutoff = time.time() - LEFTOVER_AGE_S
         spool = self.root / SPOOL_DIR
         for d in [*self.root.iterdir(), *(spool.iterdir() if spool.is_dir() else ())]:
-            if d.parent == self.root and not d.name.startswith((".tmp-", ".trash-")):
+            if d.parent == self.root and not d.name.startswith((".tmp-", ".trash-", ".replaced-")):
                 continue
             try:
                 if d.is_dir() and d.stat().st_mtime < cutoff:
@@ -454,18 +508,29 @@ class Store:
         return self.root / f".trash-{set_id}-{uuid.uuid4().hex[:8]}"
 
     def _install(self, tmp: Path, set_id: str) -> Path:
-        """Move ``tmp`` to ``<root>/<set_id>``, replacing an existing set; hold :meth:`_writing`."""
+        """Move ``tmp`` to ``<root>/<set_id>``, replacing an existing set; hold :meth:`_writing`.
+
+        The old set is moved to ``.replaced-<id>-*`` (not ``.trash-*``): if the process
+        dies before ``tmp`` is in place, the next sweep renames it back.
+        """
         final = self.root / set_id
         trash: Path | None = None
+        busy = f"log set {set_id} is in use (another program holds one of its files); retry"
         if final.exists():
-            trash = self._trash(set_id)
-            _retry(lambda: os.replace(final, trash))
+            trash = self.root / f"{REPLACED_PREFIX}{set_id}-{uuid.uuid4().hex[:8]}"
+            aside = trash
+            try:
+                _retry(lambda: os.replace(final, aside))
+            except OSError as exc:
+                raise StoreError(f"{busy}: {exc}") from exc
+            with suppress(OSError):
+                os.utime(trash)  # its age counts from now, not from when the set was built
         try:
             _retry(lambda: os.replace(tmp, final))
-        except OSError:
+        except OSError as exc:
             if trash is not None:
                 _retry(lambda: os.replace(trash, final))
-            raise
+            raise StoreError(f"{busy}: {exc}") from exc
         if trash is not None:
             _remove_tree(trash)
         return final
@@ -527,6 +592,7 @@ class Store:
             return self._load(existing)
         self._check_name(name, set_id)  # fail before parsing; checked again before the rename
         tmp = self._tmp_dir(set_id)
+        beat = Heartbeat(tmp).start()
         try:
             with EntriesWriter(tmp / ENTRIES_FILE, dedupe=dedupe) as writer:
                 writer.write(signed)
@@ -569,6 +635,8 @@ class Store:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
+        finally:
+            beat.stop()
         return _logset(final, manifest)
 
     def regroup(self, ref: str, spec: SignatureSpec) -> LogSet:
@@ -604,6 +672,7 @@ class Store:
         recipe = Recipe(fmt, spec)
         built_with = key_format_version(m.recipe_key) or 1
         tmp = self._tmp_dir(m.id)
+        beat = Heartbeat(tmp).start()
         try:
             count = resign_entries(
                 ls.entries_path,
@@ -640,6 +709,8 @@ class Store:
         except BaseException:
             shutil.rmtree(tmp, ignore_errors=True)
             raise
+        finally:
+            beat.stop()
         with self._index_lock:
             self._index.pop(final, None)
         return _logset(final, manifest)
@@ -749,14 +820,21 @@ class Store:
             StoreError: The set does not exist or cannot be deleted.
 
         """
-        ls = self.open(ref)
-        set_id = ls.manifest.id
+        try:
+            ls = self.open(ref)
+            set_id, path = ls.manifest.id, ls.path
+        except StoreError:
+            # a set whose manifest cannot be read is still removable by its directory name
+            path = self.root / ref
+            if not (_plain_id(ref) and (path / "manifest.json").is_file()):
+                raise
+            set_id = ref
         trash = self._trash(set_id)
         with self._writing():
             try:
-                _retry(lambda: os.replace(ls.path, trash))
+                _retry(lambda: os.replace(path, trash))
             except OSError as exc:
                 raise StoreError(f"cannot remove log set {set_id}: {exc}") from exc
         with self._index_lock:
-            self._index.pop(ls.path, None)
+            self._index.pop(path, None)
         _remove_tree(trash)

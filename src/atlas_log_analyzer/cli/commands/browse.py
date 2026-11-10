@@ -58,7 +58,9 @@ def sets(*, brief: bool = False) -> None:
     cluster node a set holds and which capture it belongs to (null when
     unknown; see `label`, `captures`). --brief keeps only id, name, first_ts,
     last_ts, entry_count, group_count, summary, stale, node and capture. An
-    empty or missing store gives count 0.
+    empty or missing store gives count 0. A set directory whose manifest cannot be
+    read is not listed; one warning per such directory goes to stderr (clear it
+    by deleting its directory).
 
     Exit codes: 0 ok (also when empty); 3 store error.
 
@@ -75,6 +77,11 @@ def sets(*, brief: bool = False) -> None:
         summary=lambda m: set_summary(store.set_dir(m.id)),  # pyarrow only: no polars
     )
     ctx.out().document(doc, columns=render.SET_COLUMNS, title="log sets")
+    for name, reason in store.unreadable():
+        ctx.out().warn(
+            f"set directory {store.set_dir(name)} is not listed: its manifest cannot be read "
+            f"({reason}); `atlas-log remove {name}` clears this"
+        )
 
 
 def captures(*, brief: bool = False) -> None:
@@ -147,7 +154,7 @@ def groups(
 
     Output (json):
       {"schema": "groups.v1", "logset": id, "count": int, "total": int,
-       "offset": int, "truncated": bool, "items": [
+       "offset": int, "next_offset": int | null, "truncated": bool, "items": [
         {"signature", "coarse_signature", "template", "level", "logger",
          "level_name", "exception_type", "count", "first_seen", "last_seen",
          ...}, ...]}
@@ -157,7 +164,7 @@ def groups(
     rows starting at --offset (in --sort order). "total" is the number of
     matching groups before --offset/--limit, "offset" echoes --offset and
     "truncated" is true when more rows follow this page (offset + count <
-    total; the next page starts at offset + count). With --coarse, "signature"
+    total) and "next_offset" is where it starts (null on the last page). With --coarse, "signature"
     is the coarse signature and "signatures" lists the member signatures.
     --columns keeps only the named columns (comma-separated and/or repeated;
     unknown name: error "invalid_value", "hint" lists the valid ones).
@@ -459,6 +466,8 @@ def context(
     cap = params.cap(max_raw, text=False)
     sel = Select(columns=columns, brief=brief)
     out = ctx.out()
+    if not window >= 0:  # checked with or without --all-nodes, as documented
+        raise OpError("invalid_value", "--window must be >= 0 (seconds)")
     if all_nodes:
         from atlas_log_analyzer.service import capture_queries
 
@@ -581,7 +590,7 @@ def query(logset: str, sql: str, /) -> None:
     ts/first_seen/last_seen are UTC timestamps, variables a list of strings.
     The session time zone is UTC whatever the machine's zone: result
     timestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets
-    at UTC midnight.
+    at UTC midnight. One statement only (several are a usage error).
 
     SQL examples:
       select level, count(*) n from entries group by 1 order by 2 desc

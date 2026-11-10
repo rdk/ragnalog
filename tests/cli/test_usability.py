@@ -221,3 +221,29 @@ def test_report_into_a_missing_folder_names_the_folder(
     err = res.json()["error"]
     assert res.code == 2 and err["code"] == "file_not_found"
     assert f"the folder {tmp_path / 'nope'} does not exist" in err["message"]
+
+
+def test_audit_edge_cases(jcli: Invoke, mini: str, store_dir: Path) -> None:
+    # an unknown group has no timeline: exit 2, as show and the capture form say
+    r = jcli("timeline", mini, "--signature", "zzzz")
+    assert r.code == 2 and r.json()["error"]["reason"] == "group_not_found"
+    # a window that runs backwards is refused, not silently empty
+    r = jcli("entries", mini, "--since", "2026-10-29T09:00", "--until", "2026-10-29T08:00")
+    assert r.code == 1 and r.json()["error"]["code"] == "invalid_value"
+    # --window is checked with or without --all-nodes
+    entry = jcli("entries", mini, "--limit", "1").json()["items"][0]["id"]
+    r = jcli("context", mini, entry, "--window", "-5")
+    assert r.code == 1 and r.json()["error"]["code"] == "invalid_value"
+    # a name that reads as a reference or a path is refused
+    r = jcli("ingest", MINI_LOG, "--name", "capture:x")
+    assert r.code == 1 and r.json()["error"]["code"] == "invalid_value"
+    # the baseline keywords ignore case and blanks
+    assert jcli("triage", mini, "--baseline", " AUTO ").code == 0
+    # empty SQL is a usage error
+    assert jcli("query", mini, " ").code == 1
+    # a damaged set file is a store error (exit 3), not a bad value or an internal error
+    sid = jcli("set", mini).json()["id"]
+    (store_dir / sid / "groups.parquet").write_text("not parquet", encoding="utf-8")
+    for argv in (("groups", mini), ("query", mini, "select count(*) from groups")):
+        r = jcli(*argv)
+        assert r.code == 3 and r.json()["error"]["code"] == "store_error", (argv, r.stdout)

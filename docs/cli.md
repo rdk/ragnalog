@@ -36,7 +36,7 @@ Global options may appear before or after the command name.
 | Option | Default | Meaning |
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
-| `--store DIR` | env `ATLAS_LOG_STORE` (ignored when blank), else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
+| `--store DIR` | env `ATLAS_LOG_STORE` (a blank `--store` or variable is ignored), else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -65,7 +65,8 @@ blank variable counts as unset. A number that does not parse is error
 - **json** — exactly one JSON document on stdout. Every document is an object
   with a `"schema": "<name>.v1"` key. Listings put their rows under `"items"`
   and add `"count"`. Compact on a pipe, indented on a terminal.
-  Paged listings (`groups`, `entries`) also carry `"total"` (rows matching
+  Paged listings (`groups`, `entries`) also carry `"next_offset"` (where the next page
+  starts, `null` on the last) and `"total"` (rows matching
   the filters before `--offset`/`--limit`), `"offset"` (the `--offset` used)
   and `"truncated"` (more rows follow this page: `offset + count < total`; the
   next page starts at `offset + count`); `count` is always `len(items)`. `query` has `"total" == "count"` and
@@ -289,7 +290,7 @@ next ingest, so a set holds exactly the bytes its `sources` digests name.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@3|L+G+E+F0|sig1|mask2", "node": "NODE1", "cluster": "jira-test",
+ "recipe_key": "jira@4|L+G+E+F0|sig2|mask3", "node": "NODE1", "cluster": "jira-test",
  "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
@@ -313,6 +314,9 @@ thread and logger and comes at most 5 ms later; that entry keeps its own id,
 `raw` and header and gets the banner's raw line as `context.preamble`. An entry
 whose header message is blank is grouped by its first body line that is not
 blank or decoration (`Jira starting...`); its `message` stays empty.
+
+A `--name` with `:`, `/` or `\` is refused (`invalid_value`): it would read as a
+capture reference (`capture:ID`) or a path.
 
 `ingest.warnings` lists requests that were not honoured, also printed on stderr:
 re-ingesting existing files with another `--name` keeps the set's name and
@@ -491,7 +495,7 @@ first_seen, last_seen`. `--brief` together with `--columns` is a usage error.
 With `--coarse` the filters apply to the member groups before aggregation.
 
 ```json
-{"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "offset": 0, "truncated": true, "items": [
+{"schema": "groups.v1", "logset": "…", "count": 2, "total": 7, "offset": 0, "next_offset": 2, "truncated": true, "items": [
   {"signature", "coarse_signature", "template", "level", "level_name", "logger",
    "exception_type", "count", "first_seen", "last_seen", "user_count", "thread_count",
    "source_count", "top_users", "top_threads", "sources", "examples"}]}
@@ -646,7 +650,8 @@ Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 
 ### `query SET SQL`
 
-DuckDB SQL over the views `entries`, `groups` and (when present) `merges`.
+DuckDB SQL over the views `entries`, `groups` and (when present) `merges`. One
+statement only (a trailing `;` is fine): several are a `usage` error.
 `atlas-log query --help` lists the same columns; `atlas-log schema NAME` adds
 types and descriptions. The session time zone is UTC whatever the machine's
 zone: timestamps in the result are UTC, as in `entries`, and
@@ -692,15 +697,17 @@ busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
 
-### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--since] [--until] [--window overlap|union] [--by-node]`
+### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--since] [--until] [--window overlap|union] [--by-node]`
 
 Entries per time bucket (`<n>s|m|h|d`, aligned to the epoch in UTC). A set
-gives `timeline.v1`, the twin of `GET /api/sets/{ref}/timeline` (`--level`,
-`--min-level`, `--since`, `--until` filter the entries). A capture reference,
+gives `timeline.v1`, the twin of `GET /api/sets/{ref}/timeline` (it takes every filter of
+`entries`, with the same names and meaning, so a chart can count what a filtered
+listing shows). A capture reference,
 or a set with `--by-node` (its capture; a set in no capture is one node), gives
 `cluster-timeline.v1`, the twin of `GET /api/captures/{ref}/timeline`: per node
 and bucket the entries by level, or with `--signature` those of one group,
-over the window (`--window`, `--since`, `--until`).
+over the window (`--window`, `--since`, `--until`); it takes no other filter
+than `--signature` (any other, `--node` too, is a usage error).
 
 ```json
 {"schema": "timeline.v1", "logset": "…", "bucket": "1h", "count": 24, "items": [{"bucket", "count"}]}
@@ -711,7 +718,7 @@ over the window (`--window`, `--since`, `--until`).
 
 The table prints one row per bucket (a capture: a column per node; blank
 where the node has no logs). Exit: 0; 1 bad option, bucket, level or time,
-`--level` with a capture, `--window` with a set, ambiguous signature prefix;
+a set-only filter (`--level`, `--thread` …) with a capture, `--window` with a set, ambiguous signature prefix;
 2 unknown capture or group; 3.
 
 ### `matrix REF [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--window overlap|union] [--node N] [--spread all|only|skewed] [--sort count|skew|lead] [--skew-min 4.0] [--signature SIG] [--limit 50] [--offset 0]`
@@ -784,7 +791,9 @@ unknown capture; 3.
 ### `diff SET_A SET_B [--min-level L | --level L] [--coarse] [--force] [--limit 50] [--rate]`
 
 Compares stored group tables: `new` (only in B), `vanished` (only in A),
-`changed` (both, different count; `ratio = count_b / count_a`).
+`changed` (both, different count; `ratio = count_b / count_a`). `--level` is an
+alias of `--min-level` and means "this level and above" here (unlike `entries
+--level`, which matches exactly); an invalid level names the flag you typed.
 
 ```json
 {"schema": "diff.v1", "a": "<id>", "b": "<id>", "new": [row], "vanished": [row],
@@ -1079,7 +1088,8 @@ Exit: 0; 2 unknown COMMAND (`not_found`).
 {"schema": "remove.v1", "removed": "<id>", "name": "prod"}
 ```
 
-Exit: 0; 3.
+A set whose `manifest.json` cannot be read is removed by its directory name
+(`"name": null`); an unknown set is still an error. Exit: 0; 3.
 
 ### `serve [--host 127.0.0.1] [--port 8321] [--token T] [--max-upload-mb 2048] [--allowed-host NAMES] [--reload]`
 
@@ -1104,7 +1114,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.3.0", "schema_version": "1.0", "signature_version": 1, "mask_rules_version": 2, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.3.0", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
 ```
 
 ### `batch`
@@ -1120,7 +1130,8 @@ printf '%s\n' '["groups", "prod", "--brief", "--limit", "5"]' '["stats", "nope"]
 
 Each line runs with the global options of the `batch` call (`--store`, `--quiet`,
 …) and `--output json`, and writes exactly one JSON document to stdout, in input
-order: the command's usual document, or `error.v1` when it fails — including a
+order: the command's usual document, or `error.v1` when it fails (its message starts
+with `line N:`) — including a
 line that is not a JSON array of strings, one that sets a global option, asks for
 `--help`/`--version`, or runs `batch`, `parse`, `serve` or a `--raw` listing (none
 of which write one document). Blank lines are skipped. A failed line never stops

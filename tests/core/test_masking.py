@@ -116,7 +116,7 @@ def test_empty_rules_and_cache() -> None:
 
 
 def test_version() -> None:
-    assert MASK_RULES_VERSION == 2
+    assert MASK_RULES_VERSION == 3
 
 
 @pytest.mark.parametrize(

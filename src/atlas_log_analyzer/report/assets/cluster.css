@@ -288,7 +288,9 @@ table.c-groups th.c-lv { width: 84px; } /* badge + the first column's 16px outer
 table.c-groups th.c-total { width: 96px; text-align: right; }
 table.c-groups td.c-total { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; text-overflow: clip; }
 table.c-groups td.c-lead.is-whole { opacity: 0.5; }
-table.c-groups td.c-total .of { display: block; font-size: 11px; line-height: 1.2; color: var(--muted); font-weight: 400; }
+table.c-groups td.c-total .of { font-size: 11px; color: var(--muted); font-weight: 400; white-space: nowrap; }
+table.c-groups.in-win th.c-total { width: 136px; }
+@container (max-width: 520px) { table.c-groups.in-win th.c-total { width: 112px; } }
 table.c-groups th.c-n { width: 124px; }
 table.c-groups th.c-heat { width: calc(var(--hn, 10) * 14px + 20px); }
 table.c-groups th.c-spread { width: 104px; }

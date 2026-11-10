@@ -1489,8 +1489,8 @@
   }
   function renderHead() {
     const th = (cls, label, key, title) => {
-      const sorted = key && S.sort === key ? ` aria-sort="${key === "template" ? "ascending" : "descending"}"` : "";
-      return `<th class="${cls}${key ? " sortable" : ""}"${key ? ` data-sort="${esc(key)}"` : ""}${sorted} title="${esc(title || "")}">${label}</th>`;
+      const sorted = !key ? "" : ` aria-sort="${S.sort === key ? (key === "template" ? "ascending" : "descending") : "none"}"`;
+      return `<th class="${cls}${key ? " sortable" : ""}"${key ? ` data-sort="${esc(key)}"` : ""}${sorted} title="${esc(title || "")}">${key ? `<button type="button" class="th-sort" data-sort="${esc(key)}">${label}</button>` : label}</th>`;
     };
     let cells = th("c-lv", "Level", "level", "Level") + th("c-tpl", "Template", "template", "Template") +
       (S.t ? th("c-total", "In window", "count", "Entries on all nodes in the time window; below: the capture's total")
@@ -1529,16 +1529,16 @@
     return `<tr data-id="${esc(r.id)}" class="${cls}" tabindex="-1">` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-tpl" data-tip-k="cg"><span class="tpl">${tplHtml(r.tpl)}</span><span class="sub">${loggerHtml(r.logger, true)}${r.exc ? " · " + excHtml(r.exc, true) : ""}</span></td>` +
-      (S.t ? `<td class="c-total" title="${fmt(r.total)} in the window of ${fmt(row.total)} in total">${fmt(r.total)}<small class="of">of ${esc(compact(row.total))}</small></td>`
+      (S.t ? `<td class="c-total" title="${fmt(r.total)} in the window of ${fmt(row.total)} in total">${fmt(r.total)}<small class="of"> / ${esc(compact(row.total))}</small></td>`
         : `<td class="c-total">${fmt(r.total)}</td>`) + nodes +
       (!MULTI ? "" : `<td class="c-spread">${spreadChip(r)}</td>` +
         (S.t ? `<td class="c-lead is-whole">${leadChip(row)}</td>` : `<td class="c-lead">${leadChip(r)}</td>`)) + `</tr>`;
   }
   function pagerHtml(pages) {
     if (pages <= 1) return "";
-    return `<button type="button" class="btn small" data-page="${S.p - 1}" ${S.p <= 0 ? "disabled" : ""}>‹ Prev</button>` +
+    return `<button type="button" class="btn small" data-page="${S.p - 1}" data-dir="prev" ${S.p <= 0 ? "disabled" : ""}>‹ Prev</button>` +
       `<span>Page ${S.p + 1} of ${pages}</span>` +
-      `<button type="button" class="btn small" data-page="${S.p + 1}" ${S.p >= pages - 1 ? "disabled" : ""}>Next ›</button>`;
+      `<button type="button" class="btn small" data-page="${S.p + 1}" data-dir="next" ${S.p >= pages - 1 ? "disabled" : ""}>Next ›</button>`;
   }
   function activeFilters() {
     const out = [];
@@ -1556,6 +1556,7 @@
     const page = LIST.slice(start, start + PAGE);
     renderHead();
     $("t-body").innerHTML = page.map(rowHtml).join("");
+    $("groups").classList.toggle("in-win", !!S.t); // "N / total" on one line: a wider column
     const empty = $("t-empty");
     empty.hidden = page.length > 0;
     $("t-head").hidden = !page.length;
@@ -2551,12 +2552,16 @@
   let lastTl = "";
   // re-renders replace the chips, pagers and window buttons: put the focus back on the
   // control that had it (same id, or same tag and data-* attributes)
+  // (data-page changes with every page and data-tip-* is set by tips.js on hover/focus: not stable)
+  const UNSTABLE = /^data-(page|tip-text|tip-html)$/;
   function focusKey(el) {
     if (!(el instanceof HTMLElement) || el === document.body) return "";
     if (el.id) return "#" + CSS.escape(el.id);
-    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-"))
+    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-") && !UNSTABLE.test(a.name))
       .map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("");
-    return attrs ? el.tagName.toLowerCase() + attrs : "";
+    if (!attrs) return "";
+    const host = el.parentElement && el.parentElement.closest("[id]");
+    return (host ? "#" + CSS.escape(host.id) + " " : "") + el.tagName.toLowerCase() + attrs;
   }
   function restoreFocus(key) {
     const a = document.activeElement;

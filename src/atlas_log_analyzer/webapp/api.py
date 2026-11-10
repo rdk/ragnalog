@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -26,7 +27,7 @@ from atlas_log_analyzer.service.params import (
 )
 from atlas_log_analyzer.service.sets import open_set
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
-from atlas_log_analyzer.webapp.jobs import safe_filename
+from atlas_log_analyzer.webapp.jobs import MAX_ACTIVE_JOBS, safe_filename
 from atlas_log_analyzer.webapp.params import query_model
 from atlas_log_analyzer.webapp.responses import JSON, payload_response
 from atlas_log_analyzer.webapp.state import AppState, get_state
@@ -143,7 +144,7 @@ async def label_set(
     an empty one (``node=``) clears it. Only the manifest changes; the id, the name
     and the data stay. Values are letters, digits, ``_``, ``.`` and ``-``.
     """
-    form = await request.form()
+    form = await request.form(max_files=0)  # fields only: a file part is refused
     values = {
         key: given if given is not None else _form_raw(form.get(key))
         for key, given in (("node", node), ("cluster", cluster), ("capture", capture))
@@ -509,15 +510,16 @@ def frames(
 def timeline(
     ref: str,
     state: StateDep,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
     bucket: str = "1h",
-    signature: str | None = None,
-    level: str | None = None,
-    min_level: str | None = None,
-    since: str | None = None,
-    until: str | None = None,
 ) -> dict[str, Any]:
-    """Entry counts per time bucket (``timeline.v1``)."""
-    q = EntryQuery(signature=signature, level=level, min_level=min_level, since=since, until=until)
+    """Entry counts per time bucket (``timeline.v1``), of the entries ``entries`` would list.
+
+    The filters are those of ``GET /api/sets/{ref}/entries`` (``signature``, ``level``,
+    ``min_level``, ``logger``, ``user``, ``thread``, ``request_id``, ``since``, ``until``,
+    ``contains``, ``with_exception``, ``exception``, ``coarse_signature``), as
+    ``atlas-log timeline``.
+    """
     return queries.timeline(state, ref, q, bucket=bucket, front="api")
 
 
@@ -630,6 +632,35 @@ def triage(
     return doc
 
 
+UPLOAD_MARGIN = 256 * 1024 * 1024
+"""Free space kept beyond twice an upload (the job also writes the set)."""
+RETRY_AFTER = 30
+"""Seconds a client is told to wait when the job queue is full."""
+
+
+def upload_refusal(state: AppState, length: int) -> tuple[OpError, int, dict[str, str]] | None:
+    """Return ``(error, status, headers)`` when an upload of ``length`` bytes cannot be taken.
+
+    503 with ``Retry-After`` when :data:`MAX_ACTIVE_JOBS` jobs are queued or running; 507
+    when the store's disk has less than ``2 * length + UPLOAD_MARGIN`` bytes free. Checked
+    from the headers, before the body is read.
+    """
+    if state.jobs.active_count() >= MAX_ACTIVE_JOBS:
+        message = f"{MAX_ACTIVE_JOBS} ingest jobs are queued or running; retry later"
+        return OpError("http", message), 503, {"Retry-After": str(RETRY_AFTER)}
+    probe = state.store.root
+    while not probe.exists() and probe != probe.parent:
+        probe = probe.parent
+    try:
+        free = shutil.disk_usage(probe).free
+    except OSError:
+        return None  # cannot tell: do not refuse
+    if free < 2 * length + UPLOAD_MARGIN:
+        message = f"not enough free disk space for this upload: {free >> 20} MiB free"
+        return OpError("http", message), 507, {}
+    return None
+
+
 @router.post("/ingest", status_code=202)
 async def ingest(
     request: Request,
@@ -681,7 +712,8 @@ async def ingest(
     if not files:
         raise OpError("usage", "send one or more log files as multipart field 'files'")
     limit = state.settings.max_upload_mb * 1024 * 1024
-    job_id, folder = state.jobs.new_upload_dir()
+    # disk work runs in the thread pool: a slow disk must not stall every other request
+    job_id, folder = await run_in_threadpool(state.jobs.new_upload_dir)
     paths: list[Path] = []
     written = 0
     try:
@@ -689,7 +721,8 @@ async def ingest(
             target = folder / safe_filename(upload.filename or "upload.log")
             while target in paths:
                 target = target.with_name(f"_{target.name}")
-            with target.open("wb") as fh:
+            fh = await run_in_threadpool(target.open, "wb")
+            try:
                 while chunk := await upload.read(1 << 20):
                     written += len(chunk)
                     if written > limit:
@@ -697,10 +730,12 @@ async def ingest(
                             "payload_too_large",
                             f"upload exceeds {state.settings.max_upload_mb} MiB",
                         )
-                    fh.write(chunk)
+                    await run_in_threadpool(fh.write, chunk)
+            finally:
+                fh.close()
             paths.append(target)
     except BaseException:
-        state.jobs.discard_upload(job_id)
+        state.jobs.discard_upload(job_id)  # inline: an await could be cancelled here too
         raise
     job = await run_in_threadpool(
         state.jobs.submit,

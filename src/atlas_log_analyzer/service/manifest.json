@@ -6,22 +6,22 @@
   "usage": "atlas-log [GLOBAL OPTIONS] COMMAND ARGS... [OPTIONS]",
   "notes": [
    "JSON on a pipe: \"schema\" names the document, listings have \"items\"",
-   "errors: error.v1 on stdout with a hint",
+   "errors: error.v1 on stdout",
    "paging: \"truncated\"; next --offset = offset + count",
    "times: ISO 8601, YYYY-MM-DD or 2h/1d before the last entry"
   ],
   "workflow": [
    {
     "run": "ingest PATH... --name N",
-    "purpose": "parse logs into a stored set"
+    "purpose": "parse logs into a set"
    },
    {
     "run": "triage LOGSET",
-    "purpose": "new kinds of errors since the previous set?"
+    "purpose": "new errors since the previous set?"
    },
    {
     "run": "groups LOGSET --brief",
-    "purpose": "groups by count; --with-exception: any stack trace"
+    "purpose": "by count; --with-exception: stack traces"
    },
    {
     "run": "show LOGSET SIGNATURE --brief",
@@ -29,11 +29,11 @@
    },
    {
     "run": "frames LOGSET SIGNATURE",
-    "purpose": "its stack trace, application frames first"
+    "purpose": "its stack trace, app frames first"
    },
    {
     "run": "context LOGSET ENTRY_ID",
-    "purpose": "what the thread did around one entry"
+    "purpose": "thread activity around an entry"
    },
    {
     "run": "entries LOGSET --request-id ID",
@@ -41,13 +41,13 @@
    },
    {
     "run": "diff SET_A SET_B --rate",
-    "purpose": "compare two sets of any length"
+    "purpose": "compare two sets"
    }
   ],
   "when": [
    {
     "run": "capture cluster:NAME",
-    "purpose": "cluster nodes side by side, verdict per node"
+    "purpose": "nodes side by side, verdict each"
    },
    {
     "run": "matrix CAPTURE --spread only",
@@ -55,23 +55,19 @@
    },
    {
     "run": "events CAPTURE",
-    "purpose": "what each node did, when"
+    "purpose": "what each node did"
    },
    {
     "run": "interactions CAPTURE",
-    "purpose": "how the nodes affect each other"
+    "purpose": "node-to-node effects"
    },
    {
     "run": "query LOGSET SQL",
-    "purpose": "aggregates no command gives (DuckDB SQL)"
+    "purpose": "custom aggregates (DuckDB SQL)"
    },
    {
     "run": "batch",
-    "purpose": "several commands in one process"
-   },
-   {
-    "run": "sets --brief",
-    "purpose": "what is in the store"
+    "purpose": "several commands, one process"
    }
   ],
   "commands": {
@@ -86,6 +82,7 @@
     ]
    },
    "sets": {
+    "summary": "List the log sets in the store, newest first",
     "usage": "[--brief]",
     "output": "sets.v1",
     "exit": [
@@ -200,7 +197,7 @@
    },
    "timeline": {
     "summary": "Count entries per time bucket",
-    "usage": "REF [--bucket str=1h] [--signature str] [--level str] [--min-level str] [--since str] [--until str] [--window overlap|union] [--by-node]",
+    "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node]",
     "output": "timeline.v1",
     "exit": [
      0,
@@ -240,7 +237,7 @@
     ]
    },
    "diff": {
-    "usage": "SET_A SET_B [--min-level str] [--coarse] [--force] [--limit int=50] [--rate]",
+    "usage": "SET_A SET_B [--min-level str] [--level str] [--coarse] [--force] [--limit int=50] [--rate]",
     "output": "diff.v1",
     "exit": [
      0,
@@ -407,7 +404,7 @@
   },
   "global_options": {
    "--output": "table|json|jsonl: Output mode",
-   "--store": "path: Store directory holding log sets",
+   "--store": "str: Store directory holding log sets",
    "--quiet": "flag: Suppress progress and",
    "--width": "int: Table width; default",
    "--color": "auto|always|never=auto: Colour tables and raw entries"
@@ -533,7 +530,7 @@
     {
      "name": "--name",
      "type": "str",
-     "help": "Human-readable alias for the set, usable wherever SET is expected; with a split, the prefix of the sets' names."
+     "help": "Human-readable alias for the set, usable wherever SET is expected; with a split, the prefix of the sets' names. No ':', '/' or backslash."
     },
     {
      "name": "--frames",
@@ -583,7 +580,7 @@
    "command": "sets",
    "version": "",
    "usage": "[--brief]",
-   "description": "List the log sets in the store, newest first.\n\nOutput (json):\n  {\"schema\": \"sets.v1\", \"store\": str, \"count\": int,\n   \"items\": [<logset.v1 manifest without \"schema\"> + \"summary\" + \"stale\"]}\nEach item has id, name, format, sources, first_ts, last_ts, entry_count,\ngroup_count, created_at, tool_version, schema_version, signature_version,\nmask_rules_version, signature_spec, recipe_key, node, cluster, capture,\n\"summary\": {\"errors\", \"warnings\", \"error_groups\"} (entries at ERROR/FATAL,\nentries at WARN, groups at ERROR/FATAL; null when the set cannot be read)\nand \"stale\": true when recipe_key differs from the recipe this version\nsigns the set's format and spec with (rebuild with `upgrade`; triage\ndoes not use stale sets as baselines). node, cluster and capture say which\ncluster node a set holds and which capture it belongs to (null when\nunknown; see `label`, `captures`). --brief keeps only id, name, first_ts,\nlast_ts, entry_count, group_count, summary, stale, node and capture. An\nempty or missing store gives count 0.\n\nExit codes: 0 ok (also when empty); 3 store error.",
+   "description": "List the log sets in the store, newest first.\n\nOutput (json):\n  {\"schema\": \"sets.v1\", \"store\": str, \"count\": int,\n   \"items\": [<logset.v1 manifest without \"schema\"> + \"summary\" + \"stale\"]}\nEach item has id, name, format, sources, first_ts, last_ts, entry_count,\ngroup_count, created_at, tool_version, schema_version, signature_version,\nmask_rules_version, signature_spec, recipe_key, node, cluster, capture,\n\"summary\": {\"errors\", \"warnings\", \"error_groups\"} (entries at ERROR/FATAL,\nentries at WARN, groups at ERROR/FATAL; null when the set cannot be read)\nand \"stale\": true when recipe_key differs from the recipe this version\nsigns the set's format and spec with (rebuild with `upgrade`; triage\ndoes not use stale sets as baselines). node, cluster and capture say which\ncluster node a set holds and which capture it belongs to (null when\nunknown; see `label`, `captures`). --brief keeps only id, name, first_ts,\nlast_ts, entry_count, group_count, summary, stale, node and capture. An\nempty or missing store gives count 0. A set directory whose manifest cannot be\nread is not listed; one warning per such directory goes to stderr (clear it\nby deleting its directory).\n\nExit codes: 0 ok (also when empty); 3 store error.",
    "output": "sets.v1",
    "exit": [
     0,
@@ -717,7 +714,7 @@
    "command": "groups",
    "version": "",
    "usage": "LOGSET [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--sort count|last_seen|first_seen|signature|template=count] [--limit int=50] [--offset int=0] [--coarse] [--columns str*] [--brief]",
-   "description": "List the groups (one per message signature) of a log set.\n\nA group collects all entries whose level, logger, masked message and\nexception chain are equal; its \"signature\" (16 hex chars) is stable across\nsets, so it can be used with `show`, `entries --signature` and `diff`.\n\nOutput (json):\n  {\"schema\": \"groups.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"truncated\": bool, \"items\": [\n    {\"signature\", \"coarse_signature\", \"template\", \"level\", \"logger\",\n     \"level_name\", \"exception_type\", \"count\", \"first_seen\", \"last_seen\",\n     ...}, ...]}\n\"level\" is numeric (ERROR=50), \"level_name\" the name. \"items\" holds the\ngroups.v1 columns (`atlas-log schema groups`: also user_count, thread_count,\nsource_count, top_users, top_threads, sources, examples), at most --limit\nrows starting at --offset (in --sort order). \"total\" is the number of\nmatching groups before --offset/--limit, \"offset\" echoes --offset and\n\"truncated\" is true when more rows follow this page (offset + count <\ntotal; the next page starts at offset + count). With --coarse, \"signature\"\nis the coarse signature and \"signatures\" lists the member signatures.\n--columns keeps only the named columns (comma-separated and/or repeated;\nunknown name: error \"invalid_value\", \"hint\" lists the valid ones).\n--brief is the preset --columns signature,template,level_name,logger,\nexception_type,count,first_seen,last_seen; --brief with --columns is a\nusage error.\n--with-exception keeps groups that carry an exception (exception_type not\nnull) at any level, so a DEBUG entry with a stack trace is found even\nthough --min-level WARN would hide it. --exception TEXT matches a\ncase-insensitive substring of exception_type (the outermost exception);\n--contains TEXT a case-insensitive substring of template. With --coarse\nall filters apply to the member groups.\n\nExit codes: 0 ok (also when no group matches); 1 bad option, unknown\ncolumn, or --brief with --columns; 3 unknown set or store error.",
+   "description": "List the groups (one per message signature) of a log set.\n\nA group collects all entries whose level, logger, masked message and\nexception chain are equal; its \"signature\" (16 hex chars) is stable across\nsets, so it can be used with `show`, `entries --signature` and `diff`.\n\nOutput (json):\n  {\"schema\": \"groups.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool, \"items\": [\n    {\"signature\", \"coarse_signature\", \"template\", \"level\", \"logger\",\n     \"level_name\", \"exception_type\", \"count\", \"first_seen\", \"last_seen\",\n     ...}, ...]}\n\"level\" is numeric (ERROR=50), \"level_name\" the name. \"items\" holds the\ngroups.v1 columns (`atlas-log schema groups`: also user_count, thread_count,\nsource_count, top_users, top_threads, sources, examples), at most --limit\nrows starting at --offset (in --sort order). \"total\" is the number of\nmatching groups before --offset/--limit, \"offset\" echoes --offset and\n\"truncated\" is true when more rows follow this page (offset + count <\ntotal) and \"next_offset\" is where it starts (null on the last page). With --coarse, \"signature\"\nis the coarse signature and \"signatures\" lists the member signatures.\n--columns keeps only the named columns (comma-separated and/or repeated;\nunknown name: error \"invalid_value\", \"hint\" lists the valid ones).\n--brief is the preset --columns signature,template,level_name,logger,\nexception_type,count,first_seen,last_seen; --brief with --columns is a\nusage error.\n--with-exception keeps groups that carry an exception (exception_type not\nnull) at any level, so a DEBUG entry with a stack trace is found even\nthough --min-level WARN would hide it. --exception TEXT matches a\ncase-insensitive substring of exception_type (the outermost exception);\n--contains TEXT a case-insensitive substring of template. With --coarse\nall filters apply to the member groups.\n\nExit codes: 0 ok (also when no group matches); 1 bad option, unknown\ncolumn, or --brief with --columns; 3 unknown set or store error.",
    "output": "groups.v1",
    "exit": [
     0,
@@ -1096,7 +1093,7 @@
    "command": "query",
    "version": "",
    "usage": "LOGSET SQL",
-   "description": "Run DuckDB SQL over a log set and print the result rows.\n\nViews: \"entries\" (entries.v1), \"groups\" (groups.v1) and \"merges\" (merges.v1,\nonly when present). Their columns (types and descriptions: `atlas-log\nschema entries|groups|merges`):\n  entries:\n    id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n    request_id, session, ip, url, request_url, context, exception_type,\n    exception_message, exception_chain, signature, coarse_signature, template,\n    variables, source_path, source_line, source_offset, raw, parse_error\n  groups:\n    signature, coarse_signature, template, level, level_name, logger,\n    exception_type, count, first_seen, last_seen, user_count, thread_count,\n    source_count, top_users, top_threads, sources, examples\n  merges:\n    cluster_id, drain_template, signatures\nlevel is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),\nts/first_seen/last_seen are UTC timestamps, variables a list of strings.\nThe session time zone is UTC whatever the machine's zone: result\ntimestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets\nat UTC midnight.\n\nSQL examples:\n  select level, count(*) n from entries group by 1 order by 2 desc\n  select unnest(variables) v, count(*) n from entries\n    where signature = '0123456789abcdef' group by 1 order by 2 desc\n  select signature, count, template from groups where exception_type is not null\n    order by count desc limit 20\n\nOutput (json):\n  {\"schema\": \"query.v1\", \"logset\": id, \"columns\": [str, ...], \"count\": int,\n   \"total\": int, \"truncated\": false, \"items\": [{<column>: value, ...}, ...]}\nThe CLI never truncates query results (\"total\" = \"count\"); use LIMIT in SQL.\n\nErrors: \"sql_error\"; for an unknown column its \"hint\" lists DuckDB's\ncandidate columns (or the columns of the views), for an unknown table the\navailable views.\n\nExit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or\nstore error.",
+   "description": "Run DuckDB SQL over a log set and print the result rows.\n\nViews: \"entries\" (entries.v1), \"groups\" (groups.v1) and \"merges\" (merges.v1,\nonly when present). Their columns (types and descriptions: `atlas-log\nschema entries|groups|merges`):\n  entries:\n    id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n    request_id, session, ip, url, request_url, context, exception_type,\n    exception_message, exception_chain, signature, coarse_signature, template,\n    variables, source_path, source_line, source_offset, raw, parse_error\n  groups:\n    signature, coarse_signature, template, level, level_name, logger,\n    exception_type, count, first_seen, last_seen, user_count, thread_count,\n    source_count, top_users, top_threads, sources, examples\n  merges:\n    cluster_id, drain_template, signatures\nlevel is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),\nts/first_seen/last_seen are UTC timestamps, variables a list of strings.\nThe session time zone is UTC whatever the machine's zone: result\ntimestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets\nat UTC midnight. One statement only (several are a usage error).\n\nSQL examples:\n  select level, count(*) n from entries group by 1 order by 2 desc\n  select unnest(variables) v, count(*) n from entries\n    where signature = '0123456789abcdef' group by 1 order by 2 desc\n  select signature, count, template from groups where exception_type is not null\n    order by count desc limit 20\n\nOutput (json):\n  {\"schema\": \"query.v1\", \"logset\": id, \"columns\": [str, ...], \"count\": int,\n   \"total\": int, \"truncated\": false, \"items\": [{<column>: value, ...}, ...]}\nThe CLI never truncates query results (\"total\" = \"count\"); use LIMIT in SQL.\n\nErrors: \"sql_error\"; for an unknown column its \"hint\" lists DuckDB's\ncandidate columns (or the columns of the views), for an unknown table the\navailable views.\n\nExit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or\nstore error.",
    "output": "query.v1",
    "exit": [
     0,
@@ -1139,8 +1136,8 @@
    "schema": "manifest-command.v1",
    "command": "timeline",
    "version": "",
-   "usage": "REF [--bucket str=1h] [--signature str] [--level str] [--min-level str] [--since str] [--until str] [--window overlap|union] [--by-node]",
-   "description": "Count entries per time bucket: of a log set, or per node of a capture.\n\nA log set gives timeline.v1 (as GET /api/sets/{ref}/timeline). A capture\nreference (capture:ID, cluster:NAME[@DAY]), or a set with --by-node, gives\ncluster-timeline.v1 of its capture: per node and bucket the entries by\nlevel, or with --signature the entries of that group; buckets run over the\nwindow (--window overlap|union, --since/--until, as `capture`).\n\nOutput (json):\n  {\"schema\": \"timeline.v1\", \"logset\": id, \"bucket\": str, \"count\": int,\n   \"items\": [{\"bucket\", \"count\"}]}\n  {\"schema\": \"cluster-timeline.v1\", \"bucket\": str, \"buckets\": [iso],\n   \"nodes\": {NODE: {\"levels\": {\"ERROR\"|\"WARN\"|\"INFO\"|\"DEBUG\"|\"OTHER\": [n]},\n                    \"coverage\": [first, last] | null}},\n   \"signature\"?: str}\nBucket times are UTC, aligned to the epoch. \"coverage\" gives the first and\nlast bucket index in which the node has logs; with --signature \"levels\"\nhas only \"count\". Table mode prints one row per bucket (a capture: one\ncolumn per node).\n\nExit codes: 0 ok; 1 bad option, bucket, level or time, --level with a\ncapture, --window with a set, or an ambiguous signature prefix; 2 unknown\ncapture or group; 3 unknown set or store error.",
+   "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node]",
+   "description": "Count entries per time bucket: of a log set, or per node of a capture.\n\nA log set gives timeline.v1 (as GET /api/sets/{ref}/timeline). A capture\nreference (capture:ID, cluster:NAME[@DAY]), or a set with --by-node, gives\ncluster-timeline.v1 of its capture: per node and bucket the entries by\nlevel, or with --signature the entries of that group; buckets run over the\nwindow (--window overlap|union, --since/--until, as `capture`).\n\nOutput (json):\n  {\"schema\": \"timeline.v1\", \"logset\": id, \"bucket\": str, \"count\": int,\n   \"items\": [{\"bucket\", \"count\"}]}\n  {\"schema\": \"cluster-timeline.v1\", \"bucket\": str, \"buckets\": [iso],\n   \"nodes\": {NODE: {\"levels\": {\"ERROR\"|\"WARN\"|\"INFO\"|\"DEBUG\"|\"OTHER\": [n]},\n                    \"coverage\": [first, last] | null}},\n   \"signature\"?: str}\nBucket times are UTC, aligned to the epoch. \"coverage\" gives the first and\nlast bucket index in which the node has logs; with --signature \"levels\"\nhas only \"count\". Table mode prints one row per bucket (a capture: one\ncolumn per node).\n\nExit codes: 0 ok; 1 bad option, bucket, level or time, --level with a\ncapture, --window with a set, or an ambiguous signature prefix; 2 unknown\ncapture or group; 3 unknown set or store error.\n\nA set takes all the filters of `entries` (--level, --min-level, --logger,\n--user, --thread, --request-id, --contains, --with-exception, --exception,\n--coarse-signature, --signature, --since, --until), so the chart of a\nfiltered listing counts what the listing shows. A capture takes only\n--signature, --since and --until; any other filter is a usage error.",
    "output": "timeline.v1",
    "exit": [
     0,
@@ -1155,35 +1152,80 @@
      "help": "Log set, or capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
     },
     {
-     "name": "--bucket",
-     "type": "str",
-     "default": "1h",
-     "help": "Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d)."
-    },
-    {
      "name": "--signature",
      "type": "str",
-     "help": "Only entries of this group (signature or unique prefix)."
+     "help": "Only entries of this group signature (or unique prefix, 4+ hex chars); a capture also takes several, comma-separated (entries of any of them), and NODE:SIGNATURE for a group on that node only."
+    },
+    {
+     "name": "--coarse-signature",
+     "type": "str",
+     "help": "Only entries of this coarse signature (exact; the signature of groups --coarse)."
     },
     {
      "name": "--level",
      "type": "str",
-     "help": "A set only: only these levels, e.g. ERROR or WARN,ERROR."
+     "help": "Only these levels, e.g. ERROR or WARN,ERROR."
     },
     {
      "name": "--min-level",
      "type": "str",
-     "help": "A set only: only this level or more severe."
+     "help": "Only this level or more severe."
+    },
+    {
+     "name": "--logger",
+     "type": "str",
+     "help": "Logger name or package prefix (c.a.jira matches c.a.jira.Foo; com.atlassian.jira also the forms Jira abbreviates, c.a.jira.index.X and c.a.j.issue.index.X)."
+    },
+    {
+     "name": "--user",
+     "type": "str",
+     "help": "Only this user (exact)."
+    },
+    {
+     "name": "--thread",
+     "type": "str",
+     "help": "Only this thread (exact)."
+    },
+    {
+     "name": "--request-id",
+     "type": "str",
+     "help": "Only this request id (exact; the Jira request context, e.g. 540x101x1)."
     },
     {
      "name": "--since",
      "type": "str",
-     "help": "From this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the last entry."
+     "help": "Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry."
     },
     {
      "name": "--until",
      "type": "str",
-     "help": "Up to this time (same forms as --since)."
+     "help": "Only entries before this time (same forms as --since)."
+    },
+    {
+     "name": "--contains",
+     "type": "str",
+     "help": "Only entries whose raw text contains this text (case-insensitive)."
+    },
+    {
+     "name": "--with-exception",
+     "type": "flag",
+     "help": "Only entries with an exception (exception_type not null), any level."
+    },
+    {
+     "name": "--exception",
+     "type": "str",
+     "help": "Only entries whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--node",
+     "type": "str",
+     "help": "Only entries of these nodes, comma-separated (a capture only)."
+    },
+    {
+     "name": "--bucket",
+     "type": "str",
+     "default": "1h",
+     "help": "Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d)."
     },
     {
      "name": "--window",
@@ -1392,7 +1434,7 @@
    "schema": "manifest-command.v1",
    "command": "diff",
    "version": "",
-   "usage": "SET_A SET_B [--min-level str] [--coarse] [--force] [--limit int=50] [--rate]",
+   "usage": "SET_A SET_B [--min-level str] [--level str] [--coarse] [--force] [--limit int=50] [--rate]",
    "description": "Compare the groups of two log sets (A = before, B = after).\n\n\"new\": signatures present only in B; \"vanished\": only in A; \"changed\": in\nboth with a different count (ratio = count_b / count_a). Only the stored\ngroup tables are compared, never the raw logs.\n\nOutput (json):\n  {\"schema\": \"diff.v1\", \"a\": id_a, \"b\": id_b,\n   \"new\": [row], \"vanished\": [row], \"changed\": [row], \"unchanged_count\": int,\n   \"totals\": {\"new\": int, \"vanished\": int, \"changed\": int}, \"truncated\": bool,\n   \"warnings\": [str]}\nEach section holds at most --limit rows (default 50, 0 = all); \"totals\"\nare the section sizes before --limit and \"truncated\" is true when any\nsection was cut.\nEach row has signature, template, level, level_name, logger,\nexception_type, count_a, count_b, first_seen_a, last_seen_a, first_seen_b,\nlast_seen_b (counts are 0 on the missing side); \"changed\" rows also have\nratio. \"new\" is sorted by count_b, \"vanished\" by count_a, \"changed\" by\n|log(ratio)|, all descending. With --rate \"changed\" rows also have rate_a\nand rate_b (count per hour of each set's span, first to last entry) and\nrate_ratio = rate_b / rate_a, and \"changed\" is sorted by rate_ratio\ndescending: use it when the sets cover different lengths of time.\n\"warnings\" is present only when the spans of A and B differ by more than\n4x either way: one sentence saying that new/vanished groups are\nunreliable (groups that occur only at certain times of day). In table and\njsonl mode the sentence goes to stderr. In jsonl mode one row per line\nwith an extra \"change\" key (new / vanished / changed).\n\nExit codes: 0 ok; 1 the sets were built with different signature/mask-rule\nversions or specs (use --force); 3 unknown set or store error.",
    "output": "diff.v1",
    "exit": [
@@ -1415,6 +1457,11 @@
      "name": "--min-level",
      "type": "str",
      "help": "Only groups of this level or more severe (e.g. ERROR)."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "Alias of --min-level: this level and above (unlike `entries --level`, which matches exactly)."
     },
     {
      "name": "--coarse",
@@ -1700,7 +1747,7 @@
    "command": "remove",
    "version": "",
    "usage": "LOGSET",
-   "description": "Delete a log set from the store (its directory and all files).\n\nOutput (json): {\"schema\": \"remove.v1\", \"removed\": id, \"name\": str | null}\n\nExit codes: 0 ok; 3 unknown set or store error.",
+   "description": "Delete a log set from the store (its directory and all files).\n\nOutput (json): {\"schema\": \"remove.v1\", \"removed\": id, \"name\": str | null}\n\nA set whose manifest.json cannot be read is removed by its directory name\n(\"name\" is then null).\n\nExit codes: 0 ok; 3 unknown set or store error.",
    "output": "remove.v1",
    "exit": [
     0,
@@ -1710,7 +1757,7 @@
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name (the directory name when the manifest cannot be read)."
     }
    ]
   },
@@ -1776,7 +1823,7 @@
    "command": "batch",
    "version": "",
    "usage": "",
-   "description": "Run many commands in one process: argv arrays in, one JSON document per line out.\n\nReads JSON Lines from stdin, one command per line as a JSON array of its\narguments without \"atlas-log\" and without global options, e.g.\n  [\"groups\", \"prod\", \"--brief\", \"--limit\", \"5\"]\n  [\"show\", \"prod\", \"0a1b2c3d\"]\nEach runs in this process with the global --store (and the other global\noptions) and --output json, and writes exactly one JSON document per line\nto stdout, in input order: its usual document, or error.v1 when it fails\n(a line that is not a JSON array of strings, a global option, --help, or\nbatch/parse/serve, which do not write one document, are usage errors).\nBlank lines are skipped. A failed line never stops the batch.\nUse it to avoid the start-up cost of the CLI (about 0.45 s per call) when\nan agent runs several commands.\n\nOutput: one document per input line, each with its own \"schema\"\n(\"groups.v1\", \"entries.v1\", ..., \"error.v1\"); diagnostics on stderr.\n\nExit codes: 0 when the input was read, whatever each line returned; 1 the\ninput could not be read (not UTF-8, or a read error).",
+   "description": "Run many commands in one process: argv arrays in, one JSON document per line out.\n\nReads JSON Lines from stdin, one command per line as a JSON array of its\narguments without \"atlas-log\" and without global options, e.g.\n  [\"groups\", \"prod\", \"--brief\", \"--limit\", \"5\"]\n  [\"show\", \"prod\", \"0a1b2c3d\"]\nEach runs in this process with the global --store (and the other global\noptions) and --output json, and writes exactly one JSON document per line\nto stdout, in input order: its usual document, or error.v1 when it fails\n(a line that is not a JSON array of strings, a global option, --help, or\nbatch/parse/serve, which do not write one document, are usage errors).\nEvery error message starts with \"line N:\".\nBlank lines are skipped. A failed line never stops the batch.\nUse it to avoid the start-up cost of the CLI (about 0.45 s per call) when\nan agent runs several commands.\n\nOutput: one document per input line, each with its own \"schema\"\n(\"groups.v1\", \"entries.v1\", ..., \"error.v1\"); diagnostics on stderr.\n\nExit codes: 0 when the input was read, whatever each line returned; 1 the\ninput could not be read (not UTF-8, or a read error).",
    "exit": [
     0,
     1

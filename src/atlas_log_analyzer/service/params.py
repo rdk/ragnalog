@@ -266,12 +266,13 @@ class GroupQuery:
 
         """
         last = manifest.last_ts
+        since, until = _window(self.since, self.until, last, front)
         return GroupFilter(
             level=parse_level(self.level, "level", front=front),
             min_level=parse_level(self.min_level, "min_level", front=front),
             logger=blank(self.logger),
-            since=parse_time(self.since, "since", last, front=front),
-            until=parse_time(self.until, "until", last, front=front),
+            since=since,
+            until=until,
             with_exception=self.with_exception,
             exception=blank(self.exception),
             contains=blank(self.contains),
@@ -369,6 +370,7 @@ class EntryQuery:
                     hint="pass a capture (capture:ID, cluster:NAME)",
                 )
         last = manifest.last_ts
+        since, until = _window(self.since, self.until, last, front)
         signature, coarse = next(iter(self.signatures), None), blank(self.coarse_signature)
         return EntryFilter(
             signature=signature,
@@ -379,12 +381,27 @@ class EntryQuery:
             user=blank(self.user),
             thread=blank(self.thread),
             request_id=blank(self.request_id),
-            since=parse_time(self.since, "since", last, front=front),
-            until=parse_time(self.until, "until", last, front=front),
+            since=since,
+            until=until,
             contains=blank(self.contains),
             with_exception=self.with_exception,
             exception=blank(self.exception),
         )
+
+
+def _window(
+    since: str | None, until: str | None, last: datetime | None, front: Front
+) -> tuple[datetime | None, datetime | None]:
+    """``since`` and ``until`` resolved; ``invalid_value`` when the window runs backwards."""
+    t0 = parse_time(since, "since", last, front=front)
+    t1 = parse_time(until, "until", last, front=front)
+    if t0 is not None and t1 is not None and t0 > t1:
+        raise OpError(
+            "invalid_value",
+            f"{flag('since', front)} {t0.isoformat()} is after {flag('until', front)} "
+            f"{t1.isoformat()}",
+        )
+    return t0, t1
 
 
 def _check(
