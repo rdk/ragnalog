@@ -10,6 +10,8 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-10
+
 Parsing, masking and signatures change (format `jira@4`, signatures `sig2`, masking
 `mask3`): sets built before are `stale` and not comparable with new ones until
 `atlas-log upgrade --all` rebuilds them from their stored entries (no log files
@@ -165,6 +167,8 @@ Everything below; tagged only.
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.2.1...HEAD
+[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.0
+[0.3.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.3.0
 [0.2.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.1
 [0.2.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.0
