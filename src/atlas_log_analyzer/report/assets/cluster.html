@@ -142,14 +142,14 @@
 
 <footer class="foot" id="foot"></footer>
 <div class="tooltip" id="tooltip" role="tooltip" hidden></div>
-<div class="toast" id="toast" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="ids" class="ids-dlg" aria-labelledby="ids-h">
   <h2 id="ids-h">Identifiers &amp; CLI</h2>
   <div id="ids-body"></div>
   <form method="dialog"><button class="btn small">Close</button></form>
 </dialog>
-<dialog id="help">
-  <h2>Keyboard</h2>
+<dialog id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Keyboard</h2>
   <dl class="keys">
     <dt><kbd>/</kbd></dt><dd>Focus the search of the current view</dd>
     <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group or log row (j on the last loaded row loads more)</dd>

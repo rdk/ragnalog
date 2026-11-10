@@ -133,7 +133,9 @@
     // atlas-log's menu in the breadcrumb closes on a click elsewhere, on Esc and on a choice
     const menu = document.querySelector(".crumb-menu");
     if (menu) {
-      document.addEventListener("click", (ev) => { if (!menu.contains(ev.target)) menu.open = false; });
+      document.addEventListener("click", (ev) => {
+        if (!menu.contains(ev.target) || ev.target.closest(".crumb-menu a")) menu.open = false;
+      });
       menu.addEventListener("keydown", (ev) => {
         if (ev.key === "Escape" && menu.open) { menu.open = false; menu.querySelector("summary").focus(); ev.stopPropagation(); }
       });
@@ -143,7 +145,10 @@
     ["shell-set", "shell-node"].forEach((id) => {
       const sw = $(id);
       if (sw) sw.addEventListener("change", () => {
-        location.href = "/sets/" + encodeURIComponent(sw.value) + location.search + location.hash;
+        const q = new URLSearchParams(location.search);
+        if (q.get("compare") === sw.value) q.delete("compare"); // a set is not its own baseline
+        const qs = q.toString();
+        location.href = "/sets/" + encodeURIComponent(sw.value) + (qs ? "?" + qs : "") + location.hash;
       });
     });
 
@@ -601,7 +606,7 @@
         // files that are not logs of the format are left out: say so instead of moving on
         const skipped = j.capture ? [] : ((j.result.ingest || {}).skipped || []);
         if (!skipped.length) { location.href = href; return; }
-        cancel.hidden = true;
+        cancel.hidden = true; submit.disabled = false;
         $("job-state").textContent = "done";
         const names = skipped.map((p) => esc(String(p).split(/[\/]/).pop()));
         $("job-detail").innerHTML = fmt((j.progress || {}).entries ?? j.result.entry_count) + " entries · skipped " + names.length + " file(s) that are not " +

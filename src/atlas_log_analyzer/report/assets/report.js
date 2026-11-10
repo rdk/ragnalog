@@ -48,9 +48,11 @@
   let TZ = "UTC";
   /** The ISO time shifted into the shown zone (still printed with toISOString's layout). */
   function zoned(iso) {
-    if (!TZL || !iso) return iso;
+    if (!iso) return iso;
     const ms = parseTs(iso);
-    return ms === ms ? new Date(ms - new Date(ms).getTimezoneOffset() * 6e4).toISOString() : iso;
+    if (ms !== ms) return iso;
+    // UTC too goes through toISOString: hour stamps ("…T14:00:00Z") get their milliseconds
+    return new Date(TZL ? ms - new Date(ms).getTimezoneOffset() * 6e4 : ms).toISOString();
   }
   function zoneName(ms) {
     try {
@@ -325,7 +327,7 @@
       lg: p.get("lg") || "",
       ex: p.get("ex") || "",
       hx: p.get("hx") === "1",
-      sort: sort && SORTS[sort] ? sort : "count",
+      sort: sort && Object.hasOwn(SORTS, sort) ? sort : "count",
       view: VIEW_NAMES.includes(v) && (v !== "merged" || MERGES.length) ? v : "sig",
       cmp: CMP && CMP_NAMES.includes(c) ? c : "all",
       p: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
@@ -362,6 +364,7 @@
   let CUR = "";
 
   function commit(patch, opts = {}) {
+    if ("sig" in patch && patch.sig !== S.sig) CLIP.d = null; // each group's chart starts automatic
     Object.assign(S, patch);
     if (opts.keepPage !== true && !("p" in patch)) S.p = 0;
     const h = hashOf(S);
@@ -832,7 +835,7 @@
     if (!(S.q || S.lg || S.ex || S.hx)) return null;
     const rows = LIST.filter((x) => !x.gone && x.hourly.length && !isMuted(x));
     if (!rows.length || rows.length >= view(S.view).rows.length) return null;
-    return { key: ["f", S.view, S.q, S.lg, S.ex, S.hx, [...S.lv].sort().join(","), S.t ? S.t.join("-") : "", rows.length].join("|"), name: `${fmt(rows.length)} listed group${rows.length === 1 ? "" : "s"}`, rows };
+    return { key: ["f", S.view, S.cmp, S.q, S.lg, S.ex, S.hx, [...S.lv].sort().join(","), S.t ? S.t.join("-") : "", rows.length].join("|"), name: `${fmt(rows.length)} listed group${rows.length === 1 ? "" : "s"}`, rows };
   }
   const overlayKey = () => { const o = overlaySpec(); return o ? o.key : ""; };
   const LV_TITLE = { ERROR: "ERROR and FATAL", DEBUG: "DEBUG and TRACE", OTHER: "Unknown level" };
@@ -1095,9 +1098,9 @@
   }
   function pagerHtml(pages) {
     if (pages <= 1) return "";
-    return `<button type="button" class="btn small" data-page="${S.p - 1}" ${S.p <= 0 ? "disabled" : ""}>‹ Prev</button>` +
+    return `<button type="button" class="btn small" data-page="${S.p - 1}" data-dir="prev" ${S.p <= 0 ? "disabled" : ""}>‹ Prev</button>` +
       `<span>Page ${S.p + 1} of ${pages}</span>` +
-      `<button type="button" class="btn small" data-page="${S.p + 1}" ${S.p >= pages - 1 ? "disabled" : ""}>Next ›</button>`;
+      `<button type="button" class="btn small" data-page="${S.p + 1}" data-dir="next" ${S.p >= pages - 1 ? "disabled" : ""}>Next ›</button>`;
   }
   function renderTable(v) {
     const pages = Math.max(1, Math.ceil(LIST.length / PAGE));
@@ -2070,12 +2073,16 @@
   // ---------------------------------------------------------------- update
   // re-renders replace the chips, pagers and window buttons: put the focus back on the
   // control that had it (same id, or same tag and data-* attributes)
+  // (data-page changes with every page and data-tip-* is set by tips.js on hover/focus: not stable)
+  const UNSTABLE = /^data-(page|tip-text|tip-html)$/;
   function focusKey(el) {
     if (!(el instanceof HTMLElement) || el === document.body) return "";
     if (el.id) return "#" + CSS.escape(el.id);
-    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-"))
+    const attrs = [...el.attributes].filter((a) => a.name.startsWith("data-") && !UNSTABLE.test(a.name))
       .map((a) => `[${a.name}="${CSS.escape(a.value)}"]`).join("");
-    return attrs ? el.tagName.toLowerCase() + attrs : "";
+    if (!attrs) return "";
+    const host = el.parentElement && el.parentElement.closest("[id]");
+    return (host ? "#" + CSS.escape(host.id) + " " : "") + el.tagName.toLowerCase() + attrs;
   }
   function restoreFocus(key) {
     const a = document.activeElement;
@@ -2589,7 +2596,13 @@
       }
       if (typing || e.ctrlKey || e.metaKey || e.altKey || help.open || idsDlg.open) return;
       switch (e.key) {
-        case "/": e.preventDefault(); $("f-search").focus(); $("f-search").select(); break;
+        case "/": {
+          e.preventDefault();
+          const box = $("f-search");
+          if (box.offsetParent === null) window.scrollTo({ top: 0 }); // the stuck narrow bar hides it
+          requestAnimationFrame(() => { box.focus(); box.select(); });
+          break;
+        }
         case "w": toggleWide(); break;
         case "j": e.preventDefault(); move(1); break;
         case "k": e.preventDefault(); move(-1); break;
@@ -2598,7 +2611,9 @@
         case "z": toggleTz(); toast(TZL ? `Times in ${TZ}` : "Times in UTC"); break;
         case "c": {
           const r = lookup(S.sig || CUR);
-          if (r) copy(r.kind === "sig" ? r.sig : r.id.replace(/^[cm]:/, ""));
+          // a merged row has no signature of its own: copy its first member's (as its CLI does)
+          const sig = r && (r.kind === "sig" ? r.sig : r.kind === "merged" ? (r.sigs || [])[0] : r.id.replace(/^c:/, ""));
+          if (sig) copy(sig); else if (r) toast("This row has no signature");
           break;
         }
         case "n": if ((S.p + 1) * PAGE < LIST.length) commit({ p: S.p + 1 }, { keepPage: true }); break;

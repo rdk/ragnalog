@@ -396,6 +396,12 @@ body.app .triage-table .src {
 }
 body.app .triage-table .src > .lg { flex: 0 1 auto; }
 body.app .triage-table .src > .xc { flex: none; max-width: 70%; }
+/* narrow: the exception and logger go under the template instead of squeezing to a few letters */
+@media (max-width: 1100px) {
+  body.app .triage-table .tpl-line { flex-wrap: wrap; row-gap: 1px; }
+  body.app .triage-table .tpl-line .clamp { flex-basis: 100%; }
+  body.app .triage-table .src { max-width: 100%; }
+}
 body.app .triage-table td.t-count { color: var(--ink); }
 body.app .triage-table .from { margin-left: var(--s2); color: var(--muted); font-size: var(--fs-meta); }
 body.app .triage-table td.t-rate { color: var(--muted); }

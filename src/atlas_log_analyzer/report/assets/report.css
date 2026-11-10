@@ -872,8 +872,8 @@ html[data-wide] .d-sec .entry .e-body { max-height: 60vh; }
     --chip-bg: #eeede8; --code-bg: #f3f2ee; --hover: transparent; --sel: transparent; --neutral: #a3a29b;
     --syn-cls: #3b55a0; --syn-mth: #2c6a45; --syn-str: #86560f; --syn-fl: #6a4ea6; --syn-ln: #a24a33;
     --syn-exc: #b3352f; --syn-kw: #7a4fa0; --syn-dim: #6f6e69; --syn-num: #0b7285; --syn-id: #6b7489; --syn-warn: #8a5a00;
-    --lv-error-bg: #f4978f; --lv-error-ink: #5e110c; --lv-warn-bg: #f9c74f; --lv-warn-ink: #4a3000;
-    --lv-info-bg: #c9d4e6; --lv-info-ink: #1f2d47; --lv-debug-bg: #e0dfd8; --lv-debug-ink: #55544f;
+    --lv-error-bg: #f28b83; --lv-error-ink: #520e09; --lv-warn-bg: #f8c23e; --lv-warn-ink: #402a00;
+    --lv-info-bg: #b6cbec; --lv-info-ink: #172c52; --lv-debug-bg: #d4d3cc; --lv-debug-ink: #45443f;
   }
   body { background: #fff; }
   /* printed traces: the light syntax colours on paper, no dark panel */
@@ -952,7 +952,7 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
    selection); details in the tooltips (report.js registerTips).
    Anatomy: header (h1, actions, meta line with the figures) > overview card (timeline) >
    sticky filter bar > summary line and pager > table card; drawer and dialogs on the side. */
-:is(.report, .cluster) .d-sec h3, :is(.report, .cluster) .stats dt, .report .win-k, .rtip-k,
+:is(.report, .cluster) .d-sec h3, .report .stats dt, .report .win-k, .rtip-k,
 :is(.report, .cluster) .d-idcli > summary, .ids-dlg h3 {
   font-size: var(--fs-label); font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
 }
@@ -1163,16 +1163,15 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
    exception as its subtitle, then the facts as a quiet panel (label above value) */
 :is(.report, .cluster) .d-head { gap: var(--s2); margin-bottom: var(--s3); }
 :is(.report, .cluster) .d-sub { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--s1) var(--s3); color: var(--muted); font-size: var(--fs-meta); line-height: 1.55; overflow-wrap: anywhere; }
-.report .stats, .cluster .stats {
+.report .stats {
   display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--s3) var(--s4); margin: var(--s3) 0 0; padding: var(--s3) var(--s4);
   background: var(--page); border-radius: var(--r);
 }
-.cluster .stats { margin-top: var(--s3); }
-:is(.report, .cluster) .stats div { padding: 0; background: none; border-radius: 0; }
-:is(.report, .cluster) .stats dt { font-size: var(--fs-label); }
-:is(.report, .cluster) .stats dd { margin: 2px 0 0; color: var(--ink); font-size: var(--fs-ctl); font-weight: 500; font-variant-numeric: tabular-nums; }
-:is(.report, .cluster) .stats dd .ts { font-size: var(--fs-ctl); }
-:is(.report, .cluster) .stats .k dd { font-size: var(--fs-body); font-weight: 600; line-height: 1.4; }
+.report .stats div { padding: 0; background: none; border-radius: 0; }
+.report .stats dt { font-size: var(--fs-label); }
+.report .stats dd { margin: 2px 0 0; color: var(--ink); font-size: var(--fs-ctl); font-weight: 500; font-variant-numeric: tabular-nums; }
+.report .stats dd .ts { font-size: var(--fs-ctl); }
+.report .stats .k dd { font-size: var(--fs-body); font-weight: 600; line-height: 1.4; }
 /* section heads: label, a muted count, an action at the right */
 :is(.report, .cluster) .d-sec > h3 .sec-n { color: var(--muted); font-weight: 400; letter-spacing: 0; text-transform: none; font-variant-numeric: tabular-nums; }
 :is(.report, .cluster) .d-sec > h3 > :is(.d-all, .btn, .icon-btn):last-child { margin-left: auto; }
@@ -1186,7 +1185,7 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report .d-ids { gap: var(--s1) var(--s4); margin-top: var(--s2); font-size: var(--fs-meta); }
 .report .icon-btn { width: var(--ctl-h-sm); height: var(--ctl-h-sm); margin-left: var(--s1); color: var(--muted); vertical-align: middle; border-radius: var(--r-sm); }
 :is(.report, .cluster) .d-sec { margin-top: var(--s5); padding-top: var(--s4); border-top: 1px solid var(--grid); }
-:is(.report, .cluster) .d-sec#d-s-stats { margin-top: 0; padding-top: 0; border-top: 0; }
+.report .d-sec#d-s-stats { margin-top: 0; padding-top: 0; border-top: 0; }
 :is(.report, .cluster) .d-sec#d-s-nodes { margin-top: var(--s4); }
 :is(.report, .cluster) .d-sec > h3 { display: flex; align-items: center; gap: var(--s2); margin-bottom: var(--s3); }
 .report .d-sec > h3 .btn { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--ink-2); margin-left: 0; }
@@ -1337,6 +1336,7 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 @media print {
   .report .filters { margin: 0 0 var(--s2); padding: 0; background: none; backdrop-filter: none; border: 0; }
   .report .f-scope, .report .filters.is-stuck .f-scope { display: none; }
+  .report .filters .f-row, .report .filters .f-grp { display: none !important; } /* #f-print says it */
   .report .top { padding-inline: 0; }
   .report .overview { margin-inline: 0; }
   .report main { padding: 0; }

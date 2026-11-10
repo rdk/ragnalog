@@ -302,7 +302,16 @@
       const id = btn.dataset.rawView;
       if (RAW_VIEW.has(id)) RAW_VIEW.delete(id); else RAW_VIEW.add(id);
       const card = btn.closest(".entry");
-      if (card) card.outerHTML = entryHtml(id, entryOf(id));
+      if (!card) return null;
+      const tpl = document.createElement("template");
+      tpl.innerHTML = entryHtml(id, entryOf(id));
+      const fresh = tpl.content.firstElementChild;
+      const hadFocus = card.contains(document.activeElement);
+      card.replaceWith(tpl.content);
+      // keep the keyboard on the toggle (focus on body would re-arm the page's shortcuts)
+      const again = hadFocus && fresh && fresh.querySelector("[data-raw-view]");
+      if (again) again.focus({ preventScroll: true });
+      return fresh; // the new card, for pages that decorate it
     }
     /** "show all N lines": render the rest of the entry's body in place (the raw is already loaded). */
     function showAllLines(btn) {

@@ -6,7 +6,7 @@
         <a class="set-name" href="/sets/{{ s.id }}" data-tip-k="wa-set">{{ s.name or s.id }}</a>
         <div class="set-meta">{% if capture %}<span class="node-chip" title="Cluster node">{{ s.node or "?" }}</span>{% endif %}<span>{{ s.sources|length }} file{{ "" if s.sources|length == 1 else "s" }}</span><span>{{ s.bytes|size }}</span>{% if s.node and not capture %}<span>node {{ s.node }}</span>{% endif %}</div>
       </td>
-      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ s.first_ts|range(s.last_ts) }}</span>{% if strips[s.id] %}<a class="strip-link" href="/sets/{{ s.id }}" data-href="/sets/{{ s.id }}" tabindex="-1">{{ strips[s.id] }}</a>{% endif %}</div></td>
+      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ s.first_ts|range(s.last_ts) }}</span>{% if strips[s.id] %}<a class="strip-link" href="/sets/{{ s.id }}" data-href="/sets/{{ s.id }}" tabindex="-1" aria-hidden="true">{{ strips[s.id] }}</a>{% endif %}</div></td>
       <td class="num c-entries">{{ s.entry_count|num }}</td>
       <td class="num c-groups">{{ s.group_count|num }}</td>
       <td class="num c-err"{% if s.summary %} data-tip-k="wa-levels"{% endif %}>{% if s.summary %}<span class="lv-dot lv-dot-ERROR"></span>{{ s.summary.errors|num }}{% else %}<span class="none">–</span>{% endif %}</td>
@@ -57,7 +57,7 @@
         <div class="set-meta"><span>capture</span><span>{{ c.nodes }} node{{ "" if c.nodes == 1 else "s" }}</span><span>{{ c.bytes|size }}</span></div>
       </td>
       {% set ck = "capture:" ~ c.id %}
-      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ c.first_ts|range(c.last_ts) }}</span>{% if strips[ck] %}<a class="strip-link" href="/captures/{{ ck|urlencode }}" data-href="/captures/{{ ck|urlencode }}" tabindex="-1">{{ strips[ck] }}</a>{% endif %}</div></td>
+      <td class="when"><div class="when-row"><span class="when-text" data-tip-k="wa-range">{{ c.first_ts|range(c.last_ts) }}</span>{% if strips[ck] %}<a class="strip-link" href="/captures/{{ ck|urlencode }}" data-href="/captures/{{ ck|urlencode }}" tabindex="-1" aria-hidden="true">{{ strips[ck] }}</a>{% endif %}</div></td>
       <td class="num c-entries">{{ c.entry_count|num }}</td>
       <td class="num c-groups"><span class="none">–</span></td>
       <td class="num c-err"{% if c.errors is not none %} data-tip-k="wa-levels"{% endif %}>{% if c.errors is not none %}<span class="lv-dot lv-dot-ERROR"></span>{{ c.errors|num }}{% else %}<span class="none">–</span>{% endif %}</td>
@@ -104,9 +104,9 @@
     <pre class="cmd">atlas-log --store {{ store }} ingest path/to/logs --name prod-2026-10-29</pre>
   </details>
   <div class="job" id="job" hidden>
-    <div class="job-head"><strong id="job-state">queued</strong> <span class="muted" id="job-detail"></span>
+    <div class="job-head" role="status" aria-live="polite"><strong id="job-state">queued</strong> <span class="muted" id="job-detail"></span>
       <button type="button" class="btn small link" id="job-cancel">Cancel</button></div>
-    <div class="progress" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="job-bar"></span></div>
+    <div class="progress" role="progressbar" aria-label="Ingest progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="job-bar"></span></div>
   </div>
 </section>
 {% endblock %}

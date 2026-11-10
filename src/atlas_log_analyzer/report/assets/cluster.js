@@ -602,11 +602,13 @@
     for (const k of [1, 2, 3, 4, 6, 8, 12, 24, 48, 96, 168, 336]) if (Math.ceil(n / k) * 5 <= plotW) return k;
     return Math.max(1, Math.ceil((n * 5) / Math.max(1, plotW)));
   }
-  function niceTicks(max, parts = 3) {
+  /** Round axis ticks from 0 to at least max; whole steps only on a count axis (`int`). */
+  function niceTicks(max, parts = 3, int = false) {
     if (!(max > 0)) return [0, 1];
     const raw = max / parts;
     const p = Math.pow(10, Math.floor(Math.log10(raw)));
-    const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    let step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    if (int) step = step < 1 ? 1 : step === 2.5 ? 2 : step; // no "0.5 entries", no 2.5 steps
     const out = [];
     for (let v = 0; v < max + step * 0.999; v += step) out.push(Math.round(v * 1e6) / 1e6);
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
@@ -786,12 +788,12 @@
       shared = Math.max(shared, m);
     }
     for (const r of rows) {
-      r.ticks = niceTicks(S.y === "node" ? r.peak : shared, BAND < 70 ? 2 : 3);
+      r.ticks = niceTicks(S.y === "node" ? r.peak : shared, BAND < 70 ? 2 : 3, S.y !== "pct" && !fit);
       r.yMax = r.ticks[r.ticks.length - 1] || 1;
     }
     const tickText = (t) => (S.y === "pct" ? compact(t) + "%" : compact(t));
     const P = [];
-    P.push(`<svg class="${S.arrows ? "" : "arrows-off"}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${ERR ? "Errors" : "Entries"} per ${esc(binLabel(k))}${ERR ? "" : " by level"}, one band per node, with event lanes">`);
+    P.push(`<svg class="${S.arrows ? "" : "arrows-off"}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${ERR ? "Errors" : "Entries"} per ${esc(binLabel(k))}${ERR ? "" : " by level"}, one band per node, with event lanes">`);
     P.push(`<rect class="hover-band" x="0" y="${RULER}" width="${r1(slot)}" height="${bottomAll - RULER}" visibility="hidden"/>`);
     // window ruler
     if (WIN) {
@@ -1401,6 +1403,7 @@
   // per-node rates and first-seen times behind them are in their tooltips (builders below)
   function spreadChip(r) {
     const sig = ` data-sig="${esc(r.id)}" data-tip-k="cs"`;
+    if (!r.present.length) return `<span class="spr-all"${sig}>none in window</span>`;
     if (r.spread === "only") {
       const n = r.present[0] || r.top || "";
       return `<span class="schip ${ncls(n)}"${sig}><i></i>only ${esc(NLABEL(n))}</span>`;
@@ -1441,6 +1444,7 @@
     return tipCard({ h: trusted(tplHtml(trunc(row.tpl, 420))), sub: row.lvl, rows });
   }
   function spreadText(r) {
+    if (!r.present.length) return "on no node in the time window";
     if (r.spread === "only") return `only on ${NLABEL(r.present[0] || r.top || "")}`;
     if (r.spread === "skewed") return `${r.skew != null ? "×" + ratioText(r.skew) : "much"} more often on ${NLABEL(r.top)}`;
     return r.present.length === NODES.length ? "on every node at similar rates" : `on ${r.present.map(NLABEL).join(", ")} at similar rates`;
@@ -1732,17 +1736,23 @@
   function drawerHtml(r, inList) {
     const out = [];
     if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
-    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${MULTI ? spreadChip(V(r)) + leadChip(r) : ""}</div>`);
+    // the figures sit on the badge row (they used to be a panel of their own; the per-node table
+    // right below has the detail)
+    const nNodes = V(r).counts.filter((c) => c > 0).length; // in the window when one is set
+    const figs = [`<span><b>${fmt(r.total)}</b> ${r.total === 1 ? "entry" : "entries"}</span>`];
+    if (S.t) figs.push(`<span><b>${fmt(winOf(r).total)}</b> in window</span>`);
+    figs.push(`<span>${NODES.length === 1 ? (nNodes ? "on the node" : "not on the node") : `${fmt(nNodes)} of ${fmt(NODES.length)} nodes`}</span>`);
+    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${MULTI ? spreadChip(V(r)) + leadChip(r) : ""}` +
+      `<span class="d-figs">${figs.join(" · ")}</span></div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
     if (r.exc || r.logger) {
-      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger">${loggerHtml(r.logger)}</span>` : ""}${r.exc ? `<span title="Exception">${excHtml(r.exc)}</span>` : ""}</div>`);
+      // one line: the logger with its package abbreviated, the exception by its class name; the full
+      // names are in the tooltips
+      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger ${esc(r.logger)}">${loggerHtml(r.logger, true)}</span>` : ""}${r.exc ? `<span title="Exception ${esc(r.exc)}">${excHtml(r.exc, true)}</span>` : ""}</div>`);
     }
-    out.push(`<dl class="stats"><div class="k"><dt>Entries</dt><dd>${fmt(r.total)}</dd></div>` +
-      (S.t ? `<div><dt>In window</dt><dd>${fmt(winOf(r).total)}</dd></div>` : "") +
-      `<div><dt>Nodes</dt><dd>${fmt(r.counts.filter((c) => c > 0).length)}<span class="of"> of ${fmt(NODES.length)}</span></dd></div></dl>`);
     out.push(secId("d-s-nodes", "Per node", nodeTable(r)));
     out.push(secId("d-s-hourly", `Per ${esc(binLabel(1))} and node` + (S.t ? " (window shaded)" : ""),
-      `<div class="d-legend">${NODES.filter((n, i) => r.counts[i] > 0 || NODES.length <= 8).map((n) => `<span class="${ncls(n)}"><i class="lkey"></i>${esc(NLABEL(n))} ${esc(n)}</span>`).join("")}</div><div class="d-chart" id="d-hourly"></div>`));
+      `<div class="d-chart" id="d-hourly"></div>`));  // the lines take the node colours of the table above
     EX_ALL = allEntriesLink(r);
     const exNodes = NODES.filter((n) => arr(r.examples[n]).length);
     for (const n of Object.keys(r.examples)) if (!NIDX.has(n) && arr(r.examples[n]).length) exNodes.push(n);
@@ -1796,9 +1806,10 @@
   }
   /** Per-node lines of one group over the timeline buckets (shared y-axis, window shaded). */
   function drawLines(el, r) {
-    if (!el || !NB) return undefined;
+    if (!el) return undefined;
+    if (!NB) { el.innerHTML = `<p class="muted">No timeline in this report.</p>`; return undefined; }
     const W = Math.max(240, Math.floor(el.clientWidth || 400));
-    const H = 170, padL = 42, padR = 8, padB = 22;
+    const H = 84, padL = 42, padR = 8, padB = 20;
     const k = chooseBin(NB, W - padL - padR);
     const nb = Math.ceil(NB / k);
     const series = NODES.map((n) => ({ n, v: binArr(denseOf(r.hourly[n]), k, nb), has: binHas(n, k, nb) }))
@@ -1816,7 +1827,7 @@
     const padT = clip ? 18 : 8;
     const plotW = W - padL - padR, plotH = H - padT - padB;
     const slot = plotW / nb;
-    const ticks = niceTicks(clip ? p95 : max, 3);
+    const ticks = niceTicks(clip ? p95 : max, 2, true);  // two steps: the chart is short
     const yMax = ticks[ticks.length - 1] || 1;
     const pxPerMs = slot / (BMS * k);
     const xOfMs = (ms) => padL + (ms - TA) * pxPerMs;
@@ -1847,8 +1858,18 @@
       P.push(`<g class="${ncls(s.n)}">` + (d ? `<path class="nline" d="${d}"/>` : "") +
         dots.map(([x, y]) => `<circle class="ndot" cx="${r1(x)}" cy="${r1(y)}" r="3.5"/>`).join("") + `</g>`);
     }
-    for (let b = 0; b < nb; b++) {
-      if (over[b]) P.push(`<text class="clip-lbl" x="${r1(padL + b * slot + slot / 2)}" y="${padT - 5}" text-anchor="middle">${esc(compact(over[b]))}</text>`);
+    // one label per run of clipped bins (its maximum), at least 40px apart, as on the timeline
+    for (let b = 0, lastX = -Infinity; b < nb; b++) {
+      if (!over[b]) continue;
+      let e = b, top = over[b];
+      while (e + 1 < nb && over[e + 1]) top = Math.max(top, over[++e]);
+      const cx = r1(padL + ((b + e + 1) / 2) * slot);
+      if (cx - lastX >= 40) {
+        const x = Math.max(padL + 14, Math.min(cx, W - padR - 14));
+        P.push(`<text class="clip-lbl" x="${x}" y="${padT - 5}" text-anchor="middle">${esc(compact(top))}</text>`);
+        lastX = cx;
+      }
+      b = e;
     }
     P.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/></svg>`);
     el.innerHTML = P.join("");
@@ -1921,6 +1942,7 @@
       drawnKey = null;
       drawerStale = false;
       DGEO = null;
+      resetDrawerSpy(dr);
       return;
     }
     dr.hidden = false;
@@ -1940,12 +1962,19 @@
     body.innerHTML = r ? drawerHtml(r, idx >= 0) : `<div class="empty">Group ${esc(S.sig)} is not in this report.</div>`;
     body.scrollTop = sameGroup ? top : 0;
     if (!sameGroup) {
+      DCLIP = null; // each group starts clipped when spiky
+      resetDrawerSpy(dr);
       body.classList.remove("fresh");
       void body.offsetWidth;
       body.classList.add("fresh");
     }
     if (r) drawHourly(r);
   });
+  /** Forget the scroll spy's state: a hidden or refilled body scrolls to the top without an event. */
+  function resetDrawerSpy(dr) {
+    dr.classList.remove("scrolled");
+    for (const b of document.querySelectorAll("#d-nav [data-jump].on")) b.classList.remove("on");
+  }
   /** Redraw the drawer after its data changed, keeping its scroll position (no fade). */
   function redrawDrawer() {
     drawerStale = true;
@@ -2639,6 +2668,8 @@
     const b = $("btn-tz");
     if (!b) return;
     (b.querySelector(".tz-t") || b).textContent = TZ;
+    const mh = document.querySelector(".ml-head > span");
+    if (mh) mh.textContent = `Time (${TZ})`;
     b.setAttribute("aria-pressed", String(TZL));
     b.title = TZL ? `Times in your time zone (${TZ}); click to show UTC` : "Times in UTC; click to show your time zone";
   }

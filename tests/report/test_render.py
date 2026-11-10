@@ -161,3 +161,13 @@ def test_asset_text() -> None:
     assert asset_text("report.js") and asset_text("report.css")
     with pytest.raises(ValueError):
         asset_text("../__init__.py")
+
+
+def test_placeholder_text_in_set_name_is_not_substituted(payload: dict[str, Any]) -> None:
+    p = copy.deepcopy(payload)
+    p["logset"]["name"] = "__REPORT_DATA__ /*__REPORT_CSS__*/"
+    page = render_html(p)
+    data = report_data(page)
+    assert isinstance(data, dict)
+    assert data["logset"]["name"] == "__REPORT_DATA__ /*__REPORT_CSS__*/"
+    assert "<title>__REPORT_DATA__ /*__REPORT_CSS__*/ · atlas-log report</title>" in page

@@ -111,6 +111,12 @@ def _replace_once(text: str, marker: str, value: str) -> str:
     return before + value + after
 
 
+def _put_title(page: str, title: str) -> str:
+    """Fill the ``<title>`` element (its first occurrence: the head precedes the data)."""
+    marker = f"<title>{TITLE}</title>"
+    return _replace_once(page, marker, f"<title>{html.escape(title)}</title>")
+
+
 def _sub_once(text: str, pattern: re.Pattern[str], value: str) -> str:
     out, n = pattern.subn(lambda _m: value, text, count=1)
     if n != 1:
@@ -153,7 +159,6 @@ def render_html(
     if data_url is not None:
         attr = f' data-report-url="{html.escape(data_url, quote=True)}"'
         page = _replace_once(page, "<html", "<html" + attr)
-    page = _replace_once(page, TITLE, html.escape(_title(payload, name)))
     if inline_assets:
         css = asset_text("report.css")
         js = "\n".join(asset_text(n) for n in (*SHARED_JS, "report.js"))
@@ -170,8 +175,9 @@ def render_html(
             _JS_BLOCK,
             _script_tags(base, "report.js"),
         )
-    # Data last, so text inside the payload is never taken for a placeholder.
-    return _replace_once(page, DATA, "" if payload is None else embed_json(payload))
+    # Data and title last, so text inside them is never taken for a placeholder.
+    page = _replace_once(page, DATA, "" if payload is None else embed_json(payload))
+    return _put_title(page, _title(payload, name))
 
 
 def render_cluster_html(
@@ -202,7 +208,6 @@ def render_cluster_html(
     if data_url is not None:
         attr = f' data-report-url="{html.escape(data_url, quote=True)}"'
         page = _replace_once(page, "<html", "<html" + attr)
-    page = _replace_once(page, TITLE, html.escape(_cluster_title(payload, name)))
     if asset_base is None:
         page = _inline(page, CSS, "report.css")
         page = _inline(page, CLUSTER_CSS, "cluster.css")
@@ -218,5 +223,6 @@ def render_cluster_html(
             _CLUSTER_JS_BLOCK,
             _script_tags(base, "cluster.js"),
         )
-    # Data last, so text inside the payload is never taken for a placeholder.
-    return _replace_once(page, DATA, "" if payload is None else embed_json(payload))
+    # Data and title last, so text inside them is never taken for a placeholder.
+    page = _replace_once(page, DATA, "" if payload is None else embed_json(payload))
+    return _put_title(page, _cluster_title(payload, name))

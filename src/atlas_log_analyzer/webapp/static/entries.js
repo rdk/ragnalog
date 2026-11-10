@@ -23,7 +23,14 @@
   const levelNum = (name) => LEVELS[name] || 0;
   const badge = (name, level) => `<span class="lv lv-${bucketOf(level)}">${esc(name || "?")}</span>`;
   const zone = () => window.atlasZone || { local: () => false, zoneName: () => "UTC" };
-  const parseTs = (iso) => Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1"));
+  /** Milliseconds of an absolute ISO time (naive = UTC, as the API reads it); NaN for "2h" and the like. */
+  const parseTs = (iso) => {
+    const s = String(iso).trim().replace(/^(\d{4}-\d{2}-\d{2}) (?=\d)/, "$1T").replace(/(\.\d{3})\d+/, "$1");
+    if (!/^\d{4}-\d{2}-\d{2}/.test(s)) return NaN;
+    return Date.parse(/T\d/.test(s) && !/(Z|[+-]\d{2}:?\d{2})$/i.test(s) ? s + "Z" : s);
+  };
+  /** A window bound: milliseconds, or null when absent or relative (the server resolves those). */
+  const bound = (v) => { const ms = v ? parseTs(v) : NaN; return ms === ms ? ms : null; };
   /** "YYYY-MM-DDTHH:MM:SS.mmmZ" of the ISO time shifted into the shown zone. */
   function shifted(iso) {
     const ms = parseTs(iso);
@@ -41,7 +48,8 @@
   let Q = new URLSearchParams(location.search);
   const FILTERS = ["signature", "coarse_signature", "level", "min_level", "logger", "user", "thread", "request_id",
     "since", "until", "contains", "with_exception", "exception", "node"];
-  const hasFilters = () => FILTERS.some((k) => Q.get(k));
+  const isOn = (v) => !!v && !/^(false|0|no|off)$/i.test(v);
+  const hasFilters = () => FILTERS.some((k) => (k === "with_exception" ? isOn(Q.get(k)) : Q.get(k)));
   const sigList = () => (Q.get("signature") || "").split(",").map((s) => s.trim()).filter(Boolean);
   const oneGroup = () => (sigList().length === 1 && !Q.get("node")) || !!Q.get("coarse_signature");
   let ROWS = [];
@@ -120,6 +128,7 @@
     };
     const fail = (err) => {
       if (seq !== SEQ) return;
+      if (!first) { toast("Loading more failed: " + (err.message || String(err))); $("e-load").disabled = false; return; }
       state("error", err.message || String(err));
     };
     if (doc) return done(doc);
@@ -254,8 +263,10 @@
     }
     if (Q.get("coarse_signature")) chips.push(chip(["coarse_signature"], "Coarse", esc(Q.get("coarse_signature").slice(0, 8)), "Only the entries of this coarse group"));
     if (Q.get("since") || Q.get("until")) {
-      const a = Q.get("since") ? tsMin(Q.get("since")) : "", b = Q.get("until") ? tsMin(Q.get("until")) : "";
-      const text = a && b ? a + " → " + (a.slice(0, 10) === b.slice(0, 10) ? b.slice(11) : b) : a ? "from " + a : "until " + b;
+      const show = (k) => (Q.get(k) ? tsMin(Q.get(k)) || Q.get(k) : "");
+      const a = show("since"), b = show("until");
+      const sameDay = /^\d{4}-\d{2}-\d{2} /.test(a) && a.slice(0, 10) === b.slice(0, 10);
+      const text = a && b ? a + " → " + (sameDay ? b.slice(11) : b) : a ? "from " + a : "until " + b;
       chips.push(chip(["since", "until"], "Window", esc(text) + ` <span class="tz">${esc(tzName())}</span>`, "Only entries in this time window"));
     }
     for (const [k, w] of [["node", "Node"], ["thread", "Thread"], ["user", "User"], ["level", "Level"], ["min_level", "Level ≥"], ["logger", "Logger"], ["exception", "Exception"], ["request_id", "Request"]]) {
@@ -263,7 +274,7 @@
       if (val) chips.push(chip([k], w, `<span class="${k === "thread" || k === "user" || k === "request_id" ? "mono" : ""}">${esc(val)}</span>`, val));
     }
     if (withSearch && Q.get("contains")) chips.push(chip(["contains"], "Search", `<span class="mono">${esc(Q.get("contains"))}</span>`, Q.get("contains")));
-    if (Q.get("with_exception")) chips.push(chip(["with_exception"], "With exception", "", "Only entries with an exception"));
+    if (isOn(Q.get("with_exception"))) chips.push(chip(["with_exception"], "With exception", "", "Only entries with an exception"));
     return chips;
   }
   function renderChips() {
@@ -330,13 +341,14 @@
   const sizeMs = (name) => SIZES.find((s) => s[0] === name)[1];
   async function fetchHist(spec) {
     let name = "1h";
-    const known = spec.since && spec.until ? parseTs(spec.until) - parseTs(spec.since) : 0;
+    const s0 = bound(spec.since), u0 = bound(spec.until);
+    const known = s0 != null && u0 != null ? u0 - s0 : 0;
     if (known > 0) name = pickSize(known)[0];
     let map = timelineCounts(await getJson(timelineUrl(spec, name)), spec);
     for (let pass = 0; pass < 2 && map.size; pass++) {
       const ts = [...map.keys()];
-      const from = spec.since ? parseTs(spec.since) : Math.min(...ts);
-      const to = spec.until ? parseTs(spec.until) : Math.max(...ts) + sizeMs(name);
+      const from = s0 != null ? s0 : Math.min(...ts);
+      const to = u0 != null ? u0 : Math.max(...ts) + sizeMs(name);
       const want = pickSize(to - from)[0];
       if (want === name) break;
       name = want;
@@ -345,8 +357,8 @@
     if (!map.size) return null;
     const size = sizeMs(name);
     const ts = [...map.keys()];
-    const from = Math.floor((spec.since ? parseTs(spec.since) : Math.min(...ts)) / size) * size;
-    const to = spec.until ? parseTs(spec.until) : Math.max(...ts) + size;
+    const from = Math.floor((s0 != null ? s0 : Math.min(...ts)) / size) * size;
+    const to = u0 != null ? u0 : Math.max(...ts) + size;
     const nb = Math.max(1, Math.ceil((to - from) / size));
     const counts = new Array(nb).fill(0);
     for (const [t, c] of map) { const i = Math.floor((t - from) / size); if (i >= 0 && i < nb) counts[i] += c; }
@@ -374,7 +386,8 @@
   function drawHist() {
     const sec = $("e-hist"), host = $("e-hist-plot");
     HG = null;
-    if (!HIST || HIST.counts.length < 2) { sec.hidden = true; host.textContent = ""; return; }
+    // one bucket draws too when a window is set: the chart holds the "Full range" button
+    if (!HIST || (HIST.counts.length < 2 && !(Q.get("since") || Q.get("until")))) { sec.hidden = true; host.textContent = ""; return; }
     sec.hidden = false;
     const { from, size, counts, peak } = HIST;
     const nb = counts.length;
@@ -414,7 +427,12 @@
     host.innerHTML = parts.join("");
     HG = { svg: host.firstElementChild, slot, nb };
     const total = counts.reduce((a, b) => a + b, 0);
-    $("e-hist-what").innerHTML = `per ${SIZE_WORD[HIST.name]} · peak <span class="n">${fmt(peak)}</span> · <span class="n">${fmt(total)}</span> in view`;
+    // the timeline API counts by group, level and node only: say so when other filters narrow the table
+    const unseen = ["thread", "user", "request_id", "logger", "contains", "exception"].filter((k) => Q.get(k));
+    if (isOn(Q.get("with_exception"))) unseen.push("with_exception");
+    if (CAPTURE) unseen.push(...["level", "min_level"].filter((k) => Q.get(k)));
+    const note = unseen.length ? ` · <span class="muted" title="The chart counts the group${CAPTURE ? " and node" : ", level and node"} only; the table also applies the other filters">not filtered by ${esc(unseen.map((k) => k.replace("_", " ")).join(", "))}</span>` : "";
+    $("e-hist-what").innerHTML = `per ${SIZE_WORD[HIST.name]} · peak <span class="n">${fmt(peak)}</span> · <span class="n">${fmt(total)}</span> in view${note}`;
   }
   const idxAt = (ev) => Math.max(0, Math.min(HG.nb - 1, Math.floor((ev.clientX - HG.svg.getBoundingClientRect().left) / HG.slot)));
   function setBrush(i0, i1) {
@@ -606,7 +624,7 @@
       }
       const b = t.closest("[data-raw-view],[data-all-lines],[data-copy-raw],[data-unfold]");
       if (!b) return;
-      if (b.dataset.rawView != null) card.toggleRaw(b);
+      if (b.dataset.rawView != null) decorate(card.toggleRaw(b));
       else if (b.dataset.allLines != null) card.showAllLines(b);
       else if (b.dataset.copyRaw != null) copy(card.fullText(BY_KEY.get(b.dataset.copyRaw) || {}));
       else {

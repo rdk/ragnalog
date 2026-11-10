@@ -344,7 +344,7 @@ body.drawer-open .c-lead { display: none; }
 
 /* The group drawer: the look and the numbers are the report's (report.css). What is its own: the
    cluster bar holds the level badge and template (shown once the body scrolled 48px), the section
-   links sit in a row of their own, the facts line replaces the stats grid. */
+   links sit in a row of their own, the figures sit on the badge row (no stats grid). */
 .cluster .drawer-bar #d-prev, .cluster .drawer-bar #d-next { width: var(--ctl-h-sm); padding: 0; justify-content: center; }
 .cluster .d-pos b { color: var(--ink-2); font-weight: 600; margin-right: 2px; }
 .d-bar-id { flex: 1 1 0; min-width: 0; display: flex; align-items: center; gap: var(--s2); padding-left: var(--s2); }
@@ -374,9 +374,6 @@ body.drawer-open .c-lead { display: none; }
 .d-nodes td.t { color: var(--muted); }
 .d-nodes td .nm { margin-left: var(--s1); color: var(--ink-2); }
 .d-nodes tr:last-child td { border-bottom: 0; }
-.d-legend { display: flex; flex-wrap: wrap; gap: var(--s1) var(--s4); font-size: var(--fs-meta); color: var(--ink-2); margin-bottom: var(--s2); }
-.d-legend span { display: inline-flex; align-items: center; gap: 6px; }
-.lkey { display: inline-block; width: 14px; height: 2px; border-radius: 1px; background: var(--nc); }
 .nline { fill: none; stroke: var(--nc); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
 .ndot { fill: var(--nc); stroke: var(--surface); stroke-width: 2; }
 .crosshair { stroke: var(--baseline); stroke-width: 1; shape-rendering: crispEdges; }
@@ -604,3 +601,19 @@ table.mx .mx-corner { color: var(--muted); font-weight: 400; }
 .load-error p { margin: 4px 0; }
 .load-error .hint { color: var(--ink-2); }
 .load-error .code { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+
+/* cluster drawer, before the examples: compact (figures on the badge row, logger and exception on
+   one line, tighter sections, a short chart) so the examples start high */
+.cluster .drawer-body .d-head { margin-bottom: var(--s2); }
+.cluster .d-figs { margin-left: auto; color: var(--muted); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; text-align: right; }
+.cluster .d-figs > span { white-space: nowrap; }
+.cluster .d-figs b { color: var(--ink); font-weight: 600; }
+.cluster .drawer-body .d-tpl { margin-bottom: var(--s1); }
+.cluster .drawer-body .d-sub { flex-wrap: nowrap; gap: var(--s3); line-height: 1.4; }
+.cluster .drawer-body .d-sub > span { display: flex; min-width: 0; flex: 0 1 auto; }  /* each name gives up its package first */
+.cluster .drawer-body .d-sub > span > :is(.lg, .xc) { max-width: 100%; }
+.cluster .drawer-body .d-sec { margin-top: var(--s3); padding-top: var(--s3); }
+.cluster .drawer-body .d-sec#d-s-nodes { margin-top: var(--s3); border-top: 0; padding-top: 0; }
+.cluster .drawer-body .d-sec > h3 { margin-bottom: var(--s2); }
+.cluster #d-s-nodes table th { padding-top: var(--s1); padding-bottom: var(--s1); }
+.cluster #d-s-nodes table td { padding-top: 3px; padding-bottom: 3px; }

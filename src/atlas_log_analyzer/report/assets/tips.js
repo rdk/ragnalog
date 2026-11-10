@@ -206,7 +206,8 @@
   });
   document.addEventListener("focusout", () => hide());
   document.addEventListener("keydown", (e) => {
-    if (e.key === "Escape" && cur) hide();
+    // Esc dismisses an open tip only: the page's own Esc (close the drawer, …) waits for the next one
+    if (e.key === "Escape" && cur) { hide(); e.stopImmediatePropagation(); }
   });
   document.addEventListener("input", () => {
     if (cur) hide();

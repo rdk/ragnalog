@@ -147,8 +147,10 @@ bar (40 px) names the open group and its position. A handle on the drawer's left
 it (drag, or arrow keys when focused; double-click or Home resets; the width is remembered,
 the table keeps at least about 440 px). In the drawer the group's template is the
 headline (16 px), its logger and exception the subtitle, and the figures (entries, first and
-last seen, users, threads, sources; on the cluster page entries, in window, nodes) a quiet panel
-with the label above each value; section heads are a label, a muted count and an action at the
+last seen, users, threads, sources) a quiet panel with the label above each value (the cluster
+page keeps its drawer short before the examples: entries, in window and nodes on the badge row,
+logger and exception abbreviated on one line, an 84 px chart without a legend, as the lines take
+the per-node table's colours); section heads are a label, a muted count and an action at the
 right ("All N entries ↗"). Reset is dimmed and disabled until a filter, the sort
 order, the view or an open group differs from the default (the cluster page also counts the log
 filters; after it is used, focus moves to the search field); clicking the stuck bar's name and scope line scrolls back to the full filter bar. An
@@ -230,9 +232,10 @@ remove, or "Remove all filters".
   dropped. Older links with bucket indices (`t=95-118`) still open.
 - Keyboard: `/` focuses search, `j`/`k` move the selection, `Enter` opens,
   `Esc` closes the drawer (focus returns to its row), `w` toggles the full screen width,
-  `c` copies the signature,
+  `c` copies the signature (a merged row: its first member's),
   `m` mutes the selected group in the chart, `z` switches UTC / local time,
-  `[`/`]` move the time window.
+  `n`/`p` page, `[`/`]` move the time window, `?` lists the keys. `Esc` first dismisses an
+  open tooltip.
 - Every drawer has the equivalent CLI commands
   (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) in its
   collapsed *Identifiers & CLI* part, so a human can hand a finding to an agent verbatim.
@@ -241,7 +244,8 @@ remove, or "Remove all filters".
   for every page of the app (`localStorage` `atlas-log-wide`), applied before the first paint.
 - Theme: follows `prefers-color-scheme`, toggle persisted in `localStorage`;
   all colors are CSS custom properties on `:root`.
-- Print: drawer and filters collapse; the table prints.
+- Print: drawer and filter controls collapse (a line states the filters); the table
+  prints its current page.
 
 ### Entry cards
 
