@@ -132,4 +132,7 @@ refuses to create the implicit `./.atlas-log` inside a git work tree, so pass
 Real log sets live outside the repository in `../atlas-log-analyzer-data/`
 (layout, naming and the excerpt-to-fixture procedure in its `README.md`;
 `stores/main` there holds them ingested). Opt-in tests read it via
-`ATLAS_LOG_DATA`.
+`ATLAS_LOG_DATA`. Names of the real environment (its domain, company packages,
+in-house plugins, paths) are never written into the repository, not even as a
+guard: `tests/test_fixture_hygiene.py` reads them from `forbidden.txt` in that
+folder, and `scripts/make_fixture.py` takes the logs' domain as `--host-domain`.

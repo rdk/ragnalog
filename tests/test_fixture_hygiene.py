@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -17,7 +18,25 @@ IPV4_RE = re.compile(r"(?<![\w.])(\d{1,3})(?:\.\d{1,3}){3}(?![\w.])")
 URL_HOST_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://(?:[^@/\s]+@)?([^/:\s)'\"]+)", re.IGNORECASE)
 ALLOWED_HOSTS = frozenset({"localhost", "go"})
 """``go`` appears in a Jira product message (``http://go/j/JRASERVER-...``)."""
-FORBIDDEN_RE = re.compile(r"corp\.example|example\.corp", re.IGNORECASE)
+
+
+def _forbidden() -> re.Pattern[str] | None:
+    """Names of the real environment that must not reach a fixture, one regex per line.
+
+    They are kept OUT of the repository, in ``forbidden.txt`` of the data folder
+    (``ATLAS_LOG_DATA``, else ``../atlas-log-analyzer-data`` beside the repository), so
+    this guard never writes them down itself; without that file (CI) it checks nothing.
+    """
+    root = Path(os.environ.get("ATLAS_LOG_DATA") or TESTS.parents[1] / "atlas-log-analyzer-data")
+    try:
+        lines = (root / "forbidden.txt").read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    pats = [ln.strip() for ln in lines if ln.strip() and not ln.lstrip().startswith("#")]
+    return re.compile("|".join(f"(?:{p})" for p in pats), re.IGNORECASE) if pats else None
+
+
+FORBIDDEN_RE = _forbidden()
 
 
 def test_fixtures_found() -> None:
@@ -38,4 +57,7 @@ def test_fixture_is_masked(path: Path) -> None:
         if h not in ALLOWED_HOSTS and h != "example.com" and not h.endswith(".example.com")
     }
     assert not bad_hosts, f"hosts outside example.com: {sorted(bad_hosts)}"
-    assert not FORBIDDEN_RE.search(text), "internal domain name found"
+    found = FORBIDDEN_RE.search(text) if FORBIDDEN_RE else None
+    assert found is None, (
+        f"a name from the data folder's forbidden.txt at offset {found and found.start()}"
+    )

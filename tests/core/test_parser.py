@@ -258,8 +258,8 @@ def _ids(texts: list[str]) -> list[str]:
 @pytest.mark.parametrize(
     ("fixture", "count", "digest"),
     [
-        # sample.log: two logger names masked in 0.4.x (was 6a4fd64fe087c840 with the same ids code)
-        (SAMPLE, 47, "8e1618cb9e09d46d"),
+        # sample.log was re-masked (logger, plugin and path names); the ids code is unchanged
+        (SAMPLE, 47, "6d179c20119ed7cd"),
         (EDGE_CASES, 15, "e07a5219cc18eaf6"),
         (Path(__file__).parents[1] / "cli" / "data" / "mini.log", 10, "e35f07bdb9e3e630"),
     ],
