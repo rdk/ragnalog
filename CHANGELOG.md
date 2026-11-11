@@ -10,6 +10,10 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-11
+
+No stored-format change: sets built by 0.4.0 stay comparable.
+
 ### Changed
 
 - The report's group panel is laid out like the cluster page's: Mute and Copy in its top
@@ -186,7 +190,8 @@ Everything below; tagged only.
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.1
 [0.4.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.3.0
 [0.2.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.1
