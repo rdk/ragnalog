@@ -324,9 +324,13 @@ def report_asset(name: str) -> Response:
 
 _SEP = '<span class="crumb-sep" aria-hidden="true">/</span>'
 _MENU = (
-    '<details class="crumb-menu"><summary aria-label="atlas-log menu" title="atlas-log menu">'
-    '</summary><div class="crumb-pop"><a href="/">Log sets</a>'
-    '<a href="/#upload">Ingest</a><a href="/docs">API</a></div></details>'
+    '<details class="crumb-menu"><summary aria-label="atlas-log menu" '
+    'title="Menu: all log sets, ingest new logs, the API">'
+    '</summary><div class="crumb-pop">'
+    '<a href="/" title="The start page: every stored log set and cluster capture">Log sets</a>'
+    '<a href="/#upload" title="Upload log files or a ZIP to build a new log set">Ingest</a>'
+    '<a href="/docs" title="The JSON API and its OpenAPI documentation, for scripts">API</a>'
+    "</div></details>"
 )
 _HOME = '<a class="crumb-home" href="/">atlas-log</a>' + _MENU
 templates.env.globals["crumb_root"] = Markup(_HOME)
@@ -357,6 +361,34 @@ _ICONS = {
 """Stroke icons of the view tabs (16 x 16 viewBox, drawn by :func:`_views`)."""
 
 
+_VIEW_TIPS = {
+    "Report": "Every group of this set (entries that share one message template) with its "
+    "count, the timeline, filters and a detail panel per group.",
+    "Triage": "What needs attention first, against a baseline (by default the previous set "
+    "of the same node): new error types, new exceptions, groups whose rate at least "
+    "doubled, and groups that vanished.",
+    "Entries": "The individual log entries in time order, with a histogram and filters by "
+    "level, thread, user or text.",
+    "Cluster view": "All nodes of the capture side by side: each group's count per node, "
+    "which node logs it first or more often, and events across nodes.",
+    "Compare with previous": "Adds the previous set of the same node to this report: "
+    "which groups are new, grew, shrank or vanished, and by how much.",
+    "Without compare": "Shows this set alone again, without the comparison.",
+}
+"""What each view tab opens (its rich tooltip), keyed by the tab's text."""
+
+
+def _view_tip(text: str, current: bool) -> str:
+    """Return the ``data-tip`` card of a view tab: its name, what it shows, "you are here"."""
+    desc = _VIEW_TIPS.get(text, "")
+    card = f'<div class="atip-h">{html.escape(text)}</div>'
+    if desc:
+        card += f'<div class="atip-body">{html.escape(desc)}</div>'
+    if current:
+        card += '<div class="atip-note">The page you are on.</div>'
+    return html.escape(card, quote=True)
+
+
 def _views(*items: tuple[str, str, str | None], label: str = "Views of this set") -> str:
     """Build the view tabs from ``(icon, text, href)``; no ``href`` marks the current one."""
     out = []
@@ -366,10 +398,11 @@ def _views(*items: tuple[str, str, str | None], label: str = "Views of this set"
             'stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'
             f'{_ICONS[icon]}</svg><span class="v-l">{text}</span>'
         )
+        tip = f'aria-label="{text}" data-tip="{_view_tip(text, href is None)}"'
         if href is None:
-            out.append(f'<span class="view" aria-current="page" title="{text}">{body}</span>')
+            out.append(f'<span class="view" aria-current="page" {tip}>{body}</span>')
         else:
-            out.append(f'<a class="view" href="{href}" title="{text}">{body}</a>')
+            out.append(f'<a class="view" href="{href}" {tip}>{body}</a>')
     return f'<nav class="views" aria-label="{label}">' + "".join(out) + "</nav>"
 
 
@@ -385,7 +418,8 @@ def _set_crumb(state: AppState, ref_id: str) -> str:
         options.append(f'<option value="{m.id}"{selected}>{label}</option>')
     return (
         _SEP
-        + '<span class="crumb-sel"><select id="shell-set" aria-label="Log set">'
+        + '<span class="crumb-sel"><select id="shell-set" aria-label="Log set" '
+        + 'title="Switch to another log set; the filters in the address stay">'
         + "".join(options)
         + "</select></span>"
     )
@@ -416,7 +450,8 @@ def _node_switch(state: AppState, ls: LogSet) -> str:
         options.append(f'<option value="{m.id}"{selected}>{label}</option>')
     return (
         _SEP
-        + '<span class="crumb-sel"><select id="shell-node" aria-label="Cluster node">'
+        + '<span class="crumb-sel"><select id="shell-node" aria-label="Cluster node" '
+        + 'title="Switch to the same view of another node of this capture">'
         + "".join(options)
         + "</select></span>"
     )
@@ -426,7 +461,8 @@ def _node_link(i: int, node: str, set_id: str, name: str) -> str:
     """Chip linking a node's report: a dot in the node's cluster page colour and its name."""
     colour = f"nc{i}" if i < 8 else "ncx"
     return (
-        f'<a class="node-link" href="/sets/{quote(set_id)}" title="Report of {html.escape(name)}">'
+        f'<a class="node-link" href="/sets/{quote(set_id)}" '
+        f'title="Report of node {html.escape(name)}: its own log set">'
         f'<span class="nd {colour}"></span>{html.escape(node)}</a>'
     )
 
@@ -638,6 +674,35 @@ async def set_entries_page(ref: str, request: Request, state: StateDep, q: Entry
         api_url=f"/api/sets/{sid}/entries",
         back=f"/sets/{sid}",
         nodes={},
+    )
+
+
+@router.get("/sets/{ref}/entries/{entry_id}/raw")
+async def entry_raw_page(ref: str, entry_id: str, request: Request, state: StateDep) -> Response:
+    """One entry's exact text (banner lines first) as a page: the stack trace highlighted.
+
+    The cards' "Open raw" link: application frames marked, library frames dimmed (all of
+    them shown), as in the cards; the plain text stays at ``GET /api/sets/{ref}/entries/
+    {entry_id}/raw``.
+    """
+
+    def build() -> tuple[tuple[str | None, str], LogSet]:
+        return queries.entry_parts(state, ref, entry_id, front="api"), state.open(ref)
+
+    (preamble, raw), ls = await run_in_threadpool(build)
+    sid = ls.manifest.id
+    plain = f"/api/sets/{quote(sid)}/entries/{quote(entry_id)}/raw"
+    data = {"id": entry_id, "raw": raw, "preamble": preamble, "plain": plain}
+    return templates.TemplateResponse(
+        request,
+        "entry_raw.html",
+        {
+            "name": ls.manifest.name or sid,
+            "sid": sid,
+            "entry_id": entry_id,
+            "plain": plain,
+            "data": Markup(embed_json(data)),
+        },
     )
 
 

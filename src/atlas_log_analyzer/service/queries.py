@@ -418,6 +418,17 @@ def entry_raw(sets: Sets, ref: str, entry_id: str, *, front: Front) -> str:
         OpError: ``entry_not_found`` for an unknown id.
 
     """
+    preamble, raw = entry_parts(sets, ref, entry_id, front=front)
+    return f"{preamble}\n{raw}" if preamble else raw
+
+
+def entry_parts(sets: Sets, ref: str, entry_id: str, *, front: Front) -> tuple[str | None, str]:
+    """Return one entry's banner lines (``None`` without any) and its ``raw`` text.
+
+    Raises:
+        OpError: ``entry_not_found`` for an unknown id.
+
+    """
     ls = open_set(sets, ref, front=front)
     row = ls.entry(entry_id)
     if row is None:
@@ -426,8 +437,7 @@ def entry_raw(sets: Sets, ref: str, entry_id: str, *, front: Front) -> str:
         )
     context = row.get("context") or {}
     preamble = context.get("preamble") if isinstance(context, dict) else None
-    raw = str(row.get("raw") or "")
-    return f"{preamble}\n{raw}" if preamble else raw
+    return (str(preamble) if preamble else None), str(row.get("raw") or "")
 
 
 def group_examples(

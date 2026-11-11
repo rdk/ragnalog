@@ -28,6 +28,7 @@ __all__ = [
     "JobCancelled",
     "JobManager",
     "JobState",
+    "QueueFull",
     "safe_filename",
 ]
 
@@ -36,6 +37,12 @@ UPLOADS_DIR = ".uploads"
 """Spool directory inside the store (ignored by store listings: it starts with a dot)."""
 MAX_ACTIVE_JOBS = 8
 """Queued plus running jobs: one more upload is refused (503)."""
+
+
+class QueueFull(Exception):
+    """:meth:`JobManager.submit` refused a job: :data:`MAX_ACTIVE_JOBS` are queued or running."""
+
+
 KEEP_FINISHED = 100
 """Finished jobs kept for ``GET /api/jobs``; older ones are forgotten."""
 
@@ -156,7 +163,16 @@ class JobManager:
         shutil.rmtree(self.spool / job_id, ignore_errors=True)
 
     def submit(self, job_id: str, paths: list[Path], *, name: str | None, **options: Any) -> Job:
-        """Queue an ingest of ``paths`` (files in the job's upload directory)."""
+        """Queue an ingest of ``paths`` (files in the job's upload directory).
+
+        The cap is checked and the job added in one step under the lock, so uploads that
+        finish at the same moment cannot push the queue past :data:`MAX_ACTIVE_JOBS` (the
+        check from the request headers can only see the jobs submitted before them).
+
+        Raises:
+            QueueFull: :data:`MAX_ACTIVE_JOBS` jobs are already queued or running.
+
+        """
         job = Job(
             id=job_id,
             name=name,
@@ -165,6 +181,11 @@ class JobManager:
             options=options,
         )
         with self._lock:
+            if (
+                sum(j.state in ("queued", "running") for j in self._jobs.values())
+                >= MAX_ACTIVE_JOBS
+            ):
+                raise QueueFull(f"{MAX_ACTIVE_JOBS} ingest jobs are queued or running")
             self._jobs[job_id] = job
         if self._pool is None:
             self._run(job, paths)

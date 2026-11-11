@@ -294,7 +294,7 @@
         (e.raw_truncated ? `<span class="muted">${FULL(id, e) ? "loading the full entry…" : `cut to ${fmt(raw.length)} characters in this file; all of it: atlas-log context SET ${esc(id)} --before 0 --after 0 --max-raw 0`}</span>` : "") +
         `<span class="grow"></span>` + (h.actions ? str(h.actions(id, e)) : "") +
         `<button type="button" class="btn small" data-raw-view="${esc(id)}" aria-pressed="${rawOn}" title="Show the exact text of the entry as in the log file, every line">${rawOn ? "Formatted" : "Raw"}</button>` +
-        (rawUrl(id, e) ? `<a class="btn small" href="${esc(rawUrl(id, e))}" target="_blank" rel="noopener" title="The full entry as plain text in a new tab">Open raw ↗</a>` : "") +
+        (rawUrl(id, e) ? `<a class="btn small" href="${esc(rawUrl(id, e))}" target="_blank" rel="noopener" title="The exact text of the entry in a new tab, its stack trace highlighted (plain text from there)">Open raw ↗</a>` : "") +
         `<button type="button" class="btn small" data-copy-raw="${esc(id)}">Copy raw</button></div></article>`;
     }
     /** "Raw" / "Formatted": redraw one card in the other view. */

@@ -528,11 +528,12 @@
     for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 5 <= plotW) return k;
     return 168;
   }
-  function niceTicks(max) {
+  function niceTicks(max, parts = 3, int = false) {
     if (max <= 0) return [0, 1];
-    const raw = max / 3;
+    const raw = max / parts;
     const p = Math.pow(10, Math.floor(Math.log10(raw)));
-    const step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    let step = [1, 2, 2.5, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    if (int) step = step < 1 ? 1 : step === 2.5 ? 2 : step;  // a short chart: no 0.5 entries, no 2.5 steps
     const out = [];
     for (let v = 0; v < max + step * 0.999; v += step) out.push(Math.round(v * 1e6) / 1e6);
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
@@ -576,7 +577,8 @@
     const born = opts.births ? 10 : 0;
     // the lane's room is kept when no group is open, so opening one does not rescale the bars
     const lane = born + (opts.overlay || opts.ovLane ? 9 : 0);
-    const padL = 42, padR = 6, padB = 22 + lane;
+    const small = H <= 100;  // the drawer's chart: two y steps, a slimmer axis
+    const padL = 42, padR = 6, padB = (small ? 20 : 22) + lane;
     const plotW = W - padL - padR;
     const k = chooseBin(NH, plotW);
     const off = binOff(k);
@@ -597,7 +599,7 @@
     const clip = spiky && CLIP[opts.clipKey || "tl"] !== false;
     const padT = clip ? 18 : 8;
     const plotH = H - padT - padB;
-    const ticks = niceTicks(clip ? p95 : maxT);
+    const ticks = small ? niceTicks(clip ? p95 : maxT, 2, true) : niceTicks(clip ? p95 : maxT);
     const yMax = ticks[ticks.length - 1];
     const slot = plotW / nb;
     const bw = Math.min(24, Math.max(3, slot - GAP));
@@ -1385,25 +1387,32 @@
     }
     return [...m].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count).slice(0, 10);
   }
-  function barList(items, labelFn, total, noun) {
-    if (!items || !items.length) return `<div class="muted">—</div>`;
+  /** A name cut in the middle: the head gives way to an ellipsis, the tail stays (a thread's number, a file's ".log.1"). */
+  function nameHtml(full, file) {
+    const text = file ? basename(full) : full;
+    // a file keeps its last word whole ("jira.log.1" of NODE_atlassian-jira.log.1), not a cut word
+    const m = file ? /[^-_\s.]*\.[A-Za-z0-9]+(?:\.\d+)*$/.exec(text) : null;
+    const n = m ? Math.min(m[0].length, 16, text.length) : text.length > 14 ? 7 : 0;
+    return `<span class="l"><span class="lh">${esc(text.slice(0, text.length - n))}</span><span class="lt">${esc(text.slice(text.length - n))}</span></span>`;
+  }
+  const whoRows = (items, max, file) => items.map((x) => {
+    const full = x.value == null ? "(none)" : String(x.value);
+    return `<div class="wr" style="--p:${r1(Math.max(2, (100 * x.count) / max))}%" title="${esc(full)}">${nameHtml(full, file)}<span class="v">${fmt(x.count)}</span></div>`;
+  }).join("");
+  /** One column of the "Who" section: its top 5, a "+N more" toggle for the rest, "none" when empty. */
+  function whoCol(title, items, total, noun, file) {
+    const head = `<h3>${esc(title)}${total ? ` <span class="sec-n">${fmt(total)}</span>` : ""}</h3>`;
+    if (!items || !items.length) return `<div class="who-c">${head}<div class="muted">none</div></div>`;
     const max = Math.max(...items.map((x) => x.count));
     const min = Math.min(...items.map((x) => x.count));
-    const list = barRows(items, labelFn, max);
+    const rest = items.slice(5);
+    let list = whoRows(items.slice(0, 5), max, file) +
+      (rest.length ? `<details class="who-more"><summary><span class="o">+${rest.length} more</span><span class="c">fewer</span></summary>${whoRows(rest, max, file)}</details>` : "");
     if (items.length >= 3 && (max - min) / max < 0.1) {
       const first = items[0].value == null ? "(none)" : String(items[0].value);
-      return `<details class="flat"><summary>${fmt(Math.max(total || 0, items.length))} ${esc(noun || "values")}, evenly spread, e.g. ` +
-        `<span title="${esc(first)}">${esc(labelFn ? labelFn(first) : first)}</span></summary>${list}</details>`;
+      list = `<details class="flat"><summary title="${esc(file ? basename(first) : first)}, for example">${fmt(Math.max(total || 0, items.length))} ${esc(noun)}, evenly spread</summary>${list}</details>`;
     }
-    return list;
-  }
-  function barRows(items, labelFn, max) {
-    return `<div class="blist">` + items.map((x) => {
-      const full = x.value == null ? "(none)" : String(x.value);
-      return `<span class="l" title="${esc(full)}">${esc(labelFn ? labelFn(full) : full)}</span>` +
-        `<span class="b"><i style="width:${r1(Math.max(2, (100 * x.count) / max))}%"></i></span>` +
-        `<span class="v">${fmt(x.count)}</span>`;
-    }).join("") + `</div>`;
+    return `<div class="who-c">${head}${list}</div>`;
   }
   /** Signature groups whose entries per hour rise and fall with r's: Pearson's r over every
    *  hour of the set (sparse sums, so ~1,500 groups take a few ms). Two halves of one story
@@ -1451,7 +1460,7 @@
     entry: (id) => ENTRIES[id],
     srcPath: (e) => srcPath(e.source ?? e.source_path),
     /** Web app: the full raw entry as plain text (opens in a new tab). */
-    rawUrl: (id) => (ENTRIES_URL && LS.id ? `/api/sets/${encodeURIComponent(LS.id)}/entries/${encodeURIComponent(id)}/raw` : ""),
+    rawUrl: (id) => (ENTRIES_URL && LS.id ? `/sets/${encodeURIComponent(LS.id)}/entries/${encodeURIComponent(id)}/raw` : ""),
     fullLoads: () => !!ENTRIES_URL,
   });
   const LEVEL_NUM = { TRACE: 10, DEBUG: 20, INFO: 30, WARN: 40, ERROR: 50, FATAL: 60 };
@@ -1526,26 +1535,29 @@
   }
   const iconCopy = (text, what) =>
     `<button type="button" class="icon-btn" data-copy="${esc(text)}" title="Copy ${esc(what)}" aria-label="Copy ${esc(what)}">⧉</button>`;
+  const lbl = (t) => `<span class="fl">${esc(t)}</span>`;
   /** The drawer's "Identifiers & CLI" part is open (it also shows the member signatures). */
   let IDS_OPEN = false;
   function drawerHtml(r, inList) {
     const out = [];
     if (!inList) out.push(`<div class="d-banner">This group is not in the current filter.</div>`);
     const what = r.kind === "merged" ? `Drain3 cluster ${r.cluster ? r.cluster.cluster_id : ""}` : r.kind === "coarse" ? "Coarse group" : "";
-    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${r.cmp ? deltaChip(r.cmp) : ""}` +
-      (r.members ? `<span class="muted">${esc(what)} · ${r.members.length} signatures</span>` : "") +
-      (r.gone ? `<span class="muted">only in ${esc(OTHERNAME)}</span>` : "") +
-      `<span class="d-acts">` +
-      (r.gone ? "" : `<button type="button" class="btn small toggle" data-mute aria-pressed="${isMuted(r)}" title="Leave this group out of the chart and the window totals, so what it hides shows (m)">Mute in chart</button>`) +
-      `<button type="button" class="btn small" data-ticket title="Copy the group as Jira wiki markup: template, counts, first and last seen, the set and an example">Copy for ticket</button>` +
-      `</span></div>`);
+    // the figures sit on the badge row, as on the cluster page; a window adds its own count
+    const figs = [];
+    if (r.members) figs.push(`<span>${esc(what)} · ${r.members.length} signatures</span>`);
+    if (r.gone) figs.push(`<span>only in ${esc(OTHERNAME)}</span>`);
+    else {
+      figs.push(`<span><b>${fmt(r.count)}</b> ${r.count === 1 ? "entry" : "entries"}</span>`);
+      if (S.t) figs.push(`<span><b>${fmt(winOf(r).n)}</b> in window</span>`);
+    }
+    out.push(`<div class="d-head">${badge(r.lvl, r.level)}${r.cmp ? deltaChip(r.cmp) : ""}<span class="d-figs">${figs.join(" · ")}</span></div>`);
     out.push(`<h2 class="d-tpl" tabindex="-1">${tplHtml(r.tpl)}</h2>`);
     if (r.exc || r.logger) {
-      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger">${loggerHtml(r.logger)}</span>` : ""}${r.exc ? `<span title="Exception">${excHtml(r.exc)}</span>` : ""}</div>`);
+      // one line: the logger with its package abbreviated, the exception by its class name; full names in the tooltips
+      out.push(`<div class="d-sub">${r.logger ? `<span title="Logger ${esc(r.logger)}">${loggerHtml(r.logger, true)}</span>` : ""}${r.exc ? `<span title="Exception ${esc(r.exc)}">${excHtml(r.exc, true)}</span>` : ""}</div>`);
     }
-    let stats = "";
     if (!r.gone) {
-      // [label, value, tooltip card, class]: exact times and how a number is counted on hover
+      // one line of facts: muted labels, ink values; exact times and how a number is counted on hover
       const at = (x, what) => (x ? tipCard({ h: what, rows: [["Time", tsFull(x.iso) + " " + TZ]],
         note: x.approx ? seenTitle(x) : null }) : "");
       const whole = (h, extra) => {
@@ -1553,30 +1565,32 @@
         return tipCard({ h, note: n || null });
       };
       const many = r.members ? "The largest member's count: the members may share them." : "";
-      const T = (x) => ({ html: x ? tsHtml(x) : nilHtml() });
-      let st;
-      if (S.t) {
-        const w = winOf(r);
-        st = [["In window", fmt(w.n), tipCard({ h: `${fmt(w.n)} of ${fmt(r.count)} entries`, note: "Entries of the group inside the time window" }), "k"],
-          ["First in window", T(seenText(w.first, true)), at(w.first, "First entry in the window")],
-          ["Last in window", T(seenText(w.last, true)), at(w.last, "Last entry in the window")]];
-      } else {
-        st = [["Entries", fmt(r.count), "", "k"], ["First seen", T(ts16(r.first)), at({ iso: r.first }, "First entry")],
-          ["Last seen", T(ts16(r.last)), at({ iso: r.last }, "Last entry")]];
+      const w = S.t ? winOf(r) : null;
+      const first = w ? w.first : { iso: r.first }, last = w ? w.last : { iso: r.last };
+      const T = (x) => (x && x.iso ? tsHtml(w ? seenText(x, true) : ts16(x.iso)) : nilHtml());
+      const item = (html, tip) => `<span class="fi"${tip ? ` data-tip="${esc(tip)}"` : ""}>${html}</span>`;
+      const count = (n, one, more, tip, ge) => item(n
+        ? `<span class="fv">${ge ? "≥ " : ""}${fmt(n)}</span> ${lbl(n === 1 && !ge ? one : more)}` : lbl(`no ${more}`), tip);
+      const span = S.t ? S.t[1] - S.t[0] + 1 : NH, n = S.t ? w.n : r.count;
+      const rate = span > 0 ? n / span : 0;
+      const f = [item(`${lbl(S.t ? "First in window" : "First")} ${T(first)}`, at(first, S.t ? "First entry in the window" : "First entry")) + " " +
+        item(`→ ${lbl("last")} ${T(last)} ${TZ}`, at(last, S.t ? "Last entry in the window" : "Last entry"))];
+      if (rate > 0) {
+        f.push(item(`<span class="fv">≈${rate >= 10 ? fmt(Math.round(rate)) : rate < 0.05 ? "<0.1" : String(Math.round(rate * 10) / 10)}</span> ${lbl("/ h")}`,
+          tipCard({ h: "Entries per hour", note: S.t ? `${fmt(n)} entries over the ${fmt(span)} hours of the window` : `The average over the ${fmt(span)} hours of the set` })));
       }
-      st.push([r.members ? "Users (≥)" : "Users", fmt(r.users), whole("Distinct users", many)],
-        [r.members ? "Threads (≥)" : "Threads", fmt(r.threads), whole("Distinct threads", many)],
-        ["Sources", fmt(r.nsrc), whole("Source files with entries of the group", many)]);
-      stats += `<dl class="stats">` + st.map(([k, v, t, c]) => `<div${c ? ` class="${c}"` : ""}${t ? ` data-tip="${esc(t)}"` : ""}><dt>${k}</dt><dd>${v && v.html != null ? v.html : esc(v)}</dd></div>`).join("") + `</dl>`;
-      if (S.t) stats += `<div class="muted small d-whole">Whole set: ${esc(fmt(r.count))} entries, ${esc(ts16(r.first))} → ${esc(ts16(r.last))} ${TZ}</div>`;
+      f.push(count(r.threads, "thread", "threads", whole("Distinct threads", many), !!r.members));
+      f.push(count(r.users, "user", "users", whole("Distinct users", many), !!r.members));
+      f.push(count(r.nsrc, "source", "sources", whole("Source files with entries of the group", many)));
+      if (S.t) f.push(`<span class="fi fm">whole set: ${esc(ts16(r.first))} → ${esc(ts16(r.last))} ${TZ}</span>`);
+      out.push(`<div class="d-facts">${f.join(" · ")}</div>`);
     }
     if (r.cmp) {
       const d = r.cmp.d;
-      let note = "";
-      if (d && d.first_seen_a) note = `<div class="muted small">In ${esc(OTHERNAME)}: ${esc(ts16(d.first_seen_a))} → ${esc(ts16(d.last_seen_a))} ${TZ}</div>`;
-      stats += `<div class="cmp-row" data-tip-k="rpt-delta"><span class="muted">vs ${esc(OTHERNAME)}</span><span class="ab">${abText(r.cmp)}</span>${deltaChip(r.cmp)}</div>${note}`;
+      out.push(`<div class="d-facts d-cmp" data-tip-k="rpt-delta"><span class="fi wrap">${lbl("vs " + OTHERNAME)} <span class="fv">${abText(r.cmp)}</span></span>` +
+        (d && d.first_seen_a ? ` · <span class="fi" title="First and last entry in ${esc(OTHERNAME)}">${lbl("seen")} ${tsHtml(ts16(d.first_seen_a))} → ${tsHtml(ts16(d.last_seen_a))} ${TZ}</span>` : "") + `</div>`);
     }
-    out.push(`<section class="d-sec" id="d-s-stats">${stats}</section>`);
+    if (!r.gone) out.push(secId("d-s-hourly", "Per hour", `<div class="d-chart" id="d-hourly"></div>`));
     EX_ALL = allEntriesLink(r);
     const exIds = exampleIds(r);
     let ex = exIds.filter((id) => ENTRIES[id]);
@@ -1603,14 +1617,13 @@
     else if (ex.length) out.push(secId("d-s-examples", exTitle, ex.map((id) => entryHtml(id, ENTRIES[id])).join("")));
     else if (!r.gone && (pending || !winEx())) out.push(secId("d-s-examples", exTitle.replace(/ \(\d+\)$/, ""), `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
     if (!r.gone) {
-      out.push(secId("d-s-hourly", "Entries per hour" + (S.t ? " (window shaded)" : ""), `<div class="d-chart" id="d-hourly"></div>`));
       const src = r.members || [r];
       const tops = [
-        ["Top users", mergeTops(src, "top_users"), null, r.users, "users"],
-        ["Top threads", mergeTops(src, "top_threads"), null, r.threads, "threads"],
-        ["Sources", mergeTops(src, "sources"), basename, r.nsrc, "sources"],
+        ["Top users", mergeTops(src, "top_users"), r.users, "users", false],
+        ["Top threads", mergeTops(src, "top_threads"), r.threads, "threads", false],
+        ["Sources", mergeTops(src, "sources"), r.nsrc, "sources", true],
       ];
-      out.push(`<section class="d-sec tops" id="d-s-who">` + tops.map(([t, items, fn, total, noun]) => `<div><h3>${t}</h3>${barList(items, fn, total, noun)}</div>`).join("") + `</section>`);
+      if (tops.some((t) => t[1].length)) out.push(`<section class="d-sec tops" id="d-s-who">` + tops.map((t) => whoCol(...t)).join("") + `</section>`);
       const moves = movesWith(r, 6);
       if (moves.length) {
         out.push(secId("d-s-rel", "Moves with", `<p class="muted small" title="Pearson's r of the entries per hour over the whole set, 0.6 and up">Groups that rise and fall with this one, hour by hour: often the other half of the story.</p>` + movesList(moves)));
@@ -1642,10 +1655,11 @@
     if (!el || !NH) return;
     const dense = new Float64Array(NH);
     for (const [i, n] of r.hourly) dense[i] = n;
-    DCHART = drawColumns(el, [{ key: "blue", name: "entries", cls: "s-blue", data: dense }], { height: 150, label: "Entries per hour", clipKey: "d" });
+    const lv = bucketOf(r.level);  // the group's level colour, as on the entries page
+    DCHART = drawColumns(el, [{ key: lv, name: "entries", cls: "s-" + lv, data: dense }], { height: 84, label: "Entries per hour", clipKey: "d" });
     const h3 = el.parentElement && el.parentElement.querySelector("h3");
     const k = DCHART.k;
-    if (h3) h3.innerHTML = esc("Entries per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours") + (S.t ? " (window shaded)" : "")) + clipBtn(DCHART);
+    if (h3) h3.innerHTML = esc("Per " + (k === 1 ? "hour" : k === 24 ? "day" : k + " hours")) + (S.t ? ` <span class="sec-n">(window shaded)</span>` : "") + clipBtn(DCHART);
   }
   /** Redraw the drawer with what arrived (examples), keeping its scroll position. */
   function redrawDrawer() {
@@ -1664,8 +1678,11 @@
     dr.hidden = false;
     document.body.classList.add("drawer-open");
     const idx = LIST.findIndex((x) => x.id === S.sig);
-    $("d-pos").textContent = idx >= 0 ? `${fmt(idx + 1)} of ${fmt(LIST.length)}` : `– of ${fmt(LIST.length)}`;
+    $("d-pos").innerHTML = `<b>${idx >= 0 ? fmt(idx + 1) : "–"}</b> of ${fmt(LIST.length)}`;
     const cur = lookup(S.sig);
+    $("d-mute").hidden = !cur || !!cur.gone;
+    $("d-mute").setAttribute("aria-pressed", String(!!cur && !cur.gone && isMuted(cur)));
+    $("d-ticket").hidden = !cur;
     $("d-which").innerHTML = cur ? `${badge(cur.lvl, cur.level)}<span class="t" title="${esc(cur.tpl)}">${tplHtml(cur.tpl)}</span>` : "";
     const key = S.view + "|" + S.sig + "|" + (S.t || "") + "|" + (idx >= 0) + "|" + TZ + "|" + [...S.mute].sort().join(",");
     if (key === drawnKey) return;
@@ -2476,15 +2493,14 @@
     renderWideBtn();
     $("d-prev").onclick = () => move(-1);
     $("d-next").onclick = () => move(1);
+    $("d-mute").onclick = () => toggleMute(lookup(S.sig));
+    $("d-ticket").onclick = () => {
+      const r = lookup(S.sig);
+      if (r) copy(ticketText(r), "Copied for a Jira ticket");
+    };
     $("drawer-body").addEventListener("click", (e) => {
-      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex],[data-mute],[data-ticket]");
+      const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex]");
       if (!t) return;
-      if (t.dataset.mute != null) return toggleMute(lookup(S.sig));
-      if (t.dataset.ticket != null) {
-        const r = lookup(S.sig);
-        if (r) copy(ticketText(r), "Copied for a Jira ticket");
-        return;
-      }
       if (t.dataset.retryEx != null) {
         EX_FAILED.clear();
         EX_ERR = "";

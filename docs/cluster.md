@@ -584,4 +584,4 @@ too far apart for a skew estimate.
   split upload opens the capture page. At start the server deletes `.spool`
   entries older than 6 hours (left by a crashed ingest).
 - The agent manifest lists `capture`, `matrix`, `events` and `interactions` in
-  `when`; with the new commands it is about 10 KB, so its budget is now 10 KB.
+  `when`; with the new commands it is about 10 KB (its budget, first 10 KB, is now 16 KB).

@@ -143,14 +143,20 @@ sticks (until then the header says it), the table header sticks under it (the st
 row: below 1500 px it drops the view options and Reset, below 1200 px the facets, below 800 px
 the search; the scope line still names every active filter), the open row keeps a
 blue bar and tint (and is scrolled into view when the drawer opens or closes), and the drawer
-bar (40 px) names the open group and its position. A handle on the drawer's left edge resizes
+bar (40 px) names the open group and its position, and holds *Mute in chart* and *Copy for ticket*
+(the labels shorten, then the group's name goes, as the drawer narrows). A handle on the drawer's left edge resizes
 it (drag, or arrow keys when focused; double-click or Home resets; the width is remembered,
-the table keeps at least about 440 px). In the drawer the group's template is the
-headline (16 px), its logger and exception the subtitle, and the figures (entries, first and
-last seen, users, threads, sources) a quiet panel with the label above each value (the cluster
-page keeps its drawer short before the examples: entries, in window and nodes on the badge row,
-logger and exception abbreviated on one line, an 84 px chart without a legend, as the lines take
-the per-node table's colours); section heads are a label, a muted count and an action at the
+the table keeps at least about 440 px). Both drawers share one compact layout: the level badge,
+the compare chip (report) or the spread and lead chips (cluster) and the figures (entries, in window,
+nodes) on one row; the template as the headline (16 px); one subtitle line with the logger and
+exception abbreviated (full names in the tooltips); then the facts. The report's facts are one wrapping
+line (first and last seen, the average entries per hour, threads, users, sources; with a window the first
+and last in it and the whole-set span; each with a tooltip for its exact times or how it is counted), the
+compare row one line under it; the cluster's are its per-node table. The chart (84 px, two y steps)
+comes next, above the examples: per bin and in the group's level colour on the report, per bin and node on
+the cluster page, the window shaded. Then the examples, the report's *Who* (top 5 users, threads and
+sources in three columns, stacked in a narrow drawer, "+N more" for the rest, names cut with their
+tail kept), the related groups, and the collapsed identifiers. Section heads are a label, a muted count and an action at the
 right ("All N entries ↗"). Reset is dimmed and disabled until a filter, the sort
 order, the view or an open group differs from the default (the cluster page also counts the log
 filters; after it is used, focus moves to the search field); clicking the stuck bar's name and scope line scrolls back to the full filter bar. An
@@ -179,7 +185,7 @@ remove, or "Remove all filters".
     group's own last entry is in it, else the hour (`10-29 01:xx`). The hourly
     counts cover every entry, so window counts are exact;
   - sparklines draw the window's bars in full and the rest muted;
-  - the drawer shows *In window*, *First/Last in window* and a whole-set line.
+  - the drawer shows the entries in the window next to the total, the first and last in the window and a whole-set span.
     In the web app its examples are the group's first entries inside the window
     (the examples URL with `since`/`until`). The static file has only the
     stored examples, so it lists the ones inside the window first.
@@ -254,8 +260,10 @@ remove, or "Remove all filters".
 Every card has **Raw**: it switches the card to the entry's exact text as in the log file
 (the banner lines it carries first, then every line, character for character, with the
 same token colours as the formatted view) and back with **Formatted**.
-In the web app, **Open raw ↗** opens the full entry as plain text in a new tab
-(`/api/sets/{set}/entries/{id}/raw`; `urls.raw` on the cluster page). **Copy raw** copies the
+In the web app, **Open raw ↗** opens the entry's exact text in a new tab
+(`/sets/{set}/entries/{id}/raw`; `urls.raw` on the cluster page), its stack trace highlighted
+as in the cards (application frames marked, library frames dimmed, every frame shown), with
+Copy and a link to the plain text (`/api/sets/{set}/entries/{id}/raw`). **Copy raw** copies the
 same text.
 
 An example entry (the drawer's examples; on the cluster page also the merged
@@ -448,7 +456,7 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
   open group, each with × to clear it; "Whole capture, all nodes" when nothing narrows
   the views), the filters in a second row; once it sticks it also names the capture. The
   open row is marked with a blue edge. The drawer bar holds prev/next, the position
-  ("3 of 417"), the open group's level and template, and Close; the
+  ("3 of 417"), the open group's level and template, and Close (the same bar as the report's); the
   section links are a row below it.
 - Tabs in the sticky bar:
   - *Groups by node*: level, template, total, one count-and-bar column per node in node

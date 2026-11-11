@@ -10,6 +10,25 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Changed
+
+- The report's group panel is laid out like the cluster page's: Mute and Copy in its top
+  bar, one line of facts, a short hourly chart above the examples, *Who* as three top-5
+  columns.
+- "Open raw ↗" opens a page with the entry's exact text highlighted
+  (`/sets/{set}/entries/{id}/raw`; the plain text stays at the API route).
+- Tooltips on the view tabs, the atlas-log menu, the breadcrumb, the cluster tabs and the
+  panel's section links.
+- The entries page's group chip shows the template with its placeholders, its header time
+  range uses the time style.
+- The agent manifest's budget is 16 KB (it is about 10 KB).
+
+### Fixed
+
+- The mouse wheel scrolls the page again over the group panel.
+- Uploads finishing at the same moment could push the ingest queue past its 8 jobs; the
+  cap is now checked when the job is added (503 with `Retry-After`).
+
 ## [0.4.0] - 2026-11-10
 
 Parsing, masking and signatures change (format `jira@4`, signatures `sig2`, masking

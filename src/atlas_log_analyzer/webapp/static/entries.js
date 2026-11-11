@@ -69,7 +69,7 @@
     badge, bucketOf, levelNum, tsFull,
     tz: tzName,
     entry: (key) => BY_KEY.get(key),
-    rawUrl: (key, e) => `/api/sets/${encodeURIComponent(e.set || PAGE.ref)}/entries/${encodeURIComponent(e.id)}/raw`,
+    rawUrl: (key, e) => `/sets/${encodeURIComponent(e.set || PAGE.ref)}/entries/${encodeURIComponent(e.id)}/raw`,
     fullLoads: (key) => FULLING.has(key),
     nodeBadge: (n) => `<span class="node-chip">${esc(n)}</span>`,
     srcPath: (e) => e.source_path || "",
@@ -227,7 +227,8 @@
     if (TOTAL != null) bits.push(`<span class="ent-n"><span class="n">${fmt(TOTAL)}</span> ${Q.get("contains") ? "matching " : ""}${TOTAL === 1 ? "entry" : "entries"}</span>`);
     if (HEAD && HEAD.first && TOTAL) {
       const a = tsMin(HEAD.first), b = LAST_TS ? tsMin(LAST_TS) : "";
-      bits.push(`<span class="range" title="First and last entry of this selection">${esc(a)}${b && b !== a ? " → " + esc(a.slice(0, 10) === b.slice(0, 10) ? b.slice(11) : b) : ""} ${esc(tzName())}</span>`);
+      const ts = window.AtlasEntryCard.tsHtml;
+      bits.push(`<span class="range" title="First and last entry of this selection">${ts(a)}${b && b !== a ? " → " + ts(a.slice(0, 10) === b.slice(0, 10) ? b.slice(11) : b) : ""} <span class="tz">${esc(tzName())}</span></span>`);
     }
     $("e-meta").innerHTML = bits.join("");
     $("e-barid").textContent = (group && hd.template ? hd.template : "Entries").slice(0, 80);
@@ -256,7 +257,7 @@
       let title = one ? "Only the entries of this group (signature " + short + ")" : "Only the entries of these groups";
       const h = HEAD || SEEN.get(sigs[0]);
       if (one && h && h.template && !node) {
-        v = badge(h.level_name, h.level) + `<span class="t">${esc(h.template.length > 34 ? h.template.slice(0, 33) + "…" : h.template)}</span>`;
+        v = badge(h.level_name, h.level) + `<span class="t">${tplHtml(h.template)}</span>`;  // CSS cuts it, placeholders whole
         title = h.template + " (signature " + short + ")";
       } else if (node) v += " on " + esc(node);
       chips.push(chip(["signature"], "Group", v, title));

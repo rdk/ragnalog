@@ -64,6 +64,27 @@ def test_upload_refused_for_full_queue(client: TestClient, store_dir: Path) -> N
     assert _upload(client) == 202
 
 
+def test_queue_filled_while_the_body_was_read(
+    client: TestClient, store_dir: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The header check passed, then other uploads filled the queue: submit refuses (503)."""
+    manager = client.app.state.atlas.jobs  # type: ignore[attr-defined]
+    real_new = manager.new_upload_dir
+
+    def fill_then_allocate() -> tuple[str, Path]:
+        for i in range(MAX_ACTIVE_JOBS):  # simultaneous uploads submitted in the meantime
+            manager._jobs[f"r{i}"] = Job(f"r{i}", None, [], 0, {}, state="queued")
+        return real_new()
+
+    monkeypatch.setattr(manager, "new_upload_dir", fill_then_allocate)
+    with MINI.open("rb") as fh:
+        resp = client.post("/api/ingest", files={"files": ("mini.log", fh)})
+    assert resp.status_code == 503
+    assert int(resp.headers["Retry-After"]) > 0
+    assert manager.active_count() == MAX_ACTIVE_JOBS
+    assert _spool_empty(store_dir)
+
+
 @pytest.fixture
 def manager(tmp_path: Path) -> Iterator[JobManager]:
     """A synchronous job manager over an empty store."""

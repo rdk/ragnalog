@@ -546,6 +546,14 @@ def test_entry_raw_is_the_exact_text_with_its_banner(client: TestClient, store_d
     assert missing.status_code == 404
     assert missing.json()["error"]["reason"] == "entry_not_found"
 
+    # the cards' "Open raw" page: the same text, rendered by entry-card.js (highlighted trace)
+    page = client.get(f"/sets/sample/entries/{with_banner['id']}/raw")
+    assert page.status_code == 200 and page.headers["content-type"].startswith("text/html")
+    assert 'id="raw-data"' in page.text and "/static/entry_raw.js" in page.text
+    assert f"/api/sets/{ls.manifest.id}/entries/{with_banner['id']}/raw" in page.text
+    gone = client.get("/sets/sample/entries/0123456789abcdef/raw", headers={"accept": "text/html"})
+    assert gone.status_code == 404
+
 
 def test_token_guards_the_pages_and_a_link_sets_a_cookie(store_dir: Path) -> None:
     html = {"Accept": "text/html"}

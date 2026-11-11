@@ -27,7 +27,8 @@ from atlas_log_analyzer.service.params import (
 )
 from atlas_log_analyzer.service.sets import open_set
 from atlas_log_analyzer.store.logset import LogSet, LogSetManifest
-from atlas_log_analyzer.webapp.jobs import MAX_ACTIVE_JOBS, safe_filename
+from atlas_log_analyzer.webapp.errors import error_response
+from atlas_log_analyzer.webapp.jobs import MAX_ACTIVE_JOBS, QueueFull, safe_filename
 from atlas_log_analyzer.webapp.params import query_model
 from atlas_log_analyzer.webapp.responses import JSON, payload_response
 from atlas_log_analyzer.webapp.state import AppState, get_state
@@ -737,21 +738,28 @@ async def ingest(
     except BaseException:
         state.jobs.discard_upload(job_id)  # inline: an await could be cancelled here too
         raise
-    job = await run_in_threadpool(
-        state.jobs.submit,
-        job_id,
-        paths,
-        name=name or None,
-        format=format,
-        frames=frames,
-        mine=mine,
-        overwrite=overwrite,
-        force=force,
-        node=ident.node,
-        cluster=ident.cluster,
-        capture=ident.capture,
-        split=ident.split,
-    )
+    try:
+        job = await run_in_threadpool(
+            state.jobs.submit,
+            job_id,
+            paths,
+            name=name or None,
+            format=format,
+            frames=frames,
+            mine=mine,
+            overwrite=overwrite,
+            force=force,
+            node=ident.node,
+            cluster=ident.cluster,
+            capture=ident.capture,
+            split=ident.split,
+        )
+    except QueueFull:  # filled up while this body was read (the header check passed)
+        state.jobs.discard_upload(job_id)
+        message = f"{MAX_ACTIVE_JOBS} ingest jobs are queued or running; retry later"
+        refused = error_response(OpError("http", message), 503)
+        refused.headers["Retry-After"] = str(RETRY_AFTER)
+        return refused
     return JSON(job.to_dict(), status_code=202, headers={"Location": f"/api/jobs/{job.id}"})
 
 

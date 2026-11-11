@@ -35,7 +35,7 @@
   <div class="top-actions">
     <span class="tool-btns" role="group" aria-label="Page settings">
       <button type="button" class="btn" id="btn-tz" aria-pressed="false" title="Show times in UTC or in your time zone"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg><span class="tz-t">UTC</span></button>
-      <button type="button" class="btn icon" id="btn-theme" title="Switch theme" aria-label="Switch theme"><svg class="i-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z"/></svg><svg class="i-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1"/></svg></button>
+      <button type="button" class="btn icon" id="btn-theme" title="Light or dark theme (remembered)" aria-label="Switch theme"><svg class="i-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z"/></svg><svg class="i-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1"/></svg></button>
       <button type="button" class="btn icon" id="btn-wide" aria-pressed="false" title="Use the full screen width (w)" aria-label="Full screen width"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       <button type="button" class="btn icon" id="btn-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.4a1.7 1.7 0 1 1 2.4 1.5c-.5.3-.8.6-.8 1.2M8 11.4h.01"/></svg></button>
       <details class="more-menu" id="more-menu">
@@ -75,9 +75,9 @@
     <div class="f-row c-barrow">
       <span class="c-ctx" id="c-ctx"></span>
       <div class="c-tabs" role="tablist" aria-label="Views" id="c-tabs">
-        <button type="button" role="tab" id="tab-g" data-tab="g" aria-controls="p-groups">Groups by node <span class="n" id="tab-g-n"></span></button>
-        <button type="button" role="tab" id="tab-i" data-tab="i" aria-controls="p-inter">Interactions <span class="n" id="tab-i-n"></span></button>
-        <button type="button" role="tab" id="tab-l" data-tab="l" aria-controls="p-log">Merged log <span class="n" id="tab-l-n"></span></button>
+        <button type="button" role="tab" id="tab-g" data-tab="g" aria-controls="p-groups" title="Every group of the capture with its count on each node: whether all nodes log it, which one first, and how far their rates differ (1)">Groups by node <span class="n" id="tab-g-n"></span></button>
+        <button type="button" role="tab" id="tab-i" data-tab="i" aria-controls="p-inter" title="How the nodes affect each other: groups that burst on several nodes together, events that follow each other across nodes, and nodes naming other nodes (2)">Interactions <span class="n" id="tab-i-n"></span></button>
+        <button type="button" role="tab" id="tab-l" data-tab="l" aria-controls="p-log" title="The entries of all nodes interleaved in one timeline, to read what happened around a moment (3)">Merged log <span class="n" id="tab-l-n"></span></button>
       </div>
       <div class="c-scope" id="c-scope" aria-label="Scope of the views"></div>
       <button type="button" class="btn link" id="f-reset" title="Reset all filters, the window and the selection">Reset</button>
@@ -112,15 +112,15 @@
     </div>
     <aside class="drawer" id="drawer" tabindex="-1" hidden aria-label="Group detail">
       <div class="drawer-bar">
-        <button type="button" class="btn small" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <button type="button" class="btn small icon" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <button type="button" class="btn small icon" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
         <span class="d-pos" id="d-pos" aria-live="polite"></span>
-        <button type="button" class="btn small" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
         <div class="d-bar-id" id="d-bar-id"></div>
         <button type="button" class="btn small" id="d-close" title="Close (Esc)">Close</button>
       </div>
       <div class="d-navrow">
         <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
-          <button type="button" data-jump="d-s-nodes">Nodes</button><button type="button" data-jump="d-s-hourly">Hourly</button><button type="button" data-jump="d-s-examples">Examples</button><button type="button" data-jump="d-s-links">Related</button><button type="button" data-jump="d-s-cli">IDs &amp; CLI</button>
+          <button type="button" data-jump="d-s-nodes" title="Count, rate and first and last entry on each node">Nodes</button><button type="button" data-jump="d-s-hourly" title="Entries over time, one line per node">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries of each node">Examples</button><button type="button" data-jump="d-s-links" title="Co-bursts, mentions and cluster events that involve this group">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
         </nav>
       </div>
       <div class="drawer-body" id="drawer-body"></div>

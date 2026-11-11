@@ -1050,7 +1050,7 @@ name (`usage`).
 ### `manifest`
 
 `manifest.v1` ([docs/formats/manifest.v1.md](formats/manifest.v1.md)), about 10 KB
-of compact JSON (under 10 KB), for agents:
+of compact JSON (its budget is 16 KB), for agents:
 
 ```json
 {"schema": "manifest.v1", "tool": "atlas-log", "version": "0.4.0", "usage": "...", "notes": [str],

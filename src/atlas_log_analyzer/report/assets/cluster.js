@@ -1669,12 +1669,12 @@
       const p = obj(r.pn[n]);
       const c = r.counts[i];
       const wc = w ? `<td class="r"><b>${w.counts[i] > 0 ? fmt(w.counts[i]) : "·"}</b></td>` : "";
-      return `<tr><td>${nodeBadge(n)}<span class="nm">${esc(n)}</span></td>${wc}<td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
-        `<td class="r">${isNum(p.rate_per_hour) && c > 0 ? esc(r1(p.rate_per_hour)) : ""}</td>` +
+      return `<tr><td title="${esc(n)}">${nodeBadge(n)}<span class="nm">${esc(n)}</span></td>${wc}<td class="r">${c > 0 ? fmt(c) : "·"}</td>` +
+        `<td class="r rate">${isNum(p.rate_per_hour) && c > 0 ? esc(r1(p.rate_per_hour)) : ""}</td>` +
         `<td class="t">${tsHtml(ts16(p.first_seen))}</td><td class="t">${tsHtml(ts16(p.last_seen))}</td></tr>`;
     }).join("");
     return `<div class="d-nodes-wrap"><table class="d-nodes"><thead><tr><th>Node</th>${w ? `<th class="r" title="Entries in the time window">In window</th><th class="r">Total</th>` : `<th class="r">Count</th>`}` +
-      `<th class="r">Per hour</th><th>First seen (${esc(TZ)})</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+      `<th class="r rate">Per hour</th><th>First seen (${esc(TZ)})</th><th>Last seen</th></tr></thead><tbody>${rows}</tbody></table></div>`;
   }
   function relatedHtml(r) {
     const out = [];
@@ -1802,7 +1802,7 @@
     DGEO = drawLines(el, r) || null;
     const h3 = el.parentElement && el.parentElement.querySelector("h3");
     if (!h3 || !DGEO) return;
-    h3.innerHTML = `Per ${esc(binLabel(DGEO.k))} and node` + (S.t ? " (window shaded)" : "") +
+    h3.innerHTML = `Per ${esc(binLabel(DGEO.k))} and node` + (S.t ? ` <span class="sec-n">(window shaded)</span>` : "") +
       (DGEO.spiky ? `<button type="button" class="btn small toggle" data-clip aria-pressed="${DGEO.clip}" title="Clip the y-axis to the 95th percentile so spikes do not flatten the rest; clipped points are labelled with their value">Clip spikes</button>` : "");
   }
   /** Per-node lines of one group over the timeline buckets (shared y-axis, window shaded). */

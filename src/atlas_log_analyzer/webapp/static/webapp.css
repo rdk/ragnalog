@@ -486,6 +486,7 @@ body.app #e-title {
 body.app .ent .page-meta { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4); }
 body.app .ent .page-meta > * { white-space: nowrap; min-width: 0; }
 body.app .ent .page-meta .range { color: var(--ink-2); }
+body.app .ent .page-meta .range .tz { color: var(--muted); font-size: var(--fs-label); }
 body.app .ent .page-meta .n { color: var(--ink-2); font-variant-numeric: tabular-nums; }
 body.app .ent .page-meta .range { font-variant-numeric: tabular-nums; }
 body.app .ent-bar { gap: var(--s2) var(--s4); }
@@ -496,7 +497,7 @@ body.app .ent-chips .fchip { gap: var(--s1); max-width: 100%; }
 body.app .ent-chips .fchip .k { color: var(--muted); font-size: var(--fs-label); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 body.app .ent-chips .fchip .v { min-width: 0; overflow: hidden; text-overflow: ellipsis; display: inline-flex; align-items: center; gap: var(--s1); }
 body.app .ent-chips .fchip .v .mono { font: 12px var(--mono); }
-body.app .ent-chips .fchip .v .t { overflow: hidden; text-overflow: ellipsis; }
+body.app .ent-chips .fchip .v .t { max-width: 34ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 body.app .ent-chips .fchip .v .tz { color: var(--muted); font-size: var(--fs-label); }
 body.app .ent-chips .fchip .x { color: var(--muted); }
 body.app .ent-chips .fchip:hover .x { color: var(--ink); }
@@ -589,3 +590,6 @@ body.app .ent-empty .sr { position: absolute; width: 1px; height: 1px; overflow:
 }
 @media (max-width: 1000px) { body.app .ent-hist-hint { display: none; } }
 body.app .ent-table { overflow: clip; }  /* not a scroll container: the header row sticks under the bar */
+/* the page of one entry's exact text: the whole text, no inner scroll box */
+.raw-page .raw-text { margin: 0; padding: var(--s3) var(--s4); max-height: none; border-radius: var(--r); }
+.raw-page .page-meta .mono { font-family: var(--mono); font-size: var(--fs-code); }
