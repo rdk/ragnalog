@@ -10,6 +10,10 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Development
+
+- Dependabot is removed again (its update PRs got no CI).
+
 ## [0.5.0] - 2026-11-12
 
 No stored-format change: sets built by 0.4.x stay comparable.
