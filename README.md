@@ -1,307 +1,261 @@
+<div align="center">
+
+<img src="docs/img/logo.svg" width="72" height="72" alt="atlas-log logo">
+
 # atlas-log-analyzer
 
-Parse, group and compare application log files — Jira Data Center first.
+**Turn gigabytes of Jira Data Center logs into a few hundred groups you can read,<br>
+compare and triage, in the browser, the terminal or from an agent.**
 
-**Status:** 0.2 — Jira Data Center format. See [CHANGELOG.md](CHANGELOG.md).
+[![Release](https://img.shields.io/badge/release-v0.4.1-2f6bc7?style=flat-square)](https://github.com/rdk/atlas-log-analyzer/releases/latest)
+[![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+[![uv](https://img.shields.io/badge/built_with-uv-de5fe9?style=flat-square&logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
+[![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/atlas-log-analyzer/pkgs/container/atlas-log-analyzer)
+[![Jira Data Center](https://img.shields.io/badge/logs-Jira_Data_Center-0052cc?style=flat-square&logo=jira&logoColor=white)](docs/formats/)
+[![Ruff](https://img.shields.io/badge/lint-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
+[![mypy strict](https://img.shields.io/badge/types-mypy_strict-1f5082?style=flat-square)](https://mypy-lang.org/)
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-3da639?style=flat-square)](LICENSE)
 
-## What you get
+[Quick start](#quick-start) · [Features](#features) · [Web app](#web-app) · [CLI](#cli) · [For agents](#for-agents) · [How it works](#how-it-works) · [Docs](#documentation)
 
-- **Groups instead of lines** — every entry gets a stable signature (level,
-  logger, masked message, exception chain); millions of lines become a few
-  hundred groups with counts, time span, users and threads.
-- **Variables kept** — issue keys, numbers, ids and URLs are masked out of the
-  template but stored per entry, so you can ask *which* values occur.
-- **Before/after diffs** — `diff` shows new, vanished and changed groups
-  between two log sets (upgrade, node, day) without the raw logs.
-- **SQL on Parquet** — `query` runs DuckDB over the stored entries and groups.
-- **One-file HTML report** and a **JSON-first CLI** with documented schemas
-  and exit codes for scripts and agents.
-- **Web app** — `atlas-log serve` lists the sets with a verdict against the
-  previous one ("160 new error types"), opens the report, and ingests uploads.
+<br>
 
-`atlas-log` turns `atlassian-jira.log` files (including rotated ones and Java
-stack traces) into a **log set**: Parquet tables of entries and of *groups*,
-where a group collects all entries with the same level, logger, masked message
-and exception chain. Variable parts (issue keys, numbers, ids, URLs …) are
-masked out of the group template and kept per entry as `variables`. Group
-signatures are stable hashes, so two log sets — before and after an upgrade,
-two nodes, two days — can be compared without the raw logs.
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/img/hero-dark.png">
+  <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="100%">
+</picture>
 
-Built for humans at a terminal and for coding/ops agents: every command
-prints JSON when piped, with documented schemas and exit codes.
+<sub>All screenshots show synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data.</sub>
 
-## Install
+</div>
 
-Requires Python 3.14 and [uv](https://docs.astral.sh/uv/). Install a release
-(tags `vX.Y.Z`, notes in [CHANGELOG.md](CHANGELOG.md)) straight from GitHub:
+## Features
+
+- **Groups instead of lines.** Every entry gets a stable signature (level, logger, masked
+  message, exception chain), so millions of lines become a few hundred groups with counts,
+  time span, users and threads.
+- **Triage in one look.** New kinds of errors, groups that grew and groups that vanished
+  against the previous log set, with a verdict per set and per cluster node.
+- **Cluster view.** The nodes of a cluster side by side on one time axis, with events, the
+  moments several nodes fail together, groups by node and the merged log.
+- **Variables kept.** Issue keys, numbers, ids and URLs are masked out of the template but
+  stored per entry, so you can still ask *which* issues or users were hit.
+- **Stack traces made readable.** Frames are tokenised and coloured, library frames dimmed
+  and your application's own frames marked.
+- **Every entry of a group.** A filterable, bookmarkable table of all entries of one group,
+  with a time histogram to cut a window.
+- **Works offline.** `report` writes one self-contained HTML file you can mail or keep.
+- **JSON-first CLI.** Every command prints a documented JSON document when piped, with
+  stable exit codes and a manifest written for agents.
+- **SQL when you need it.** `query` runs DuckDB over the stored Parquet entries and groups.
+
+<table>
+  <tr>
+    <td width="50%"><img src="docs/img/drawer.png" alt="Group panel with the hourly chart and an example entry"><br><sub><b>Group panel:</b> facts, hourly chart, example entries with stack traces.</sub></td>
+    <td width="50%"><img src="docs/img/cluster.png" alt="Cluster view with two nodes on one time axis"><br><sub><b>Cluster view:</b> two nodes on one time axis, events and groups by node.</sub></td>
+  </tr>
+  <tr>
+    <td width="50%"><img src="docs/img/triage.png" alt="Triage with new types, grown and vanished groups"><br><sub><b>Triage:</b> what is new, what grew and what vanished since the previous set.</sub></td>
+    <td width="50%"><img src="docs/img/entries.png" alt="All entries of one group with a time histogram"><br><sub><b>Entries:</b> every entry of a group, histogram and the full entry inline.</sub></td>
+  </tr>
+</table>
+
+## Quick start
+
+Pick one: the **Docker image** runs the web app with nothing else installed; **without
+Docker** you get the `atlas-log` command (CLI and web app) on your machine.
+
+### With Docker
+
+The image is published to the GitHub Container Registry with each release. The
+repository is private, so sign in once with a token that has `read:packages`:
 
 ```sh
-uv tool install "atlas-log-analyzer[web] @ git+https://github.com/rdk/atlas-log-analyzer@v0.4.1"
-atlas-log --help
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
 ```
 
-`[web]` adds the web app (`atlas-log serve`), `[mine]` the optional Drain3
-template mining; leave the extras out for the CLI alone. Each GitHub release also
-carries the wheel (`uv tool install ./atlas_log_analyzer-0.4.1-py3-none-any.whl`).
-From a checkout:
+Run the web app on port 8321 with the store in a named volume. It listens on all
+interfaces in the container, so give it a token:
 
 ```sh
-uv tool install '.[web]'    # the `atlas-log` command with the web app
-uv sync --all-extras --dev  # development environment (.venv)
+export ATLAS_LOG_TOKEN="$(openssl rand -hex 16)"
+docker run -d --name atlas-log -p 8321:8321 -v atlas-log:/data \
+  -e ATLAS_LOG_TOKEN ghcr.io/rdk/atlas-log-analyzer:0.4.1
+echo "http://localhost:8321/?token=$ATLAS_LOG_TOKEN"     # open once; the token is kept
+```
+
+Upload log files on the start page, or ingest a folder with the CLI from the same image
+(any `atlas-log` command works this way):
+
+```sh
+docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
+  ghcr.io/rdk/atlas-log-analyzer:0.4.1 ingest /in --name prod-1030
+```
+
+<details>
+<summary>Docker Compose</summary>
+
+```yaml
+services:
+  atlas-log:
+    image: ghcr.io/rdk/atlas-log-analyzer:0.4.1
+    ports: ["8321:8321"]
+    environment:
+      ATLAS_LOG_TOKEN: ${ATLAS_LOG_TOKEN:?set a token}
+    volumes: ["atlas-log:/data"]
+    restart: unless-stopped
+volumes:
+  atlas-log:
+```
+
+</details>
+
+To build the image yourself: `docker build -t atlas-log .`
+
+### Without Docker
+
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/); it fetches
+Python 3.14 itself. Install a release straight from GitHub (your git access to the
+repository is used; `[web]` adds the web app, `[mine]` the optional Drain3 template
+mining):
+
+```sh
+uv tool install "atlas-log-analyzer[web] @ git+ssh://git@github.com/rdk/atlas-log-analyzer.git@v0.4.1"
+atlas-log --version
+```
+
+or install the wheel attached to the release:
+
+```sh
+gh release download v0.4.1 -R rdk/atlas-log-analyzer -p '*.whl'
+uv tool install "atlas-log-analyzer[web] @ ./atlas_log_analyzer-0.4.1-py3-none-any.whl"
+```
+
+Then point it at a store (a folder for the log sets, outside any git repository),
+ingest some logs and open the web app:
+
+```sh
+export ATLAS_LOG_STORE=~/atlas-log-store
+atlas-log ingest /var/atlassian/application-data/jira/log/ --name prod-1030
+atlas-log serve                                  # http://127.0.0.1:8321/
+```
+
+### From source
+
+```sh
+git clone git@github.com:rdk/atlas-log-analyzer.git && cd atlas-log-analyzer
+uv sync --all-extras --dev                       # .venv with every extra and the dev tools
 uv run atlas-log --help
 ```
 
-### Container
+### Try it with demo logs
 
-Each release publishes an image that runs the web app on port 8321 with the store
-in the volume `/data`:
-
-```sh
-docker run -d -p 8321:8321 -v atlas-log:/data \
-  -e ATLAS_LOG_TOKEN="$(openssl rand -hex 16)" ghcr.io/rdk/atlas-log-analyzer:0.4.1
-docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
-  ghcr.io/rdk/atlas-log-analyzer:0.4.1 ingest /in --name prod-1030   # any CLI command
-```
-
-The container listens on all interfaces, so set `ATLAS_LOG_TOKEN` (without it,
-`serve` warns at startup) and open the pages once with `?token=…`. Build it
-yourself with `docker build -t atlas-log .`.
-
-## Quick start (humans)
+No logs at hand? Generate the synthetic two-node cluster the screenshots use:
 
 ```sh
-export ATLAS_LOG_STORE=~/atlas-log-store                       # where log sets live
-atlas-log ingest /var/atlassian/jira/log/ --name prod-1030     # build a log set
-atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
-atlas-log ingest jira-logs_export.zip --cluster jira-prod      # cluster export: one set per node
-atlas-log capture cluster:jira-prod                            # the nodes side by side, a verdict per node
-atlas-log matrix cluster:jira-prod --spread only --min-level WARN  # groups on one node only
-atlas-log groups prod-1030 --min-level WARN --brief            # one row per signature
-atlas-log groups prod-1030 --with-exception --brief            # stack traces at any level
-atlas-log show prod-1030 83d1828c --brief                      # entries of a group (unique signature prefix)
-atlas-log show prod-1030 83d1828c --raw --limit 1              # the original text
-atlas-log frames prod-1030 83d1828c                            # its stack trace, application frames first
-atlas-log context prod-1030 ENTRY_ID --before 10               # what the thread did around one entry
-atlas-log diff prod-1029 prod-1030 --rate --limit 20           # new / vanished / changed vs an earlier set
+uv run python scripts/demo_logs.py /tmp/demo     # two weeks, two nodes, invented data
+uv run atlas-log --store /tmp/demo-store ingest /tmp/demo/prev --cluster demo-jira --name prev
+uv run atlas-log --store /tmp/demo-store ingest /tmp/demo/week --cluster demo-jira --name week
+uv run atlas-log --store /tmp/demo-store serve
 ```
-
-Log sets live in `--store DIR`, else `$ATLAS_LOG_STORE`, else `./.atlas-log`.
-The implicit `./.atlas-log` is not created inside a git work tree (a store in a
-repository risks committing real logs): `ingest` then stops with a
-`store_error` and asks for `--store` or `ATLAS_LOG_STORE`; an existing
-`./.atlas-log` keeps working. A set can be referred to by id, name or unique id
-prefix.
-
-## Report
-
-```sh
-atlas-log report prod-1030 --compare prod-1029 --out prod-1030.html --open
-```
-
-writes one self-contained HTML file (no network access needed; open it from a
-file share or send it by e-mail): timeline by level, filterable group table,
-per-group drawer with example entries, stack traces and the matching CLI
-commands, and — with `--compare` — new / vanished / changed groups against a
-baseline. Drag across the timeline for a time window and sort by *Spike* ("what
-started at 14:00?"); hover a bar for the groups it is made of; mute a noisy group
-(`m`) so the errors stay readable; a lane marks the hours where new groups first
-appear (a deploy, an incident); the drawer lists the groups that *move with* the
-open one. Times show in UTC or your time zone (`z`). The view (filters, window,
-selected group) is kept in the URL, so a link with its `#…` part reopens the same
-view. See `docs/report.md`.
-
-![HTML report](docs/img/report.png)
-
-<!-- docs/img/report.png is made from the fixture tests/fixtures/jira/sample.log
-     (atlas-log report sample, a group open), never from real logs. -->
 
 ## Web app
 
-```sh
-atlas-log --store ~/atlas-log-store serve   # http://127.0.0.1:8321/
-```
+`atlas-log serve` (or the container) serves:
 
-The start page lists every set with its error counts and a triage verdict
-against the previous set. **Triage** shows the new types first (ERROR before
-WARN), then groups whose hourly rate grew, then vanished ones, each linking into
-the report with the group open. **Upload** ingests log files in the background
-with a progress bar; the pages keep answering meanwhile. One server per store:
-a second `serve` on the same store exits with code 3, while CLI commands may run
-next to it. Everything is also JSON under `/api` (OpenAPI at `/docs`);
-`GET /api/sets/SET/triage` answers "any new kinds of errors?" in one call — the
-same `triage.v1` document as `atlas-log triage SET`. A cluster export (one set
-per node) opens on its **cluster page** `/captures/cluster:NAME`: the nodes side
-by side, their events on one time axis, a lane of the moments when several nodes
-log far more errors than usual at once, an errors-only view, the groups by node,
-how the nodes interact and the merged log (the static twin:
-`atlas-log report cluster:NAME`). See `docs/webapp.md` and
-`docs/cluster.md`.
+| Page | What it shows |
+|---|---|
+| **Log sets** `/` | every set with its error counts, activity and a verdict against the previous set; upload with progress |
+| **Report** `/sets/SET` | entries per hour by level, filterable groups, the group panel with examples, stack traces and related groups |
+| **Triage** `/sets/SET/triage` | new types (ERROR first), grown and vanished groups against a baseline it picks or you choose |
+| **Entries** `/sets/SET/entries?signature=…` | all entries of a group or filter, with a time histogram, opened from the group panel |
+| **Cluster view** `/captures/CAPTURE` | the nodes side by side, cross-node moments, interactions and the merged log |
 
-## Agent workflow
+Everything is also JSON under `/api` (OpenAPI at `/docs`), the same documents the CLI prints.
+Light and dark themes, UTC or local time, keyboard shortcuts (`?`), and the view lives in
+the URL, so a link reopens the same filters. See [`docs/webapp.md`](docs/webapp.md).
 
-Start with `atlas-log manifest` (bare `atlas-log` prints the same when stdout is
-not a terminal): about 10 KB of JSON with this workflow, every command's usage,
-output document and exit codes, one-line help per parameter, the `--brief`
-presets and where the document schemas are (`atlas-log schema triage.v1`).
-`atlas-log manifest COMMAND` gives one command in full (every parameter with its
-type, default and help) when you are about to run it.
+## CLI
 
 ```sh
-atlas-log manifest                                          # 0. how to use the tool (manifest.v1)
-atlas-log ingest LOGS/ --name today                         # 1. build the set (JSON manifest)
-atlas-log triage today                                      # 2. verdict vs the previous set
-atlas-log groups today --min-level ERROR --limit 20 --brief # 3. groups: check "total"/"truncated"
-atlas-log groups today --with-exception --brief             #    stack traces at any level
-atlas-log show today SIGNATURE --brief --limit 5            # 4. drill into one group
-atlas-log frames today SIGNATURE                            #    its stack trace, plugin frames first
-atlas-log context today ENTRY_ID --before 10 --brief        #    what the thread did around it
-atlas-log entries today --request-id REQUEST_ID --brief     #    the whole HTTP request
-atlas-log entries today --signature SIGNATURE --since 2h --raw   #    the raw text
-atlas-log diff yesterday today --rate --limit 20            # 5. compare with another set
+atlas-log ingest logs/ --name prod-1030                        # build a log set
+atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
+atlas-log groups prod-1030 --min-level WARN --brief            # one row per group
+atlas-log show prod-1030 83d1828c --brief                      # entries of a group (signature prefix)
+atlas-log frames prod-1030 83d1828c                            # its stack trace, application frames first
+atlas-log context prod-1030 ENTRY_ID --before 10               # what the thread did around one entry
+atlas-log diff prod-1029 prod-1030 --rate --limit 20           # new / vanished / changed vs an earlier set
+atlas-log report prod-1030 --compare prod-1029 --out r.html    # one self-contained HTML file
+atlas-log ingest jira-logs_export.zip --cluster jira-prod      # cluster export: one set per node
+atlas-log capture cluster:jira-prod                            # the nodes side by side, a verdict each
+atlas-log query prod-1030 "select level_name, count(*) from entries group by 1"
 ```
 
-Repeat 3–4; on an error, read `error.hint` for the next step. `SIGNATURE`
-may be a unique prefix (4+ hex characters); `atlas-log sets --brief` lists the
-sets with their error and warning counts, `atlas-log set SET` shows one.
+A set is referred to by name, id or unique id prefix. Sets live in `--store DIR`, else
+`$ATLAS_LOG_STORE`, else `./.atlas-log` (never created inside a git work tree, so real
+logs cannot end up in a repository). Full reference: [`docs/cli.md`](docs/cli.md).
 
-Every call pays the start-up of the CLI (about 0.45 s). For several commands in
-a row, `atlas-log batch` reads one JSON array of arguments per line on stdin
-and writes one JSON document per line (`error.v1` for a failed line, which
-never stops the batch):
+## For agents
+
+Every command prints JSON when stdout is not a terminal (`"schema": "<name>.v1"`, rows in
+`"items"`), with stable exit codes (`0` ok, `1` usage, `2` nothing found, `3` store error)
+and an `error.v1` document with a `hint` on failure. Start with the manifest, about 10 KB of
+JSON describing the workflow and every command:
 
 ```sh
-printf '%s\n' '["groups", "today", "--brief", "--limit", "5"]' '["show", "today", "83d1"]' \
-  | atlas-log --store "$ATLAS_LOG_STORE" batch
+atlas-log manifest                                   # how to use the tool (manifest.v1)
+atlas-log triage today                               # verdict vs the previous set
+atlas-log groups today --min-level ERROR --brief     # check "total" / "truncated"
+printf '%s\n' '["groups","today","--brief"]' '["show","today","83d1"]' | atlas-log batch
 ```
 
-## Quick start (agents)
+`batch` runs many commands in one process (one JSON document per line). The workflow,
+conventions and a cookbook of common questions are in [`docs/agents.md`](docs/agents.md).
 
-- Set `ATLAS_LOG_STORE` (or pass `--store DIR`) to a directory outside any
-  repository; the implicit `./.atlas-log` is refused inside a git work tree.
-- Output is JSON whenever stdout is not a terminal; force it with
-  `--output json` (one document) or `--output jsonl` (one row per line).
-- Every document has `"schema": "<name>.v1"`; listings put rows in `"items"`.
-- `groups` and `entries` page with `--limit N --offset M`: `"truncated": true`
-  means more rows follow; fetch the next page with `--offset <offset + count>`.
-- Keep rows small: `--brief` (a documented column preset) or
-  `--columns a,b,c` on `groups`, `entries`, `show` and `context`.
-- Level filters hide DEBUG stack traces; `--with-exception` (any level with an
-  exception) and `--exception TEXT` (substring of `exception_type`) do not.
-- `frames SET SIGNATURE|ENTRY_ID` reduces a stack trace to its application
-  frames (JDK and Jira platform packages skipped; set `ATLAS_LOG_APP_PACKAGES=
-  com.acme.,org.example.` to name your own packages instead).
-- Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
-  stdout (`"reason"`, when present, is the same in the CLI and the web API, e.g.
-  `set_not_found`); exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
-  `3` store error. Diagnostics go to stderr (`--quiet` silences them).
-- Long entries are cut in JSON: `raw` and `body` keep 4000 characters
-  (`--max-raw N`, `0` = all); cut rows carry `"body_truncated": true` and
-  `"raw_chars"`. `--raw` (plain text) is never cut unless `--max-raw` is given.
-- `atlas-log schema` describes the stored tables (`entries`, `groups`,
-  `merges`, `logset`) field by field; `atlas-log schema NAME.v1` prints the JSON
-  Schema of a document (`triage.v1`, `error.v1`, …; also
-  `docs/formats/NAME.v1.schema.json`); `atlas-log COMMAND --help` documents the
-  JSON shape and exit codes of each command.
+## How it works
 
-```sh
-atlas-log --output json ingest atlassian-jira.log --name today
-atlas-log groups today --min-level ERROR --limit 20 | jq '.items[] | {signature, count, template}'
-atlas-log query today "select level_name, count(*) n from entries group by 1 order by 2 desc"
-atlas-log query today "select unnest(variables) v, count(*) n from entries
-                       where signature = '83d1828c6afb2ead' group by 1 order by 2 desc"
-atlas-log query today "select hour(ts) h, count(*) from entries where level >= 50 group by 1 order by 1"
-atlas-log parse atlassian-jira.log --limit 100      # JSONL entries, no store
-```
-
-`query --help` lists the columns of the `entries`, `groups` and `merges`
-views; a misspelt column gets the candidate columns in `error.hint`.
-
-## Agent cookbook
-
-Five common questions and the commands that answer them. `before`/`after` are
-set names given at `ingest --name`; `SIG` is a 16-hex group signature from
-`groups` (or a unique prefix of 4+ characters), `ENTRY` an entry id from
-`entries`/`show`, `REQ` a Jira request id.
-
-**1. What broke after the deploy?**
-
-```sh
-atlas-log triage after --baseline before            # verdict, new types, new exceptions, growth
-atlas-log diff before after --min-level WARN --rate --limit 20   # top 20 per section, changed by hourly rate
-```
-
-Without `--baseline`, triage picks one itself: another set of the same format
-and recipe that is not a superset or subset of this one's files, not later,
-not tiny and of comparable span (`baseline.reason` says why it was chosen,
-`baseline.candidates` which sets were not and why). After a tool update that
-changes signatures, `atlas-log sets` marks older sets `"stale": true`;
-`atlas-log upgrade --all` rebuilds them (about 5 s per 700k entries).
-
-Read `verdict`, then `new` and `new_exceptions` (stack traces below the level
-filter). If `warnings` is not empty the two sets cover very different spans
-and `new`/`vanished` are unreliable: compare sets of similar length.
-
-**2. What is in this stack trace?**
-
-```sh
-atlas-log frames after SIG                          # the chain with application frames first
-atlas-log frames after SIG --all                    # every frame, with an "app" flag
-atlas-log show after SIG --raw --limit 1 --max-raw 0   # the full original text of one entry
-```
-
-**3. Which request or thread triggered it?**
-
-```sh
-atlas-log entries after --signature SIG --columns id,ts,thread,user,request_id --limit 5
-atlas-log entries after --request-id REQ --brief    # everything that request logged
-atlas-log context after ENTRY --before 20           # what the thread did just before
-atlas-log context after ENTRY --any-thread --before 5 --after 5   # what else happened then
-```
-
-**4. Is it gone after the fix?**
-
-```sh
-atlas-log ingest logs-after-fix/ --name fixed
-atlas-log triage fixed --baseline after             # SIG should be in "vanished"
-atlas-log diff after fixed --rate --limit 0 | jq '[.vanished[], .changed[]] | map(select(.signature == "SIG"))'
-atlas-log groups fixed --exception NullPointer --brief  # any group with that exception left?
-```
-
-Let the fixed set cover a comparable span (see `coverage` / `warnings`);
-a group that only occurs at night is "vanished" from a daytime-only set.
-
-**5. Which issues or users are affected?**
-
-```sh
-atlas-log show after SIG --limit 20 | jq '.items[] | {ts, user, variables}'
-atlas-log query after "select unnest(variables) v, count(*) n from entries
-                       where signature = 'SIG' group by 1 order by 2 desc"
-atlas-log query after "select user, count(*) n from entries
-                       where signature = 'SIG' group by 1 order by 2 desc"
-atlas-log groups after --contains 'issue' --columns signature,count,top_users
-```
-
-`show` returns each entry's `variables` (the values masking replaced: issue
-keys, numbers, ids); the first `query` counts them over the whole group, the
-second counts users; `top_users` in `groups` is the top-10 list per group.
-
-Store layout:
+`atlas-log` reads `atlassian-jira.log` files (rotated and gzipped ones too, ZIP exports,
+Java stack traces) into a **log set**. Each entry is masked (issue keys, numbers, ids, URLs,
+users, IPs become placeholders such as `<ISSUE>`) and gets a signature from its level,
+logger, masked message and exception chain; entries with the same signature form a
+**group**. Signatures are stable across sets, so two sets (before and after an upgrade, two
+nodes, two days) compare without the raw logs.
 
 ```
-.atlas-log/<logset-id>/
-├── manifest.json      logset.v1 (sources, time range, counts, versions)
-├── entries.parquet    entries.v1, one row per entry
-├── groups.parquet     groups.v1, one row per signature
-└── merges.parquet     merges.v1, Drain3 merge proposals (optional)
+<store>/<logset-id>/
+├── manifest.json      logset.v1: sources, time range, counts, versions
+├── entries.parquet    one row per entry (with its variables)
+├── groups.parquet     one row per signature
+└── merges.parquet     Drain3 merge proposals (optional)
 ```
 
-The Parquet files can be read directly with DuckDB, polars or pandas.
+The Parquet files read directly in DuckDB, polars or pandas. Design notes:
+[`docs/design.md`](docs/design.md).
 
 ## Documentation
 
-- [`docs/cli.md`](docs/cli.md) — command reference: options, JSON output, exit codes
-- [`docs/webapp.md`](docs/webapp.md) — web app pages and HTTP API
-- [`docs/report.md`](docs/report.md) — HTML report and its `report.v1` payload
-- [`docs/design.md`](docs/design.md) — architecture, models, storage format
-- [`docs/requirements.md`](docs/requirements.md), [`docs/research.md`](docs/research.md)
-- [`AGENTS.md`](AGENTS.md) — guide for coding agents working on this repository
+| | |
+|---|---|
+| [`docs/cli.md`](docs/cli.md) | command reference: options, JSON output, exit codes, environment variables |
+| [`docs/webapp.md`](docs/webapp.md) | web app pages and the HTTP API |
+| [`docs/report.md`](docs/report.md) | the report page, the HTML file and its `report.v1` payload |
+| [`docs/cluster.md`](docs/cluster.md) | captures and the cluster view |
+| [`docs/agents.md`](docs/agents.md) | agent workflow, conventions and cookbook |
+| [`docs/design.md`](docs/design.md) | architecture, models, storage format |
+| [`docs/formats/`](docs/formats/) | every document and stored table, with JSON Schemas |
+| [`CHANGELOG.md`](CHANGELOG.md) | release notes |
+
+## Development
+
+```sh
+uv sync --all-extras --dev
+uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
+```
+
+CI runs the same on Ubuntu and Windows. [`AGENTS.md`](AGENTS.md) is the guide for coding
+agents (and humans) working on the code: layout, conventions and data hygiene. Fixtures are
+small, hand-masked excerpts; real logs never enter the repository.
+
+## License
+
+[Apache License 2.0](LICENSE) © 2026 Radoslav Krivák
