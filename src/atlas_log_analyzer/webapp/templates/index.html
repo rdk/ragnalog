@@ -15,7 +15,7 @@
       <td class="actions">
         <a class="btn small act-report" href="/sets/{{ s.id }}">Report</a>
         <a class="btn small" href="/sets/{{ s.id }}/triage">Triage</a>
-        <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the store">Delete</button>
+        <button type="button" class="btn small link danger" data-delete="{{ s.id }}" data-label="{{ s.name or s.id }}" title="Delete this set from the data directory">Delete</button>
       </td>
     </tr>
 {% endmacro %}
@@ -24,11 +24,11 @@
 <header class="page-head">
   <div>
     <h1>Log sets</h1>
-    <p class="page-meta">{{ sets|length }} set{{ "" if sets|length == 1 else "s" }}<span class="dot">·</span><button type="button" class="tip-btn info" data-tip-k="wa-ref" data-tip-ref="tip-store" aria-label="Store location">store</button><span class="dot">·</span>Open a set's report, or triage it against the previous one.</p>
+    <p class="page-meta">{{ sets|length }} set{{ "" if sets|length == 1 else "s" }}<span class="dot">·</span><button type="button" class="tip-btn info" data-tip-k="wa-ref" data-tip-ref="tip-store" aria-label="Data directory location">data directory</button><span class="dot">·</span>Open a set's report, or triage it against the previous one.</p>
   </div>
   <div class="page-tools">{% include "_tools.html" %}</div>
   <template id="tip-store">
-    <div class="atip-h">Store</div>
+    <div class="atip-h">Data directory</div>
     <div class="atip-sub atip-mono">{{ store }}</div>
   </template>
 </header>

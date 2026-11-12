@@ -170,7 +170,7 @@
           "type": "string"
         },
         "store": {
-          "description": "The store searched (CLI, unknown set).",
+          "description": "The data directory searched (CLI, unknown set).",
           "type": "string"
         },
         "candidates": {

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "sets.v1.schema.json",
   "title": "sets.v1",
-  "description": "The log sets of the store, newest first: `sets`, `GET /api/sets`.",
+  "description": "The log sets of the data directory, newest first: `sets`, `GET /api/sets`.",
   "type": "object",
   "properties": {
     "schema": {
@@ -11,7 +11,7 @@
       ]
     },
     "store": {
-      "description": "CLI: the store path; API: the store directory's name.",
+      "description": "CLI: the data directory path; API: the data directory's name.",
       "type": "string"
     },
     "count": {

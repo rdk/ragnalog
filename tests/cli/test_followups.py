@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -54,11 +55,18 @@ def test_set_timeline_applies_entry_filters(
     assert _total(jcli("timeline", "mini", "--bucket", "1d").json()) > expected
 
 
-def test_capture_timeline_refuses_set_only_filters(jcli: Invoke) -> None:
+def test_capture_timeline_takes_the_entry_filters(jcli: Invoke) -> None:
     assert jcli("ingest", MINI_LOG, "--name", "mini").code == 0
-    res = jcli("timeline", "mini", "--by-node", "--thread", "x")
-    assert res.code == 1
-    assert "--thread" in res.stdout + res.stderr
+    whole = jcli("timeline", "mini", "--by-node", "--bucket", "1d").json()
+
+    def total(doc: dict[str, Any]) -> int:
+        return sum(sum(s) for n in doc["nodes"].values() for s in n["levels"].values())
+
+    none = jcli("timeline", "mini", "--by-node", "--bucket", "1d", "--thread", "no-such-thread")
+    assert none.code == 0 and total(none.json()) == 0
+    some = jcli("timeline", "mini", "--by-node", "--bucket", "1d", "--min-level", "ERROR").json()
+    assert 0 < total(some) < total(whole)
+    assert jcli("timeline", "mini", "--by-node", "--node", "nope").code == 1
 
 
 def _corrupt(store_dir: Path, name: str = "badbadbadbad0001") -> None:

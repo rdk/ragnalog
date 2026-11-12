@@ -42,7 +42,7 @@ __all__ = [
 
 
 def sets(*, brief: bool = False) -> None:
-    """List the log sets in the store, newest first.
+    """List the log sets in the data directory, newest first.
 
     Output (json):
       {"schema": "sets.v1", "store": str, "count": int,
@@ -58,7 +58,7 @@ def sets(*, brief: bool = False) -> None:
     cluster node a set holds and which capture it belongs to (null when
     unknown; see `label`, `captures`). --brief keeps only id, name, first_ts,
     last_ts, entry_count, group_count, summary, stale, node and capture. An
-    empty or missing store gives count 0. A set directory whose manifest cannot be
+    empty or missing data directory gives count 0. A set directory whose manifest cannot be
     read is not listed; one warning per such directory goes to stderr (clear it
     by deleting its directory).
 

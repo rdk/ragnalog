@@ -38,7 +38,7 @@ ENV_VARS: Final[tuple[EnvVar, ...]] = (
         "ATLAS_LOG_STORE",
         "store",
         "`./.atlas-log`",
-        "Store directory holding the log sets (`--store` wins).",
+        "Data directory holding the log sets (`--store` wins).",
         "default of --store",
     ),
     EnvVar(

@@ -7,7 +7,7 @@ second one) into a **single self-contained HTML file**: no network requests, no
 CDN, works from a file share or an e-mail attachment, in light and dark mode.
 It is the static precursor of the future FastAPI app: the page consumes a
 `report.v1` JSON payload that the web app will later serve from an endpoint, so
-the front-end is written against the payload, never against the store.
+the front-end is written against the payload, never against the stored data.
 
 ## 1. Payload (`report.v1`)
 

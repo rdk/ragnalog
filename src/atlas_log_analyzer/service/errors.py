@@ -109,9 +109,9 @@ SPEC: Final[Mapping[str, ErrorSpec]] = {
     "store_error": ErrorSpec(
         ExitCode.STORE,
         500,
-        "Store failure: corrupt manifest or damaged set, newer schema, store refused or "
-        "in use, a path the system refuses (permission, a file where a directory belongs); "
-        "in the CLI also an unknown or ambiguous set.",
+        "Data directory failure: corrupt manifest or damaged set, newer schema, data directory "
+        "refused or in use, a path the system refuses (permission, a file where a directory "
+        "belongs); in the CLI also an unknown or ambiguous set.",
     ),
     "http": ErrorSpec(ExitCode.USAGE, 400, "Another HTTP error (the API sends its own status)."),
     "internal_error": ErrorSpec(

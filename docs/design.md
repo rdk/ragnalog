@@ -180,7 +180,7 @@ group `atlas_log_analyzer.formats` so external packages can add formats.
   joined with `\n`, at most 16). The entry keeps its id, `raw` (which still
   starts with its own header line), header and source; every other banner stays
   an entry. `attach_banners` runs per file after the ids are made unique, with
-  a lookahead of one entry. On the sample store the immediate-next rule caught
+  a lookahead of one entry. On the sample data directory the immediate-next rule caught
   122,538 of 122,587 banners; "the next entry of the same thread and logger
   within 5 ms", with any number of entries between, would have caught 6 more,
   so the simpler streaming rule was kept. *Titles from the body*
@@ -261,7 +261,7 @@ can be applied as a view ("merged groups") without changing the primary keys.
 A *log set* is a directory:
 
 ```
-<store>/<logset-id>/
+<data dir>/<logset-id>/
 ├── manifest.json        logset.v1: id, name, format, sources[{path,size,xxh3,first_ts,last_ts}],
 │                        time_range, entry_count, tool_version, schema_version, signature_version,
 │                        recipe_key, created_at, node, cluster, capture (schema 1.1)
@@ -303,7 +303,7 @@ run of adjacent same-millisecond entries with its ordinal in the run, and
 keeps the ids issued in the last 4,096 milliseconds (at most 128 per
 millisecond): an id issued already in its millisecond, because the
 millisecond recurred after other timestamps, is re-hashed again. Only such
-collisions get new ids, so the ids of existing stores stay valid; on the 191 MB
+collisions get new ids, so the ids of existing data directories stay valid; on the 191 MB
 sample exactly one id changed, a startup banner line that was dropped as a
 duplicate before. A pure per-timestamp ordinal would have changed 19 ids of
 non-colliding entries (threads log slightly out of order).
@@ -312,12 +312,12 @@ non-colliding entries (threads log slightly out of order).
 
 Global options: `--output table|json|jsonl` (default `table` on a TTY, `json`
 otherwise), `--quiet`, `--store DIR` (env `ATLAS_LOG_STORE`, default
-`./.atlas-log`).
+`./.atlas-log`; the data directory, the folder that keeps the log sets).
 
 | Command | Purpose |
 |---|---|
 | `ingest PATH... [--format jira] [--name N] [--mine] [--split auto] [--cluster C]` | Build or update a log set (one per node for cluster logs); prints manifest(s). |
-| `sets` | List log sets in the store. |
+| `sets` | List log sets in the data directory. |
 | `captures`, `label SET [--node N]` | Sets of several nodes collected together; set a set's node, cluster, capture. |
 | `groups SET [--level ERROR] [--logger X] [--since/--until] [--sort count/last_seen] [--limit N] [--coarse]` | Group table. |
 | `show SET SIGNATURE [--limit N] [--raw]` | Entries of one group, with variables. |
@@ -325,7 +325,7 @@ otherwise), `--quiet`, `--store DIR` (env `ATLAS_LOG_STORE`, default
 | `query SET "SQL"` | DuckDB SQL over `entries`/`groups` views. |
 | `stats SET` | Counts per level/logger/hour, time range, sources. |
 | `diff SET_A SET_B [--level ERROR]` | New / vanished / changed-count signatures. |
-| `parse PATH... [--format jira]` | One-shot stream to JSONL, no store. |
+| `parse PATH... [--format jira]` | One-shot stream to JSONL, no data directory. |
 | `regroup SET [--frames N]` | Recompute groups with another signature spec. |
 | `upgrade [SET...] [--all]` | Rebuild stale sets at the current recipe, each with its own spec. |
 | `formats`, `schema [entries/groups/logset]` | Introspection for agents. |
@@ -343,7 +343,7 @@ import path, so a command loads only its module (`version` loads no polars).
 ## 9. Web app
 
 `src/atlas_log_analyzer/webapp/` (optional extra `[web]`, `atlas-log serve`)
-exposes the store over FastAPI with the CLI's JSON documents; see
+exposes the data directory over FastAPI with the CLI's JSON documents; see
 `docs/webapp.md`. Nothing in `core`/`store`/`report` may import from `cli` or
 `webapp`.
 
@@ -417,10 +417,10 @@ reports `IngestProgress`.
 
 `tests/contract/test_parity.py` is the written contract between
 `atlas-log --output json` and `/api`: its `CASES` table pairs a command line with
-a request; both run against one store and must return the same document once
+a request; both run against one data directory and must return the same document once
 volatile keys (`created_at`, `elapsed_s`, `tool_version`, `report_url`) are
 dropped. Differences by design are listed per case in `allowed`, each with its
-reason (the API names only the store directory and adds per-set `summary`; `show`
+reason (the API names only the data directory (the `store` key) and adds per-set `summary`; `show`
 is `entries.v1` while the API's group page gets `group.v1` with a histogram; a cut
 text says `use --max-raw 0` or `use max_raw=0`). `HTTP_CAPS` lists the page caps
 only the API has. Errors must agree on `error.reason` (on `error.code` when they
@@ -522,7 +522,7 @@ Struct fails it.
   held only for the name check and the rename that installs a set, so a long
   ingest blocks no reader. The name is checked before parsing and again under
   the lock; a set with the same id installed meanwhile is returned instead of
-  replaced. The write lock is also an OS file lock on `<store>/.write.lock`
+  replaced. The write lock is also an OS file lock on `<data dir>/.write.lock`
   (`msvcrt.locking` / `fcntl.flock`, `store/locks.py`), which the OS releases
   when a process dies, so a CLI ingest next to `serve` cannot take the same
   name at the same moment. Renames and deletes of set directories retry on
@@ -536,8 +536,8 @@ Struct fails it.
   its tmp and spool directories every few minutes (`store/fresh.py`). A set
   whose `manifest.json` cannot be read is not listed; `Store.unreadable()` names
   it, `sets` warns on stderr and the web index shows a notice (`atlas-log remove NAME`
-  or `DELETE /api/sets/NAME` with the directory name clears it). The web app holds `<store>/.server.lock` (one
-  server per store).
+  or `DELETE /api/sets/NAME` with the directory name clears it). The web app holds `<data dir>/.server.lock` (one
+  server per data directory).
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
   reports sniff confidence per format; `parse` always emits JSONL; an empty
   listing exits 0. Added for agents: `triage` (the web app's `triage.v1`,

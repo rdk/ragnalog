@@ -1,6 +1,6 @@
 # captures.v1
 
-The captures of the store, newest last_ts first: `captures`, `GET /api/captures`.
+The captures of the data directory, newest last_ts first: `captures`, `GET /api/captures`.
 
 Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`captures.v1.schema.json`](captures.v1.schema.json), also `atlas-log schema captures.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 

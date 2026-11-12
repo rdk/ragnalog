@@ -65,7 +65,7 @@ def resolving[T](sets: Sets, ref: str, action: Callable[[str], T], *, front: Fro
             found = (
                 f"available sets: {', '.join(names)}"
                 if names
-                else "the store is empty; create a set with `atlas-log ingest PATH`"
+                else "the data directory is empty; create a set with `atlas-log ingest PATH`"
             )
         raise OpError.because("set_not_found", front, f"no log set {ref!r}", hint=found) from exc
     except AmbiguousLogSet as exc:

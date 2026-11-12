@@ -1,4 +1,4 @@
-"""Commands about the tool and the store.
+"""Commands about the tool and the data directory.
 
 ``formats``, ``schema``, ``manifest``, ``remove``, ``serve``, ``version`` and ``batch``.
 """
@@ -125,7 +125,7 @@ def emit_manifest(out: Output, command: str | None = None) -> None:
 
 
 def remove(logset: str, /) -> None:
-    """Delete a log set from the store (its directory and all files).
+    """Delete a log set from the data directory (its directory and all files).
 
     Output (json): {"schema": "remove.v1", "removed": id, "name": str | null}
 
@@ -165,7 +165,7 @@ def serve(
     Exit codes: 0 stopped normally; 1 the `web` extra is not installed or bad
     option; 3 store error (including the default ./.atlas-log not existing inside
     a git work tree: pass --store DIR or set ATLAS_LOG_STORE, and another server
-    already using the store: one server per store).
+    already using the data directory: one server per data directory).
 
     Args:
         host: Interface to bind; use 0.0.0.0 to serve the network (set --token then).

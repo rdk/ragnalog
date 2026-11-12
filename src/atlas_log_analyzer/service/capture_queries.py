@@ -208,15 +208,49 @@ def timeline(
     *,
     bucket: str = "1h",
     signature: str | None = None,
+    q: EntryQuery | None = None,
     front: Front,
 ) -> Doc:
-    """``cluster-timeline.v1``: entries per bucket and node, by level or of one group."""
+    """``cluster-timeline.v1``: entries per bucket and node, by level or of one group.
+
+    ``q`` filters as ``entries`` (level, logger, user, thread, request_id, contains,
+    exception, with_exception, coarse_signature, one ``signature``); ``node`` keeps those
+    nodes only (the window is still that of the whole capture). Its ``since``/``until`` are
+    the window's: pass them in ``w``. ``signature`` is the group, as ``q.signature``.
+
+    Raises:
+        OpError: ``usage`` for several signatures or ``NODE:SIGNATURE``; ``invalid_value`` for
+            a node not in the capture; the errors of :func:`entries`.
+
+    """
     from atlas_log_analyzer.service.cluster import cluster_timeline
 
+    q = q or EntryQuery()
+    q.check(front=front)
+    sigs = q.signatures
+    if signature is not None and blank(signature) is not None:
+        sigs = [blank(signature) or ""]
+    if len(sigs) > 1 or any(":" in s for s in sigs):
+        raise OpError(
+            "usage",
+            f"{flag('signature', front)} takes one group of the capture",
+            hint="use --node to keep one node",
+        )
     cap = capture_from_ref(sets, ref, front=front)
     window = w.resolve(cap, front=front)
+    plain = dataclasses.replace(q, since=None, until=None, signature=None, node=None)
+    where = plain.resolve(cap.nodes[0].logset.manifest, front=front)
+    if q.nodes:
+        cap = _only_nodes(cap, q.nodes, front=front)
     return _doc(
-        cluster_timeline(cap, window=window, bucket=bucket, signature=blank(signature), front=front)
+        cluster_timeline(
+            cap,
+            window=window,
+            bucket=bucket,
+            signature=sigs[0] if sigs else None,
+            where=where,
+            front=front,
+        )
     )
 
 

@@ -70,7 +70,7 @@ def test_second_server_on_the_same_store_fails(store_dir: Path) -> None:
     with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))) as first:
         assert (store_dir / SERVER_LOCK_FILE).is_file()
         second = TestClient(create_app(Settings(store=store_dir, sync_jobs=True)))
-        with pytest.raises(StoreInUse, match="already using the store"), second:
+        with pytest.raises(StoreInUse, match="already using the data directory"), second:
             pass
         assert first.get("/api/health").status_code == 200
     # released at shutdown

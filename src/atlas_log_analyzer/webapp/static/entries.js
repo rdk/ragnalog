@@ -306,7 +306,7 @@
   let HG = null; // geometry of the drawn chart
   let DRAG = null;
 
-  /** What the chart counts: the page's group, level and node filters (the timeline API's); null: not drawn. */
+  /** What the chart counts: the page's filters (those of the timeline API); null: not drawn. */
   function histSpec() {
     const sigs = sigList();
     if (Q.get("coarse_signature") || sigs.length > 1) return null;
@@ -316,19 +316,20 @@
     for (const k of EXTRA) spec[k] = Q.get(k) || "";
     return spec;
   }
-  /** Entry filters the set timeline API takes besides group, level and window (a capture's lacks them). */
+  /** Entry filters the timeline APIs take besides group, level, node and window. */
   const EXTRA = ["thread", "user", "request_id", "logger", "contains", "exception", "with_exception"];
   const timelineUrl = (spec, bucket) => {
     const p = new URLSearchParams({ bucket });
     if (spec.sig) p.set("signature", spec.sig);
     if (spec.since) p.set("since", spec.since);
     if (spec.until) p.set("until", spec.until);
-    if (CAPTURE) p.set("window", "union");
-    else {
-      if (spec.level) p.set("level", spec.level);
-      if (spec.min) p.set("min_level", spec.min);
-      for (const k of EXTRA) if (spec[k]) p.set(k, spec[k]);
+    if (CAPTURE) {
+      p.set("window", "union");
+      if (spec.node) p.set("node", spec.node);
     }
+    if (spec.level) p.set("level", spec.level);
+    if (spec.min) p.set("min_level", spec.min);
+    for (const k of EXTRA) if (spec[k]) p.set(k, spec[k]);
     return PAGE.api.replace(/\/entries$/, "/timeline") + "?" + p.toString();
   };
   /** Map of bucket start (ms) to count, from a timeline.v1 or cluster-timeline.v1 document. */
@@ -436,13 +437,7 @@
     host.innerHTML = parts.join("");
     HG = { svg: host.firstElementChild, slot, nb };
     const total = counts.reduce((a, b) => a + b, 0);
-    // a capture's timeline API counts by group, level and node only: say so when other filters narrow the table
-    const unseen = [];
-    if (CAPTURE) unseen.push(...EXTRA.filter((k) => k !== "with_exception" && Q.get(k)));
-    if (CAPTURE && isOn(Q.get("with_exception"))) unseen.push("with_exception");
-    if (CAPTURE) unseen.push(...["level", "min_level"].filter((k) => Q.get(k)));
-    const note = unseen.length ? ` · <span class="muted" title="The chart counts the group${CAPTURE ? " and node" : ", level and node"} only; the table also applies the other filters">not filtered by ${esc(unseen.map((k) => k.replace("_", " ")).join(", "))}</span>` : "";
-    $("e-hist-what").innerHTML = `per ${SIZE_WORD[HIST.name]} · peak <span class="n">${fmt(peak)}</span> · <span class="n">${fmt(total)}</span> in view${note}`;
+    $("e-hist-what").innerHTML = `per ${SIZE_WORD[HIST.name]} · peak <span class="n">${fmt(peak)}</span> · <span class="n">${fmt(total)}</span> in view`;
   }
   const idxAt = (ev) => Math.max(0, Math.min(HG.nb - 1, Math.floor((ev.clientX - HG.svg.getBoundingClientRect().left) / HG.slot)));
   function setBrush(i0, i1) {

@@ -243,7 +243,8 @@ def test_capture_usage_errors(jcli: Invoke, captured: str) -> None:
     assert f"atlas-log capture {captured} --triage" in triage.json()["error"]["hint"]
     for argv in (
         ("entries", "jira-test_node1", "--window", "union"),
-        ("timeline", captured, "--level", "ERROR"),
+        ("timeline", captured, "--signature", "aaaaaa,bbbbbb"),
+        ("timeline", "jira-test_node1", "--node", "NODE1"),
         ("timeline", "jira-test_node1", "--window", "union"),
         ("report", captured, "--compare", "jira-test_node1"),
         ("report", "jira-test_node1", "--window", "union"),

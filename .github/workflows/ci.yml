@@ -1,9 +1,10 @@
 name: CI
 
+# Not run on pushes or pull requests (turned off 2026-11-12 to save Actions minutes): run the
+# checks locally (AGENTS.md), by hand here (Actions > CI > Run workflow), and release.yml still
+# runs them before it publishes a tag.
 on:
-  push:
-    branches: ["**"]
-  pull_request:
+  workflow_dispatch:
   workflow_call:  # release.yml runs the checks first
     inputs:
       ref:

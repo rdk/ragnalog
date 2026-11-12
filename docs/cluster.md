@@ -77,7 +77,7 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   `node1/application-logs/`). Any other input stays one set, as today; a
   directory without log files of its own is searched two levels down (a support
   ZIP's `application-logs/`, an export's `logs/` beside `job.json`). ZIPs are
-  extracted into the store's spool and removed afterwards.
+  extracted into the data directory's spool and removed afterwards.
 - **Node id**, first match wins:
   1. `--node`;
   2. the node names in `job.json`;
@@ -169,7 +169,7 @@ node; `entries` and `report` take a capture only through a capture reference
 |---|---|---|---|
 | `captures.v1` | `captures` | `GET /api/captures` | `CaptureInfo` items (§11.1), newest first; built (phase A) from the manifests alone |
 | `capture.v1` | `capture CAPTURE [--no-triage]` | `GET /api/captures/{ref}` | cluster, capture, window, and per node: set, coverage, gaps ≥ 15 min, entries, errors and warnings per hour, top error group, triage verdict against its own baseline, event counts, clock skew estimate |
-| `cluster-timeline.v1` | `timeline CAPTURE`, `timeline SET --by-node` | `GET /api/captures/{ref}/timeline` | buckets, and per node counts by level; with `signature`, that group per node; coverage per node |
+| `cluster-timeline.v1` | `timeline CAPTURE`, `timeline SET --by-node` | `GET /api/captures/{ref}/timeline` | buckets, and per node counts by level; with `signature`, that group per node; coverage per node; takes the entry filters of `entries` and `node` |
 | `matrix.v1` | `matrix CAPTURE` | `GET /api/captures/{ref}/matrix` | one row per signature: group fields, and per node `count, rate_per_hour, first_seen, last_seen`; `spread` (`all`, `only`, `skewed`), `skew`, `first_node`, `lead_ms`. Filters as `groups`, plus `node`, `spread`, `sort=count\|skew\|lead` |
 | `events.v1` | `events CAPTURE\|SET` | `GET /api/captures/{ref}/events` | `items` `{node, ts, kind, subject_node?, signature, entry_id, text}`; `pairs` of events on different nodes that follow each other (§7) |
 | `interactions.v1` | `interactions CAPTURE` | `GET /api/captures/{ref}/interactions` | mention matrix, co-bursts, concurrent jobs, sessions on several nodes (§7) |
@@ -411,7 +411,7 @@ Builders return msgspec Structs (registered in `documents.py`). Each takes the
 | Function | Document |
 |---|---|
 | `capture_summary(capture, *, window, store=None)` | `capture.v1`: `capture, cluster, window {mode, since, until}, nodes[{node, set {id, name}, first_ts, last_ts, coverage {since, until}, gaps [[since, until]], entries, errors, warnings, errors_per_hour, warnings_per_hour, top_error {signature, template, count} \| null, verdict \| null, baseline \| null, events}], skew [{a, b, offset_ms, pairs}]`. `verdict`/`baseline` are filled only when `store` is given (per-node triage) |
-| `cluster_timeline(capture, *, window, bucket="1h", signature=None)` | `cluster-timeline.v1`: `bucket, buckets [iso], nodes {NODE: {levels {LEVEL: [n…]}, coverage [first_idx, last_idx] \| null}}`; with `signature`, `levels` has only `"count"` |
+| `cluster_timeline(capture, *, window, bucket="1h", signature=None, where=None)` | `cluster-timeline.v1`: `bucket, buckets [iso], nodes {NODE: {levels {LEVEL: [n…]}, coverage [first_idx, last_idx] \| null}}`; with `signature`, `levels` has only `"count"` |
 | `matrix(capture, *, window, where=None, spread=None, node=None, sort="count", limit=50, offset=0, skew_min=4.0)` | `matrix.v1`: `total, offset, truncated, nodes [..], items [{signature, template, level, level_name, logger, exception_type, total, per_node {NODE: {count, rate_per_hour, first_seen, last_seen}}, spread: "all"\|"only"\|"skewed", skew: float \| null, first_node, lead_ms \| null}]` |
 | `events(capture, *, window, kinds=None)` | `events.v1`: `items [{node, ts, kind, subject_node, signature, entry_id, text}]`, `pairs [{a {node, kind}, b {node, kind}, count, of, median_lag_ms, examples [[ts_a, ts_b]]}]` |
 | `interactions(capture, *, window, delta_s=300)` | `interactions.v1`: `mentions [{from, to, count, groups [sig]}], co_bursts [{a {node, signature, template}, b {node, signature, template}, hits, of, median_lag_ms, lift}], concurrent_jobs [{job, nodes [..], slots, examples [ts]}], sessions [{nodes [a, b], count}]` |

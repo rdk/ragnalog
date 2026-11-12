@@ -42,7 +42,7 @@ def ingest(
     PATHs are files, directories or ZIP files (directories are scanned
     non-recursively for *.log*; rotated files x.log.N (also gzipped, x.log.N.gz,
     identified by its decompressed content) are read oldest first; a
-    ZIP is extracted into the store, job.json and *.log* files only, at most
+    ZIP is extracted into the data directory, job.json and *.log* files only, at most
     32 GiB, and removed afterwards). Files found in a directory that the format
     does not recognise in their first 200 lines (access, GC or JSON logs next
     to atlassian-jira.log) are skipped and listed in "ingest.skipped", and so
@@ -89,14 +89,14 @@ def ingest(
     gets the node, cluster and capture it lacks); "ingest.warnings" then says
     when --name was ignored (also on stderr).
 
-    Without --store and ATLAS_LOG_STORE the store is ./.atlas-log; inside a git
+    Without --store and ATLAS_LOG_STORE the data directory is ./.atlas-log; inside a git
     work tree it is not created (error "store_error": real logs could be
     committed), but an existing ./.atlas-log is used.
 
     Exit codes: 0 ok; 1 unknown --format, bad option, bad ZIP, a --split that
     does not fit the input, or --node with a split; 2 no files found, format
     not detected, a large named file not in the format, or no entries parsed
-    (manifest still printed); 3 store error (including a refused default store
+    (manifest still printed); 3 store error (including a refused default data directory
     inside a git work tree).
 
     Args:
@@ -223,7 +223,7 @@ def label(
 
 
 def parse(*paths: Path, format: str | None = None, limit: int = 0, force: bool = False) -> int:
-    """Parse log files and stream the entries as JSON Lines to stdout (no store).
+    """Parse log files and stream the entries as JSON Lines to stdout (no data directory).
 
     Always writes JSONL, one entry per line, regardless of --output:
       {"id", "format", "timestamp" (ISO 8601 with offset), "level" (name),
@@ -328,7 +328,7 @@ def upgrade(*logsets: str, all: bool = False) -> None:
 
     Args:
         logsets: Log sets to upgrade (id, unique id prefix or name).
-        all: Upgrade every set in the store.
+        all: Upgrade every set in the data directory.
 
     """
     doc = service_ingest.upgrade(ctx.store(), logsets, all_sets=all, front="cli")

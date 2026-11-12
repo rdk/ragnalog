@@ -223,6 +223,23 @@ def test_an_explicit_window_is_clamped_to_the_logs(client: TestClient, tmp_path:
     assert bucket.status_code == 400
 
 
+def test_capture_timeline_takes_the_entry_filters(client: TestClient, tmp_path: Path) -> None:
+    _upload(client, export_zip(tmp_path / "export.zip"), cluster="jira-test")
+    url = f"/api/captures/capture:{JOB_ID}/timeline"
+
+    def total(params: dict[str, str]) -> int:
+        res = client.get(url, params={"bucket": "1d", "window": "union", **params})
+        assert res.status_code == 200, res.text
+        nodes = res.json()["nodes"].values()
+        return sum(sum(s) for n in nodes for s in n["levels"].values())
+
+    whole = total({})
+    assert 0 < total({"min_level": "ERROR"}) < whole
+    assert total({"thread": "no-such-thread"}) == 0
+    assert client.get(url, params={"node": "nope"}).status_code == 400
+    assert client.get(url, params={"level": "LOUD"}).status_code == 400
+
+
 def test_warm_builds_the_newest_capture_page(
     client: TestClient, store_dir: Path, tmp_path: Path
 ) -> None:

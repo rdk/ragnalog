@@ -117,7 +117,7 @@ class ErrorInfo(Struct, kw_only=True):
         ]
         | UnsetType
     ) = UNSET
-    store: Annotated[str, _d("The store searched (CLI, unknown set).")] | UnsetType = UNSET
+    store: Annotated[str, _d("The data directory searched (CLI, unknown set).")] | UnsetType = UNSET
     candidates: (
         Annotated[list[str], _d("Matching signatures of an ambiguous prefix (up to 5).")]
         | UnsetType
@@ -226,9 +226,9 @@ class SetItem(Struct, kw_only=True):
 
 
 class Sets(Struct, kw_only=True, tag_field="schema", tag="sets.v1"):
-    """The log sets of the store, newest first: `sets`, `GET /api/sets`."""
+    """The log sets of the data directory, newest first: `sets`, `GET /api/sets`."""
 
-    store: Annotated[str, _d("CLI: the store path; API: the store directory's name.")]
+    store: Annotated[str, _d("CLI: the data directory path; API: the data directory's name.")]
     count: Annotated[int, _d("Number of items.")]
     items: Annotated[
         list[SetItem],
@@ -323,7 +323,7 @@ class CaptureItem(Struct, kw_only=True):
 
 
 class Captures(Struct, kw_only=True, tag_field="schema", tag="captures.v1"):
-    """The captures of the store, newest last_ts first: `captures`, `GET /api/captures`."""
+    """The captures of the data directory, newest last_ts first: `captures`, `GET /api/captures`."""
 
     count: Annotated[int, _d("Number of items.")]
     items: Annotated[
@@ -618,7 +618,7 @@ class Health(Struct, kw_only=True, tag_field="schema", tag="health.v1"):
     """Liveness of the web app: `GET /api/health`."""
 
     status: Annotated[Literal["ok"], _d("Always ok.")]
-    sets: Annotated[int, _d("Sets in the store.")]
+    sets: Annotated[int, _d("Sets in the data directory.")]
 
 
 class Schema(Struct, kw_only=True, tag_field="schema", tag="schema.v1"):

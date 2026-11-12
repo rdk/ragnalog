@@ -115,5 +115,5 @@ def schema(name: str | None, *, front: Front) -> Doc:
 
 
 def health(sets: Sets) -> Doc:
-    """``health.v1``: the store is readable; how many sets it holds."""
+    """``health.v1``: the data directory is readable; how many sets it holds."""
     return {"schema": "health.v1", "status": "ok", "sets": len(sets.manifests())}

@@ -10,6 +10,21 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Changed
+
+- Docs, help, messages and the web app call the folder that keeps the log sets the "data directory"
+  instead of "the store"; `--store`, `ATLAS_LOG_STORE`, `store_error` and the `store` keys are unchanged.
+- `timeline` of a capture (and `GET /api/captures/{ref}/timeline`) takes the filters of
+  `entries` and `--node`, like a set's; the entries page's chart applies them for captures
+  too and no longer says "not filtered by …".
+
+### Development
+
+- CI no longer runs on pushes and pull requests (by hand, and before each release, it still
+  does); `pytest` gained browser smoke tests of every page on the demo logs and a check that
+  every quoted version matches the package's; `RELEASING.md` describes a release;
+  `scripts/screenshots.mjs` refreshes the README images; Dependabot proposes monthly updates.
+
 ## [0.4.1] - 2026-11-11
 
 No stored-format change: sets built by 0.4.0 stay comparable.

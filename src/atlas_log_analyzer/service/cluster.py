@@ -51,6 +51,7 @@ Rules and thresholds (docs/cluster.md, sections 4, 6, 7):
 from __future__ import annotations
 
 import bisect
+import dataclasses
 import re
 import statistics
 from collections import defaultdict
@@ -944,8 +945,60 @@ def _level_case() -> str:
     )
 
 
+def _filtered_rows(
+    db: _Db, window: Window, size: int, signature: str | None, where: EntryFilter
+) -> list[tuple[Any, ...]]:
+    """``(node, bucket, name, count)`` of the entries ``where`` keeps (the polars filters)."""
+    import polars as pl
+
+    from atlas_log_analyzer.store.levels import InvalidLevel
+
+    if signature is not None:
+        where = dataclasses.replace(where, signature=signature)
+    try:
+        predicate = where.predicate()
+    except InvalidLevel as exc:
+        raise OpError("invalid_level", str(exc)) from exc
+    lvl = pl.col("level")
+    name = (
+        pl.when(lvl >= 50)
+        .then(pl.lit("ERROR"))
+        .when(lvl >= 40)
+        .then(pl.lit("WARN"))
+        .when(lvl >= 30)
+        .then(pl.lit("INFO"))
+        .when(lvl >= 10)
+        .then(pl.lit("DEBUG"))
+        .otherwise(pl.lit("OTHER"))
+    )
+    cond = pl.col("ts").is_between(window.since, window.until, closed="both")
+    if predicate is not None:
+        cond = cond & predicate
+    rows: list[tuple[Any, ...]] = []
+    for m in db.capture.nodes:
+        df = (
+            m.logset.entries_lazy()
+            .filter(cond)
+            .select(
+                (pl.col("ts").dt.epoch("ms") // size).alias("b"),
+                pl.lit("count").alias("n") if signature is not None else name.alias("n"),
+            )
+            .group_by("b", "n")
+            .agg(pl.len().alias("c"))
+            .collect()
+        )
+        rows.extend((m.node, b, n, c) for b, n, c in df.iter_rows())
+    return rows
+
+
 def _timeline(
-    db: _Db, window: Window, bucket: str, size: int, signature: str | None, front: Front
+    db: _Db,
+    window: Window,
+    bucket: str,
+    size: int,
+    signature: str | None,
+    front: Front,
+    where: EntryFilter | None = None,
 ) -> ClusterTimelineBody:
     from atlas_log_analyzer.report.payload import LEVEL_BUCKETS
     from atlas_log_analyzer.store.logset import MAX_HISTOGRAM_BUCKETS
@@ -960,7 +1013,9 @@ def _timeline(
         )
     names = ("count",) if signature is not None else LEVEL_BUCKETS
     levels = {node: {name: [0] * n for name in names} for node in db.capture.node_ids}
-    if signature is not None:
+    if where is not None:
+        rows = _filtered_rows(db, window, size, signature, where)
+    elif signature is not None:
         rows = db.rows(
             f"SELECT node, epoch_ms(ts) // {size}, 'count', count(*) FROM entries "
             f"WHERE {_WINDOW} AND signature = ? GROUP BY ALL",
@@ -997,13 +1052,16 @@ def cluster_timeline(
     window: Window,
     bucket: str = "1h",
     signature: str | None = None,
+    where: EntryFilter | None = None,
     front: Front = "api",
 ) -> ClusterTimeline:
     """``cluster-timeline.v1``: entries per bucket and node, by level or of one group.
 
     ``bucket`` is ``<n><unit>`` as for ``atlas-log timeline`` (``15m``, ``1h``, ``1d``),
     aligned to the epoch in UTC; buckets run contiguously over the window.
-    ``signature`` (or a unique prefix) counts one group instead of the levels.
+    ``signature`` (or a unique prefix) counts one group instead of the levels. ``where``
+    keeps only the entries matching its filters (as ``entries``; its ``signature``,
+    ``since`` and ``until`` are ignored: the window and ``signature`` give those).
 
     Raises:
         OpError: ``invalid_value`` for a bad bucket or too many buckets; reasons
@@ -1013,7 +1071,13 @@ def cluster_timeline(
     size = _bucket(bucket, front)
     with _Db(capture) as db:
         sig = _resolve_signature(db, signature, front) if signature is not None else None
-        body = _timeline(db, window, bucket, size, sig, front)
+        if where is not None:
+            from atlas_log_analyzer.store.filters import EntryFilter as Filter
+
+            where = dataclasses.replace(where, signature=None, since=None, until=None)
+            if where == Filter():
+                where = None
+        body = _timeline(db, window, bucket, size, sig, front, where)
     return ClusterTimeline(**_fields(body))
 
 

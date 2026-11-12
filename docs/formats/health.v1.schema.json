@@ -17,7 +17,7 @@
       ]
     },
     "sets": {
-      "description": "Sets in the store.",
+      "description": "Sets in the data directory.",
       "type": "integer"
     }
   },

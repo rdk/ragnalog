@@ -77,7 +77,7 @@ def lock_server(root: Path) -> FileLock | None:
     except OSError:  # no lock file (read-only store) or no locking: run unlocked
         return None
     raise StoreInUse(
-        f"another atlas-log server is already using the store {root}; stop it or serve "
+        f"another atlas-log server is already using the data directory {root}; stop it or serve "
         "another --store"
     )
 

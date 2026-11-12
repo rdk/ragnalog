@@ -15,7 +15,7 @@ from atlas_log_analyzer.cli import params, render
 from atlas_log_analyzer.service import capture_queries as cq
 from atlas_log_analyzer.service.capture_queries import CaptureWindow
 from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page, blank
+from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page
 
 # polars, DuckDB and rich are imported by the code that needs them.
 
@@ -74,21 +74,6 @@ def capture(
     out.document(doc, items=None, table=lambda console: render.capture(console, doc))
 
 
-_SET_ONLY = (
-    "level",
-    "min_level",
-    "coarse_signature",
-    "logger",
-    "user",
-    "thread",
-    "request_id",
-    "contains",
-    "with_exception",
-    "exception",
-)
-"""Entry filters the timeline of a capture lacks."""
-
-
 def timeline(
     ref: str,
     /,
@@ -118,20 +103,19 @@ def timeline(
     has only "count". Table mode prints one row per bucket (a capture: one
     column per node).
 
-    Exit codes: 0 ok; 1 bad option, bucket, level or time, --level with a
-    capture, --window with a set, or an ambiguous signature prefix; 2 unknown
-    capture or group; 3 unknown set or store error.
+    Exit codes: 0 ok; 1 bad option, bucket, level or time, --window with
+    a set, --node with a set, several signatures of a capture, or an ambiguous
+    signature prefix; 2 unknown capture or group; 3 unknown set or store error.
 
-    A set takes all the filters of `entries` (--level, --min-level, --logger,
-    --user, --thread, --request-id, --contains, --with-exception, --exception,
+    Both take the filters of `entries` (--level, --min-level, --logger, --user,
+    --thread, --request-id, --contains, --with-exception, --exception,
     --coarse-signature, --signature, --since, --until), so the chart of a
-    filtered listing counts what the listing shows. A capture takes only
-    --signature, --since and --until; any other filter is a usage error.
+    filtered listing counts what the listing shows. A capture also takes
+    --node (keep those nodes), and one --signature only (no NODE:SIGNATURE).
 
     Args:
         ref: Log set, or capture (capture:ID, cluster:NAME[@YYYY-MM-DD]).
-        q: Entry filters (the options --signature to --exception, see EntryQuery; a capture
-            takes --signature, --since and --until only).
+        q: Entry filters (the options --signature to --node, see EntryQuery).
         bucket: Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d).
         window: overlap or union (a capture only; default overlap).
         by_node: Per node of the set's capture (a set in no capture: that one node).
@@ -139,19 +123,8 @@ def timeline(
     """
     store, out = ctx.store(), ctx.out()
     if by_node or cq.names_capture(store, ref):
-        if blank(q.node) is not None:
-            raise OpError("usage", "--node does not apply to a timeline")
-        for name in _SET_ONLY:
-            value = getattr(q, name)
-            if value is True or (isinstance(value, str) and blank(value) is not None):
-                flag = "--" + name.replace("_", "-")
-                raise OpError(
-                    "usage",
-                    f"{flag} applies to the timeline of a set, not of a capture",
-                    hint="use --signature for one group",
-                )
         w = CaptureWindow(window=window or "overlap", since=q.since, until=q.until)
-        doc = cq.timeline(store, ref, w, bucket=bucket, signature=q.signature, front="cli")
+        doc = cq.timeline(store, ref, w, bucket=bucket, q=q, front="cli")
         out.document(doc, items=None, table=lambda console: render.cluster_timeline(console, doc))
         return
     if window is not None:

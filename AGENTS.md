@@ -40,8 +40,14 @@ tests/
   fixtures/jira/*.log        masked Jira log excerpts shared by all tests
   fixtures/foreign/*.log     non-Jira text (access, GC logs) no format may claim
   cli/data/mini.log          10-entry Jira log used by the CLI end-to-end tests
+  browser/                   smoke tests of every web page in headless Edge/Chrome on the
+                             demo logs (smoke.mjs; skip without Node 22+ or a browser)
+  test_version.py            every quoted version (README, docs, CHANGELOG) = pyproject
 docs/        requirements, research, design, cli reference,
-             formats/*.v1.md and *.v1.schema.json (generated)
+             formats/*.v1.md and *.v1.schema.json (generated), img/ (README screenshots)
+scripts/     demo_logs.py (synthetic demo logs), screenshots.mjs (docs/img from them),
+             make_fixture.py (cut and mask a fixture from a real log)
+RELEASING.md how to cut a release (version strings, tag, release workflow, pitfalls)
 ```
 
 ## Dependency direction
@@ -63,15 +69,18 @@ clear `ImportError`.
 ```sh
 uv sync --all-extras --dev           # environment
 uv run ruff check .                  # lint (rules incl. D docstrings, ANN annotations)
-uv run ruff format .                 # format (CI runs `ruff format --check .`)
+uv run ruff format .                 # format (checks run `ruff format --check .`)
 uv run mypy                          # strict type check of the package
 uv run pytest                        # all tests; `uv run pytest tests/cli -q` for one package
 uv run atlas-log --help              # the CLI from the working tree
 uv run python docs/formats/generate.py   # regenerate docs/formats (md + JSON Schema) and docs/cli.md lists
 ```
 
-CI (`.github/workflows/ci.yml`) runs lint, format check, mypy and pytest on
-ubuntu-latest and windows-latest.
+CI (`.github/workflows/ci.yml`) does not run on pushes or pull requests: run the checks
+above locally before you push (the browser smoke tests are part of `pytest`). It can be
+started by hand, and the release workflow runs it (ubuntu-latest and windows-latest) before
+it publishes a tag; see `RELEASING.md`. UI changes: refresh the README screenshots with
+`scripts/screenshots.mjs` on the demo logs, never from real logs.
 
 ## Conventions
 

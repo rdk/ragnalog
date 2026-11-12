@@ -1,13 +1,13 @@
 # sets.v1
 
-The log sets of the store, newest first: `sets`, `GET /api/sets`.
+The log sets of the data directory, newest first: `sets`, `GET /api/sets`.
 
 Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`sets.v1.schema.json`](sets.v1.schema.json), also `atlas-log schema sets.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
 | `schema` | `"sets.v1"` | yes |  |
-| `store` | `string` | yes | CLI: the store path; API: the store directory's name. |
+| `store` | `string` | yes | CLI: the data directory path; API: the data directory's name. |
 | `count` | `integer` | yes | Number of items. |
 | `items` | `list<SetItem>` | yes | The sets; with --brief only id, name, first_ts, last_ts, counts, summary, stale, node, capture. |
 | `items[].id` | `string` | yes | xxh3-64 hex of the LF-joined sorted source xxh3 digests. |

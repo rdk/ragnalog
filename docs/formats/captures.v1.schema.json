@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "captures.v1.schema.json",
   "title": "captures.v1",
-  "description": "The captures of the store, newest last_ts first: `captures`, `GET /api/captures`.",
+  "description": "The captures of the data directory, newest last_ts first: `captures`, `GET /api/captures`.",
   "type": "object",
   "properties": {
     "schema": {

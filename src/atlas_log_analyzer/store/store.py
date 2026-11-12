@@ -489,7 +489,7 @@ class Store:
                 locked = None
             if locked is False:
                 raise StoreError(
-                    f"store {self.root} is locked by another writer "
+                    f"data directory {self.root} is locked by another writer "
                     f"(waited {WRITE_LOCK_TIMEOUT_S:g} s)"
                 )
             try:

@@ -177,7 +177,7 @@
 
     document.querySelectorAll("[data-delete]").forEach((b) => b.addEventListener("click", () => {
       const id = b.getAttribute("data-delete");
-      if (!confirm("Delete log set " + b.getAttribute("data-label") + "? This removes its Parquet files from the store.")) return;
+      if (!confirm("Delete log set " + b.getAttribute("data-label") + "? This removes its Parquet files from the data directory.")) return;
       b.disabled = true;
       fetch("/api/sets/" + encodeURIComponent(id), { method: "DELETE" })
         .then((r) => (r.ok ? location.reload() : r.json().catch(() => ({})).then((d) => {

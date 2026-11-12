@@ -36,7 +36,7 @@ class Context:
 
     @property
     def store(self) -> Path:
-        """Store directory."""
+        """Data directory."""
         return self.settings.store
 
     @property
@@ -91,7 +91,7 @@ def _in_git_work_tree(path: Path) -> Path | None:
 
 
 def store(*, create: bool = False) -> Store:
-    """Return the store of this invocation.
+    """Return the store (data directory) of this invocation.
 
     With ``create`` (commands that may create the store directory) the implicit
     default ``./.atlas-log`` is refused inside a git work tree unless it exists
@@ -103,15 +103,15 @@ def store(*, create: bool = False) -> Store:
         if repo is not None:
             raise OpError(
                 "store_error",
-                f"refusing to create the default store {ctx.store.as_posix()} inside the git "
-                f"work tree {repo.as_posix()}: a store inside a repository risks committing "
-                "real logs",
+                f"refusing to create the default data directory {ctx.store.as_posix()} inside "
+                f"the git work tree {repo.as_posix()}: a data directory inside a repository "
+                "risks committing real logs",
                 hint=f"pass --store DIR outside the repository or set {STORE_ENV}",
             )
     if ctx.store.exists() and not ctx.store.is_dir():
         raise OpError(
             "store_error",
-            f"the store {ctx.store.as_posix()} is a file, not a directory",
+            f"the data directory {ctx.store.as_posix()} is a file, not a directory",
             hint=f"pass --store DIR (a directory) or set {STORE_ENV}",
         )
     from atlas_log_analyzer.store.store import Store

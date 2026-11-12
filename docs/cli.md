@@ -16,7 +16,7 @@ Typical flow:
    an entry) drill into one group.
 5. `diff A B --rate` compares two sets.
 
-`sets --brief` and `set SET` show what is in the store. A Jira Data Center
+`sets --brief` and `set SET` show what is in the data directory. A Jira Data Center
 cluster export (one ZIP with `job.json` and `NODE_atlassian-jira.log*`) becomes
 one set per node; `captures` lists such sets collected together and `label`
 sets a node, cluster or capture by hand (`cluster.md`). `capture`, `matrix`,
@@ -36,7 +36,7 @@ Global options may appear before or after the command name.
 | Option | Default | Meaning |
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
-| `--store DIR` | env `ATLAS_LOG_STORE` (a blank `--store` or variable is ignored), else `./.atlas-log` | Store directory holding log sets. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a store in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
+| `--store DIR` | env `ATLAS_LOG_STORE` (a blank `--store` or variable is ignored), else `./.atlas-log` | The data directory, the folder that keeps the log sets (older text calls it the store); the option and variable that name it keep the name `--store` / `ATLAS_LOG_STORE`. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a data directory in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -52,7 +52,7 @@ blank variable counts as unset. A number that does not parse is error
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ATLAS_LOG_STORE` | `./.atlas-log` | Store directory holding the log sets (`--store` wins). |
+| `ATLAS_LOG_STORE` | `./.atlas-log` | Data directory holding the log sets (`--store` wins). |
 | `ATLAS_LOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
 | `ATLAS_LOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
 | `ATLAS_LOG_TOKEN` | none | `serve`: API token (`--token` wins). |
@@ -119,7 +119,7 @@ be typed in upper case.
 | 0 | OK (an empty listing is OK). |
 | 1 | Usage error: bad option/argument, unknown format, invalid level, SQL error, incompatible sets in `diff` without `--force`, ambiguous signature prefix, missing optional dependency. |
 | 2 | Nothing found / parse failure: no input files, format not detected, a large named file not in the format, no entries parsed, no entries for a signature, file not found. |
-| 3 | Store error: unknown log set, ambiguous reference, corrupt manifest, unsupported schema version, default store refused inside a git work tree. |
+| 3 | Store error (data directory): unknown log set, ambiguous reference, corrupt manifest, unsupported schema version, default data directory refused inside a git work tree. |
 
 In `json`/`jsonl` mode errors are written to **stdout** as
 
@@ -159,7 +159,7 @@ Error codes, with the CLI's exit code and the web API's HTTP status (one table i
 | `not_in_format` | 2 | 422 | A named file over 64 MiB is not in the format (force reads it). |
 | `no_entries` | 2 | 422 | No entries could be parsed. |
 | `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
-| `store_error` | 3 | 500 | Store failure: corrupt manifest or damaged set, newer schema, store refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
+| `store_error` | 3 | 500 | Data directory failure: corrupt manifest or damaged set, newer schema, data directory refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
 | `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
 | `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
 
@@ -328,7 +328,7 @@ ZIP, a `--split` that does not fit, `--node` with a split; 2 no files, format
 not detected, a large named file not in the format (`not_in_format`), or zero
 entries (manifest still printed); 3.
 
-**ZIP files** are extracted into the store (`<store>/.spool/`) and removed
+**ZIP files** are extracted into the data directory (`<data dir>/.spool/`) and removed
 afterwards, also after an error or a cancel (what a killed ingest left is
 deleted by the next write a day later); error messages name the ZIP, not the
 spool. Only `job.json` and `*.log*` members are
@@ -415,7 +415,7 @@ empty); 3.
 
 ### `captures [--brief]`
 
-The captures in the store: the sets that share a `capture` id (one cluster log
+The captures in the data directory: the sets that share a `capture` id (one cluster log
 export, one `ingest` that split its input, or `label --capture`), newest
 `last_ts` first. Reads the manifests only (no polars); the twin of
 `GET /api/captures`.
@@ -464,7 +464,7 @@ capture; 3 unknown set.
 
 Sets the cluster node, cluster and capture of a stored set and prints its
 manifest (`logset.v1`); the twin of `POST /api/sets/{ref}/label`. Only
-`manifest.json` is rewritten (under the store's write lock): the id, the name
+`manifest.json` is rewritten (under the data directory's write lock): the id, the name
 and the data stay. An option that is not given keeps its value, an empty one
 (`--node ""`) clears it. Values are letters, digits, `_`, `.` and `-`, at most
 128. Exit: 0; 1 no option or a bad value (`usage`, `invalid_value`); 3 unknown
@@ -697,7 +697,7 @@ busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
 
-### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--since] [--until] [--window overlap|union] [--by-node]`
+### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--node] [--since] [--until] [--window overlap|union] [--by-node]`
 
 Entries per time bucket (`<n>s|m|h|d`, aligned to the epoch in UTC). A set
 gives `timeline.v1`, the twin of `GET /api/sets/{ref}/timeline` (it takes every filter of
@@ -706,8 +706,10 @@ listing shows). A capture reference,
 or a set with `--by-node` (its capture; a set in no capture is one node), gives
 `cluster-timeline.v1`, the twin of `GET /api/captures/{ref}/timeline`: per node
 and bucket the entries by level, or with `--signature` those of one group,
-over the window (`--window`, `--since`, `--until`); it takes no other filter
-than `--signature` (any other, `--node` too, is a usage error).
+over the window (`--window`, `--since`, `--until`). It takes the same filters of
+`entries` as a set (the counts are those of the filtered listing), and `--node` keeps
+those nodes only; `--signature` names one group (several, or `NODE:SIGNATURE`, is a
+usage error; `--node` with a set is one too).
 
 ```json
 {"schema": "timeline.v1", "logset": "…", "bucket": "1h", "count": 24, "items": [{"bucket", "count"}]}
@@ -957,7 +959,7 @@ capture; 3.
 
 ### `parse PATH... [--format F] [--limit 0] [--force]`
 
-Streams entries as JSON Lines to stdout without a store; `--output` is ignored.
+Streams entries as JSON Lines to stdout without a data directory; `--output` is ignored.
 Files are selected and bounded as by `ingest` (`--force` likewise).
 
 ```json
@@ -997,7 +999,7 @@ stored rows alone (the log files are not needed): banners are attached to the
 entry they announce (`context.preamble`, see `ingest`), entries with a blank
 message get their title from the body, and `entry_count`, the per-source counts
 and time ranges and the groups follow. The result equals ingesting the same
-files again. On the sample store (four sets, 2.1M entries) 122,538 banner
+files again. On the sample data directory (four sets, 2.1M entries) 122,538 banner
 entries were attached and 49 stayed; each set took 2–6 s.
 
 Sets built before Jira format version 3 (`jira@2|…`) are stale too. Version 3
@@ -1010,7 +1012,7 @@ Masking rules version 2 (`…|mask2`) masks an IP address that ends a sentence
 (`from 10.0.0.1.`) whole; `upgrade` re-signs for it.
 
 A set ingested from a ZIP before 0.2.0 named its files by the spool directory they
-were extracted to (`<store>/.spool/<id>/<zip stem>/<member>`, removed after the
+were extracted to (`<data dir>/.spool/<id>/<zip stem>/<member>`, removed after the
 ingest). `upgrade` renames them to `<zip stem>.zip/<member>` in the entries, groups
 and manifest, also for a set that is otherwise current, and adds
 `"renamed_sources": N` to its item.
@@ -1093,7 +1095,7 @@ A set whose `manifest.json` cannot be read is removed by its directory name
 
 ### `serve [--host 127.0.0.1] [--port 8321] [--token T] [--max-upload-mb 2048] [--allowed-host NAMES] [--reload]`
 
-Runs the web app over the store until interrupted (needs the `web` extra). Pages:
+Runs the web app over the data directory until interrupted (needs the `web` extra). Pages:
 `/` (sets with triage verdicts and upload), `/sets/SET` (report, `?compare=auto|SET`),
 `/sets/SET/triage`; JSON API under `/api` with the same documents as this CLI and
 OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
@@ -1105,11 +1107,11 @@ cache hit). On a loopback `--host` only loopback `Host` names (and the
 `--allowed-host` names, `ATLAS_LOG_ALLOWED_HOSTS`) are answered, and
 requests that change something from a page of another site are refused (see
 `docs/webapp.md`, Security). A `--host` off loopback without a token prints a
-warning on stderr. Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per store: a
-second `serve` on a store that is being served fails with `store_error`.
+warning on stderr. Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per data directory: a
+second `serve` on a data directory that is being served fails with `store_error`.
 
 Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad option; 3
-(also: the store is served already).
+(also: the data directory is served already).
 
 ### `version`
 

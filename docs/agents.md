@@ -43,7 +43,7 @@ printf '%s\n' '["groups", "today", "--brief", "--limit", "5"]' '["show", "today"
 
 ## Conventions
 
-- Set `ATLAS_LOG_STORE` (or pass `--store DIR`) to a directory outside any
+- Set `ATLAS_LOG_STORE` (or pass `--store DIR`) to a data directory (the folder that keeps the log sets) outside any
   repository; the implicit `./.atlas-log` is refused inside a git work tree.
 - Output is JSON whenever stdout is not a terminal; force it with
   `--output json` (one document) or `--output jsonl` (one row per line).
@@ -60,7 +60,7 @@ printf '%s\n' '["groups", "today", "--brief", "--limit", "5"]' '["show", "today"
 - Errors: `{"schema": "error.v1", "error": {"code": ..., "message": ...}}` on
   stdout (`"reason"`, when present, is the same in the CLI and the web API, e.g.
   `set_not_found`); exit codes `0` ok, `1` usage, `2` nothing found / parse failure,
-  `3` store error. Diagnostics go to stderr (`--quiet` silences them).
+  `3` store error (data directory). Diagnostics go to stderr (`--quiet` silences them).
 - Long entries are cut in JSON: `raw` and `body` keep 4000 characters
   (`--max-raw N`, `0` = all); cut rows carry `"body_truncated": true` and
   `"raw_chars"`. `--raw` (plain text) is never cut unless `--max-raw` is given.
@@ -152,5 +152,5 @@ atlas-log groups after --contains 'issue' --columns signature,count,top_users
 keys, numbers, ids); the first `query` counts them over the whole group, the
 second counts users; `top_users` in `groups` is the top-10 list per group.
 
-The store's Parquet files (layout in the [README](../README.md#how-it-works)) can also be
+The data directory's Parquet files (layout in the [README](../README.md#how-it-works)) can also be
 read directly with DuckDB, polars or pandas.

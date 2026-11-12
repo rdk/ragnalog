@@ -229,6 +229,37 @@ def test_cluster_timeline(capture: C.Capture, window: C.Window) -> None:
     assert "signature" not in d
 
 
+def test_cluster_timeline_takes_entry_filters(capture: C.Capture, window: C.Window) -> None:
+    whole = doc(C.cluster_timeline(capture, window=window))
+    same = doc(C.cluster_timeline(capture, window=window, where=EntryFilter()))
+    assert same == whole
+    errors = doc(C.cluster_timeline(capture, window=window, where=EntryFilter(level="ERROR")))
+    n1 = errors["nodes"]["NODE1"]["levels"]
+    assert n1["ERROR"] == [6, 5, 3] and not any(n1["WARN"] + n1["INFO"] + n1["DEBUG"])
+    assert errors["nodes"]["NODE1"]["coverage"] == whole["nodes"]["NODE1"]["coverage"]
+    nothing = doc(C.cluster_timeline(capture, window=window, where=EntryFilter(thread="no-such")))
+    assert not any(sum(s) for n in nothing["nodes"].values() for s in n["levels"].values())
+    deadlock = next(
+        r for r in C.matrix(capture, window=window).items if r.template.startswith("Dead")
+    )
+    both = doc(
+        C.cluster_timeline(
+            capture,
+            window=window,
+            signature=deadlock.signature[:6],
+            where=EntryFilter(min_level="WARN"),
+        )
+    )
+    assert both["signature"] == deadlock.signature
+    assert both["nodes"]["NODE1"]["levels"] == {"count": [6, 3, 3]}
+    none = doc(
+        C.cluster_timeline(
+            capture, window=window, signature=deadlock.signature, where=EntryFilter(contains="~~")
+        )
+    )
+    assert none["nodes"]["NODE1"]["levels"] == {"count": [0, 0, 0]}
+
+
 def test_cluster_timeline_of_one_group_and_buckets(capture: C.Capture, window: C.Window) -> None:
     deadlock = next(
         r for r in C.matrix(capture, window=window).items if r.template.startswith("Dead")

@@ -255,9 +255,13 @@ uv sync --all-extras --dev
 uv run ruff check . && uv run ruff format --check . && uv run mypy && uv run pytest
 ```
 
-CI runs the same on Ubuntu and Windows. [`AGENTS.md`](AGENTS.md) is the guide for coding
-agents (and humans) working on the code: layout, conventions and data hygiene. Fixtures are
-small, hand-masked excerpts; real logs never enter the repository.
+`pytest` includes browser smoke tests of every page on the demo logs (`tests/browser`; they
+skip without Node 22+ and Edge or Chrome). CI does not run on pushes; the release workflow
+runs the same checks on Ubuntu and Windows before it publishes a tag (see
+[`RELEASING.md`](RELEASING.md)), and `scripts/screenshots.mjs` refreshes the README images
+from the demo logs. [`AGENTS.md`](AGENTS.md) is the guide for coding agents (and humans)
+working on the code: layout, conventions and data hygiene. Fixtures are small, hand-masked
+excerpts; real logs never enter the repository.
 
 ## License
 

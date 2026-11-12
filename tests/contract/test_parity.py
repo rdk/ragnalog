@@ -393,6 +393,21 @@ CLUSTER_CASES: list[Case] = [
         ["timeline", "acme_node1", "--by-node", "--bucket", "15m", "--signature", "{pfx}"],
         "/api/captures/acme_node1/timeline?bucket=15m&signature={pfx}",
     ),
+    Case(
+        "cluster-timeline-filters",
+        ["timeline", "cluster:acme", "--bucket", "30m", "--min-level", "WARN", "--contains", "a"],
+        "/api/captures/cluster:acme/timeline?bucket=30m&min_level=WARN&contains=a",
+    ),
+    Case(
+        "cluster-timeline-node-window",
+        ["timeline", "cluster:acme", "--node", "NODE1", "--window", "union", "--thread", "x"],
+        "/api/captures/cluster:acme/timeline?node=NODE1&window=union&thread=x",
+    ),
+    Case(
+        "cluster-timeline-level-unknown",
+        ["timeline", "cluster:acme", "--level", "UNKNOWN"],
+        "/api/captures/cluster:acme/timeline?level=UNKNOWN",
+    ),
     Case("set-timeline", ["timeline", "acme_node2"], "/api/sets/acme_node2/timeline"),
     Case(
         "set-timeline-filters",

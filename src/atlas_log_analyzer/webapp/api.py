@@ -155,7 +155,7 @@ async def label_set(
 
 @router.get("/captures")
 def list_captures(state: StateDep, brief: bool = False) -> dict[str, Any]:
-    """List the captures of the store, newest first (``captures.v1``), as ``atlas-log captures``.
+    """List the captures, newest first (``captures.v1``), as ``atlas-log captures``.
 
     A capture is the sets that share a ``capture`` id (one cluster log export, one split
     ingest). ``brief`` keeps only ``node``, ``id`` and ``name`` per node.
@@ -184,15 +184,20 @@ def capture(ref: str, state: StateDep, w: CaptureWindowDep, triage: bool = True)
 def capture_timeline(
     ref: str,
     state: StateDep,
-    w: CaptureWindowDep,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
+    window: WindowMode = "overlap",
     bucket: str = "1h",
-    signature: str | None = None,
 ) -> dict[str, Any]:
     """Entries per bucket and node (``cluster-timeline.v1``), as ``timeline CAPTURE``.
 
-    By level, or of one group with ``signature`` (or a unique prefix of one).
+    By level, or of one group with ``signature`` (or a unique prefix of one). The filters
+    are those of ``/captures/{ref}/entries`` (``level``, ``min_level``, ``logger``,
+    ``user``, ``thread``, ``request_id``, ``contains``, ``with_exception``, ``exception``,
+    ``coarse_signature``); ``node`` keeps those nodes (comma-separated); ``since``/``until``
+    set the window (else ``window``).
     """
-    return capture_queries.timeline(state, ref, w, bucket=bucket, signature=signature, front="api")
+    w = CaptureWindow(window=window, since=q.since, until=q.until)
+    return capture_queries.timeline(state, ref, w, bucket=bucket, q=q, front="api")
 
 
 @router.get("/captures/{ref}/matrix")

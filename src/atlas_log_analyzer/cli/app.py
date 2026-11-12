@@ -122,7 +122,7 @@ def _meta(
     Args:
         tokens: Command and its arguments.
         output: Output mode. Default: table when stdout is a terminal, json otherwise.
-        store: Store directory holding log sets (env ATLAS_LOG_STORE, ignored when empty;
+        store: Data directory holding the log sets (env ATLAS_LOG_STORE, ignored when empty;
             default ./.atlas-log, which ingest/serve do not create inside a git work tree).
         quiet: Suppress progress and diagnostics on stderr (warnings and errors still shown).
         width: Table width; default: the terminal width, else $COLUMNS, else 160.

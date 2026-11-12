@@ -8,4 +8,4 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 |---|---|---|---|
 | `schema` | `"health.v1"` | yes |  |
 | `status` | `"ok"` | yes | Always ok. |
-| `sets` | `integer` | yes | Sets in the store. |
+| `sets` | `integer` | yes | Sets in the data directory. |
