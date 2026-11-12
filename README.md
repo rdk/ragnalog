@@ -7,7 +7,7 @@
 **Turn gigabytes of Jira Data Center logs into a few hundred groups you can read,<br>
 compare and triage, in the browser, the terminal or from an agent.**
 
-[![Release](https://img.shields.io/badge/release-v0.4.1-2f6bc7?style=flat-square)](https://github.com/rdk/atlas-log-analyzer/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.5.0-2f6bc7?style=flat-square)](https://github.com/rdk/atlas-log-analyzer/releases/latest)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/built_with-uv-de5fe9?style=flat-square&logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
 [![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/atlas-log-analyzer/pkgs/container/atlas-log-analyzer)
@@ -81,7 +81,7 @@ interfaces in the container, so give it a token:
 ```sh
 export ATLAS_LOG_TOKEN="$(openssl rand -hex 16)"
 docker run -d --name atlas-log -p 8321:8321 -v atlas-log:/data \
-  -e ATLAS_LOG_TOKEN ghcr.io/rdk/atlas-log-analyzer:0.4.1
+  -e ATLAS_LOG_TOKEN ghcr.io/rdk/atlas-log-analyzer:0.5.0
 echo "http://localhost:8321/?token=$ATLAS_LOG_TOKEN"     # open once; the token is kept
 ```
 
@@ -90,7 +90,7 @@ Upload log files on the start page, or ingest a folder with the CLI from the sam
 
 ```sh
 docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
-  ghcr.io/rdk/atlas-log-analyzer:0.4.1 ingest /in --name prod-1030
+  ghcr.io/rdk/atlas-log-analyzer:0.5.0 ingest /in --name prod-1030
 ```
 
 <details>
@@ -99,7 +99,7 @@ docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
 ```yaml
 services:
   atlas-log:
-    image: ghcr.io/rdk/atlas-log-analyzer:0.4.1
+    image: ghcr.io/rdk/atlas-log-analyzer:0.5.0
     ports: ["8321:8321"]
     environment:
       ATLAS_LOG_TOKEN: ${ATLAS_LOG_TOKEN:?set a token}
@@ -121,15 +121,15 @@ repository is used; `[web]` adds the web app, `[mine]` the optional Drain3 templ
 mining):
 
 ```sh
-uv tool install "atlas-log-analyzer[web] @ git+ssh://git@github.com/rdk/atlas-log-analyzer.git@v0.4.1"
+uv tool install "atlas-log-analyzer[web] @ git+ssh://git@github.com/rdk/atlas-log-analyzer.git@v0.5.0"
 atlas-log --version
 ```
 
 or install the wheel attached to the release:
 
 ```sh
-gh release download v0.4.1 -R rdk/atlas-log-analyzer -p '*.whl'
-uv tool install "atlas-log-analyzer[web] @ ./atlas_log_analyzer-0.4.1-py3-none-any.whl"
+gh release download v0.5.0 -R rdk/atlas-log-analyzer -p '*.whl'
+uv tool install "atlas-log-analyzer[web] @ ./atlas_log_analyzer-0.5.0-py3-none-any.whl"
 ```
 
 Then choose a data directory, the folder that keeps the log sets (outside any git

@@ -1055,7 +1055,7 @@ name (`usage`).
 of compact JSON (its budget is 16 KB), for agents:
 
 ```json
-{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.4.1", "usage": "...", "notes": [str],
+{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.5.0", "usage": "...", "notes": [str],
  "workflow": [{"run": "triage LOGSET", "purpose": "new kinds of errors since the previous set?"}, ...],
  "when": [{"run": "query LOGSET SQL", "purpose": "..."}],
  "commands": {"groups": {"usage": "LOGSET [--level str] ... [--limit int=50] ... [--brief]", "output": "groups.v1", "exit": [0, 1, 3]}, ...},
@@ -1116,7 +1116,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.4.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.5.0", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
 ```
 
 ### `batch`

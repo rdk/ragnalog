@@ -1,6 +1,6 @@
 [project]
 name = "atlas-log-analyzer"
-version = "0.4.1"
+version = "0.5.0"
 description = "Parse, group and compare application log files (Jira Data Center first)."
 readme = "README.md"
 authors = [{ name = "Radoslav Krivak" }]

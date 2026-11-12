@@ -10,6 +10,10 @@ and `atlas-log upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-12
+
+No stored-format change: sets built by 0.4.x stay comparable.
+
 ### Changed
 
 - Docs, help, messages and the web app call the folder that keeps the log sets the "data directory"
@@ -205,7 +209,8 @@ Everything below; tagged only.
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.5.0
 [0.4.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.1
 [0.4.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.0
 [0.3.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.3.0
