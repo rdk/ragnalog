@@ -74,7 +74,8 @@ repository is private, so sign in once with a token that has `read:packages`:
 echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
 ```
 
-Run the web app on port 8321 with the store in a named volume. It listens on all
+Run the web app on port 8321 with its data directory (where the log sets are kept) in a
+named volume. It listens on all
 interfaces in the container, so give it a token:
 
 ```sh
@@ -131,11 +132,12 @@ gh release download v0.4.1 -R rdk/atlas-log-analyzer -p '*.whl'
 uv tool install "atlas-log-analyzer[web] @ ./atlas_log_analyzer-0.4.1-py3-none-any.whl"
 ```
 
-Then point it at a store (a folder for the log sets, outside any git repository),
+Then choose a data directory, the folder that keeps the log sets (outside any git
+repository; the option and variable that name it are `--store` and `ATLAS_LOG_STORE`),
 ingest some logs and open the web app:
 
 ```sh
-export ATLAS_LOG_STORE=~/atlas-log-store
+export ATLAS_LOG_STORE=~/atlas-log-data
 atlas-log ingest /var/atlassian/application-data/jira/log/ --name prod-1030
 atlas-log serve                                  # http://127.0.0.1:8321/
 ```
@@ -154,9 +156,9 @@ No logs at hand? Generate the synthetic two-node cluster the screenshots use:
 
 ```sh
 uv run python scripts/demo_logs.py /tmp/demo     # two weeks, two nodes, invented data
-uv run atlas-log --store /tmp/demo-store ingest /tmp/demo/prev --cluster demo-jira --name prev
-uv run atlas-log --store /tmp/demo-store ingest /tmp/demo/week --cluster demo-jira --name week
-uv run atlas-log --store /tmp/demo-store serve
+uv run atlas-log --store /tmp/demo-data ingest /tmp/demo/prev --cluster demo-jira --name prev
+uv run atlas-log --store /tmp/demo-data ingest /tmp/demo/week --cluster demo-jira --name week
+uv run atlas-log --store /tmp/demo-data serve
 ```
 
 ## Web app
@@ -191,16 +193,17 @@ atlas-log capture cluster:jira-prod                            # the nodes side 
 atlas-log query prod-1030 "select level_name, count(*) from entries group by 1"
 ```
 
-A set is referred to by name, id or unique id prefix. Sets live in `--store DIR`, else
-`$ATLAS_LOG_STORE`, else `./.atlas-log` (never created inside a git work tree, so real
-logs cannot end up in a repository). Full reference: [`docs/cli.md`](docs/cli.md).
+A set is referred to by name, id or unique id prefix. Sets are kept in a data directory:
+`--store DIR`, else `$ATLAS_LOG_STORE`, else `./.atlas-log` (never created inside a git
+work tree, so real logs cannot end up in a repository). Full reference:
+[`docs/cli.md`](docs/cli.md).
 
 ## For agents
 
 Every command prints JSON when stdout is not a terminal (`"schema": "<name>.v1"`, rows in
-`"items"`), with stable exit codes (`0` ok, `1` usage, `2` nothing found, `3` store error)
-and an `error.v1` document with a `hint` on failure. Start with the manifest, about 10 KB of
-JSON describing the workflow and every command:
+`"items"`), with stable exit codes (`0` ok, `1` usage, `2` nothing found, `3` data directory
+error) and an `error.v1` document with a `hint` on failure. Start with the manifest, about
+10 KB of JSON describing the workflow and every command:
 
 ```sh
 atlas-log manifest                                   # how to use the tool (manifest.v1)
@@ -222,7 +225,7 @@ logger, masked message and exception chain; entries with the same signature form
 nodes, two days) compare without the raw logs.
 
 ```
-<store>/<logset-id>/
+<data directory>/<logset-id>/
 ├── manifest.json      logset.v1: sources, time range, counts, versions
 ├── entries.parquet    one row per entry (with its variables)
 ├── groups.parquet     one row per signature
