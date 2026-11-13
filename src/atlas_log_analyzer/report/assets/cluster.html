@@ -30,7 +30,7 @@
   </defs>
 </svg>
 <header class="top" id="top">
-  <h1 id="c-title">atlas-log cluster</h1>
+  <div class="cluster-id"><h1 id="c-title">atlas-log cluster</h1></div>
   <div class="top-meta" id="c-meta"></div>
   <div class="top-actions">
     <span class="tool-btns" role="group" aria-label="Page settings">
@@ -56,11 +56,14 @@
     <div class="card-head c-tl-head">
       <h2 id="tl-title">Entries per hour</h2>
       <div class="tl-window" id="tl-window"></div>
-      <div class="tl-ctl">
+      <details class="chart-options disclosure" id="c-chart-options">
+        <summary class="btn small">Chart options</summary>
+        <div class="disclosure-panel tl-ctl">
         <div class="seg" id="tl-y" role="group" aria-label="Y scale"></div>
         <button type="button" class="btn small toggle" id="tl-jobs" aria-pressed="false" title="Show scheduled job runs in the event lanes and the events table (hidden by default: they repeat and hide the rare events)">Job runs</button>
         <button type="button" class="btn small toggle" id="tl-arrows" aria-pressed="true" title="Show mention arrows between the nodes' event lanes">Arrows</button>
-      </div>
+        </div>
+      </details>
     </div>
     <div class="c-sel" id="tl-sel" aria-label="Selected group"></div>
     <div class="c-timeline" id="c-timeline" aria-label="Timeline; drag across a band to select a time window"></div>

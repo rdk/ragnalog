@@ -155,12 +155,68 @@ await page("index", async (check, expect) => {
   await expect("at least 4 set rows", `${count("table.sets tr[data-set]")} >= 4`);
   await expect("capture row listed", `${count("table.sets tr.capture-row")} >= 1`);
   await expect("triage cells resolved", `!document.querySelector("td.triage .pending")`);
+  check("ingest form is collapsed while browsing existing sets", await evaluate(`!document.getElementById("upload").open`));
+  await evaluate(`document.querySelector(".ingest-link").click()`);
+  await expect("Ingest logs reveals the upload form", `document.getElementById("upload").open`);
+  check("secondary ingest options start collapsed", await evaluate(`!document.getElementById("upload-advanced").open`));
+  await evaluate(`document.querySelector("#upload-advanced > summary").click()`);
+  await expect("advanced ingest options remain available", `document.getElementById("upload-advanced").open && !!document.querySelector('#upload-advanced input[name="overwrite"]')`);
+  await evaluate(`document.querySelector("#upload > summary").click()`);
+  await expect("upload form can be collapsed again", `!document.getElementById("upload").open`);
+  await open("/?smoke=ingest#upload");
+  await expect("direct ingest link opens the form", `document.getElementById("upload").open`);
+  await evaluate(`document.querySelector("#upload > summary").click()`);
+  const setCount = await evaluate(`document.querySelectorAll("table.sets tr[data-set]").length`);
+  await evaluate(`(() => {
+    const input = document.getElementById("sets-search");
+    input.value = "__no_matching_log_sets__";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await expect("search hides nonmatching sets", `${count("table.sets tr[data-set]:not([hidden])")} === 0`);
+  await expect("search gives a useful empty state", visible("#sets-no-matches"));
+  await evaluate(`document.getElementById("sets-clear-search").click()`);
+  await expect("clear search restores every set", `${count("table.sets tr[data-set]:not([hidden])")} === ${setCount}`);
+  await expect("clear search returns keyboard focus", `document.activeElement.id === "sets-search"`);
+  await evaluate(`(() => {
+    const member = document.querySelector("table.sets tr[data-member-of]");
+    const input = document.getElementById("sets-search");
+    input.value = member.dataset.set;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  })()`);
+  await expect("search preserves the matching capture and all its nodes", `(() => {
+    const member = document.querySelector("table.sets tr[data-member-of]");
+    const capture = member.dataset.memberOf;
+    const visibleSets = [...document.querySelectorAll("table.sets tr[data-set]:not([hidden])")];
+    const members = [...document.querySelectorAll("table.sets tr[data-member-of]")].filter(r => r.dataset.memberOf === capture);
+    const headers = [...document.querySelectorAll("table.sets tr[data-capture]:not([hidden])")];
+    return visibleSets.length === members.length && visibleSets.every(r => r.dataset.memberOf === capture)
+      && headers.length === 1 && headers[0].dataset.capture === capture;
+  })()`);
+  await expect("search count explains capture grouping", `document.getElementById("sets-search-count").textContent.includes("matching captures include all nodes")`);
+  await evaluate(`document.getElementById("sets-search").dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true }))`);
+  await expect("Escape resets collection search", `${count("table.sets tr[data-set]:not([hidden])")} === ${setCount}`);
 });
 
 await page("report", async (check, expect) => {
   await open(`/sets/${S.week_node2}`);
   await expect("group rows", `${count("#t-body tr")} > 0`);
-  await expect("tiles drawn", `${count("#tiles > *")} > 0`);
+  await expect("set details are available on demand", `${count("#tiles > *")} > 0 && !document.getElementById("report-details").open`);
+  await evaluate(`document.querySelector("#report-details > summary").click()`);
+  await expect("set details open", `document.getElementById("report-details").open`);
+  await evaluate(`document.querySelector("#report-details > summary").click()`);
+  check("advanced filters start collapsed", await evaluate(`!document.getElementById("f-more").open`));
+  await evaluate(`document.querySelector("#f-more > summary").click()`);
+  await expect("More filters opens the advanced controls", `document.getElementById("f-more").open`);
+  await evaluate(`document.getElementById("f-hasexc").click()`);
+  await expect("advanced filter affects the URL and control", `location.hash.includes("hx=1") && document.getElementById("f-hasexc").getAttribute("aria-pressed") === "true"`);
+  await evaluate(`document.querySelector("#f-more > summary").click()`);
+  await expect("collapsed advanced controls disclose an active filter", `!document.getElementById("f-more").open && document.getElementById("f-more-label").textContent.includes("1")`);
+  await evaluate(`document.getElementById("f-reset").click()`);
+  await expect("Reset clears a filter while its panel is closed", `!location.hash.includes("hx=1") && document.getElementById("f-hasexc").getAttribute("aria-pressed") === "false"`);
+  await open(`/sets/${S.week_node2}?smoke=filters#hx=1&view=coarse`);
+  await expect("deep-linked advanced filters are exposed", `document.getElementById("f-more").open && document.getElementById("f-hasexc").getAttribute("aria-pressed") === "true" && document.getElementById("f-coarse").getAttribute("aria-pressed") === "true"`);
+  await evaluate(`document.getElementById("f-reset").click()`);
+  await expect("Reset restores the default group view", `document.getElementById("f-coarse").getAttribute("aria-pressed") === "false" && document.querySelectorAll("#t-body tr").length > 0`);
   await evaluate(`document.querySelector("#t-body tr").click()`);
   await expect("drawer shown", visible("#drawer"));
   await expect("drawer holds an example entry card", `${count("#drawer-body .entry")} > 0`, 12000);
@@ -184,11 +240,23 @@ await page("triage", async (check, expect) => {
     `((document.querySelector(".verdict-badge") || {}).textContent || "").trim().length > 0`,
   );
   await expect("New types has rows", `${count("#s-new tbody tr")} > 0`);
+  check("baseline metadata starts collapsed", await evaluate(`!document.querySelector(".baseline-details").open`));
+  await evaluate(`document.querySelector(".baseline-details > summary").click()`);
+  await expect("baseline rationale remains accessible", `document.querySelector(".baseline-details").open && !!document.querySelector('[data-tip-ref="tip-baseline"]')`);
+  await evaluate(`document.querySelector('[data-open="s-gone"]').click()`);
+  await expect("compact section link opens its collapsed findings", `document.getElementById("s-gone").open`);
 });
 
 await page("cluster", async (check, expect) => {
   await open(`/captures/capture:${cfg.capture}`);
   await expect("groups table rows", `${count("#t-body tr")} > 0`);
+  check("secondary chart controls start collapsed", await evaluate(`!document.getElementById("c-chart-options").open`));
+  await evaluate(`document.querySelector("#c-chart-options > summary").click()`);
+  await expect("Chart options reveals its controls", `document.getElementById("c-chart-options").open`);
+  const arrowsBefore = await evaluate(`document.getElementById("tl-arrows").getAttribute("aria-pressed")`);
+  await evaluate(`document.getElementById("tl-arrows").click()`);
+  await expect("revealed chart control remains functional", `document.getElementById("tl-arrows").getAttribute("aria-pressed") !== ${JSON.stringify(arrowsBefore)}`);
+  await evaluate(`document.querySelector("#c-chart-options > summary").click()`);
   await evaluate(`location.hash = "#tab=i"`);
   await expect(
     "interactions tab renders",

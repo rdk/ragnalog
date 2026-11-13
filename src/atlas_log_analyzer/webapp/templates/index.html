@@ -21,12 +21,13 @@
 {% endmacro %}
 {% block nav %}<span class="crumb-sep" aria-hidden="true">/</span><span class="crumb-here" aria-current="page">Log sets</span>{% endblock %}
 {% block main %}
-<header class="page-head">
-  <div>
-    <h1>Log sets</h1>
-    <p class="page-meta">{{ sets|length }} set{{ "" if sets|length == 1 else "s" }}<span class="dot">·</span><button type="button" class="tip-btn info" data-tip-k="wa-ref" data-tip-ref="tip-store" aria-label="Data directory location">data directory</button><span class="dot">·</span>Open a set's report, or triage it against the previous one.</p>
+<header class="page-head home-head">
+  <h1>Log sets</h1>
+  <div class="page-tools">
+    {% if sets %}<div class="collection-tools"><label class="set-search"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><circle cx="8.5" cy="8.5" r="5.5"/><path d="m13 13 4 4"/></svg><input type="search" id="sets-search" placeholder="Find a log set…" aria-label="Find a log set" autocomplete="off" aria-describedby="sets-search-count"></label><span id="sets-search-count" class="set-search-status" role="status" aria-live="polite">{{ sets|length }} log sets</span></div>{% endif %}
+    <button type="button" class="btn small link" data-tip-k="wa-ref" data-tip-ref="tip-store">Details</button>
+    <a class="btn primary ingest-link" href="#upload"><span aria-hidden="true">＋</span> Ingest logs</a>{% include "_tools.html" %}
   </div>
-  <div class="page-tools">{% include "_tools.html" %}</div>
   <template id="tip-store">
     <div class="atip-h">Data directory</div>
     <div class="atip-sub atip-mono">{{ store }}</div>
@@ -75,6 +76,7 @@
   {% endfor %}
   </tbody>
 </table>
+<div class="collection-empty" id="sets-no-matches" hidden><strong>No matching log sets</strong><p>Try another name, node, or cluster.</p><button type="button" class="btn small" id="sets-clear-search">Clear search</button></div>
 </div>
 <script type="application/json" id="sets-data">{{ sets|tojson }}</script>
 {% else %}
@@ -84,11 +86,13 @@
 </section>
 {% endif %}
 
-<section class="card upload" id="upload">
-  <h2>Ingest log files</h2>
+<details class="card upload" id="upload"{% if not sets %} open{% endif %}>
+  <summary><h2>Ingest log files</h2><span class="muted">.log · .gz · .zip</span></summary>
+  <div class="upload-body">
   <form id="upload-form" enctype="multipart/form-data">
     <label class="drop" id="drop">
       <input type="file" name="files" id="files" multiple required>
+      <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M5 15v5h14v-5"/></svg>
       <span class="drop-text"><strong>Choose files</strong> or drop them here</span>
       <span class="drop-hint" title="A cluster log export .zip becomes one set per node, a support .zip one set of its application logs. Gzipped rotations (.log.3.gz) are read as they are.">Rotated files (<span class="mono">.log.1</span>, <span class="mono">.log.2</span>…), <span class="mono">.gz</span> and <span class="mono">.zip</span> exports are fine.</span>
       <span class="drop-list" id="drop-list"></span>
@@ -96,11 +100,16 @@
     <div class="upload-row">
       <label class="field">Name <input type="text" name="name" placeholder="e.g. prod-2026-10-29" maxlength="128"></label>
       <label class="field">Cluster <input type="text" name="cluster" placeholder="e.g. jira-prod" maxlength="128"></label>
-      <label class="check" title="Run Drain3 over the group templates and store proposals of groups to merge (needs the mine extra)"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
-      <label class="check" title="Files ingested before keep their existing set; this rebuilds it (and renames it to the name given)"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
       <span class="grow"></span>
       <button class="btn small primary" type="submit">Upload &amp; ingest</button>
     </div>
+    <details class="disclose upload-advanced" id="upload-advanced">
+      <summary>Advanced options</summary>
+      <div class="advanced-fields">
+        <label class="check" title="Run Drain3 over the group templates and store proposals of groups to merge (needs the mine extra)"><input type="checkbox" name="mine" value="true"> Propose merges (Drain3)</label>
+        <label class="check" title="Files ingested before keep their existing set; this rebuilds it (and renames it to the name given)"><input type="checkbox" name="overwrite" value="true"> Rebuild if it exists</label>
+      </div>
+    </details>
   </form>
   <details class="disclose">
     <summary>Ingest from a shell</summary>
@@ -111,5 +120,6 @@
       <button type="button" class="btn small link" id="job-cancel">Cancel</button></div>
     <div class="progress" role="progressbar" aria-label="Ingest progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><span id="job-bar"></span></div>
   </div>
-</section>
+  </div>
+</details>
 {% endblock %}

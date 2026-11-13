@@ -312,7 +312,6 @@ body.app .verdict-line { display: flex; flex-wrap: wrap; align-items: center; ga
 body.app .verdict .vs { color: var(--ink-2); }
 body.app .verdict .vs a { color: var(--ink); font-weight: 500; text-decoration: none; }
 body.app .verdict .vs a:hover { text-decoration: underline; text-decoration-color: var(--faint); text-underline-offset: 3px; }
-body.app .vs-range { margin: 0 var(--s2) 0 var(--s1); color: var(--muted); font-size: var(--fs-meta); }
 body.app .callout {
   margin: var(--s3) 0 0; padding: var(--s2) var(--s3); border-radius: var(--r-sm);
   font-size: var(--fs-ctl); line-height: 1.5; color: var(--ink-2);
@@ -370,7 +369,6 @@ body.app .triage-sec > summary::before {
   transform: rotate(-45deg); transition: transform 0.15s ease;
 }
 body.app .triage-sec[open] > summary::before { transform: rotate(45deg) translate(-1px, -1px); }
-body.app .triage-sec > summary .sec-hint { color: var(--muted); font-size: var(--fs-meta); }
 body.app .triage-sec .none-msg { margin: 0; padding: 0 var(--card-pad) var(--s4) calc(var(--card-pad) + var(--s5)); color: var(--muted); font-size: var(--fs-ctl); }
 /* overflow: clip (not auto) keeps the table header sticky under the section bar; the columns
    that do not fit are hidden at narrow widths, so nothing needs to scroll sideways */
@@ -532,7 +530,6 @@ body.app .ent-more .btn { min-width: 160px; }
 .ent-toast { z-index: 60; }
 @media (max-width: 1000px) {
   body.app .ent-t .c-th { display: none; }
-  body.app .ent-keys { display: none; }
 }
 @media (max-width: 720px) {
   body.app .ent-t th.c-t { width: 150px; }
@@ -593,3 +590,164 @@ body.app .ent-table { overflow: clip; }  /* not a scroll container: the header r
 /* the page of one entry's exact text: the whole text, no inner scroll box */
 .raw-page .raw-text { margin: 0; padding: var(--s3) var(--s4); max-height: none; border-radius: var(--r); }
 .raw-page .page-meta .mono { font-family: var(--mono); font-size: var(--fs-code); }
+
+/* Workspace refresh. Only the navigation is shared with report and cluster pages. */
+.crumbs {
+  min-height: 40px; margin: 0; padding: 3px var(--pad-x); gap: 4px 16px;
+  background: #142139; border-bottom: 1px solid #263653; color: #c2cee3;
+  box-shadow: 0 2px 8px rgb(12 27 51 / 0.08);
+}
+.crumb-trail { gap: 8px; }
+.crumbs .crumb-home { height: 28px; gap: 8px; color: #fff; font-size: 14px; letter-spacing: -0.4px; }
+.crumbs .crumb-home:hover { color: #bad2ff; }
+.crumbs .crumb-home::before {
+  width: 22px; height: 22px; border-radius: 6px;
+  background:
+    linear-gradient(#fff, #fff) 5px 10px / 3px 8px no-repeat,
+    linear-gradient(#fff, #fff) 10px 5px / 3px 13px no-repeat,
+    linear-gradient(#a7c4ff, #a7c4ff) 15px 8px / 3px 10px no-repeat, #3468df;
+}
+.crumbs .crumb-sep { color: #697e9f; padding: 0 5px; }
+.crumbs .crumb-here { color: #f3f6ff; font-weight: 500; }
+.crumbs a:not([class]) { color: #c2cee3; }
+.crumbs a:not([class]):hover { color: #fff; }
+.crumbs .crumb-sel, .crumbs .crumb-sel select { height: 28px; }
+.crumbs .crumb-sel select { color: #d9e4f5; font-size: 13px; }
+.crumbs .crumb-sel select option { color: var(--ink); background: var(--surface); }
+.crumbs .crumb-sel::after { border-color: #a8bad5; }
+.crumbs .crumb-sel:hover, .crumbs .crumb-sel:focus-within { background: #21324e; }
+.crumbs .crumb-menu summary { width: 26px; height: 28px; color: #b4c7e4; }
+.crumbs .crumb-menu summary:hover, .crumbs .crumb-menu[open] summary { background: #263956; color: #fff; }
+.crumbs .crumb-pop { min-width: 184px; padding: 6px; background: var(--raised); box-shadow: var(--shadow); }
+.crumbs .crumb-pop a { min-height: 36px; display: flex; align-items: center; padding: 6px 12px; color: var(--ink-2); }
+.crumbs .crumb-pop a:hover { color: var(--ink); background: var(--hover); }
+.crumbs .views { background: #0e192c; border-color: #30415d; padding: 2px; border-radius: 8px; }
+.crumbs .views .view { height: 26px; padding: 0 10px; color: #bccbe1; font-size: 13px; gap: 7px; }
+.crumbs .views a.view:hover { color: #fff; background: #273b5c; }
+:root .crumbs .views .view[aria-current] { color: #fff; background: #3468df; box-shadow: 0 1px 4px rgb(0 0 0 / 0.15); }
+.crumbs .node-links { height: 28px; border-color: #344765; }
+.crumbs .node-links .views-label { color: #9fb3d1; }
+.crumbs .node-link { height: 22px; color: #d9e4f5; }
+.crumbs .node-link:hover { background: #273b5c; color: #fff; }
+
+body.app .page { padding-top: 0; padding-bottom: 32px; }
+body.app .page, body.app .card, body.app .upload form { min-width: 0; }
+body.app .table-wrap { position: relative; }
+body.app .page-head { align-items: center; gap: 8px 16px; padding: 8px 0 12px; }
+body.app .page-head h1 { font-size: var(--fs-h1); line-height: 1.22; font-weight: 650; letter-spacing: -0.3px; }
+body.app .page-head .page-meta { margin-top: 4px; font-size: var(--fs-meta); line-height: 1.45; }
+body.app .page-tools { gap: 8px; }
+body.app .home-head .page-tools { margin-left: auto; }
+body.app .page a.btn.primary { color: #fff; }
+body.app .ingest-link { min-height: var(--ctl-h); gap: 6px; padding: 0 12px; border-radius: 8px; box-shadow: 0 3px 7px rgb(52 104 223 / 0.15); }
+body.app .ingest-link > span { font-size: 20px; font-weight: 400; }
+body.app .card { box-shadow: 0 2px 8px rgb(18 39 74 / 0.035); }
+body.app .collection-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; max-width: 430px; min-width: 0; }
+body.app .set-search-status { font-size: 11px; color: var(--muted); }
+body.app .set-search { position: relative; display: inline-flex; align-items: center; color: var(--muted); }
+body.app .set-search svg { position: absolute; width: 18px; height: 18px; left: 12px; pointer-events: none; }
+body.app .set-search input { width: 250px; height: var(--ctl-h); padding: 0 12px 0 38px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
+body.app .set-search input:focus { outline: 2px solid var(--blue); outline-offset: 2px; }
+body.app .collection-empty { padding: 32px; text-align: center; color: var(--ink); }
+body.app .collection-empty p { color: var(--muted); margin: 8px 0 16px; }
+body.app table.sets th { padding-top: 5px; padding-bottom: 5px; font-size: var(--fs-label); letter-spacing: 0.045em; background: color-mix(in srgb, var(--page) 65%, var(--surface)); }
+body.app .set-name { font-size: 14px; font-weight: 600; }
+body.app .verdict-badge { border-radius: 5px; height: var(--ctl-h-sm); padding: 0 8px; font-size: 11.5px; }
+body.app .verdict-badge.ok { color: var(--ink-2); background: var(--chip-bg); }
+body.app .verdict { position: relative; border-left: 4px solid var(--neutral); }
+body.app .verdict.v-new_errors { border-left-color: var(--lv-error); }
+body.app .verdict:is(.v-new_warnings, .v-new_exceptions) { border-left-color: var(--lv-warn); }
+body.app .verdict .verdict-badge { height: var(--ctl-h-sm); font-size: 12.5px; font-weight: 600; }
+body.app .verdict-line { gap: 8px 16px; }
+body.app .verdict .vs { font-size: 13px; line-height: 1.45; }
+body.app .triage-head { padding-top: 8px; padding-bottom: 12px; gap: 8px 16px; }
+body.app .triage-head .page-meta { margin-top: 4px; font-size: 12px; }
+body.app .verdict { padding: 10px 12px; }
+body.app .page > .verdict { margin-bottom: 12px; }
+body.app .baseline-details { position: relative; font-size: 12px; color: var(--muted); }
+body.app .baseline-details > summary { cursor: pointer; padding: 4px; }
+body.app .baseline-panel { position: absolute; top: calc(100% + 8px); left: 0; z-index: 10; width: min(350px, calc(100vw - 64px)); padding: 16px; background: var(--raised); color: var(--ink-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); }
+body.app .baseline-panel dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 14px; margin: 0 0 12px; }
+body.app .baseline-panel dt { color: var(--muted); }
+body.app .baseline-panel dd { margin: 0; }
+body.app .triage-links { padding-top: 4px; padding-bottom: 8px; margin-bottom: 8px; gap: 8px; }
+body.app .triage-links a { height: var(--ctl-h); padding: 0 10px; background: transparent; border-color: transparent; }
+body.app .triage-links a .qty { color: var(--ink); font-weight: 600; }
+body.app .triage-links a.empty-sec .qty { color: var(--muted); font-weight: 400; }
+
+body.app .triage-sec { scroll-margin-top: calc(var(--section-bar-h, 56px) + 12px); }
+body.app .triage-table th { top: var(--section-bar-h, 56px); }
+body.app .triage-sec > summary { min-height: 34px; padding: 6px 14px; }
+body.app .triage-sec > summary h2 { font-size: 14px; font-weight: 650; letter-spacing: -0.2px; }
+body.app .triage-sec > summary h2 .qty { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 20px; margin-left: 4px; padding: 0 5px; border-radius: 6px; background: var(--chip-bg); font-size: 12px; font-weight: 600; }
+body.app .triage-table td { padding-top: var(--cell-y); padding-bottom: var(--cell-y); }
+body.app .triage-table .lv { line-height: 17px; border-radius: 4px; font-size: var(--fs-label); }
+body.app .triage-sec .none-msg { padding-bottom: 12px; }
+
+body.app .upload { padding: 0; scroll-margin-top: 16px; margin-top: 16px !important; }
+body.app .upload > summary { display: flex; align-items: center; gap: 12px; min-height: 36px; padding: 7px 14px; cursor: pointer; list-style: none; }
+body.app .upload > summary::-webkit-details-marker { display: none; }
+body.app .upload > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); }
+body.app .upload[open] > summary::before { transform: rotate(45deg); }
+body.app .upload > summary h2 { font-size: 15px; }
+body.app .upload > summary > span { margin-left: auto; font-size: 12px; }
+body.app .upload-body { padding: 0 14px 14px; }
+body.app .advanced-fields { display: flex; flex-wrap: wrap; gap: 12px 24px; padding-top: 12px; font-size: 12px; }
+body.app .drop { padding: 24px; gap: 8px; background: color-mix(in srgb, var(--blue) 3%, var(--surface)); border-color: color-mix(in srgb, var(--blue) 35%, var(--border)); border-radius: 10px; }
+body.app .drop:hover, body.app .drop.over { background: var(--blue-wash); border-color: var(--blue); }
+body.app .drop-icon { width: 34px; height: 34px; padding: 7px; box-sizing: content-box; color: var(--blue); background: var(--surface); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 2px; }
+body.app .drop-text { font-size: 14px; }
+body.app .drop-text strong { color: var(--blue); }
+body.app .drop-hint { font-size: 12px; max-width: 600px; line-height: 1.6; }
+body.app .upload-row { padding-top: 8px; gap: 12px 18px; }
+body.app .upload-row .field { gap: 8px; color: var(--ink-2); }
+body.app .upload-row input[type="text"] { height: var(--ctl-h); }
+body.app .upload .disclose { margin-top: 10px; }
+body.app .upload .disclose summary { color: var(--muted); font-size: 12px; }
+body.app .ent-hist { padding: 12px 16px 8px; box-shadow: 0 2px 8px rgb(18 39 74 / 0.03); }
+body.app .ent-bar { padding-top: 8px; padding-bottom: 8px; }
+body.app .ent-bar .ent-search { flex-basis: 300px; height: var(--ctl-h); padding: 0 12px; border-radius: 8px; background: var(--surface); }
+body.app .ent-table { border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+
+@media (max-width: 1180px) {
+  body.app .when-row { grid-template-columns: minmax(0, 1fr); }
+  .crumbs .crumb-sel select { max-width: 220px; }
+}
+@media (max-width: 800px) {
+  .crumbs { padding-top: 3px; padding-bottom: 3px; gap: 4px; }
+  .crumb-trail { max-width: 100%; flex: 0 1 auto; }
+  .crumbs .crumb-sel { flex-shrink: 1; min-width: 0; }
+  .crumbs .crumb-sel select { min-width: 0; width: 100%; }
+  .crumb-end { flex-wrap: wrap; min-width: 0; max-width: 100%; }
+  .crumbs .views { min-width: 0; max-width: 100%; overflow-x: auto; flex: 0 1 auto; }
+  .crumbs .views .view { flex-shrink: 0; }
+  .crumbs .crumb-sel select { max-width: 180px; }
+  .crumbs .crumb-here { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
+  body.app .page-head { padding-top: 8px; }
+  body.app .page-tools { justify-content: space-between; }
+}
+@media (max-width: 520px) {
+  .crumb-trail { gap: 2px; }
+  .crumbs .crumb-home { font-size: 14px; gap: 7px; }
+  .crumbs .crumb-sel select { max-width: 130px; }
+  .crumbs .crumb-sep { padding: 0 2px; }
+  .crumbs .crumb-here { max-width: 70px; font-size: 12px; }
+  .crumbs .views .view { padding: 0 12px; }
+  body.app .page-tools { width: 100%; }
+  body.app .baseline-details[open] { flex-basis: 100%; }
+  body.app .baseline-panel { position: static; margin-top: 8px; width: 100%; box-shadow: none; }
+  body.app .collection-tools { width: 100%; max-width: none; }
+  body.app .home-head .collection-tools { position: relative; }
+  body.app .home-head .set-search-status { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  body.app .set-search, body.app .set-search input { width: 100%; }
+  body.app .triage-table th.t-lv { width: 70px; }
+  body.app .triage-table th.t-count { width: 85px; }
+  body.app .triage-sec > summary { padding-left: 15px; padding-right: 15px; }
+  body.app .ent-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; }
+  body.app .ent-bar .ent-search { grid-column: 1; grid-row: 1; width: 100%; min-width: 0; }
+  body.app .ent-bar #e-reset { grid-column: 2; grid-row: 1; }
+  body.app .ent-bar .ent-chips { grid-column: 1 / -1; grid-row: 2; }
+  body.app .ent-bar .ent-chips:empty { display: none; }
+  body.app .ent-t th.c-t { width: 110px; }
+  body.app .ent-t td.c-t .ts { font-size: 11px; }
+}

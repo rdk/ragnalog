@@ -735,7 +735,7 @@
       TLG = null;
       return;
     }
-    const W = Math.max(360, Math.floor(el.clientWidth || 900));
+    const W = Math.max(240, Math.floor(el.clientWidth || 900));
     const N = NODES.length;
     const padL = 116, padR = 12;
     const plotW = W - padL - padR;
@@ -1252,7 +1252,7 @@
     if (!NB) {
       w.innerHTML = "";
     } else if (!S.t) {
-      w.innerHTML = `<span class="muted">Drag across a band to select a time window</span>${seg}`;
+      w.innerHTML = seg;
     } else {
       const rg = tRange();
       let entries = 0, errors = 0;
@@ -2914,6 +2914,17 @@
   }
 
   function bind() {
+    const chartOptions = $("c-chart-options");
+    chartOptions.addEventListener("keydown", (e) => {
+      if (e.key !== "Escape" || !chartOptions.open) return;
+      e.stopPropagation();
+      chartOptions.open = false;
+      chartOptions.querySelector("summary").focus();
+    });
+    document.addEventListener("click", (e) => {
+      if (chartOptions.open && !chartOptions.contains(e.target)) chartOptions.open = false;
+    });
+
     $("c-tabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
       if (b) commit({ tab: b.dataset.tab }, { keepPage: true });

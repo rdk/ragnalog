@@ -81,9 +81,10 @@
    line (figures and facts, middots between). */
 .cluster .top {
   display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "title acts" "meta meta";
-  align-items: center;
+  align-items: center; padding-block: var(--s2);
 }
-.cluster .top h1 { grid-area: title; }
+.cluster .cluster-id { grid-area: title; display: flex; flex-direction: column; }
+.cluster .top h1 { margin: 0; }
 .cluster .top-meta { grid-area: meta; line-height: 18px; }
 .top-meta .m-item { white-space: nowrap; }
 .top-meta .m-v { color: var(--ink-2); font-variant-numeric: tabular-nums; }
@@ -93,10 +94,10 @@
 
 /* The overview: one card. The nodes as rows (numbers to compare; the rest in tooltips), then the
    timeline under a card head. The node filter button is marked by a blue frame while it is on. */
-.c-nodebar { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s6); padding-bottom: var(--s3); margin-bottom: var(--s3); border-bottom: 1px solid var(--grid); }
+.c-nodebar { display: flex; flex-wrap: wrap; gap: var(--s2) var(--s5); padding-bottom: var(--s2); margin-bottom: var(--s2); border-bottom: 1px solid var(--grid); }
 .nrow {
-  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s4); flex: 1 1 480px; min-width: 0; min-height: var(--ctl-h-sm);
-  padding-left: var(--s3); border-left: 3px solid var(--nc); /* the node's colour, the same as its lane and its table columns */
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s3); flex: 0 1 auto; min-width: 0; min-height: var(--ctl-h-sm);
+  padding: 0; border: 0; /* the node's colour, the same as its lane and its table columns */
 }
 .nr-name {
   display: inline-flex; align-items: center; gap: var(--s2); flex: none; height: var(--ctl-h-sm);
@@ -144,7 +145,8 @@ button.nr-name[aria-pressed="true"] { background: var(--blue-wash-2); box-shadow
 .c-ov .seg button { height: calc(var(--ctl-h-sm) - 2px); }
 .c-ov .chip, .c-inter .chip { height: var(--ctl-h-sm); }
 /* the y-scale and the two toggles stay together: on a narrow page they move to the next line as one */
-.tl-ctl { display: flex; flex-wrap: nowrap; align-items: center; gap: var(--s2); margin-left: auto; }
+.chart-options { margin-left: auto; }
+.chart-options .tl-ctl { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s2); width: 320px; max-width: calc(100vw - 48px); }
 .c-sel { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); margin-bottom: var(--s2); font-size: var(--fs-meta); color: var(--muted); min-width: 0; }
 .c-sel:empty { display: none; }
 .c-sel .tpl { max-width: 520px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
@@ -236,11 +238,11 @@ button.nr-name[aria-pressed="true"] { background: var(--blue-wash-2); box-shadow
    filters. Page background; when stuck (is-stuck, set by cluster.js) it gets a hairline and a
    shadow and shows the capture's name. The groups table's header sticks under it (--sticky-top). */
 .cluster .filters.c-bar {
-  gap: var(--s2); margin: calc(var(--gap) - var(--s2)) calc(-1 * var(--pad-x)) 0; padding: var(--s2) var(--pad-x);
-  background: var(--page); border-bottom: 1px solid transparent;
+  gap: var(--s1); margin: var(--s2) 0 var(--s1); padding: 6px var(--s3);
+  background: var(--surface); border: 1px solid var(--border); border-radius: var(--r); box-shadow: var(--panel-shadow);
 }
 .cluster .filters.c-bar.is-stuck { border-bottom-color: var(--border); box-shadow: 0 6px 10px -8px rgba(29, 30, 34, 0.25); }
-.c-barrow { align-items: center; gap: 0 var(--s4); min-height: var(--ctl-h); border-bottom: 1px solid var(--grid); }
+.c-barrow { align-items: center; gap: var(--s1) var(--s4); min-height: var(--ctl-h); padding-bottom: var(--s1); border-bottom: 1px solid var(--grid); }
 .c-ctx {
   display: none; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   padding-right: var(--s4); border-right: 1px solid var(--grid);
@@ -250,12 +252,12 @@ button.nr-name[aria-pressed="true"] { background: var(--blue-wash-2); box-shadow
 .is-stuck .c-ctx:hover { color: var(--ink); }
 .c-tabs { display: flex; gap: var(--s1); }
 .c-tabs [role="tab"] {
-  height: var(--ctl-h); padding: 0 var(--s3); margin-bottom: -1px; border: 0; border-bottom: 3px solid transparent; border-radius: var(--r-sm) var(--r-sm) 0 0;
+  height: var(--ctl-h); padding: 0 var(--s3); border: 0; border-bottom: 2px solid transparent; border-radius: var(--r-sm);
   background: none; color: var(--muted); font-size: var(--fs-ctl); font-weight: 500; cursor: pointer;
   transition: color 0.12s ease, border-color 0.12s ease;
 }
 .c-tabs [role="tab"]:hover { color: var(--ink); background: var(--hover); }
-.c-tabs [role="tab"][aria-selected="true"] { color: var(--ink); font-weight: 600; border-bottom-color: var(--blue); background: var(--blue-wash); }
+.c-tabs [role="tab"][aria-selected="true"] { color: var(--blue); font-weight: 600; border-bottom-color: var(--blue); background: var(--blue-wash); }
 .c-tabs [role="tab"]:focus-visible { outline: 2px solid var(--blue); outline-offset: -2px; }
 .c-tabs .n { margin-left: var(--s1); color: var(--muted); font-size: var(--fs-meta); font-weight: 400; font-variant-numeric: tabular-nums; }
 .c-scope { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s1) var(--s2); flex: 1 1 0; min-width: 0; justify-content: flex-end; }
@@ -274,13 +276,13 @@ button.nr-name[aria-pressed="true"] { background: var(--blue-wash-2); box-shadow
 .sc:hover .sc-x { color: var(--ink); }
 .c-frow { gap: var(--s2) var(--s4); min-height: var(--ctl-h); }
 .c-frow .chips { gap: var(--s2); }
-#f-search, #l-search { flex: 1 1 220px; max-width: 360px; }
+#f-search, #l-search { flex: 1 1 280px; max-width: 440px; background: var(--page); }
 .seg button .nb { height: 18px; }
 
 /* table zone: the summary line and the pager (32px, --s2 above and below), then the table card.
    The groups table: the total and the node differences read first; spread and lead are quieter. */
 .cluster .body { padding-top: 0; gap: var(--gap); }
-.cluster .table-head-line, .cluster .table-foot-line { min-height: var(--ctl-h); margin: 0 0 var(--s2); padding: 0; font-size: var(--fs-meta); }
+.cluster .table-head-line, .cluster .table-foot-line { min-height: var(--ctl-h-sm); margin: 0 0 var(--s1); padding: 0; font-size: var(--fs-meta); }
 .cluster #t-summary .s-main { color: var(--ink-2); }
 .cluster #t-summary .m-sep { margin: 0 var(--s2); }
 table.c-groups th.c-lv { width: 84px; } /* badge + the first column's 16px outer padding */
@@ -351,7 +353,7 @@ body.drawer-open .c-lead { display: none; }
 .d-bar-id .lv { flex: none; }
 .d-bar-tpl { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); font-size: var(--fs-ctl); }
 .cluster .drawer:not(.scrolled) .d-bar-id > * { visibility: hidden; }
-.cluster .d-navrow { flex: none; padding: 0 var(--s4) var(--s2); border-bottom: 1px solid var(--grid); background: var(--surface); }
+.cluster .d-navrow { flex: none; padding: 0 var(--s4) var(--s1); border-bottom: 1px solid var(--grid); background: var(--surface); }
 .cluster .d-nav { display: flex; gap: var(--s4); margin: 0; overflow-x: auto; scrollbar-width: none; }
 .d-idcli .cli + .cli { margin-top: var(--s2); }
 .d-idcli .k, .id-row .k { flex: none; min-width: 68px; color: var(--muted); font-size: var(--fs-meta); }
@@ -522,7 +524,7 @@ table.mx .mx-corner { color: var(--muted); font-weight: 400; }
   display: grid; grid-template-columns: 140px 36px 46px minmax(80px, 180px) minmax(0, 1fr);
   align-items: center; gap: var(--s3); min-width: 0;
 }
-.ml-line { padding: var(--cell-y) var(--s4); border-left: 3px solid var(--nc, transparent); cursor: pointer; }
+.ml-line { min-height: 31px; padding: var(--cell-y) var(--s4); border-left: 3px solid var(--nc, transparent); cursor: pointer; }
 /* labels of the columns, aligned with the rows (card border 1px + node bar 3px + padding) */
 .ml-head {
   padding: var(--s2) var(--s4) var(--s2) calc(var(--s4) + 4px); color: var(--muted); font-size: var(--fs-label);
@@ -569,6 +571,19 @@ table.mx .mx-corner { color: var(--muted); font-weight: 400; }
   .ix-flow { min-width: 560px; }
 }
 @media (max-width: 600px) {
+  .cluster .filters.c-bar { padding: var(--s3); }
+  .nrow { display: grid; grid-template-columns: minmax(0, 1fr) auto var(--ctl-h-sm); flex-basis: 100%; gap: var(--s1) var(--s2); }
+  .nrow .nr-name { grid-area: 1 / 1; min-width: 0; justify-self: start; }
+  .nrow .nr-nm { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nrow .nr-v { grid-area: 1 / 2; }
+  .nrow .nr-link { grid-area: 1 / 3; }
+  .nrow .nr-figs { grid-column: 1 / -1; grid-row: 2; }
+  .nrow .nc-win { grid-column: 1 / -1; justify-self: start; }
+  .c-tl-head h2 { flex-basis: 100%; }
+  .c-tl-head .tl-window { flex: 1 1 160px; }
+
+  .chart-options .disclosure-panel { right: 0; }
+  .c-tabs { flex-wrap: wrap; }
   .c-ctx { display: none; }
   .tl-ctl { flex-wrap: wrap; margin-left: 0; }
   .tl-ctl .seg button { padding: 0 7px; white-space: nowrap; }
@@ -581,7 +596,9 @@ table.mx .mx-corner { color: var(--muted); font-weight: 400; }
     --n5: #1baf7a; --n6: #eb6834; --n7: #0f8ea6; --n8: #a3601c;
     --nolog: rgba(11, 11, 11, 0.2); --nolog-bg: transparent;
   }
-  [data-clip], .c-tabs, .c-scope, .c-ctx, #btn-ids, .lane-hit, .tl-ctl, .ev-kinds, .ev-x, .ml-foot button, .c-sel button, .tl-window .muted, .tl-window .seg, .tl-window .btn, .e-foot .btn, .ix-info { display: none !important; }
+  .chart-options, [data-clip], .c-tabs, .c-scope, .c-ctx, #btn-ids, .lane-hit, .tl-ctl, .ev-kinds, .ev-x, .ml-foot button, .c-sel button, .tl-window .muted, .tl-window .seg, .tl-window .btn, .e-foot .btn, .ix-info { display: none !important; }
+  .cluster .filters.c-bar { margin: 0; padding: 0; border: 0; box-shadow: none; }
+  .nrow { background: none; }
   .ix-grid { grid-template-columns: minmax(0, 1fr); }
   .ix-flow { min-width: 0; }
   .c-inter .card, .ml { border-color: #ccc; break-inside: avoid; }

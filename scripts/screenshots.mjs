@@ -23,6 +23,7 @@ function browserPath() {
     "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
     "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
+    "C:/Program Files (x86)/Google/Chrome/Application/chrome.exe",
     "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
     "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge",
   ];
@@ -88,7 +89,7 @@ try {
   await go(`${base}/captures/capture:${node2.capture}`, 6000);
   await shot("cluster");
   await go(`${base}/sets/${node1.id}/triage`);
-  await shot("triage", 760);
+  await shot("triage");
   if (href) {
     await go(href, 5000);
     await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);

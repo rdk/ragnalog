@@ -28,7 +28,7 @@
 </tr>
 {% endmacro %}
 {% block main %}
-<header class="page-head">
+<header class="page-head triage-head">
   <div>
     <h1>{{ me.name or me.id }}</h1>
     <p class="page-meta">{{ me.first_ts|range(me.last_ts) }}<span class="dot">·</span>{{ me.entries|num }} entries</p>
@@ -75,9 +75,11 @@
     {% elif t.verdict == 'new_warnings' %}<span class="verdict-badge warn">New warnings</span>
     {% elif t.verdict == 'new_exceptions' %}<span class="verdict-badge warn">New exceptions below level {{ t.min_level }}</span>
     {% else %}<span class="verdict-badge ok">No new types</span>{% endif %}
-    <span class="vs">compared with <a href="/sets/{{ b.id }}">{{ b.name or b.id }}</a>
-      <span class="vs-range">{{ b.first_ts|range(b.last_ts) }}</span>
-      <button type="button" class="tip-btn" data-tip-k="wa-ref" data-tip-ref="tip-baseline">{{ 'picked automatically' if b.resolved_by == 'auto' else 'your choice' }}</button></span>
+    <span class="vs">vs <a href="/sets/{{ b.id }}">{{ b.name or b.id }}</a></span>
+    <details class="baseline-details"><summary>Baseline details</summary><div class="baseline-panel">
+      <dl><dt>Log time</dt><dd>{{ b.first_ts|range(b.last_ts) }}</dd><dt>Entries</dt><dd>{{ b.entries|num }}</dd><dt>Duration</dt><dd>{{ hours(t.coverage.hours_baseline) }} vs this set's {{ hours(t.coverage.hours_set) }}</dd></dl>
+      <button type="button" class="tip-btn" data-tip-k="wa-ref" data-tip-ref="tip-baseline">{{ 'picked automatically' if b.resolved_by == 'auto' else 'your choice' }}</button>
+    </div></details>
     <span class="grow"></span>
     <a class="btn small" href="/sets/{{ me.id }}?compare={{ b.id }}">Open comparison report</a>
   </div>
@@ -105,14 +107,14 @@
   's-grew': 'Groups in both sets whose hourly rate rose at least ×2 (' ~ (s.changed|num) ~ ' groups changed their count at all)',
   's-gone': 'Groups in the baseline that this set does not have'} %}
 <div class="bar-sentinel" aria-hidden="true"></div>
-<nav class="section-bar" aria-label="Sections">
+<nav class="section-bar triage-links" aria-label="Sections">
   <span class="bar-id">{{ me.name or me.id }} <span class="scope">· vs {{ b.name or b.id }}</span></span>
   {% for kind, title, rows, cols, anchor in sections %}<a href="#{{ anchor }}" data-open="{{ anchor }}" title="{{ bar_tips[anchor] }}"{% if not rows %} class="empty-sec"{% endif %}>{{ title.split(' (')[0] }} <span class="qty">{{ rows|length|num }}</span></a>{% endfor %}
   <span class="bar-note" title="Groups in both sets with the same count">Unchanged {{ s.unchanged|num }}</span>
 </nav>
 {% for kind, title, rows, cols, anchor in sections %}
 <details class="card triage-sec" id="{{ anchor }}"{% if kind != 'vanished' and rows %} open{% endif %}>
-  <summary><h2>{{ title }} <span class="qty">{{ rows|length|num }}</span></h2>{% if kind == 'vanished' and rows %}<span class="sec-hint">in the baseline, not in this set</span>{% endif %}</summary>
+  <summary title="{{ bar_tips[anchor] }}"><h2>{{ title }} <span class="qty">{{ rows|length|num }}</span></h2></summary>
   {% if rows %}
   <div class="table-wrap">
   <table class="sets triage-table">

@@ -100,17 +100,17 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 ### Layout
 
 ```
-<name>                                             [UTC] [theme] [width] [?] [⋯]
-712,674 entries · 2,953 groups · ● 146,548 errors · ● 507,600 warnings · jira · 10-24 03:44 → 10-29 02:45 UTC 5 d
+<name>                              [Set details ▾] [UTC] [theme] [width] [?] [⋯]
+jira · 10-24 03:44 → 10-29 02:45 UTC 5 d · 1 source file
 ┌ overview card ────────────────────────────────────────────────────────────┐
-│ ENTRIES PER HOUR  ERROR WARN INFO DEBUG        Drag to select · Last 1h … │
+│ ENTRIES PER HOUR  ERROR WARN INFO DEBUG                        Last 1h … │
 │ timeline: stacked bars per hour by level (status colors), hover tooltip,  │
 │           drag or "Last 1h/6h/24h/7d" for a time window: the table counts │
 │           only that window                                                │
 └───────────────────────────────────────────────────────────────────────────┘
  filters (sticky; shows <name> and the scope once it sticks)
- [search] [ERROR ✓][WARN ✓][INFO][DEBUG] [logger ▾] [exception ▾] [has exception]
- [coarse] [merged] [all | new | vanished | changed]                  [sort] [reset]
+ [search] [ERROR ✓][WARN ✓][INFO][DEBUG] [sort] [More filters ▾] [reset]
+ [all | new | vanished | changed] (comparison only)
  1-100 of 100 groups · N entries                                      [‹ Prev] Page 1 of 1 [Next ›]
 ┌ groups table card (sticky header) ──┬ detail drawer ──────────────────────┐
 │ count▁bar lvl logger template spark │ ↑ ↓ 3 of 100 · level · template     │
@@ -123,18 +123,22 @@ assets live in `src/atlas_log_analyzer/report/assets/` and are read with
 
 Spacing and sizes come from the shared layout tokens (`:root` in `report.css`: a 4/8/12/16/24/32
 spacing scale, one page edge `--pad-x`, 28 px toolbar controls and 22 px controls inside cards,
-tables, the drawer and dialogs; table rows about 30 px); the report restyles no primitive, it only
+tables, the drawer and dialogs; desktop table rows about 31 px). On narrow screens controls
+grow to 32 px and 28 px respectively. The report restyles no primitive, it only
 colours it. The page header, filter-bar controls, drawer and IDs & CLI dialog are shared with the
 cluster page. Its right side holds the settings as ghost icon buttons (time zone with its name,
 theme as a moon or sun that shows what a click switches to, full screen width, help) and last a
 "⋯" menu, *For scripts and agents*: *Identifiers & CLI commands…* and *Download the data*
 (the payload as JSON) — kept out of a human reader's way. In the web app a navigation row above the header carries the views; the
 standalone file has only the header.
-The page header sits on the page background: the name and the actions, then one meta line
-with the key figures (each with its tooltip; with a window it adds "N in window" notes), the
-set's format, time range and source count. The legend and the window controls share the
-overview card's head. The top is kept short (in the web app at 1500 x 1000 the table header
-is about 430 px down): hashes and the CLI are not shown by default. The "⋯" menu's
+The page header shows the name, actions, format, time range and source count.
+*Set details* opens a compact panel with totals, selected-window counts, comparison facts
+and report provenance; there is no summary-card strip. Comparison context and parse warnings
+remain visible. The legend and window controls share the overview card's head.
+*More filters* reveals logger, exception, has-exception, coarse and merged controls.
+Its label counts active advanced options even when closed, and a link carrying those
+options opens the panel initially. Reset clears them and closes the panel.
+Hashes and the CLI are not shown by default. The "⋯" menu's
 *Identifiers & CLI commands…* opens a dialog with the set id, format, node, source files, the open group's signatures and the
 commands to reproduce the view (each with a copy button); in the drawer the same sits in a
 collapsed *Identifiers & CLI* part at the end, which also reveals the signatures in member lists.
@@ -176,7 +180,7 @@ remove, or "Remove all filters".
   (those shorter than the set). `‹`/`›` and the keys `[`/`]` move the window by
   its own length; a click on the chart or "Clear" removes it. With a window the
   page answers "what happened in it":
-  - the window bar states its range; the figures in the header add "N in window"
+  - the window bar states its range; the figures in *Set details* add "N in window"
     (entries, groups, errors, warnings);
   - the table keeps the groups with entries in the window, and its count column
     becomes *In window* (the whole-set total under it, "of 68.2K"). Count bars,

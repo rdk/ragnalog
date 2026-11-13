@@ -888,7 +888,7 @@
       for (const row of ov.rows) for (const [i, n] of row.hourly) if (i >= 0 && i < NH) data[i] += n;
       overlay = { data, name: ov.name };
     }
-    TL = drawColumns(el, series, { height: 150, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
+    TL = drawColumns(el, series, { height: 120, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
     const k = TL.k;
     $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
     $("tl-clip").innerHTML = clipBtn(TL);
@@ -951,7 +951,7 @@
     }).join("");
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
     if (!S.t) {
-      el.innerHTML = `<span class="muted win-hint">Drag across the chart to select a time window</span>${seg}`;
+      el.innerHTML = seg;
       return;
     }
     const [a, b] = S.t;
@@ -1180,6 +1180,8 @@
   function resetAll() {
     clearTimeout(qTimer);
     $("f-search").value = "";
+    $("f-more").open = false;
+    closePops();
     $("f-search").focus({ preventScroll: true });
     commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, sig: "" });
   }
@@ -1189,6 +1191,7 @@
     if (k === "q") $("f-search").value = "";
     if (CLEAR[k]) commit(CLEAR[k]);
   }
+  let advancedInitialized = false;
   function renderControls(v) {
     const lvCounts = {}, cmpCounts = { all: 0, new: 0, vanished: 0, changed: 0 };
     for (const r of v.rows) {
@@ -1223,6 +1226,15 @@
     $("f-coarse").setAttribute("aria-pressed", String(S.view === "coarse"));
     $("f-merged").setAttribute("aria-pressed", String(S.view === "merged"));
     $("f-sort").value = S.sort;
+    const advanced = [S.lg ? `Logger: ${S.lg}` : "", S.ex ? `Exception: ${shortExc(S.ex)}` : "", S.hx ? "Has exception" : "", S.view !== "sig" ? (S.view === "coarse" ? "Coarse groups" : "Merged groups") : ""].filter(Boolean);
+    const moreLabel = $("f-more-label");
+    moreLabel.textContent = `More filters${advanced.length ? ` (${advanced.length})` : ""}`;
+    moreLabel.classList.toggle("has-active", !!advanced.length);
+    moreLabel.title = advanced.length ? advanced.join("; ") : "Logger, exception and grouping options";
+    if (!advancedInitialized) {
+      $("f-more").open = !!advanced.length;
+      advancedInitialized = true;
+    }
     if (!$("f-logger-pop").hidden) renderLoggerPop();
     if (!$("f-exc-pop").hidden) renderExcPop();
   }
@@ -1758,11 +1770,10 @@
       for (let i = 0; i < 4; i++) tiles[i][4] = `${fmt(win[i])} in window`;
     }
     if (st.parse_errors) tiles.push(["unparsed", "Unparsed", fmt(st.parse_errors), ""]);
-    // one quiet line of figures: value, label, then the notes; the breakdowns are in the tooltips
-    let html = tiles.map(([k, l, v, n, w, sw]) => `<span class="tile" data-tip-k="rpt-tile" data-k="${k}">${sw ? `<i class="sw sw-${sw}"></i>` : ""}<b class="value">${esc(v)}</b> <span class="label">${l.toLowerCase()}</span>` +
-      (w ? `<span class="note win-note">${esc(w)}</span>` : "") + (n ? `<span class="note">${esc(n)}</span>` : "") + `</span>`).join(`<span class="m-sep" aria-hidden="true">·</span>`);
+    // Summary cards retain the exact breakdowns and selected-window totals in their tooltips.
+    let html = tiles.map(([k, l, v, n, w, sw]) => `<span class="tile" data-tip-k="rpt-tile" data-k="${k}">${sw ? `<i class="sw sw-${sw}"></i>` : ""}<span class="label">${l}</span><b class="value">${esc(v)}</b>` +
+      (w ? `<span class="note win-note">${esc(w)}</span>` : "") + (n ? `<span class="note">${esc(n)}</span>` : "") + `</span>`).join("");
     if (CMPD) {
-      html += `<span class="m-sep" aria-hidden="true">·</span>`;
       const mini = [["new", CMPN.new, (CMPD.new || []).length], ["changed", CMPN.changed, (CMPD.changed || []).length],
         ["vanished", CMPN.vanished, (CMPD.vanished || []).length]];
       const partial = mini.filter(([, n, shown]) => shown < n).map(([k, n, shown]) => `${k} ${fmt(shown)} of ${fmt(n)}`);
@@ -1771,6 +1782,11 @@
         `<span class="note" data-tip-k="rpt-tile" data-k="cmp">${fmt(CMPN.unchanged)} unchanged${partial.length ? " · the table lists " + esc(partial.join(", ")) : ""}</span></span>`;
     }
     $("tiles").innerHTML = html;
+    const notices = [];
+    if (CMPD) notices.push(`Compared with ${esc(OTHERNAME)}${baselineNote()} · ${fmt(CMPN.new)} new, ${fmt(CMPN.changed)} changed, ${fmt(CMPN.vanished)} vanished`);
+    if (st.parse_errors) notices.push(`<span class="parse-note">${fmt(st.parse_errors)} unparsed entries</span>`);
+    $("set-notices").innerHTML = notices.join(" · ");
+    $("set-notices").hidden = !notices.length;
   }
 
   // ---------------------------------------------------------------- tooltips
@@ -2385,6 +2401,21 @@
   }
 
   function bind() {
+    for (const id of ["report-details", "f-more"]) {
+      const details = $(id);
+      details.addEventListener("keydown", (e) => {
+        if (e.key !== "Escape" || !details.open) return;
+        e.stopPropagation();
+        if (id === "f-more" && closePops()) return;
+        details.open = false;
+        details.querySelector("summary").focus();
+      });
+      document.addEventListener("click", (e) => {
+        if (details.open && !details.contains(e.target)) details.open = false;
+      });
+    }
+    $("f-more").addEventListener("toggle", () => { if (!$("f-more").open) closePops(); });
+
     $("tl-window").addEventListener("click", (e) => {
       const b = e.target.closest("button");
       if (!b || b.disabled) return;
@@ -2675,7 +2706,8 @@
   function renderFoot() {
     if (!T2) return;
     const foot = $("foot");
-    foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by atlas-log ${D.tool_version || ""} · ${D.schema} · ` +
+    foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by atlas-log ${D.tool_version || ""}`;
+    $("report-provenance").textContent = `${D.schema} · ` +
       `${fmt(BASE.length)} groups, ${ENTRIES_URL ? "examples fetched per group" : fmt(Object.keys(ENTRIES).length) + " example entries"} · ` +
       `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(T2)} ms after navigation start`;
     foot.dataset.script = String(Math.round(T1 - T0));

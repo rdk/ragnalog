@@ -167,7 +167,7 @@ uv run atlas-log --store /tmp/demo-data serve
 
 | Page | What it shows |
 |---|---|
-| **Log sets** `/` | every set with its error counts, activity and a verdict against the previous set; upload with progress |
+| **Log sets** `/` | searchable by name, node, cluster or ID, with error counts, activity and a verdict against the previous set; matching captures keep their nodes together; upload with progress |
 | **Report** `/sets/SET` | entries per hour by level, filterable groups, the group panel with examples, stack traces and related groups |
 | **Triage** `/sets/SET/triage` | new types (ERROR first), grown and vanished groups against a baseline it picks or you choose |
 | **Entries** `/sets/SET/entries?signature=…` | all entries of a group or filter, with a time histogram, opened from the group panel |

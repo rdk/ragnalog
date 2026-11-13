@@ -187,6 +187,7 @@
         .catch(() => { alert("Delete failed: the server did not answer"); b.disabled = false; });
     }));
 
+    setupSetSearch();
     setupUpload();
     setupStrips();
     setupTips();
@@ -200,6 +201,11 @@
     // the section bar names the page once it is stuck to the top
     const sentinel = document.querySelector(".bar-sentinel");
     const secBar = document.querySelector(".section-bar");
+    if (secBar && "ResizeObserver" in window) {
+      new ResizeObserver(() => {
+        document.body.style.setProperty("--section-bar-h", secBar.offsetHeight + "px");
+      }).observe(secBar);
+    }
     if (sentinel && secBar && "IntersectionObserver" in window) {
       new IntersectionObserver(([e]) => secBar.classList.toggle("stuck", !e.isIntersecting && e.boundingClientRect.top < 0))
         .observe(sentinel);
@@ -232,6 +238,42 @@
       if (d) d.open = true;
     }));
   });
+
+  function setupSetSearch() {
+    const input = $("sets-search"), source = $("sets-data");
+    if (!input || !source) return;
+    let sets;
+    try { sets = JSON.parse(source.textContent); } catch (e) { return; }
+    const byId = new Map(sets.map((s) => [s.id, s]));
+    const rows = Array.from(document.querySelectorAll("table.sets tr[data-set], table.sets tr[data-capture]"));
+    const text = new Map(rows.map((row) => {
+      const s = byId.get(row.dataset.set);
+      return [row, (s ? [s.id, s.name, s.node, s.cluster].filter(Boolean).join(" ") : row.querySelector(".c-set").textContent).toLocaleLowerCase()];
+    }));
+    const apply = () => {
+      const query = input.value.trim().toLocaleLowerCase();
+      const matchingCaptures = new Set();
+      rows.forEach((row) => {
+        if (text.get(row).includes(query)) {
+          const capture = row.dataset.capture || row.dataset.memberOf;
+          if (capture) matchingCaptures.add(capture);
+        }
+      });
+      let shown = 0;
+      rows.forEach((row) => {
+        const capture = row.dataset.capture || row.dataset.memberOf;
+        row.hidden = !(capture ? matchingCaptures.has(capture) : text.get(row).includes(query));
+        if (!row.hidden && row.dataset.set) shown++;
+      });
+      $("sets-no-matches").hidden = shown > 0;
+      $("sets-search-count").textContent = query ? `${shown} of ${sets.length} sets · matching captures include all nodes` : `${sets.length} log sets`;
+    };
+    input.addEventListener("input", apply);
+    input.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape") { input.value = ""; apply(); }
+    });
+    $("sets-clear-search").addEventListener("click", () => { input.value = ""; apply(); input.focus(); });
+  }
 
   // activity strips of the index: one time axis for every row; hover shows the bucket on all
   // rows at once (where sets overlap), a click opens that row's report narrowed to the bucket
@@ -539,6 +581,23 @@
     const form = $("upload-form");
     if (!form) return;
     const input = $("files"), drop = $("drop"), list = $("drop-list");
+    const upload = $("upload");
+    const revealUpload = () => {
+      upload.open = true;
+      requestAnimationFrame(() => {
+        upload.scrollIntoView({ block: "start" });
+        input.focus({ preventScroll: true });
+      });
+    };
+    document.querySelectorAll('a[href="#upload"], a[href="/#upload"]').forEach((link) => {
+      link.addEventListener("click", (ev) => {
+        ev.preventDefault();
+        if (location.hash !== "#upload") history.pushState(null, "", "#upload");
+        revealUpload();
+      });
+    });
+    window.addEventListener("hashchange", () => { if (location.hash === "#upload") revealUpload(); });
+    if (location.hash === "#upload") revealUpload();
     const showFiles = () => {
       const names = Array.from(input.files || []).map((f) => esc(f.name) + " (" + (f.size / 1048576).toFixed(1) + " MB)");
       list.innerHTML = names.join(" · ");

@@ -20,12 +20,15 @@ def test_index_lists_sets(client: TestClient) -> None:
     assert res.status_code == 200 and "text/html" in res.headers["content-type"]
     assert "mini" in res.text and "sample" in res.text
     assert 'data-triage="' in res.text and 'id="upload-form"' in res.text
+    upload = re.search(r'<details\b[^>]*\bid="upload"[^>]*>', res.text)
+    assert upload is not None and not re.search(r"\bopen\b", upload.group())
 
 
 def test_index_empty_state(empty_client: TestClient) -> None:
     res = empty_client.get("/")
     assert res.status_code == 200
     assert "No log sets yet" in res.text
+    assert re.search(r'<details\b(?=[^>]*\bid="upload")(?=[^>]*\bopen\b)[^>]*>', res.text)
 
 
 def test_report_page_fetches_payload(client: TestClient) -> None:
