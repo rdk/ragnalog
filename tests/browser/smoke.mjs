@@ -102,7 +102,7 @@ async function open(url) {
     };
     listeners.push(l);
   });
-  await send("Page.navigate", { url: BASE + url });
+  await send("Page.navigate", { url: new URL(url, BASE).href });
   await Promise.race([loaded, sleep(15000)]);
 }
 
@@ -300,6 +300,91 @@ await page("report-dark", async (check, expect) => {
   await evaluate(`document.getElementById("btn-wide").click()`);
   await expect("full-width toggle sets data-wide", `document.documentElement.hasAttribute("data-wide")`);
   await expect("rows still there", `${count("#t-body tr")} > 0`);
+});
+
+const skinValue = `(document.documentElement.getAttribute("data-skin") || "classic")`;
+const skinPaint = `getComputedStyle(document.documentElement).getPropertyValue("--blue").trim()`;
+async function chooseSkin(skin) {
+  await evaluate(`(() => {
+    const picker = document.querySelector(".skin-picker");
+    if (!picker.open) picker.querySelector("summary").click();
+    picker.querySelector('[data-skin-choice="${skin}"]').click();
+  })()`);
+}
+
+await page("skins", async (check, expect) => {
+  await open("/");
+  await evaluate(`localStorage.removeItem("atlas-log-skin"); localStorage.removeItem("atlas-log-report-theme"); localStorage.removeItem("atlas-log-wide")`);
+  await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
+  await open("/?smoke=skins");
+  await expect("one skin picker with three choices", `${count(".skin-picker")} === 1 && ${count("[data-skin-choice]")} === 3`);
+  check("Classic is the default", await evaluate(`${skinValue} === "classic"`));
+  const classicPaint = await evaluate(skinPaint);
+  await chooseSkin("aurora");
+  await expect("Aurora selection is applied and persisted", `${skinValue} === "aurora" && localStorage.getItem("atlas-log-skin") === "aurora"`);
+  check("skin changes the actual palette", (await evaluate(skinPaint)) !== classicPaint);
+  check("skin selection leaves color mode alone", await evaluate(`!document.documentElement.hasAttribute("data-theme")`));
+  check("selected skin has an accessible pressed state", await evaluate(`document.querySelector('[data-skin-choice="aurora"]').getAttribute("aria-pressed") === "true"`));
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await expect("Escape closes the picker and restores focus", `!document.querySelector(".skin-picker").open && document.activeElement === document.querySelector(".skin-picker > summary")`);
+
+  await open(`/sets/${S.week_node2}`);
+  await expect("skin survives navigation to report", `${skinValue} === "aurora" && ${count(".skin-picker")} === 1 && ${count("#t-body tr")} > 0`);
+  await evaluate(`(() => { const input = document.getElementById("f-search"); input.value = "Sync of directory"; input.dispatchEvent(new Event("input", { bubbles: true })); })()`);
+  await expect("report is filtered", `${count("#t-body tr")} === 3`);
+  await evaluate(`document.querySelector("#t-body tr").click()`);
+  await expect("report drawer is open", visible("#drawer"));
+  const hashBefore = await evaluate("location.hash");
+  await chooseSkin("mineral");
+  check("switching skin preserves filters, selection and drawer", await evaluate(`location.hash === ${JSON.stringify(hashBefore)} && ${count("#t-body tr")} === 3 && ${visible("#drawer")}`));
+  await send("Input.dispatchKeyEvent", { type: "keyDown", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Escape", code: "Escape", windowsVirtualKeyCode: 27 });
+  await expect("Escape dismisses skin choices before the report drawer", `!document.querySelector(".skin-picker").open && ${visible("#drawer")}`);
+  await chooseSkin("mineral");
+  await evaluate(`document.getElementById("btn-theme").click()`);
+  await expect("dark mode is independent of Mineral", `document.documentElement.dataset.theme === "dark" && ${skinValue} === "mineral"`);
+  await evaluate(`document.body.click()`);
+  await expect("clicking outside dismisses skin choices", `!document.querySelector(".skin-picker").open`);
+  for (const path of [`/sets/${S.week_node2}/entries`, `/sets/${S.week_node1}/triage`, `/captures/capture:${cfg.capture}`, "/?smoke=reload"]) {
+    await open(path);
+    await expect(`skin and mode persist at ${path}`, `${skinValue} === "mineral" && document.documentElement.dataset.theme === "dark" && ${count(".skin-picker")} === 1`);
+  }
+  await chooseSkin("classic");
+  check("Classic restores the original palette", (await evaluate(skinValue)) === "classic");
+  await evaluate(`localStorage.setItem("atlas-log-skin", "invalid-skin")`);
+  await open("/?smoke=invalid-skin");
+  await expect("invalid stored skin falls back to Classic", `${skinValue} === "classic" && document.querySelector('[data-skin-choice="classic"]').getAttribute("aria-pressed") === "true"`);
+
+  const blocked = await send("Page.addScriptToEvaluateOnNewDocument", {
+    source: `Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Storage blocked", "SecurityError"); } });`,
+  });
+  try {
+    await open("/?smoke=blocked-storage");
+    await expect("picker initializes when storage is blocked", `${count(".skin-picker")} === 1`);
+    await chooseSkin("aurora");
+    await expect("skin remains usable without storage", `${skinValue} === "aurora"`);
+  } finally {
+    await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: blocked.identifier });
+  }
+});
+
+await page("standalone-skins", async (check, expect) => {
+  for (const [index, url] of cfg.standalone.entries()) {
+    await open(url);
+    await expect(`export ${index + 1} loads a picker and rows without web assets`, `${count(".skin-picker")} === 1 && ${count("#t-body tr")} > 0 && ${count("script[src], link[rel=stylesheet]")} === 0`);
+    for (const skin of ["aurora", "mineral", "classic"]) {
+      await chooseSkin(skin);
+      await expect(`export ${index + 1} switches to ${skin}`, `${skinValue} === "${skin}"`);
+      const paintBefore = await evaluate(skinPaint);
+      await evaluate(`document.getElementById("btn-theme").click()`);
+      check(`export ${index + 1} toggles light/dark independently with ${skin}`, (await evaluate(skinPaint)) !== paintBefore && (await evaluate(skinValue)) === skin);
+    }
+    await chooseSkin("mineral");
+    await send("Emulation.setEmulatedMedia", { media: "print" });
+    check(`export ${index + 1} prints without skin decoration`, await evaluate(`getComputedStyle(document.body).backgroundColor === "rgb(255, 255, 255)" && getComputedStyle(document.querySelector(".skin-picker")).display === "none"`));
+    await send("Emulation.setEmulatedMedia", { media: "", features: [{ name: "prefers-color-scheme", value: "light" }] });
+  }
 });
 
 console.log(JSON.stringify({ pages: results }));

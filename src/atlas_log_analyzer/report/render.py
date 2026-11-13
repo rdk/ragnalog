@@ -14,9 +14,9 @@ The cluster page (:func:`render_cluster_html`, ``cluster-report.v1``) works the 
 with ``cluster.html``: ``report.css`` then ``cluster.css`` (``/*__CLUSTER_CSS__*/``) and
 ``cluster.js`` (``/*__CLUSTER_JS__*/``), the payload in ``#cluster-data``.
 
-Both pages run ``entry-card.js`` (the shared entry cards) and ``tips.js`` (the shared rich
-tooltips) before their own script: inlined ahead of it in one ``<script>``, or linked as their own
-``<script src>`` just before it. The web app's entries page runs the same two files.
+Both pages load ``skins.css`` after their page CSS and run ``entry-card.js``, ``skins.js``
+(the appearance picker) and ``tips.js`` before their own script: inlined ahead of it in one
+``<script>``, or linked as their own ``<script src>``. The web app shares these assets.
 """
 
 from __future__ import annotations
@@ -40,11 +40,15 @@ CLUSTER_CSS = "/*__CLUSTER_CSS__*/"
 CLUSTER_JS = "/*__CLUSTER_JS__*/"
 TIPS_JS = "tips.js"
 ENTRY_JS = "entry-card.js"
-SHARED_JS = (ENTRY_JS, TIPS_JS)
-"""Scripts both pages run before their own: the entry card and the tooltips."""
+SKINS_JS = "skins.js"
+SKINS_CSS = "skins.css"
+SHARED_JS = (ENTRY_JS, SKINS_JS, TIPS_JS)
+"""Scripts both pages run before their own: entry cards, appearance and tooltips."""
 ASSETS = (
     "template.html",
     "report.css",
+    SKINS_CSS,
+    SKINS_JS,
     TIPS_JS,
     ENTRY_JS,
     "report.js",
@@ -160,7 +164,7 @@ def render_html(
         attr = f' data-report-url="{html.escape(data_url, quote=True)}"'
         page = _replace_once(page, "<html", "<html" + attr)
     if inline_assets:
-        css = asset_text("report.css")
+        css = "\n".join(asset_text(n) for n in ("report.css", SKINS_CSS))
         js = "\n".join(asset_text(n) for n in (*SHARED_JS, "report.js"))
         for name, text in (("report.css", css), ("report.js", js)):
             if "</" + "script" in text.lower() or "</style" in text.lower():
@@ -169,7 +173,12 @@ def render_html(
         page = _replace_once(page, JS, js)
     else:
         base = html.escape(asset_base, quote=True)
-        page = _sub_once(page, _CSS_BLOCK, f'<link rel="stylesheet" href="{base}report.css">')
+        page = _sub_once(
+            page,
+            _CSS_BLOCK,
+            f'<link rel="stylesheet" href="{base}report.css">\n'
+            f'<link rel="stylesheet" href="{base}{SKINS_CSS}">',
+        )
         page = _sub_once(
             page,
             _JS_BLOCK,
@@ -210,13 +219,16 @@ def render_cluster_html(
         page = _replace_once(page, "<html", "<html" + attr)
     if asset_base is None:
         page = _inline(page, CSS, "report.css")
-        page = _inline(page, CLUSTER_CSS, "cluster.css")
+        page = _inline(page, CLUSTER_CSS, "cluster.css", SKINS_CSS)
         page = _inline(page, CLUSTER_JS, *SHARED_JS, "cluster.js")
     else:
         base = html.escape(asset_base, quote=True)
         page = _sub_once(page, _CSS_BLOCK, f'<link rel="stylesheet" href="{base}report.css">')
         page = _sub_once(
-            page, _CLUSTER_CSS_BLOCK, f'<link rel="stylesheet" href="{base}cluster.css">'
+            page,
+            _CLUSTER_CSS_BLOCK,
+            f'<link rel="stylesheet" href="{base}cluster.css">\n'
+            f'<link rel="stylesheet" href="{base}{SKINS_CSS}">',
         )
         page = _sub_once(
             page,

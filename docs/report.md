@@ -127,10 +127,16 @@ tables, the drawer and dialogs; desktop table rows about 31 px). On narrow scree
 grow to 32 px and 28 px respectively. The report restyles no primitive, it only
 colours it. The page header, filter-bar controls, drawer and IDs & CLI dialog are shared with the
 cluster page. Its right side holds the settings as ghost icon buttons (time zone with its name,
-theme as a moon or sun that shows what a click switches to, full screen width, help) and last a
+theme as a moon or sun that shows what a click switches to, skin palette, full screen width, help) and last a
 "⋯" menu, *For scripts and agents*: *Identifiers & CLI commands…* and *Download the data*
 (the payload as JSON) — kept out of a human reader's way. In the web app a navigation row above the header carries the views; the
 standalone file has only the header.
+The palette opens a compact picker for **Classic** (the default), **Aurora** (violet/cyan)
+and **Mineral** (ivory/sage). Selection previews immediately without changing filters or
+closing the group drawer. It is saved as `atlas-log-skin` in `localStorage`, independently
+of light/dark mode, and shared across web pages; exported files include the same picker
+and assets. Escape closes the picker and returns focus to its button. Printing uses the
+neutral report style.
 The page header shows the name, actions, format, time range and source count.
 *Set details* opens a compact panel with totals, selected-window counts, comparison facts
 and report provenance; there is no summary-card strip. Comparison context and parse warnings

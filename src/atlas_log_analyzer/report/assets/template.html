@@ -12,6 +12,9 @@
   var m = /(?:^#|&)theme=(dark|light)(?:&|$)/.exec(location.hash);
   if (m) { t = m[1]; } else { try { t = localStorage.getItem("atlas-log-report-theme"); } catch (e) { t = null; } }
   if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+  var s = null;
+  try { s = localStorage.getItem("atlas-log-skin"); } catch (e) { /* storage unavailable */ }
+  if (s === "aurora" || s === "mineral") { document.documentElement.setAttribute("data-skin", s); }
   try { if (localStorage.getItem("atlas-log-wide") === "1") { document.documentElement.setAttribute("data-wide", ""); } } catch (e) { /* storage unavailable */ }
 })();
 </script>

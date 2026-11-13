@@ -176,6 +176,9 @@ uv run atlas-log --store /tmp/demo-data serve
 Everything is also JSON under `/api` (OpenAPI at `/docs`), the same documents the CLI prints.
 Light and dark themes, UTC or local time, keyboard shortcuts (`?`), and the view lives in
 the URL, so a link reopens the same filters. See [`docs/webapp.md`](docs/webapp.md).
+The palette button beside the theme toggle offers **Classic**, **Aurora** (violet/cyan)
+and **Mineral** (ivory/sage) skins. Your choice is remembered across pages, works with
+either light or dark mode, and is also available in exported HTML reports.
 
 ## CLI
 

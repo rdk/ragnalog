@@ -23,10 +23,20 @@ from typing import Any
 import pytest
 
 from atlas_log_analyzer.cli.app import run
+from atlas_log_analyzer.report import render_cluster_html, render_html
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = Path(__file__).with_name("smoke.mjs")
-PAGES = ("index", "report", "triage", "cluster", "not-found", "report-dark")
+PAGES = (
+    "index",
+    "report",
+    "triage",
+    "cluster",
+    "not-found",
+    "report-dark",
+    "skins",
+    "standalone-skins",
+)
 DRIVER_TIMEOUT_S = 50
 
 WINDOWS_BROWSERS = (
@@ -200,6 +210,18 @@ def smoke(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
             "sets": {s["name"]: s["id"] for s in items},
             "capture": next(s["capture"] for s in items if s.get("capture")),
         }
+        report_file, cluster_file = tmp / "report.html", tmp / "cluster.html"
+        report_file.write_text(
+            render_html(get_json(f"{base}/api/sets/{config['sets']['week_node2']}/report")),
+            encoding="utf-8",
+        )
+        cluster_file.write_text(
+            render_cluster_html(
+                get_json(f"{base}/api/captures/capture:{config['capture']}/report")
+            ),
+            encoding="utf-8",
+        )
+        config["standalone"] = [report_file.as_uri(), cluster_file.as_uri()]
         done = subprocess.run(
             ["node", str(DRIVER), json.dumps(config)],
             capture_output=True,

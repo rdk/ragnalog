@@ -51,6 +51,8 @@ templates.env.globals["tool_version"] = __version__
 
 REPORT_ASSETS = (
     "report.css",
+    "skins.css",
+    "skins.js",
     "tips.js",
     "entry-card.js",
     "report.js",

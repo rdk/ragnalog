@@ -725,6 +725,7 @@ body.app .ent-table { border: 1px solid var(--border); border-radius: 12px; back
   .crumbs .crumb-here { max-width: 120px; overflow: hidden; text-overflow: ellipsis; }
   body.app .page-head { padding-top: 8px; }
   body.app .page-tools { justify-content: space-between; }
+  body.app .set-search input { width: 210px; }
 }
 @media (max-width: 520px) {
   .crumb-trail { gap: 2px; }

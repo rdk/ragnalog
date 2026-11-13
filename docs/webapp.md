@@ -62,6 +62,11 @@ cluster page's own) switches them to the browser's time zone. It is one viewer
 preference for every page (`localStorage`, like the theme); links, windows in the
 hash and `/api` parameters stay UTC.
 
+The palette button beside the light/dark toggle switches between **Classic**, **Aurora**
+and **Mineral** without changing the compact layout. The choice persists across pages
+and reloads, independently of light/dark mode. The same skins work in standalone HTML
+reports; the menu closes with Escape or a click outside it.
+
 `{ref}` is a set id, a unique id prefix or a name, as in the CLI. Unknown sets
 and paths render a 404 page, and any other error of a page (an ambiguous
 reference, a bad parameter) an HTML page with its status and hint; under `/api`
