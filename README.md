@@ -25,7 +25,7 @@ compare and triage, in the browser, the terminal or from an agent.**
   <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="100%">
 </picture>
 
-<sub>All screenshots show synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data.</sub>
+<sub>All screenshots use the Aurora skin and synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data.</sub>
 
 </div>
 

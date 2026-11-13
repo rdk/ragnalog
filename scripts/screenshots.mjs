@@ -1,4 +1,4 @@
-// README screenshots (docs/img) from a web app serving the synthetic demo logs, never real data.
+// Aurora README screenshots (docs/img) from synthetic demo logs, never real data.
 //
 //   uv run python scripts/demo_logs.py DEMO
 //   uv run atlas-log --store DEMO-DATA ingest DEMO/prev --cluster demo-jira --name prev
@@ -57,6 +57,9 @@ const evaluate = async (e) => (await send("Runtime.evaluate", { expression: e, a
 const theme = (t) => send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: t }] });
 const go = async (u, wait = 4500) => { await send("Page.navigate", { url: u }); await sleep(wait); };
 const shot = async (name, h = H) => {
+  if (await evaluate('document.documentElement.getAttribute("data-skin")') !== "aurora") {
+    throw new Error(`Aurora skin is not active for ${name}`);
+  }
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
   writeFileSync(join(out, `${name}.png`), Buffer.from(res.result.data, "base64"));
   console.log(`wrote ${join(out, name)}.png`);
@@ -73,7 +76,7 @@ try {
   const node1 = sets.find((s) => s.name === "week_node1"), node2 = sets.find((s) => s.name === "week_node2");
   if (!node1 || !node2) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");
   await go(`${base}/`);
-  await evaluate("localStorage.clear()");
+  await evaluate('localStorage.clear(); localStorage.setItem("atlas-log-skin", "aurora")');
   for (const t of ["light", "dark"]) {
     await theme(t);
     await go(`${base}/sets/${node2.id}`);
