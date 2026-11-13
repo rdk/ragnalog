@@ -20,12 +20,12 @@ compare and triage, in the browser, the terminal or from an agent.**
 
 <br>
 
-<picture>
+<a href="docs/img/hero-light.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/hero-dark.png">
   <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="100%">
-</picture>
+</picture></a>
 
-<sub>All screenshots use the Aurora skin and synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data.</sub>
+<sub>Aurora is the default skin. All screenshots use synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data. Click an image for full resolution; <a href="docs/img/hero-dark.png">view the dark report</a>.</sub>
 
 </div>
 
@@ -49,16 +49,21 @@ compare and triage, in the browser, the terminal or from an agent.**
   stable exit codes and a manifest written for agents.
 - **SQL when you need it.** `query` runs DuckDB over the stored Parquet entries and groups.
 
-<table>
-  <tr>
-    <td width="50%"><img src="docs/img/drawer.png" alt="Group panel with the hourly chart and an example entry"><br><sub><b>Group panel:</b> facts, hourly chart, example entries with stack traces.</sub></td>
-    <td width="50%"><img src="docs/img/cluster.png" alt="Cluster view with two nodes on one time axis"><br><sub><b>Cluster view:</b> two nodes on one time axis, events and groups by node.</sub></td>
-  </tr>
-  <tr>
-    <td width="50%"><img src="docs/img/triage.png" alt="Triage with new types, grown and vanished groups"><br><sub><b>Triage:</b> what is new, what grew and what vanished since the previous set.</sub></td>
-    <td width="50%"><img src="docs/img/entries.png" alt="All entries of one group with a time histogram"><br><sub><b>Entries:</b> every entry of a group, histogram and the full entry inline.</sub></td>
-  </tr>
-</table>
+<a href="docs/img/drawer.png"><img src="docs/img/drawer.png" alt="Group panel with the hourly chart and an example entry" width="100%"></a>
+
+<sub><b>Group panel:</b> facts, hourly chart and example entries with stack traces.</sub>
+
+<a href="docs/img/cluster.png"><img src="docs/img/cluster.png" alt="Cluster view with two nodes on one time axis" width="100%"></a>
+
+<sub><b>Cluster view:</b> two nodes on one time axis, with events and groups by node.</sub>
+
+<a href="docs/img/triage.png"><img src="docs/img/triage.png" alt="Triage with new types, grown and vanished groups" width="100%"></a>
+
+<sub><b>Triage:</b> what is new, what grew and what vanished since the previous set.</sub>
+
+<a href="docs/img/entries.png"><img src="docs/img/entries.png" alt="All entries of one group with a time histogram" width="100%"></a>
+
+<sub><b>Entries:</b> every entry of a group, with a time histogram and the full entry inline.</sub>
 
 ## Quick start
 
@@ -176,8 +181,8 @@ uv run atlas-log --store /tmp/demo-data serve
 Everything is also JSON under `/api` (OpenAPI at `/docs`), the same documents the CLI prints.
 Light and dark themes, UTC or local time, keyboard shortcuts (`?`), and the view lives in
 the URL, so a link reopens the same filters. See [`docs/webapp.md`](docs/webapp.md).
-The palette button beside the theme toggle offers **Classic**, **Aurora** (violet/cyan)
-and **Mineral** (ivory/sage) skins. Your choice is remembered across pages, works with
+The palette button beside the theme toggle offers **Aurora** (violet/cyan, the default),
+**Classic** and **Mineral** (ivory/sage) skins. Your choice is remembered across pages, works with
 either light or dark mode, and is also available in exported HTML reports.
 
 ## CLI

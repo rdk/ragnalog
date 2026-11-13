@@ -318,8 +318,16 @@ await page("skins", async (check, expect) => {
   await send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: "light" }] });
   await open("/?smoke=skins");
   await expect("one skin picker with three choices", `${count(".skin-picker")} === 1 && ${count("[data-skin-choice]")} === 3`);
-  check("Classic is the default", await evaluate(`${skinValue} === "classic"`));
+  check("Aurora is the fresh default", await evaluate(`${skinValue} === "aurora" && localStorage.getItem("atlas-log-skin") === null`));
+  const auroraPaint = await evaluate(skinPaint);
+  await chooseSkin("classic");
+  await expect("Classic remains an explicit saved choice", `${skinValue} === "classic" && localStorage.getItem("atlas-log-skin") === "classic"`);
+  for (const path of ["/?smoke=classic-reload", `/sets/${S.week_node2}`, "/?smoke=classic-return"]) {
+    await open(path);
+    await expect(`saved Classic survives reload and navigation at ${path}`, `${skinValue} === "classic" && document.querySelector('[data-skin-choice="classic"]').getAttribute("aria-pressed") === "true"`);
+  }
   const classicPaint = await evaluate(skinPaint);
+  check("Classic preserves its original palette", classicPaint !== auroraPaint);
   await chooseSkin("aurora");
   await expect("Aurora selection is applied and persisted", `${skinValue} === "aurora" && localStorage.getItem("atlas-log-skin") === "aurora"`);
   check("skin changes the actual palette", (await evaluate(skinPaint)) !== classicPaint);
@@ -354,16 +362,18 @@ await page("skins", async (check, expect) => {
   check("Classic restores the original palette", (await evaluate(skinValue)) === "classic");
   await evaluate(`localStorage.setItem("atlas-log-skin", "invalid-skin")`);
   await open("/?smoke=invalid-skin");
-  await expect("invalid stored skin falls back to Classic", `${skinValue} === "classic" && document.querySelector('[data-skin-choice="classic"]').getAttribute("aria-pressed") === "true"`);
+  await expect("invalid stored skin falls back to Aurora without overwriting the preference", `${skinValue} === "aurora" && localStorage.getItem("atlas-log-skin") === "invalid-skin" && document.querySelector('[data-skin-choice="aurora"]').getAttribute("aria-pressed") === "true"`);
 
   const blocked = await send("Page.addScriptToEvaluateOnNewDocument", {
     source: `Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Storage blocked", "SecurityError"); } });`,
   });
   try {
     await open("/?smoke=blocked-storage");
-    await expect("picker initializes when storage is blocked", `${count(".skin-picker")} === 1`);
-    await chooseSkin("aurora");
-    await expect("skin remains usable without storage", `${skinValue} === "aurora"`);
+    await expect("blocked storage defaults to Aurora", `${skinValue} === "aurora" && ${count(".skin-picker")} === 1`);
+    await chooseSkin("classic");
+    await expect("skin remains usable without storage", `${skinValue} === "classic"`);
+    await open(`/sets/${S.week_node2}`);
+    await expect("report also defaults to Aurora without storage", `${skinValue} === "aurora" && ${count(".skin-picker")} === 1`);
   } finally {
     await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: blocked.identifier });
   }
@@ -372,6 +382,9 @@ await page("skins", async (check, expect) => {
 await page("standalone-skins", async (check, expect) => {
   for (const [index, url] of cfg.standalone.entries()) {
     await open(url);
+    await evaluate(`localStorage.removeItem("atlas-log-skin")`);
+    await open(url);
+    await expect(`export ${index + 1} defaults to Aurora with no preference`, `${skinValue} === "aurora"`);
     await expect(`export ${index + 1} loads a picker and rows without web assets`, `${count(".skin-picker")} === 1 && ${count("#t-body tr")} > 0 && ${count("script[src], link[rel=stylesheet]")} === 0`);
     for (const skin of ["aurora", "mineral", "classic"]) {
       await chooseSkin(skin);
@@ -379,6 +392,21 @@ await page("standalone-skins", async (check, expect) => {
       const paintBefore = await evaluate(skinPaint);
       await evaluate(`document.getElementById("btn-theme").click()`);
       check(`export ${index + 1} toggles light/dark independently with ${skin}`, (await evaluate(skinPaint)) !== paintBefore && (await evaluate(skinValue)) === skin);
+    }
+    await chooseSkin("classic");
+    await open(url);
+    await expect(`export ${index + 1} preserves saved Classic on reload`, `${skinValue} === "classic" && localStorage.getItem("atlas-log-skin") === "classic"`);
+    await evaluate(`localStorage.setItem("atlas-log-skin", "invalid-skin")`);
+    await open(url);
+    await expect(`export ${index + 1} falls back to Aurora for invalid storage`, `${skinValue} === "aurora"`);
+    const blocked = await send("Page.addScriptToEvaluateOnNewDocument", {
+      source: `Object.defineProperty(window, "localStorage", { get() { throw new DOMException("Storage blocked", "SecurityError"); } });`,
+    });
+    try {
+      await open(url);
+      await expect(`export ${index + 1} defaults to Aurora with blocked storage`, `${skinValue} === "aurora" && ${count(".skin-picker")} === 1`);
+    } finally {
+      await send("Page.removeScriptToEvaluateOnNewDocument", { identifier: blocked.identifier });
     }
     await chooseSkin("mineral");
     await send("Emulation.setEmulatedMedia", { media: "print" });

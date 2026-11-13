@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-skin="aurora">
 <head>
 <meta charset="utf-8">
 <link rel="icon" href="/favicon.ico" type="image/svg+xml">
@@ -12,7 +12,8 @@
   if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
   var s = null;
   try { s = localStorage.getItem("atlas-log-skin"); } catch (e) { /* storage unavailable */ }
-  if (s === "aurora" || s === "mineral") { document.documentElement.setAttribute("data-skin", s); }
+  if (s === "classic") { document.documentElement.removeAttribute("data-skin"); }
+  else { document.documentElement.setAttribute("data-skin", s === "mineral" ? "mineral" : "aurora"); }
   try { if (localStorage.getItem("atlas-log-wide") === "1") { document.documentElement.setAttribute("data-wide", ""); } } catch (e) { /* storage unavailable */ }
 })();
 </script>

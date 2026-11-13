@@ -63,7 +63,9 @@ preference for every page (`localStorage`, like the theme); links, windows in th
 hash and `/api` parameters stay UTC.
 
 The palette button beside the light/dark toggle switches between **Classic**, **Aurora**
-and **Mineral** without changing the compact layout. The choice persists across pages
+and **Mineral** without changing the compact layout. Aurora is the default when no valid
+preference can be read, including when storage is blocked. Explicitly saved Classic
+or Mineral choices remain selected. The choice persists across pages
 and reloads, independently of light/dark mode. The same skins work in standalone HTML
 reports; the menu closes with Escape or a click outside it.
 

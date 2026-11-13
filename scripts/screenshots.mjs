@@ -7,14 +7,15 @@
 //   node scripts/screenshots.mjs http://127.0.0.1:8341 docs/img
 //
 // Needs Node 22+ (global WebSocket) and Edge or Chrome; ATLAS_LOG_BROWSER names the browser
-// when it is not found. Writes hero-light, hero-dark, drawer, cluster, triage and entries .png.
+// when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 PNGs).
+// Writes hero-light, hero-dark, drawer, cluster, triage and entries .png.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const [base = "http://127.0.0.1:8341", out = "docs/img"] = process.argv.slice(2);
-const W = 1440, H = 900, PORT = 9455;
+const W = 1440, H = 900, DPR = 2, PORT = 9455;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function browserPath() {
@@ -57,12 +58,30 @@ const evaluate = async (e) => (await send("Runtime.evaluate", { expression: e, a
 const theme = (t) => send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: t }] });
 const go = async (u, wait = 4500) => { await send("Page.navigate", { url: u }); await sleep(wait); };
 const shot = async (name, h = H) => {
+  const loaded = {
+    "hero-light": '#t-body tr', "hero-dark": '#t-body tr', drawer: '#drawer .entry',
+    cluster: '#c-timeline svg', triage: '.triage-sec', entries: '#e-body .entry',
+  }[name];
+  const deadline = Date.now() + 15000;
+  while (!(await evaluate(`!!document.querySelector(${JSON.stringify(loaded)})`))) {
+    if (Date.now() >= deadline) throw new Error(`Content did not load for ${name}`);
+    await sleep(100);
+  }
+  await evaluate(`(async () => {
+    await document.fonts.ready;
+    await Promise.all([...document.images].map(image => image.decode().catch(() => {})));
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  })()`);
   if (await evaluate('document.documentElement.getAttribute("data-skin")') !== "aurora") {
     throw new Error(`Aurora skin is not active for ${name}`);
   }
+  if (await evaluate("devicePixelRatio") !== DPR) throw new Error(`Unexpected DPR for ${name}`);
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
-  writeFileSync(join(out, `${name}.png`), Buffer.from(res.result.data, "base64"));
-  console.log(`wrote ${join(out, name)}.png`);
+  const png = Buffer.from(res.result.data, "base64");
+  const width = png.readUInt32BE(16), height = png.readUInt32BE(20);
+  if (width !== W * DPR || height !== h * DPR) throw new Error(`Unexpected PNG size: ${width}×${height}`);
+  writeFileSync(join(out, `${name}.png`), png);
+  console.log(`wrote ${join(out, name)}.png (${width}×${height}, DPR ${DPR})`);
 };
 const clickRow = (text) => evaluate(`(() => { const r = [...document.querySelectorAll("table.groups tbody tr[data-id]")]
   .find((x) => x.textContent.includes(${JSON.stringify(text)})); if (r) r.click(); return !!r; })()`);
@@ -71,7 +90,7 @@ try {
   mkdirSync(out, { recursive: true });
   await send("Runtime.enable"); await send("Page.enable"); await send("Network.enable");
   await send("Network.setCacheDisabled", { cacheDisabled: true });
-  await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: 1, mobile: false });
+  await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: DPR, mobile: false });
   const sets = (await (await fetch(`${base}/api/sets`)).json()).items;
   const node1 = sets.find((s) => s.name === "week_node1"), node2 = sets.find((s) => s.name === "week_node2");
   if (!node1 || !node2) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");

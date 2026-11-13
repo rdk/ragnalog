@@ -131,12 +131,13 @@ theme as a moon or sun that shows what a click switches to, skin palette, full s
 "⋯" menu, *For scripts and agents*: *Identifiers & CLI commands…* and *Download the data*
 (the payload as JSON) — kept out of a human reader's way. In the web app a navigation row above the header carries the views; the
 standalone file has only the header.
-The palette opens a compact picker for **Classic** (the default), **Aurora** (violet/cyan)
+The palette opens a compact picker for **Classic**, **Aurora** (the default, violet/cyan)
 and **Mineral** (ivory/sage). Selection previews immediately without changing filters or
 closing the group drawer. It is saved as `atlas-log-skin` in `localStorage`, independently
 of light/dark mode, and shared across web pages; exported files include the same picker
-and assets. Escape closes the picker and returns focus to its button. Printing uses the
-neutral report style.
+and assets. A fresh viewer, invalid preference or unavailable storage starts in Aurora;
+an explicitly saved Classic or Mineral choice is respected. Escape closes the picker and
+returns focus to its button. Printing uses the neutral report style.
 The page header shows the name, actions, format, time range and source count.
 *Set details* opens a compact panel with totals, selected-window counts, comparison facts
 and report provenance; there is no summary-card strip. Comparison context and parse warnings

@@ -5,9 +5,9 @@
   const KEY = "atlas-log-skin";
   const LABELS = { classic: "Classic", aurora: "Aurora", mineral: "Mineral" };
   const root = document.documentElement;
-  const valid = (value) => Object.hasOwn(LABELS, value) ? value : "classic";
+  const valid = (value) => Object.hasOwn(LABELS, value) ? value : "aurora";
   let picker = null;
-  let current = "classic";
+  let current = "aurora";
 
   function apply(value) {
     current = valid(value);
