@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pytest
 
-from atlas_log_analyzer.core.java import parse_exceptions, parse_frame
-from atlas_log_analyzer.core.models import Frame
+from ragnalog.core.java import parse_exceptions, parse_frame
+from ragnalog.core.models import Frame
 
 CHAIN = """\
 java.lang.RuntimeException: Invalid property 'stackTrace': Getter threw exception
@@ -195,7 +195,7 @@ def test_parse_frame(line: str, frame: Frame | None) -> None:
 
 
 def test_library_packages_and_app_frames() -> None:
-    from atlas_log_analyzer.core.java import LIBRARY_PACKAGES, is_app_frame
+    from ragnalog.core.java import LIBRARY_PACKAGES, is_app_frame
 
     for prefix in (
         "com.atlassian.",

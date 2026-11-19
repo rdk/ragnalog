@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer import __version__
-from atlas_log_analyzer._version import __version__ as literal
+from ragnalog import __version__
+from ragnalog._version import __version__ as literal
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSION = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
@@ -21,10 +21,10 @@ V = r"(\d+\.\d+\.\d+)"
 QUOTED = {
     "README.md": [
         rf"badge/release-v{V}-",
-        rf"atlas-log-analyzer:{V}\b",
-        rf"atlas-log-analyzer\.git@v{V}\b",
+        rf"ragnalog:{V}\b",
+        rf"ragnalog\.git@v{V}\b",
         rf"release download v{V}\b",
-        rf"atlas_log_analyzer-{V}-py3",
+        rf"ragnalog-{V}-py3",
     ],
     "docs/cli.md": [rf'"version": "{V}"'],
     "docs/report.md": [rf'"tool_version": "{V}"'],
@@ -49,4 +49,4 @@ def test_changelog_has_the_release() -> None:
     assert re.search(rf"^## \[{re.escape(VERSION)}\] - \d{{4}}-\d{{2}}-\d{{2}}$", text, re.M), (
         f"CHANGELOG.md has no '## [{VERSION}] - YYYY-MM-DD' section"
     )
-    assert f"[{VERSION}]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v{VERSION}" in text
+    assert f"[{VERSION}]: https://github.com/rdk/ragnalog/releases/tag/v{VERSION}" in text

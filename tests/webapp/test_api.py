@@ -9,7 +9,7 @@ from urllib.parse import quote
 import pytest
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.webapp import Settings, create_app
+from ragnalog.webapp import Settings, create_app
 
 from .conftest import MINI
 
@@ -49,7 +49,7 @@ def test_sets_list_with_summary(client: TestClient) -> None:
 
 
 def test_sets_brief_and_set_as_cli(client: TestClient, store_dir: Path) -> None:
-    from atlas_log_analyzer.service.views import SET_BRIEF
+    from ragnalog.service.views import SET_BRIEF
 
     full = _json(client, "/api/sets")
     brief = _json(client, "/api/sets?brief=true")
@@ -275,7 +275,7 @@ def test_token_required(store_dir: Path) -> None:
     with TestClient(create_app(Settings(store=store_dir, token="s3cret"))) as c:
         assert c.get("/api/sets").status_code == 401
         assert c.get("/api/sets", headers={"Authorization": "Bearer s3cret"}).status_code == 200
-        assert c.get("/api/sets", headers={"X-Atlas-Token": "s3cret"}).status_code == 200
+        assert c.get("/api/sets", headers={"X-Ragnalog-Token": "s3cret"}).status_code == 200
 
 
 def test_triage_auto_baseline_ranks_like_the_cli(client: TestClient, store_dir: Path) -> None:
@@ -300,7 +300,7 @@ def _cli_json(store_dir: Path, *args: str) -> dict[str, Any]:
     import subprocess
     import sys
 
-    command = [sys.executable, "-m", "atlas_log_analyzer.cli.app", "--output", "json"]
+    command = [sys.executable, "-m", "ragnalog.cli.app", "--output", "json"]
     res = subprocess.run(
         [*command, "--store", str(store_dir), *args],
         capture_output=True,
@@ -401,8 +401,8 @@ def test_triage_coverage_and_new_exceptions(client: TestClient) -> None:
 
 
 def test_diff_limit_defaults_to_50(store_dir: Path, tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import ingest_paths
-    from atlas_log_analyzer.store.store import Store
+    from ragnalog.store.pipeline import ingest_paths
+    from ragnalog.store.store import Store
     from tests.cli.synth import write_log
     from tests.cli.test_diff_rate import wide
 
@@ -418,8 +418,8 @@ def test_levels_as_cli(tmp_path: Path) -> None:
     log = tmp_path / "pe" / "atlassian-jira.log"
     log.parent.mkdir()
     log.write_text("preamble\n" + MINI.read_text(encoding="utf-8"), encoding="utf-8")
-    from atlas_log_analyzer.store.pipeline import ingest_paths
-    from atlas_log_analyzer.store.store import Store
+    from ragnalog.store.pipeline import ingest_paths
+    from ragnalog.store.store import Store
 
     ingest_paths(Store(tmp_path / "s"), [log], name="pe")
     with TestClient(create_app(Settings(store=tmp_path / "s", sync_jobs=True))) as client:
@@ -436,7 +436,7 @@ def test_levels_as_cli(tmp_path: Path) -> None:
 
 
 def test_group_and_context_columns_and_brief(client: TestClient, store_dir: Path) -> None:
-    from atlas_log_analyzer.service.views import DETAIL_BRIEF, GROUP_BRIEF
+    from ragnalog.service.views import DETAIL_BRIEF, GROUP_BRIEF
 
     sig = _first_signature(client)
     doc = _json(client, f"/api/sets/mini/groups/{sig}?brief=true")
@@ -458,8 +458,8 @@ def test_group_and_context_columns_and_brief(client: TestClient, store_dir: Path
 
 
 def test_signature_prefixes(store_dir: Path, tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import ingest_paths
-    from atlas_log_analyzer.store.store import Store
+    from ragnalog.store.pipeline import ingest_paths
+    from ragnalog.store.store import Store
     from tests.cli.synth import write_log
     from tests.cli.test_diff_rate import wide
 
@@ -488,7 +488,7 @@ def test_signature_prefixes(store_dir: Path, tmp_path: Path) -> None:
 def test_ingest_large_foreign_file_needs_force(
     empty_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import atlas_log_analyzer.store.pipeline as pipeline
+    import ragnalog.store.pipeline as pipeline
 
     monkeypatch.setattr(pipeline, "MAX_FOREIGN_BYTES", 100)
     blob = {"files": ("dump.log", b"no line breaks here " * 20)}
@@ -514,7 +514,7 @@ def test_ingest_frames_option(empty_client: TestClient) -> None:
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_value"
     bad = empty_client.post("/api/ingest?frames=-1", files=upload)
     assert bad.status_code == 400 and bad.json()["error"]["code"] == "invalid_value"
-    assert not any((empty_client.app.state.atlas.store.root / ".uploads").glob("*/*"))
+    assert not any((empty_client.app.state.ragnalog.store.root / ".uploads").glob("*/*"))
 
 
 def test_ingest_job_reports_ignored_name(client: TestClient) -> None:
@@ -527,7 +527,7 @@ def test_ingest_job_reports_ignored_name(client: TestClient) -> None:
 
 
 def test_entry_raw_is_the_exact_text_with_its_banner(client: TestClient, store_dir: Path) -> None:
-    from atlas_log_analyzer.store.store import Store
+    from ragnalog.store.store import Store
 
     ls = Store(store_dir).open("sample")
     rows = list(ls.entries_lazy().select("id", "raw", "context").collect().iter_rows(named=True))
@@ -564,9 +564,9 @@ def test_token_guards_the_pages_and_a_link_sets_a_cookie(store_dir: Path) -> Non
         assert c.get("/static/webapp.css").status_code == 200
         r = c.get("/sets/mini?token=s3cret", headers=html, follow_redirects=False)
         assert r.status_code == 303 and r.headers["location"].endswith("/sets/mini")
-        assert "atlas_log_token=s3cret" in r.headers["set-cookie"]
+        assert "ragnalog_token=s3cret" in r.headers["set-cookie"]
         assert "httponly" in r.headers["set-cookie"].lower()
-        c.cookies.set("atlas_log_token", "s3cret")
+        c.cookies.set("ragnalog_token", "s3cret")
         assert c.get("/", headers=html).status_code == 200
         assert c.get("/api/sets").status_code == 200
 
@@ -626,7 +626,7 @@ def test_cross_site_writes_are_refused(client: TestClient) -> None:
 
 
 def test_loopback_server_refuses_other_host_names(store_dir: Path) -> None:
-    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS, _host_name
+    from ragnalog.webapp.app import LOOPBACK_HOSTS, _host_name
 
     assert [_host_name(h) for h in ("[::1]:8321", "LocalHost:80", "127.0.0.1", "")] == [
         "::1",
@@ -656,7 +656,7 @@ def test_upload_without_content_length_is_refused(empty_client: TestClient) -> N
 
 def test_guards_behind_a_reverse_proxy(store_dir: Path) -> None:
     """A proxy rewrites Host or forwards it: same-origin writes and reads still work."""
-    from atlas_log_analyzer.webapp.app import LOOPBACK_HOSTS
+    from ragnalog.webapp.app import LOOPBACK_HOSTS
 
     app = create_app(Settings(store=store_dir), hosts=LOOPBACK_HOSTS | {"logs.example.org"})
     with TestClient(app, base_url="http://127.0.0.1:8321") as c:

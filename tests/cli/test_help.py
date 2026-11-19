@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from atlas_log_analyzer import __version__
+from ragnalog import __version__
 
 from .conftest import Invoke
 
@@ -40,7 +40,7 @@ def test_root_help_lists_every_command_and_globals(cli: Invoke) -> None:
     assert result.code == 0
     for command in COMMANDS:
         assert f" {command} " in result.stdout, command
-    for option in ("--output", "--store", "--quiet", "ATLAS_LOG_STORE"):
+    for option in ("--output", "--store", "--quiet", "RAGNALOG_STORE"):
         assert option in result.stdout
     assert "Exit codes" in result.stdout
 
@@ -59,7 +59,7 @@ def test_command_help_is_complete(cli: Invoke, command: str) -> None:
     result = cli(command, "--help")
     assert result.code == 0
     text = result.stdout
-    assert f"Usage: atlas-log {command}" in text
+    assert f"Usage: ragnalog {command}" in text
     assert "Exit codes:" in text
     assert "Output" in text
     assert '"schema"' in text or command == "parse"
@@ -117,7 +117,7 @@ def test_missing_argument_is_usage_error(cli: Invoke) -> None:
         "error": {
             "code": "usage",
             "message": 'Command "groups" parameter LOGSET requires an argument.',
-            "hint": "atlas-log groups --help",
+            "hint": "ragnalog groups --help",
         },
     }
 
@@ -151,18 +151,18 @@ def test_unexpected_arguments(cli: Invoke, argv: list[str], message: str) -> Non
     assert result.json()["error"] == {
         "code": "usage",
         "message": message,
-        "hint": f"atlas-log {argv[0]} --help",
+        "hint": f"ragnalog {argv[0]} --help",
     }
 
 
 @pytest.mark.parametrize(
     ("argv", "hint", "text"),
     [
-        (["groups", "x", "--nope"], "atlas-log groups --help", "Unknown option: --nope"),
-        (["groups", "x", "--limit", "abc"], "atlas-log groups --help", "--limit"),
-        (["schema", "bogus"], "atlas-log schema --help", '"entries"'),
-        (["frobnicate"], "atlas-log --help", "frobnicate"),
-        (["--output", "xml", "version"], "atlas-log --help", "--output"),
+        (["groups", "x", "--nope"], "ragnalog groups --help", "Unknown option: --nope"),
+        (["groups", "x", "--limit", "abc"], "ragnalog groups --help", "--limit"),
+        (["schema", "bogus"], "ragnalog schema --help", '"entries"'),
+        (["frobnicate"], "ragnalog --help", "frobnicate"),
+        (["--output", "xml", "version"], "ragnalog --help", "--output"),
     ],
 )
 def test_parse_errors_keep_message_and_hint_help(
@@ -181,7 +181,7 @@ def test_unexpected_argument_table_mode(cli: Invoke) -> None:
     result = cli("--output", "table", "sets", "nope")
     assert result.code == 1 and result.stdout == ""
     assert "unexpected argument 'nope'; sets takes no arguments" in result.stderr
-    assert "hint: atlas-log sets --help" in result.stderr
+    assert "hint: ragnalog sets --help" in result.stderr
 
 
 def test_invalid_level(cli: Invoke) -> None:

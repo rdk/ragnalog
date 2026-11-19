@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.reader import discover_sources
-from atlas_log_analyzer.store.split import (
+from ragnalog.core.reader import discover_sources
+from ragnalog.store.split import (
     ArchiveError,
     SplitError,
     expand_archives,
@@ -333,7 +333,7 @@ def test_zip_with_job_json_and_a_logs_folder_splits_by_job(tmp_path: Path) -> No
 
 
 def test_zip_errors_name_the_zip_not_the_spool(tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import NoSourcesFound, select_sources
+    from ragnalog.store.pipeline import NoSourcesFound, select_sources
 
     archive = _zip(tmp_path / "nothing.zip", {"a/b/readme.txt": b"x", "a/c/notes.txt": b"y"})
     spool = tmp_path / "store" / ".spool"
@@ -344,8 +344,8 @@ def test_zip_errors_name_the_zip_not_the_spool(tmp_path: Path) -> None:
 
 
 def test_a_cancelled_zip_ingest_leaves_nothing_in_the_spool(tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import ingest_paths
-    from atlas_log_analyzer.store.store import Store
+    from ragnalog.store.pipeline import ingest_paths
+    from ragnalog.store.store import Store
 
     class Cancelled(Exception):
         pass
@@ -364,9 +364,9 @@ def test_a_cancelled_zip_ingest_leaves_nothing_in_the_spool(tmp_path: Path) -> N
 
 def test_zip_members_are_recorded_as_zip_paths(tmp_path: Path) -> None:
     """The spool is gone after the ingest: manifests and skipped lists name the ZIP."""
-    from atlas_log_analyzer.service.ingest import ingest_paths
-    from atlas_log_analyzer.store import Store
-    from atlas_log_analyzer.store.split import shown_path
+    from ragnalog.service.ingest import ingest_paths
+    from ragnalog.store import Store
+    from ragnalog.store.split import shown_path
 
     members = dict(_support_members())
     members["application-logs/access.log"] = b"10.0.0.1 - - [01/Nov/2026] GET / 200\n" * 3
@@ -380,7 +380,7 @@ def test_zip_members_are_recorded_as_zip_paths(tmp_path: Path) -> None:
     # entries and groups name the same files, so the report can point at them
     import polars as pl
 
-    from atlas_log_analyzer.report import build_payload
+    from ragnalog.report import build_payload
 
     ls = store.open(doc["id"])
     stored = set(pl.read_parquet(ls.entries_path)["source_path"].cast(pl.String).unique())

@@ -24,10 +24,10 @@ def _forbidden() -> re.Pattern[str] | None:
     """Names of the real environment that must not reach a fixture, one regex per line.
 
     They are kept OUT of the repository, in ``forbidden.txt`` of the data folder
-    (``ATLAS_LOG_DATA``, else ``../atlas-log-analyzer-data`` beside the repository), so
+    (``RAGNALOG_DATA``, else ``../ragnalog-data`` beside the repository), so
     this guard never writes them down itself; without that file (CI) it checks nothing.
     """
-    root = Path(os.environ.get("ATLAS_LOG_DATA") or TESTS.parents[1] / "atlas-log-analyzer-data")
+    root = Path(os.environ.get("RAGNALOG_DATA") or TESTS.parents[1] / "ragnalog-data")
     try:
         lines = (root / "forbidden.txt").read_text(encoding="utf-8").splitlines()
     except OSError:

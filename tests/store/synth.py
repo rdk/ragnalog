@@ -10,12 +10,12 @@ from types import MappingProxyType
 
 import xxhash
 
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.grouping import Group, SignedEntry
-from atlas_log_analyzer.core.masking import MaskRule
-from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
-from atlas_log_analyzer.core.reader import SourceFile
-from atlas_log_analyzer.core.signature import Signature, SignatureSpec
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.grouping import Group, SignedEntry
+from ragnalog.core.masking import MaskRule
+from ragnalog.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
+from ragnalog.core.reader import SourceFile
+from ragnalog.core.signature import Signature, SignatureSpec
 
 TZ = timezone(timedelta(hours=2))
 BASE = datetime(2026, 10, 1, 8, 0, 0, tzinfo=TZ)

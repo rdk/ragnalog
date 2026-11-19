@@ -8,8 +8,8 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.service.params import (
+from ragnalog.service.errors import OpError
+from ragnalog.service.params import (
     DEFAULT_MAX_RAW,
     MAX_COUNT,
     EntryQuery,

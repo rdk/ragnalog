@@ -10,7 +10,7 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
+from ragnalog.cli.app import run
 
 DATA = Path(__file__).parent / "data"
 MINI_LOG = DATA / "mini.log"
@@ -35,7 +35,7 @@ type Invoke = Callable[..., Result]
 
 @pytest.fixture
 def cli(capsys: pytest.CaptureFixture[str]) -> Invoke:
-    """Run ``atlas-log`` in-process with the given arguments."""
+    """Run ``ragnalog`` in-process with the given arguments."""
 
     def invoke(*args: object) -> Result:
         capsys.readouterr()

@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.config import ENV_VARS
-from atlas_log_analyzer.webapp import Settings
+from ragnalog.cli.app import run
+from ragnalog.config import ENV_VARS
+from ragnalog.webapp import Settings
 
 ENV_KEYS = tuple(var.name for var in ENV_VARS)
 
@@ -35,11 +35,11 @@ def test_reload_passes_every_setting(calls: list[Any], tmp_path: Path) -> None:
     argv = ["--store", store, "serve", "--reload", "--token", "s3cret", "--max-upload-mb", "7"]
     assert run([str(a) for a in argv]) == 0
     (args, kwargs), *_ = calls
-    assert args == ("atlas_log_analyzer.webapp.app:create_app",)
+    assert args == ("ragnalog.webapp.app:create_app",)
     assert kwargs["factory"] is True and kwargs["reload"] is True
     child = Settings.from_env()  # what the reloaded factory builds
     assert child == Settings(store=store, max_upload_mb=7, token="s3cret")
-    assert os.environ["ATLAS_LOG_TOKEN"] == "s3cret"
+    assert os.environ["RAGNALOG_TOKEN"] == "s3cret"
 
 
 def test_reload_without_token_clears_it(calls: list[Any], tmp_path: Path) -> None:
@@ -50,10 +50,10 @@ def test_reload_without_token_clears_it(calls: list[Any], tmp_path: Path) -> Non
 
 
 def test_serve_env_max_upload(calls: list[Any], tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setenv("ATLAS_LOG_MAX_UPLOAD_MB", "9")
+    monkeypatch.setenv("RAGNALOG_MAX_UPLOAD_MB", "9")
     assert run(["--store", str(tmp_path / "s"), "serve"]) == 0
     (args, _), *_ = calls
-    assert args[0].state.atlas.settings.max_upload_mb == 9
+    assert args[0].state.ragnalog.settings.max_upload_mb == 9
 
 
 def test_settings_env_round_trip(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -75,7 +75,7 @@ def test_serve_rejects_bad_max_upload(tmp_path: Path) -> None:
 
 
 def test_reload_passes_app_packages(calls: list[Any], tmp_path: Path, monkeypatch: Any) -> None:
-    monkeypatch.setenv("ATLAS_LOG_APP_PACKAGES", "org.acme.")
+    monkeypatch.setenv("RAGNALOG_APP_PACKAGES", "org.acme.")
     assert run(["--store", str(tmp_path / "s"), "serve", "--reload"]) == 0
     assert Settings.from_env().app_packages == ("org.acme.",)
 
@@ -106,7 +106,7 @@ def test_reload_factory_checks_host_on_loopback(calls: list[Any], tmp_path: Path
     """The reloading child is not told its address: it checks per connection."""
     from fastapi.testclient import TestClient
 
-    from atlas_log_analyzer.webapp import create_app
+    from ragnalog.webapp import create_app
 
     assert run(["--store", str(tmp_path / "s"), "serve", "--reload"]) == 0
     app = create_app()  # what uvicorn's factory call builds

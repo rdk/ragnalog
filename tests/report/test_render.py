@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.report import build_payload, build_report, render_html, write_report
-from atlas_log_analyzer.report.render import asset_text, embed_json
-from atlas_log_analyzer.store import Store
+from ragnalog.report import build_payload, build_report, render_html, write_report
+from ragnalog.report.render import asset_text, embed_json
+from ragnalog.store import Store
 
 from .conftest import report_data
 
@@ -41,7 +41,7 @@ def test_assets_are_inlined(html: str) -> None:
     assert 'id="report-data">__REPORT_DATA__' not in html  # report.js may mention the marker
     assert "--lv-error: #d03b3b" in html  # CSS
     assert '"use strict"' in html and '$("report-data")' in html  # JS
-    assert "<title>sample · atlas-log report</title>" in html
+    assert "<title>sample · ragnalog report</title>" in html
 
 
 def test_payload_round_trips(html: str, payload: dict[str, Any]) -> None:
@@ -65,7 +65,7 @@ def test_script_breakers_are_escaped(payload: dict[str, Any]) -> None:
     assert "alert(1)</script>" not in page
     assert "<!-- y" not in page
     assert "</SCRIPT>" not in page
-    assert "<title>&lt;b&gt;set&lt;/b&gt; · atlas-log report</title>" in page
+    assert "<title>&lt;b&gt;set&lt;/b&gt; · ragnalog report</title>" in page
     data = report_data(page)
     assert isinstance(data, dict)
     assert data["entries"][entry_id]["raw"] == EVIL
@@ -170,4 +170,4 @@ def test_placeholder_text_in_set_name_is_not_substituted(payload: dict[str, Any]
     data = report_data(page)
     assert isinstance(data, dict)
     assert data["logset"]["name"] == "__REPORT_DATA__ /*__REPORT_CSS__*/"
-    assert "<title>__REPORT_DATA__ /*__REPORT_CSS__*/ · atlas-log report</title>" in page
+    assert "<title>__REPORT_DATA__ /*__REPORT_CSS__*/ · ragnalog report</title>" in page

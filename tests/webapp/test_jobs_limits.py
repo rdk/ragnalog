@@ -10,9 +10,9 @@ from typing import NamedTuple
 import pytest
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.webapp import Settings, create_app
-from atlas_log_analyzer.webapp.jobs import KEEP_FINISHED, MAX_ACTIVE_JOBS, Job, JobManager
-from atlas_log_analyzer.webapp.state import AppState
+from ragnalog.webapp import Settings, create_app
+from ragnalog.webapp.jobs import KEEP_FINISHED, MAX_ACTIVE_JOBS, Job, JobManager
+from ragnalog.webapp.state import AppState
 
 from .conftest import MINI
 
@@ -50,7 +50,7 @@ def test_upload_refused_for_disk_space(
 
 def test_upload_refused_for_full_queue(client: TestClient, store_dir: Path) -> None:
     """MAX_ACTIVE_JOBS queued or running: 503 with Retry-After and nothing written."""
-    manager = client.app.state.atlas.jobs  # type: ignore[attr-defined]
+    manager = client.app.state.ragnalog.jobs  # type: ignore[attr-defined]
     for i in range(MAX_ACTIVE_JOBS):
         manager._jobs[f"q{i}"] = Job(f"q{i}", None, [], 0, {}, state="queued")
     resp = None
@@ -68,7 +68,7 @@ def test_queue_filled_while_the_body_was_read(
     client: TestClient, store_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The header check passed, then other uploads filled the queue: submit refuses (503)."""
-    manager = client.app.state.atlas.jobs  # type: ignore[attr-defined]
+    manager = client.app.state.ragnalog.jobs  # type: ignore[attr-defined]
     real_new = manager.new_upload_dir
 
     def fill_then_allocate() -> tuple[str, Path]:

@@ -14,8 +14,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.store import Store
+from ragnalog.cli.app import run
+from ragnalog.store import Store
 
 FIXTURES = Path(__file__).parents[1] / "fixtures" / "jira"
 SAMPLE_LOG = FIXTURES / "sample.log"

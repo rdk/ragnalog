@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.cli.output import highlight_entry
+from ragnalog.cli.output import highlight_entry
 
 from .conftest import Invoke
 from .synth import EXCEPTION_MIX, PLUGIN_TRACE, write_log
@@ -76,7 +76,7 @@ def test_frames_limit_and_all(jcli: Invoke, mix: dict[str, str]) -> None:
 def test_frames_app_packages_env(
     jcli: Invoke, mix: dict[str, str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setenv("ATLAS_LOG_APP_PACKAGES", " org.acme. , com.google.")
+    monkeypatch.setenv("RAGNALOG_APP_PACKAGES", " org.acme. , com.google.")
     doc = jcli("frames", "mix", mix["id"]).json()
     assert doc["app_packages"] == ["org.acme.", "com.google."]
     outer, cause = doc["items"]
@@ -121,5 +121,5 @@ def test_highlight_platform_frames_are_not_bold() -> None:
     assert bold(text, "StatTypeHelper.resolve") and bold(text, "ReportService.build")
     assert not bold(text, "CustomFieldImpl.getValue")
     assert not bold(text, "Iterators.transform")
-    text = highlight_entry(raw, ("org.acme.",))  # ATLAS_LOG_APP_PACKAGES, via the settings
+    text = highlight_entry(raw, ("org.acme.",))  # RAGNALOG_APP_PACKAGES, via the settings
     assert bold(text, "ReportService.build") and not bold(text, "StatTypeHelper.resolve")

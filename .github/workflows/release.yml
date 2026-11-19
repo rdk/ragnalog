@@ -77,7 +77,7 @@ jobs:
             echo "release $TAG exists: kept as it is"
           else
             gh release create "$TAG" dist/* \
-              --title "atlas-log-analyzer ${{ steps.meta.outputs.version }}" \
+              --title "ragnalog ${{ steps.meta.outputs.version }}" \
               --notes-file "$RUNNER_TEMP/notes.md"
           fi
 

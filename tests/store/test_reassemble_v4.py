@@ -10,11 +10,11 @@ import polars as pl
 import pyarrow.parquet as pq
 import pytest
 
-from atlas_log_analyzer.core.formats import jira
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.models import ExceptionInfo
-from atlas_log_analyzer.store import LogSet, Store
-from atlas_log_analyzer.store.pipeline import ingest_paths
+from ragnalog.core.formats import jira
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.models import ExceptionInfo
+from ragnalog.store import LogSet, Store
+from ragnalog.store.pipeline import ingest_paths
 
 TAB = "\t"
 LINES = [

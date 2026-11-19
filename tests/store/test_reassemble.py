@@ -10,14 +10,14 @@ import polars as pl
 import pyarrow.parquet as pq
 import pytest
 
-from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.parser import attach_banners, parse_file
-from atlas_log_analyzer.core.pipeline import Recipe
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.store import LogSet, Store
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.regroup import resign_entries
+from ragnalog.core.formats.base import CTX_PREAMBLE
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.parser import attach_banners, parse_file
+from ragnalog.core.pipeline import Recipe
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.store import LogSet, Store
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.regroup import resign_entries
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jira"
 MINI = Path(__file__).resolve().parents[1] / "cli" / "data" / "mini.log"
@@ -184,8 +184,8 @@ def _v2_parse(monkeypatch: pytest.MonkeyPatch) -> None:
     """Parse as jira@2 did: one-word users only, a suppressed cause in the main chain."""
     import re
 
-    from atlas_log_analyzer.core.formats import jira
-    from atlas_log_analyzer.core.models import ExceptionInfo
+    from ragnalog.core.formats import jira
+    from ragnalog.core.models import ExceptionInfo
 
     current = jira.parse_exceptions
 

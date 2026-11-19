@@ -14,7 +14,7 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.report.render import asset_text
+from ragnalog.report.render import asset_text
 
 pytestmark = pytest.mark.skipif(shutil.which("node") is None, reason="node is not on PATH")
 
@@ -22,7 +22,7 @@ HARNESS = r"""
 const fs = require("fs");
 const win = {};
 new Function("window", fs.readFileSync(process.argv[2], "utf8"))(win);
-const page = win.AtlasEntryCard.create({
+const page = win.RagnalogEntryCard.create({
   badge: () => "", tsFull: (t) => String(t), bucketOf: () => "ERROR", levelNum: () => 50,
   tz: () => "UTC", entry: () => ({}),
 });

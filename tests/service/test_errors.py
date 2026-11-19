@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-from atlas_log_analyzer.service.errors import (
+from ragnalog.core.formats.registry import UnknownFormatError
+from ragnalog.service.errors import (
     REASONS,
     SPEC,
     ExitCode,
@@ -20,13 +20,13 @@ from atlas_log_analyzer.service.errors import (
     from_exception,
     hint,
 )
-from atlas_log_analyzer.service.views import AmbiguousSignature
-from atlas_log_analyzer.store.levels import InvalidLevel
-from atlas_log_analyzer.store.pipeline import FormatNotDetected, NoSourcesFound, NotInFormat
-from atlas_log_analyzer.store.store import AmbiguousLogSet, LogSetNotFound, StoreError
+from ragnalog.service.views import AmbiguousSignature
+from ragnalog.store.levels import InvalidLevel
+from ragnalog.store.pipeline import FormatNotDetected, NoSourcesFound, NotInFormat
+from ragnalog.store.store import AmbiguousLogSet, LogSetNotFound, StoreError
 
 ROOT = Path(__file__).resolve().parents[2]
-SRC = ROOT / "src" / "atlas_log_analyzer"
+SRC = ROOT / "src" / "ragnalog"
 DOCS = [ROOT / "docs" / "cli.md", ROOT / "docs" / "webapp.md"]
 
 
@@ -138,7 +138,7 @@ def test_envelope_keys() -> None:
 
 def test_hints_and_flags_per_front_end() -> None:
     cli, api = hint("group_not_found", "cli", set="prod"), hint("group_not_found", "api", id="a")
-    assert cli == "list signatures with `atlas-log groups prod`"
+    assert cli == "list signatures with `ragnalog groups prod`"
     assert api == "list signatures with GET /api/sets/a/groups"
     assert hint("set_not_found", "cli") is None  # the CLI lists the store's sets instead
     assert hint("no_such_thing", "api") is None
@@ -153,9 +153,9 @@ def test_unknown_code_falls_back() -> None:
 def test_mapping_loads_no_data_libraries() -> None:
     script = (
         "import json, sys\n"
-        "from atlas_log_analyzer.service.errors import from_exception\n"
+        "from ragnalog.service.errors import from_exception\n"
         "from_exception(ValueError('x'), 'cli'); from_exception(KeyError('k'), 'api')\n"
-        "print(json.dumps([m for m in ('polars', 'atlas_log_analyzer.store.pipeline')"
+        "print(json.dumps([m for m in ('polars', 'ragnalog.store.pipeline')"
         " if m in sys.modules]))\n"
     )
     out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)

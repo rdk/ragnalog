@@ -6,8 +6,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.parser import parse_file
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.parser import parse_file
 
 from .conftest import SAMPLE
 
@@ -33,9 +33,9 @@ def test_throughput_smoke() -> None:
     assert entries > 0
 
 
-@pytest.mark.skipif(not os.environ.get("ATLAS_LOG_DATA"), reason="ATLAS_LOG_DATA not set")
+@pytest.mark.skipif(not os.environ.get("RAGNALOG_DATA"), reason="RAGNALOG_DATA not set")
 def test_benchmark_real_file() -> None:
-    path = Path(os.environ["ATLAS_LOG_DATA"]) / BENCH_FILE
+    path = Path(os.environ["RAGNALOG_DATA"]) / BENCH_FILE
     if not path.is_file():
         pytest.skip(f"{path} not found")
     _run(path)  # warm-up (regex compilation, OS file cache)

@@ -25,8 +25,8 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.service.documents import DOCUMENTS, convert, decode, document_schema
-from atlas_log_analyzer.webapp import Settings, create_app
+from ragnalog.service.documents import DOCUMENTS, convert, decode, document_schema
+from ragnalog.webapp import Settings, create_app
 
 from . import test_parity as parity
 
@@ -126,7 +126,7 @@ def test_parity_documents_match_their_structs(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ATLAS_LOG_APP_PACKAGES", raising=False)
+    monkeypatch.delenv("RAGNALOG_APP_PACKAGES", raising=False)
     _, cli_doc = parity._cli(store_dir, [a.format(**refs) for a in case.cli], capsys)
     _, api_doc = parity._api(client, case.api.format(**refs))
     check(cli_doc)

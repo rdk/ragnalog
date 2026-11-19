@@ -28,14 +28,14 @@ from typing import Any
 import msgspec
 import pytest
 
-from atlas_log_analyzer.core.events import EVENT_RULES_VERSION
-from atlas_log_analyzer.service import cluster as C
-from atlas_log_analyzer.service.documents import DOCUMENTS, ClusterReport, document_schema
-from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.manifest import LogSetManifest
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.store import Store
+from ragnalog.core.events import EVENT_RULES_VERSION
+from ragnalog.service import cluster as C
+from ragnalog.service.documents import DOCUMENTS, ClusterReport, document_schema
+from ragnalog.service.errors import OpError
+from ragnalog.store.filters import EntryFilter, GroupFilter
+from ragnalog.store.manifest import LogSetManifest
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.store import Store
 from tests.contract.test_schemas import validate
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "cluster"

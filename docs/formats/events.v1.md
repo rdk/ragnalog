@@ -2,7 +2,7 @@
 
 What every node did: restarts, health checks, index and cache events, jobs.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`events.v1.schema.json`](events.v1.schema.json), also `atlas-log schema events.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`events.v1.schema.json`](events.v1.schema.json), also `ragnalog schema events.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

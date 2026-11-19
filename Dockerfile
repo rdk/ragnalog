@@ -1,5 +1,5 @@
-# atlas-log with the web app: `docker run -p 8321:8321 -v atlas-log:/data -e ATLAS_LOG_TOKEN=... IMAGE`
-# Any other command: `docker run --rm -v atlas-log:/data IMAGE groups SET --brief`.
+# ragnalog with the web app: `docker run -p 8321:8321 -v ragnalog:/data -e RAGNALOG_TOKEN=... IMAGE`
+# Any other command: `docker run --rm -v ragnalog:/data IMAGE groups SET --brief`.
 # The build stage and the runtime share one Python (python:3.14-slim-bookworm) and the
 # virtual environment's path (/app/.venv: its scripts name their interpreter by it), so
 # the copied environment runs as built.
@@ -13,17 +13,17 @@ COPY src ./src
 RUN uv sync --locked --no-dev --extra web --no-editable
 
 FROM python:3.14-slim-bookworm
-RUN useradd --create-home --uid 10001 atlas && mkdir /data && chown atlas /data
-COPY --from=build --chown=atlas /app/.venv /app/.venv
+RUN useradd --create-home --uid 10001 ragnalog && mkdir /data && chown ragnalog /data
+COPY --from=build --chown=ragnalog /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \
-    ATLAS_LOG_STORE=/data \
+    RAGNALOG_STORE=/data \
     PYTHONUNBUFFERED=1
-USER atlas
-WORKDIR /home/atlas
+USER ragnalog
+WORKDIR /home/ragnalog
 VOLUME /data
 EXPOSE 8321
 # /static is answered without the token
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s \
     CMD ["python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8321/static/webapp.js', timeout=4)"]
-ENTRYPOINT ["atlas-log"]
+ENTRYPOINT ["ragnalog"]
 CMD ["serve", "--host", "0.0.0.0", "--port", "8321"]

@@ -61,7 +61,7 @@ def test_entries_exception_filters(jcli: Invoke, mix: str) -> None:
 
 
 def test_store_counts_match(jcli: Invoke, mix: str, store_dir: Path) -> None:
-    from atlas_log_analyzer.store import Store
+    from ragnalog.store import Store
 
     ls = Store(store_dir).open("mix")
     assert ls.count_groups(with_exception=True) == ls.groups(with_exception=True).height == 2

@@ -10,8 +10,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.cli import app as cli_app
-from atlas_log_analyzer.cli import context as cli_context
+from ragnalog.cli import app as cli_app
+from ragnalog.cli import context as cli_context
 
 
 class _ClosedPipe(io.TextIOBase):
@@ -76,9 +76,9 @@ def test_other_einval_is_an_internal_error(
     monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
     """EINVAL while stdout still works (e.g. an invalid file name) is reported."""
-    monkeypatch.delenv("ATLAS_LOG_DEBUG", raising=False)
+    monkeypatch.delenv("RAGNALOG_DEBUG", raising=False)
     monkeypatch.setattr(cli_context, "_CURRENT", None)  # no output settings left by other tests
-    monkeypatch.setattr(sys, "argv", ["atlas-log", "--output", "json", "sets"])
+    monkeypatch.setattr(sys, "argv", ["ragnalog", "--output", "json", "sets"])
     monkeypatch.setattr(cli_app, "run", _fail_with(OSError(errno.EINVAL, "bad name")))
     with pytest.raises(SystemExit) as stop:
         cli_app.main()

@@ -1,6 +1,6 @@
 [project]
-name = "atlas-log-analyzer"
-version = "0.5.0"
+name = "ragnalog"
+version = "0.6.0"
 description = "Parse, group and compare application log files (Jira Data Center first)."
 readme = "README.md"
 authors = [{ name = "Radoslav Krivak" }]
@@ -32,10 +32,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/rdk/atlas-log-analyzer"
-Repository = "https://github.com/rdk/atlas-log-analyzer"
-Issues = "https://github.com/rdk/atlas-log-analyzer/issues"
-Documentation = "https://github.com/rdk/atlas-log-analyzer/blob/main/docs/cli.md"
+Homepage = "https://github.com/rdk/ragnalog"
+Repository = "https://github.com/rdk/ragnalog"
+Issues = "https://github.com/rdk/ragnalog/issues"
+Documentation = "https://github.com/rdk/ragnalog/blob/main/docs/cli.md"
 
 [project.optional-dependencies]
 mine = ["drain3>=0.9.11"]
@@ -47,10 +47,10 @@ web = [
 ]
 
 [project.scripts]
-atlas-log = "atlas_log_analyzer.cli.app:main"
+ragnalog = "ragnalog.cli.app:main"
 
-[project.entry-points."atlas_log_analyzer.formats"]
-jira = "atlas_log_analyzer.core.formats.jira:JiraFormat"
+[project.entry-points."ragnalog.formats"]
+jira = "ragnalog.core.formats.jira:JiraFormat"
 
 [dependency-groups]
 dev = [
@@ -82,7 +82,7 @@ ignore = ["D100", "D104", "D105", "D107", "D203", "D213", "ANN401", "RUF012"]
 [tool.mypy]
 python_version = "3.14"
 strict = true
-packages = ["atlas_log_analyzer"]
+packages = ["ragnalog"]
 mypy_path = "src"
 ignore_missing_imports = true
 

@@ -1,12 +1,12 @@
 // Aurora README screenshots (docs/img) from synthetic demo logs, never real data.
 //
 //   uv run python scripts/demo_logs.py DEMO
-//   uv run atlas-log --store DEMO-DATA ingest DEMO/prev --cluster demo-jira --name prev
-//   uv run atlas-log --store DEMO-DATA ingest DEMO/week --cluster demo-jira --name week
-//   uv run atlas-log --store DEMO-DATA serve --port 8341        (in another terminal)
+//   uv run ragnalog --store DEMO-DATA ingest DEMO/prev --cluster demo-jira --name prev
+//   uv run ragnalog --store DEMO-DATA ingest DEMO/week --cluster demo-jira --name week
+//   uv run ragnalog --store DEMO-DATA serve --port 8341        (in another terminal)
 //   node scripts/screenshots.mjs http://127.0.0.1:8341 docs/img
 //
-// Needs Node 22+ (global WebSocket) and Edge or Chrome; ATLAS_LOG_BROWSER names the browser
+// Needs Node 22+ (global WebSocket) and Edge or Chrome; RAGNALOG_BROWSER names the browser
 // when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 PNGs).
 // Writes hero-light, hero-dark, drawer, cluster, triage and entries .png.
 import { spawn } from "node:child_process";
@@ -20,7 +20,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function browserPath() {
   const candidates = [
-    process.env.ATLAS_LOG_BROWSER,
+    process.env.RAGNALOG_BROWSER,
     "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
     "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
     "C:/Program Files/Google/Chrome/Application/chrome.exe",
@@ -29,11 +29,11 @@ function browserPath() {
     "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", "/usr/bin/microsoft-edge",
   ];
   const found = candidates.find((p) => p && existsSync(p));
-  if (!found) throw new Error("no Edge or Chrome found: set ATLAS_LOG_BROWSER");
+  if (!found) throw new Error("no Edge or Chrome found: set RAGNALOG_BROWSER");
   return found;
 }
 
-const profile = mkdtempSync(join(tmpdir(), "atlas-shots-"));
+const profile = mkdtempSync(join(tmpdir(), "ragnalog-shots-"));
 const browser = spawn(browserPath(), ["--headless=new", "--disable-gpu", "--hide-scrollbars",
   `--remote-debugging-port=${PORT}`, `--user-data-dir=${profile}`, "about:blank"], { stdio: "ignore" });
 let pages = null;
@@ -95,7 +95,7 @@ try {
   const node1 = sets.find((s) => s.name === "week_node1"), node2 = sets.find((s) => s.name === "week_node2");
   if (!node1 || !node2) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");
   await go(`${base}/`);
-  await evaluate('localStorage.clear(); localStorage.setItem("atlas-log-skin", "aurora")');
+  await evaluate('localStorage.clear(); localStorage.setItem("ragnalog-skin", "aurora")');
   for (const t of ["light", "dark"]) {
     await theme(t);
     await go(`${base}/sets/${node2.id}`);

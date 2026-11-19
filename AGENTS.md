@@ -1,13 +1,13 @@
-# AGENTS.md — working on atlas-log-analyzer
+# AGENTS.md — working on ragnalog
 
-Python 3.14 project managed with uv; CLI `atlas-log`. Read `docs/design.md`
+Python 3.14 project managed with uv; CLI `ragnalog`. Read `docs/design.md`
 before changing behaviour; `docs/cli.md` documents the command contract.
 
 ## Layout
 
 ```
-src/atlas_log_analyzer/
-  config.py  Settings + ENV_VARS (stdlib only): flags > ATLAS_LOG_* > defaults; core reads no env
+src/ragnalog/
+  config.py  Settings + ENV_VARS (stdlib only): flags > RAGNALOG_* > defaults; core reads no env
   core/      pure library: models, formats (registry, jira), reader, parser,
              java stack traces, masking, signatures, grouping, pipeline (Recipe:
              format + spec + rules -> masker/signer/grouper and the recipe key),
@@ -28,7 +28,7 @@ src/atlas_log_analyzer/
              context.py (output, settings, store of one invocation), params.py (option
              defaults), render.py (table renderers), output.py (json/jsonl/table, error
              envelopes), manifest.py (manifest.v1, the agent manifest)
-  webapp/    FastAPI app (`atlas-log serve`): api.py (/api JSON), pages.py + templates/
+  webapp/    FastAPI app (`ragnalog serve`): api.py (/api JSON), pages.py + templates/
              (HTML), jobs.py (background ingest), state.py (store lock, caches),
              openapi.py (document schemas in /openapi.json, GET /api/manifest)
 tests/
@@ -72,7 +72,7 @@ uv run ruff check .                  # lint (rules incl. D docstrings, ANN annot
 uv run ruff format .                 # format (checks run `ruff format --check .`)
 uv run mypy                          # strict type check of the package
 uv run pytest                        # all tests; `uv run pytest tests/cli -q` for one package
-uv run atlas-log --help              # the CLI from the working tree
+uv run ragnalog --help               # the CLI from the working tree
 uv run python docs/formats/generate.py   # regenerate docs/formats (md + JSON Schema) and docs/cli.md lists
 ```
 
@@ -93,7 +93,7 @@ it publishes a tag; see `RELEASING.md`. UI changes: refresh the README screensho
   signature algorithm requires bumping `MASK_RULES_VERSION` / `SIGNATURE_VERSION`
   (a format's own rules: its `version`); all are part of `Recipe.key`, which the
   manifest stores as `recipe_key` and which decides comparability (`diff`, triage
-  baselines, `stale` in `sets`, `atlas-log upgrade`). Build maskers, signers and
+  baselines, `stale` in `sets`, `ragnalog upgrade`). Build maskers, signers and
   groupers through `core.pipeline.Recipe`, not by hand. A change to the entries a
   format assembles (its opt-ins `banner_window_ms`, `titles_from_body`) also bumps
   its `version`; `upgrade` must then rebuild old sets from their stored entries
@@ -104,13 +104,13 @@ it publishes a tag; see `RELEASING.md`. UI changes: refresh the README screensho
   for one front end (`front="cli"`/`"api"`); never rename an error code, add a
   `reason` (`service/errors.py` `REASONS`) when the front ends' codes differ, and
   keep the tables in `docs/cli.md`/`docs/webapp.md` equal to `SPEC`/`REASONS`
-  (`tests/service/test_errors.py`). Settings and `ATLAS_LOG_*` variables are
+  (`tests/service/test_errors.py`). Settings and `RAGNALOG_*` variables are
   `config.Settings`/`ENV_VARS` only. Every JSON document has a
   `"schema": "<name>.v1"` key; listings use `"items"`. Documents are typed only in
   `service/documents.py`: a new document or key gets its Struct field there
   (optional when only some commands or modes add it), then regenerate
   `docs/formats/`; a new `/api` route gets its document in `webapp/openapi.py`.
-  `atlas-log manifest [COMMAND]` is generated from the commands into
+  `ragnalog manifest [COMMAND]` is generated from the commands into
   `service/manifest.json` (regenerate with `docs/formats/generate.py` after changing
   a command); only its workflow/`when` table in `cli/manifest.py` is written by
   hand, and `manifest.v1` must stay under 16 KB (about 10 KB today). Exit codes: 0 ok,
@@ -128,20 +128,20 @@ it publishes a tag; see `RELEASING.md`. UI changes: refresh the README screensho
 - Rows go through one serialiser, `store.logset.to_records` (also behind
   `cli.output.jsonable_rows`): ISO 8601 UTC with milliseconds, naive = UTC.
 - Tests: pytest, no network. CLI tests run the app in-process via
-  `atlas_log_analyzer.cli.app.run(argv)` (fixtures in `tests/cli/conftest.py`).
+  `ragnalog.cli.app.run(argv)` (fixtures in `tests/cli/conftest.py`).
   Web app tests use FastAPI's `TestClient` over a temp store (`tests/webapp/conftest.py`).
 
 ## Data hygiene
 
 **Never commit real logs.** Fixtures must be small, hand-checked excerpts with
 user names, issue keys, hosts, IPs and URLs masked or invented. Stores
-(`.atlas-log/`) and any customer data stay out of the repository: the CLI
-refuses to create the implicit `./.atlas-log` inside a git work tree, so pass
-`--store DIR` (a temp dir) or set `ATLAS_LOG_STORE` when trying commands.
-Real log sets live outside the repository in `../atlas-log-analyzer-data/`
+(`.ragnalog/`) and any customer data stay out of the repository: the CLI
+refuses to create the implicit `./.ragnalog` inside a git work tree, so pass
+`--store DIR` (a temp dir) or set `RAGNALOG_STORE` when trying commands.
+Real log sets live outside the repository in `../ragnalog-data/`
 (layout, naming and the excerpt-to-fixture procedure in its `README.md`;
 `stores/main` there holds them ingested). Opt-in tests read it via
-`ATLAS_LOG_DATA`. Names of the real environment (its domain, company packages,
+`RAGNALOG_DATA`. Names of the real environment (its domain, company packages,
 in-house plugins, paths) are never written into the repository, not even as a
 guard: `tests/test_fixture_hygiene.py` reads them from `forbidden.txt` in that
 folder, and `scripts/make_fixture.py` takes the logs' domain as `--host-domain`.

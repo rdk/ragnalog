@@ -2,7 +2,7 @@
 
 A failure (CLI: on stdout in json/jsonl mode, with exit code 1-3; API: 4xx/5xx).
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`error.v1.schema.json`](error.v1.schema.json), also `atlas-log schema error.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`error.v1.schema.json`](error.v1.schema.json), also `ragnalog schema error.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

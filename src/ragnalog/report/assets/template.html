@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en" data-skin="aurora">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="generator" content="ragnalog report">
+<title>__REPORT_TITLE__</title>
+<script>
+/* Theme before first paint: #theme=dark|light override, then localStorage, else the OS. */
+(function () {
+  /* Settings saved before the rename to ragnalog (0.6.0) move to the new keys once. */
+  try { ["report-theme", "skin", "wide", "tz", "drawer-w"].forEach(function (k) { var v = localStorage.getItem("atlas-log-" + k); if (v !== null) { if (localStorage.getItem("ragnalog-" + k) === null) { localStorage.setItem("ragnalog-" + k, v); } localStorage.removeItem("atlas-log-" + k); } }); } catch (e) { /* storage unavailable */ }
+  var t = null;
+  var m = /(?:^#|&)theme=(dark|light)(?:&|$)/.exec(location.hash);
+  if (m) { t = m[1]; } else { try { t = localStorage.getItem("ragnalog-report-theme"); } catch (e) { t = null; } }
+  if (t === "dark" || t === "light") { document.documentElement.setAttribute("data-theme", t); }
+  var s = null;
+  try { s = localStorage.getItem("ragnalog-skin"); } catch (e) { /* storage unavailable */ }
+  if (s === "classic") { document.documentElement.removeAttribute("data-skin"); }
+  else { document.documentElement.setAttribute("data-skin", s === "mineral" ? "mineral" : "aurora"); }
+  try { if (localStorage.getItem("ragnalog-wide") === "1") { document.documentElement.setAttribute("data-wide", ""); } } catch (e) { /* storage unavailable */ }
+})();
+</script>
+<style>
+/*__REPORT_CSS__*/
+</style>
+</head>
+<body class="report">
+<header class="top" id="top">
+  <div class="top-id">
+    <h1 id="set-name">ragnalog report</h1>
+    <div class="top-meta" id="set-meta"></div>
+    <div class="set-notices" id="set-notices" hidden></div>
+  </div>
+  <div class="top-actions">
+    <details class="report-details disclosure" id="report-details">
+      <summary class="btn link">Set details</summary>
+      <div class="disclosure-panel"><div class="tiles" id="tiles" aria-label="Log set summary"></div><p class="report-provenance" id="report-provenance"></p></div>
+    </details>
+    <span class="tool-btns" role="group" aria-label="Page settings">
+      <button type="button" class="btn" id="btn-tz" aria-pressed="false" title="Show times in UTC or in your time zone"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M8 5v3.2l2 1.3"/></svg><span class="tz-t">UTC</span></button>
+      <button type="button" class="btn icon" id="btn-theme" title="Light or dark theme (remembered)" aria-label="Switch theme"><svg class="i-moon" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13 9.6A5.5 5.5 0 0 1 6.4 3a5.5 5.5 0 1 0 6.6 6.6z"/></svg><svg class="i-sun" viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="2.6"/><path d="M8 1.8v1.4M8 12.8v1.4M1.8 8h1.4M12.8 8h1.4M3.6 3.6l1 1M11.4 11.4l1 1M3.6 12.4l1-1M11.4 4.6l1-1"/></svg></button>
+      <button type="button" class="btn icon" id="btn-wide" aria-pressed="false" title="Use the full screen width (w)" aria-label="Full screen width"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M9.5 2.5h4v4M13.5 2.5 9 7M6.5 13.5h-4v-4M2.5 13.5 7 9" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+      <button type="button" class="btn icon" id="btn-help" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="8" cy="8" r="5.5"/><path d="M6.4 6.4a1.7 1.7 0 1 1 2.4 1.5c-.5.3-.8.6-.8 1.2M8 11.4h.01"/></svg></button>
+      <details class="more-menu" id="more-menu">
+        <summary class="btn icon" title="Identifiers, CLI commands and the raw data, for scripts and agents" aria-label="More: identifiers, CLI and data"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><circle cx="3.5" cy="8" r="1.25" fill="currentColor"/><circle cx="8" cy="8" r="1.25" fill="currentColor"/><circle cx="12.5" cy="8" r="1.25" fill="currentColor"/></svg></summary>
+        <div class="menu">
+          <span class="menu-k">For scripts and agents</span>
+          <button type="button" class="menu-item" id="btn-ids">Identifiers &amp; CLI commands…</button>
+          <button type="button" class="menu-item" id="btn-data">Download the data <span class="muted">report.v1 JSON</span></button>
+        </div>
+      </details>
+    </span>
+  </div>
+</header>
+<section class="overview card" aria-label="Overview">
+  <div class="card-head">
+    <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
+    <div class="legend" id="tl-legend"></div>
+    <div class="tl-window" id="tl-window"></div>
+    <div class="tl-clip" id="tl-clip"></div>
+  </div>
+  <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window" title="Drag across the chart to select a time window; click to clear it"></div>
+</section>
+
+<main id="app">
+  <section class="filters" id="filters" aria-label="Filters">
+   <div class="f-scope" id="f-scope" aria-hidden="true"></div>
+   <div class="f-row">
+    <input type="search" id="f-search" placeholder="Search groups" title="Search messages, loggers and exceptions; sig:PREFIX matches a signature" aria-label="Search" autocomplete="off" spellcheck="false">
+    <div class="chips" id="f-levels" role="group" aria-label="Levels"></div>
+    <label class="sel"><span>Sort</span><select id="f-sort" aria-label="Sort"></select></label>
+    <details class="filter-more disclosure" id="f-more">
+      <summary class="btn" id="f-more-label">More filters</summary>
+      <div class="disclosure-panel" id="f-advanced">
+    <div class="f-grp" id="f-facets">
+    <div class="facet" id="f-logger-wrap">
+      <button type="button" class="btn facet-btn" id="f-logger" aria-haspopup="true" aria-expanded="false" aria-controls="f-logger-pop">Logger</button>
+      <div class="pop" id="f-logger-pop" hidden></div>
+    </div>
+    <div class="facet" id="f-exc-wrap">
+      <button type="button" class="btn facet-btn" id="f-exc" aria-haspopup="true" aria-expanded="false" aria-controls="f-exc-pop">Exception</button>
+      <div class="pop" id="f-exc-pop" hidden></div>
+    </div>
+    <button type="button" class="btn toggle" id="f-hasexc" aria-pressed="false">Has exception</button>
+    </div>
+        <div class="f-grp" id="f-view">
+    <button type="button" class="btn toggle" id="f-coarse" aria-pressed="false" title="Group by coarse signature (exception chain ignored)">Coarse</button>
+    <button type="button" class="btn toggle" id="f-merged" aria-pressed="false" title="Apply Drain3 merge proposals" hidden>Merged</button>
+        </div>
+      </div>
+    </details>
+    <button type="button" class="btn link f-end" id="f-reset" title="Reset all filters, sort and view">Reset</button>
+   </div>
+   <div class="seg" id="f-compare" role="group" aria-label="Compare class" hidden></div>
+   <div class="print-only" id="f-print"></div>
+  </section>
+
+  <section class="body" id="body">
+    <div class="table-wrap" id="table-wrap" tabindex="-1">
+      <div class="table-head-line">
+        <span id="t-summary" class="muted"></span>
+        <span class="pager" id="pager-top"></span>
+      </div>
+      <table class="groups" id="groups">
+        <thead id="t-head"></thead>
+        <tbody id="t-body"></tbody>
+      </table>
+      <div class="empty" id="t-empty" hidden></div>
+      <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
+    </div>
+    <aside class="drawer" id="drawer" tabindex="-1" hidden aria-label="Group detail">
+      <div class="drawer-bar">
+        <button type="button" class="btn small icon" id="d-prev" title="Previous group (k)" aria-label="Previous group">↑</button>
+        <button type="button" class="btn small icon" id="d-next" title="Next group (j)" aria-label="Next group">↓</button>
+        <span class="d-pos" id="d-pos" aria-live="polite"></span>
+        <span class="d-which" id="d-which"></span>
+        <button type="button" class="btn small toggle" id="d-mute" data-mute aria-pressed="false" aria-label="Mute in chart" title="Leave this group out of the chart and the window totals, so what it hides shows (m)"><span>Mute<span class="opt"> in chart</span></span></button>
+        <button type="button" class="btn small" id="d-ticket" data-ticket aria-label="Copy for ticket" title="Copy the group as Jira wiki markup: template, counts, first and last seen, the set and an example"><span>Copy<span class="opt"> for</span> ticket</span></button>
+        <button type="button" class="btn small" id="d-close" title="Close (Esc)">Close</button>
+      </div>
+      <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
+        <button type="button" data-jump="d-s-hourly" title="Entries of this group over time">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries, with their full text and stack traces">Examples</button><button type="button" data-jump="d-s-who" title="The users, threads and source files with the most entries of this group">Who</button><button type="button" data-jump="d-s-rel" title="Groups that rise and fall with this one, hour by hour">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
+      </nav>
+      <div class="drawer-body" id="drawer-body"></div>
+    </aside>
+  </section>
+</main>
+
+<footer class="foot" id="foot"></footer>
+<div class="tooltip" id="tooltip" role="tooltip" hidden></div>
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+<dialog id="ids" class="ids-dlg" aria-labelledby="ids-h">
+  <h2 id="ids-h">Identifiers &amp; CLI</h2>
+  <div id="ids-body"></div>
+  <form method="dialog"><button class="btn small" autofocus>Close</button></form>
+</dialog>
+<dialog id="help" aria-labelledby="help-h">
+  <h2 id="help-h">Keyboard</h2>
+  <dl class="keys">
+    <dt><kbd>/</kbd></dt><dd>Focus search</dd>
+    <dt><kbd>j</kbd> <kbd>k</kbd></dt><dd>Next / previous group</dd>
+    <dt><kbd>Enter</kbd></dt><dd>Open the selected group</dd>
+    <dt><kbd>Esc</kbd></dt><dd>Close the drawer / leave search</dd>
+    <dt><kbd>w</kbd></dt><dd>Full screen width / the centred page width (every page)</dd>
+    <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
+    <dt><kbd>m</kbd></dt><dd>Mute / unmute the selected group in the chart</dd>
+    <dt><kbd>z</kbd></dt><dd>Times in UTC / in your time zone</dd>
+    <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page</dd>
+    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window</dd>
+    <dt><kbd>?</kbd></dt><dd>This help</dd>
+  </dl>
+  <p class="muted">Timeline: drag to filter groups to a time window, click to clear.
+  The view (filters, sort, page, selection) is kept in the URL — bookmark or paste it.</p>
+  <form method="dialog"><button class="btn small">Close</button></form>
+</dialog>
+<pre id="fatal" hidden></pre>
+<script type="application/json" id="report-data">__REPORT_DATA__</script>
+<script>
+/*__REPORT_JS__*/
+</script>
+</body>
+</html>

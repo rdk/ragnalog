@@ -1,18 +1,51 @@
 # Changelog
 
-All notable changes to atlas-log-analyzer. Versions follow
+All notable changes to Ragnalog (called atlas-log-analyzer up to 0.5.0; the
+entries below keep the names of their time). Versions follow
 [semantic versioning](https://semver.org/) (before 1.0 a minor version may
 change the CLI or stored formats; the notes say when).
 
-Stored sets record the version that built them (`tool_version`); `atlas-log
+Stored sets record the version that built them (`tool_version`); `ragnalog
 sets` marks a set `stale` when its signatures are not comparable with today's,
-and `atlas-log upgrade --all` rebuilds those from the stored entries.
+and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
+
+## [0.6.0] - 2026-11-19
+
+The project is renamed from atlas-log-analyzer to **Ragnalog**. No stored-format change: sets
+built by 0.4.x and 0.5.0 stay comparable and need no `upgrade`; only the names around them
+change.
+
+### Changed
+
+- Renamed everywhere, with no aliases for the old names:
+  - the repository `rdk/atlas-log-analyzer` is `rdk/ragnalog` (GitHub redirects the old URLs),
+    the distribution `atlas-log-analyzer` is `ragnalog` (`pip install 'ragnalog[web]'`) and the
+    image is `ghcr.io/rdk/ragnalog`. `ghcr.io/rdk/atlas-log-analyzer` keeps the 0.5.0 image
+    and gets no new ones;
+  - the command `atlas-log` is `ragnalog`, the import package `atlas_log_analyzer` is `ragnalog`
+    and the format entry-point group `atlas_log_analyzer.formats` is `ragnalog.formats`;
+  - the environment variables `ATLAS_LOG_*` are `RAGNALOG_*` (`RAGNALOG_STORE`,
+    `RAGNALOG_TOKEN`, …): rename them in your shell, service and compose files;
+  - the default data directory `./.atlas-log` is `./.ragnalog`; pass `--store` or set
+    `RAGNALOG_STORE` to keep using an existing `./.atlas-log`, or rename it;
+  - the web app's token header `X-Atlas-Token` is `X-Ragnalog-Token` (`Authorization: Bearer`
+    is unchanged) and its cookie `atlas_log_token` is `ragnalog_token`, so browsers sign in
+    once more.
+- The pages move the theme, skin, width, time zone and panel width saved under the old
+  `atlas-log-*` browser storage keys to `ragnalog-*` on first load.
+- Aurora is the default skin. The palette button beside the theme toggle offers **Classic**,
+  **Aurora** (violet/cyan) and **Mineral** (ivory/sage); the choice is remembered across pages,
+  works in light and dark mode and is also available in exported HTML reports.
+- A refreshed UI: compact layouts and progressive disclosure on the report, cluster, triage and
+  log-set pages. The log-set list is searchable by name, node, cluster or ID, and matching
+  captures keep their nodes together.
 
 ### Development
 
 - Dependabot is removed again (its update PRs got no CI).
+- README screenshots are taken in high DPI with the Aurora skin; click one for full resolution.
 
 ## [0.5.0] - 2026-11-12
 
@@ -213,10 +246,11 @@ Everything below; tagged only.
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/atlas-log-analyzer/compare/v0.5.0...HEAD
-[0.5.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.5.0
-[0.4.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.1
-[0.4.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.4.0
-[0.3.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.3.0
-[0.2.1]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.1
-[0.2.0]: https://github.com/rdk/atlas-log-analyzer/releases/tag/v0.2.0
+[Unreleased]: https://github.com/rdk/ragnalog/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/rdk/ragnalog/releases/tag/v0.6.0
+[0.5.0]: https://github.com/rdk/ragnalog/releases/tag/v0.5.0
+[0.4.1]: https://github.com/rdk/ragnalog/releases/tag/v0.4.1
+[0.4.0]: https://github.com/rdk/ragnalog/releases/tag/v0.4.0
+[0.3.0]: https://github.com/rdk/ragnalog/releases/tag/v0.3.0
+[0.2.1]: https://github.com/rdk/ragnalog/releases/tag/v0.2.1
+[0.2.0]: https://github.com/rdk/ragnalog/releases/tag/v0.2.0

@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1] / "src" / "atlas_log_analyzer"
+PACKAGE = Path(__file__).resolve().parents[1] / "src" / "ragnalog"
 
 FRONT_END_FORBIDDEN = (
-    "atlas_log_analyzer.store.query",
-    "atlas_log_analyzer.store.triage",
-    "atlas_log_analyzer.store.regroup",
-    "atlas_log_analyzer.store.writer",
+    "ragnalog.store.query",
+    "ragnalog.store.triage",
+    "ragnalog.store.regroup",
+    "ragnalog.store.writer",
 )
 """Store modules that compare or write sets: the front ends reach them through service."""
 PIPELINE_TYPES = {"IngestProgress", "SourceSelection"}
@@ -40,20 +40,20 @@ def test_service_imports_no_front_end(path: Path) -> None:
     for module, _ in _imports(path):
         top = module.split(".")[0]
         assert top not in {"cyclopts", "fastapi", "starlette", "rich"}, (path.name, module)
-        assert not module.startswith(("atlas_log_analyzer.cli", "atlas_log_analyzer.webapp"))
+        assert not module.startswith(("ragnalog.cli", "ragnalog.webapp"))
 
 
 @pytest.mark.parametrize("path", _files("cli", "webapp"), ids=lambda p: p.name)
 def test_front_ends_do_not_compare_or_write_sets_themselves(path: Path) -> None:
     for module, names in _imports(path):
         assert module not in FRONT_END_FORBIDDEN, (path.name, module)
-        if module == "atlas_log_analyzer.store.pipeline":
+        if module == "ragnalog.store.pipeline":
             assert set(names) <= PIPELINE_TYPES, (path.name, names)
 
 
 @pytest.mark.parametrize("path", _files("core", "store"), ids=lambda p: p.name)
 def test_core_and_store_import_no_upper_layer(path: Path) -> None:
-    upper = ("atlas_log_analyzer.cli", "atlas_log_analyzer.webapp", "atlas_log_analyzer.service")
+    upper = ("ragnalog.cli", "ragnalog.webapp", "ragnalog.service")
     for module, _ in _imports(path):
         if path.name == "views.py" and path.parent.name == "store":
             continue  # the re-export shim of service.views
@@ -63,4 +63,4 @@ def test_core_and_store_import_no_upper_layer(path: Path) -> None:
 @pytest.mark.parametrize("path", _files("webapp"), ids=lambda p: p.name)
 def test_webapp_imports_no_cli(path: Path) -> None:
     for module, _ in _imports(path):
-        assert not module.startswith("atlas_log_analyzer.cli"), (path.name, module)
+        assert not module.startswith("ragnalog.cli"), (path.name, module)

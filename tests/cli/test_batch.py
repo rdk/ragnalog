@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
+from ragnalog.cli.app import run
 
 from .conftest import MINI_LOG, Invoke
 
@@ -99,7 +99,7 @@ def test_global_options_inside_a_line_are_usage_errors(
 def test_unexpected_exception_is_internal_error(
     mini: str, store_dir: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from atlas_log_analyzer.service import meta
+    from ragnalog.service import meta
 
     def boom() -> None:
         raise RuntimeError("boom")

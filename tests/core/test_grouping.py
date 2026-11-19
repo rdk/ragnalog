@@ -5,12 +5,12 @@ from datetime import datetime
 
 import pytest
 
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.grouping import Grouper
-from atlas_log_analyzer.core.masking import Masker
-from atlas_log_analyzer.core.models import LogEntry, LogLevel, SourceRef
-from atlas_log_analyzer.core.parser import parse_file
-from atlas_log_analyzer.core.signature import Signer
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.grouping import Grouper
+from ragnalog.core.masking import Masker
+from ragnalog.core.models import LogEntry, LogLevel, SourceRef
+from ragnalog.core.parser import parse_file
+from ragnalog.core.signature import Signer
 
 from .conftest import SAMPLE
 

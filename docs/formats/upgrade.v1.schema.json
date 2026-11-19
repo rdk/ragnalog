@@ -152,7 +152,7 @@
           "type": "string"
         },
         "tool_version": {
-          "description": "atlas-log-analyzer version that wrote the set.",
+          "description": "ragnalog version that wrote the set.",
           "type": "string"
         },
         "schema_version": {

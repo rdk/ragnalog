@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.config import Settings
+from ragnalog.cli.app import run
+from ragnalog.config import Settings
 
 from .conftest import MINI_LOG, SAMPLE_LOG, Invoke
 
@@ -71,7 +71,7 @@ def test_batch_errors_start_with_line_number(
 
 @pytest.mark.parametrize("blank", ["", "  "])
 def test_blank_store_flag_is_not_given(blank: str) -> None:
-    settings = Settings.load({"store": blank}, {"ATLAS_LOG_STORE": "/some/where"})
+    settings = Settings.load({"store": blank}, {"RAGNALOG_STORE": "/some/where"})
     assert settings.store == Path("/some/where")
     assert Settings.load({"store": blank}, {}).implicit_store is True
 
@@ -80,6 +80,6 @@ def test_blank_store_flag_in_cli(
     cli: Invoke, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     env_store = tmp_path / "env-store"
-    monkeypatch.setenv("ATLAS_LOG_STORE", str(env_store))
+    monkeypatch.setenv("RAGNALOG_STORE", str(env_store))
     assert cli("--output", "json", "--store", "", "ingest", MINI_LOG).code == 0
     assert env_store.is_dir()

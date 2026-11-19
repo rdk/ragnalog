@@ -60,7 +60,7 @@
       ]
     },
     "app_packages": {
-      "description": "Echo of ATLAS_LOG_APP_PACKAGES.",
+      "description": "Echo of RAGNALOG_APP_PACKAGES.",
       "anyOf": [
         {
           "type": "array",

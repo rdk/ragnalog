@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.masking import Masker
-from atlas_log_analyzer.core.models import LogEntry, SourceRef
-from atlas_log_analyzer.core.signature import (
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.masking import Masker
+from ragnalog.core.models import LogEntry, SourceRef
+from ragnalog.core.signature import (
     COARSE_SPEC,
     DEFAULT_SPEC,
     SignatureSpec,

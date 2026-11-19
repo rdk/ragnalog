@@ -13,7 +13,7 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.webapp import Settings, create_app
+from ragnalog.webapp import Settings, create_app
 
 from .conftest import MINI_LOG, Invoke
 

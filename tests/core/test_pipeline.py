@@ -7,14 +7,14 @@ from collections.abc import Sequence
 
 import pytest
 
-from atlas_log_analyzer.core.formats import registry
-from atlas_log_analyzer.core.formats.base import HeaderMatch, LogFormat
-from atlas_log_analyzer.core.formats.jira import JIRA_RULES, JiraFormat
-from atlas_log_analyzer.core.grouping import Grouper
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker, MaskRule
-from atlas_log_analyzer.core.models import LogEntry, SourceRef
-from atlas_log_analyzer.core.parser import parse_file
-from atlas_log_analyzer.core.pipeline import (
+from ragnalog.core.formats import registry
+from ragnalog.core.formats.base import HeaderMatch, LogFormat
+from ragnalog.core.formats.jira import JIRA_RULES, JiraFormat
+from ragnalog.core.grouping import Grouper
+from ragnalog.core.masking import GENERIC_RULES, Masker, MaskRule
+from ragnalog.core.models import LogEntry, SourceRef
+from ragnalog.core.parser import parse_file
+from ragnalog.core.pipeline import (
     Recipe,
     format_version,
     key_format_version,
@@ -22,7 +22,7 @@ from atlas_log_analyzer.core.pipeline import (
     recipe_key,
     unique_entries,
 )
-from atlas_log_analyzer.core.signature import DEFAULT_SPEC, SignatureSpec, Signer
+from ragnalog.core.signature import DEFAULT_SPEC, SignatureSpec, Signer
 
 from .conftest import EDGE_CASES, SAMPLE
 

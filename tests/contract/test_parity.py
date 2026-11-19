@@ -1,4 +1,4 @@
-"""CLI ↔ API parity: ``atlas-log --output json`` and ``/api`` return the same documents.
+"""CLI ↔ API parity: ``ragnalog --output json`` and ``/api`` return the same documents.
 
 Each case runs one CLI command in-process and the matching API request against
 the same store and compares the two documents after dropping volatile keys and
@@ -30,11 +30,11 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.store.logset import LogSetManifest
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.store import Store
-from atlas_log_analyzer.webapp import Settings, create_app
+from ragnalog.cli.app import run
+from ragnalog.store.logset import LogSetManifest
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.store import Store
+from ragnalog.webapp import Settings, create_app
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures" / "jira"
 CLUSTER = Path(__file__).resolve().parents[1] / "fixtures" / "cluster"
@@ -641,7 +641,7 @@ HTTP_CAPS: list[Case] = [
         "/api/sets/edge/entries?limit=10001",
     ),
     # entries has no "all" page over HTTP: limit=0 is refused (follow next_offset), while
-    # `atlas-log entries --limit 0` writes every entry.
+    # `ragnalog entries --limit 0` writes every entry.
     Case("entries-limit-0", ["entries", "edge", "--limit", "0"], "/api/sets/edge/entries?limit=0"),
     # nor has a group's entries: show --limit 0 writes them all, a response stays bounded
     Case(
@@ -848,7 +848,7 @@ def test_cli_and_api_agree(
     capsys: pytest.CaptureFixture[str],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("ATLAS_LOG_APP_PACKAGES", raising=False)
+    monkeypatch.delenv("RAGNALOG_APP_PACKAGES", raising=False)
     agree(case, store_dir, client, refs, capsys)
 
 
@@ -902,9 +902,9 @@ def _frames() -> list[Any]:
 
 @pytest.mark.parametrize("frame", _frames())
 def test_row_serialisers_agree(frame: Any) -> None:
-    from atlas_log_analyzer.cli.output import encode_json, jsonable_rows
-    from atlas_log_analyzer.store.logset import to_records
-    from atlas_log_analyzer.webapp.responses import JSON
+    from ragnalog.cli.output import encode_json, jsonable_rows
+    from ragnalog.store.logset import to_records
+    from ragnalog.webapp.responses import JSON
 
     cli_rows = json.loads(encode_json(jsonable_rows(frame)))
     api_rows = json.loads(JSON(to_records(frame)).body)

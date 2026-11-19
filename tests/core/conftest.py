@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.jira import JIRA_RULES, JiraFormat
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
+from ragnalog.core.formats.jira import JIRA_RULES, JiraFormat
+from ragnalog.core.masking import GENERIC_RULES, Masker
 
 FIXTURES = Path(__file__).resolve().parent.parent / "fixtures" / "jira"
 SAMPLE = FIXTURES / "sample.log"

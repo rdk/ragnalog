@@ -4,7 +4,7 @@ import re
 
 import pytest
 
-from atlas_log_analyzer.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker, MaskRule
+from ragnalog.core.masking import GENERIC_RULES, MASK_RULES_VERSION, Masker, MaskRule
 
 
 def test_docstring_example(masker: Masker) -> None:

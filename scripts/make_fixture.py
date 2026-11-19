@@ -32,7 +32,7 @@ import argparse
 import re
 from pathlib import Path
 
-from atlas_log_analyzer.core.formats.jira import HEADER_RE
+from ragnalog.core.formats.jira import HEADER_RE
 
 SYSTEM_USERS = frozenset({"anonymous", "Anonymous user", "Automation Robot", "-", ""})
 IP_RE = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")

@@ -1,8 +1,8 @@
 # HTML report
 
-Status: design 2026-10-29, implemented in `atlas_log_analyzer.report`.
+Status: design 2026-10-29, implemented in `ragnalog.report`.
 
-`atlas-log report SET` renders one analysed log set (optionally compared with a
+`ragnalog report SET` renders one analysed log set (optionally compared with a
 second one) into a **single self-contained HTML file**: no network requests, no
 CDN, works from a file share or an e-mail attachment, in light and dark mode.
 It is the static precursor of the future FastAPI app: the page consumes a
@@ -44,7 +44,7 @@ Size-driven conventions (2026-10-29, still `report.v1`):
 {
   "schema": "report.v1",
   "generated_at": "2026-10-29T10:00:00Z",
-  "tool_version": "0.5.0",
+  "tool_version": "0.6.0",
   "logset": { /* logset.v1 manifest incl. sources */ },
   "stats": { /* LogSet.stats(): entry_count, group_count, parse_errors, levels, loggers, hours, time_range */ },
   "timeline": {                               // per-hour counts by level for the overview chart
@@ -94,7 +94,7 @@ The payload is documented in `docs/formats/report.v1.md`.
 One file: `template.html` with `report.css`, `entry-card.js`, `tips.js` and `report.js` inlined and the
 payload embedded as `<script type="application/json" id="report-data">`
 (`</` escaped as `<\/`). Vanilla JS and CSS, no framework, no build step; the
-assets live in `src/atlas_log_analyzer/report/assets/` and are read with
+assets live in `src/ragnalog/report/assets/` and are read with
 `importlib.resources`.
 
 ### Layout
@@ -133,7 +133,7 @@ theme as a moon or sun that shows what a click switches to, skin palette, full s
 standalone file has only the header.
 The palette opens a compact picker for **Classic**, **Aurora** (the default, violet/cyan)
 and **Mineral** (ivory/sage). Selection previews immediately without changing filters or
-closing the group drawer. It is saved as `atlas-log-skin` in `localStorage`, independently
+closing the group drawer. It is saved as `ragnalog-skin` in `localStorage`, independently
 of light/dark mode, and shared across web pages; exported files include the same picker
 and assets. A fresh viewer, invalid preference or unavailable storage starts in Aurora;
 an explicitly saved Classic or Mineral choice is respected. Escape closes the picker and
@@ -256,11 +256,11 @@ remove, or "Remove all filters".
   sorts) and carry `aria-sort` (`none` on the others); the focus stays on the header after
   the table re-renders.
 - Every drawer has the equivalent CLI commands
-  (`atlas-log show <set> <signature>`, `atlas-log entries … --signature`) in its
+  (`ragnalog show <set> <signature>`, `ragnalog entries … --signature`) in its
   collapsed *Identifiers & CLI* part, so a human can hand a finding to an agent verbatim.
 - Full screen width: the header's ⤢ toggle (key `w`) drops the centred 1680 px frame, narrows
   the page edge to 16 px and lets the drawer grow (up to half the screen, 1200 px). One setting
-  for every page of the app (`localStorage` `atlas-log-wide`), applied before the first paint.
+  for every page of the app (`localStorage` `ragnalog-wide`), applied before the first paint.
 - Theme: follows `prefers-color-scheme`, toggle persisted in `localStorage`;
   all colors are CSS custom properties on `:root`.
 - Print: drawer and filter controls collapse (a line states the filters); the table
@@ -288,14 +288,14 @@ its body as a stack trace (frames tokenised, library frames dimmed, nothing fold
 drawer a long trace scrolls inside the card). Stack traces and the raw view are code: a little
 smaller than the message, never wrapped, a long line scrolls sideways. The footer is tooling behind a hairline: the
 file and line, then Raw, Open raw and Copy raw. Every kind of small text has one treatment on
-every page (`report.css`, "text kinds"; markup from `AtlasEntryCard.loggerHtml`, `excHtml`,
+every page (`report.css`, "text kinds"; markup from `RagnalogEntryCard.loggerHtml`, `excHtml`,
 `tsHtml`, `kvHtml`, `nilHtml`): a logger has its package muted and its class name in ink, an
 exception its class name in the exception colour, a time its date and milliseconds muted,
 identifiers (thread, signatures) are mono and muted, template placeholders are dashed italic
 chips, an empty value is a faint dash.
 
 Log text is formatted the same way on every page (`logInline`, `frameHtml` in
-`entry-card.js`: `AtlasEntryCard.create(hooks)`, which each page calls once with
+`entry-card.js`: `RagnalogEntryCard.create(hooks)`, which each page calls once with
 its own helpers: badges, the shown time zone, where an entry is looked up, the raw
 link and extra buttons such as the cluster page's "±30 s on all nodes"). A body with a stack trace
 is a dark code panel in both themes. In a frame the module, package (dimmed), class,
@@ -335,7 +335,7 @@ group's signature (a coarse group: `coarse_signature`; merged Drain3 rows have n
 with a time window selected the link adds `since`/`until` and reads "All N entries in
 window ↗". On the cluster page it opens the capture's page with the signature
 (all nodes). A standalone report file has no server, so it shows no link (its
-"Identifiers & CLI" part gives `atlas-log entries SET --signature SIG`).
+"Identifiers & CLI" part gives `ragnalog entries SET --signature SIG`).
 
 ### Visual rules (from the dataviz method)
 
@@ -353,7 +353,7 @@ window ↗". On the cluster page it opens the capture's page with the signature
 ## 3. Code
 
 ```
-src/atlas_log_analyzer/report/
+src/ragnalog/report/
 ├── __init__.py       build_report(logset, ...) -> str, write_report(logset, path, ...) -> ReportInfo,
 │                     write_cluster_report(payload, path) -> ClusterReportInfo
 ├── payload.py        build_payload(...)  (polars/duckdb over the LogSet)
@@ -379,7 +379,7 @@ element, `data-report-url` on `<html>` and `<link>`/`<script src>` under
 
 ## 4. CLI
 
-`atlas-log report SET [--out FILE] [--compare SET_B] [--min-level L]
+`ragnalog report SET [--out FILE] [--compare SET_B] [--min-level L]
 [--examples 3] [--max-raw 4000] [--max-groups N] [--open]`
 
 Default `--out` is `<name or id>.html` in the current directory. JSON output:
@@ -389,7 +389,7 @@ Exit codes as for the other commands.
 ## 5. Cluster page
 
 Status: page implemented 2026-11-05 (`docs/cluster.md` §8, contract §11.3/§11.4); the
-`cluster-report.v1` payload comes from `service/cluster.py`. `atlas-log report CAPTURE`
+`cluster-report.v1` payload comes from `service/cluster.py`. `ragnalog report CAPTURE`
 writes the static page, the web app serves `/captures/{ref}` with `urls` filled
 (`docs/cluster.md` §11.6). The sample payload
 `tests/report/data/cluster_payload.json` (two invented nodes) is the page's fixture;
@@ -479,7 +479,7 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
     per-node lines over the timeline buckets (no line where a node has no logs), example
     entries per node in tabs (collapsible stack traces, "±30 s on all nodes"), the
     co-bursts, mentions and events involving the group, and, collapsed, the CLI commands
-    (`atlas-log matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
+    (`ragnalog matrix CAPTURE --signature SIG`, `timeline --by-node`, `entries`,
     `show SET SIG` per node). With one node there are no spread or lead columns, no
     spread or node filter and no per-node sorts. The drawer bar stays on one line (its
     section links scroll).
@@ -508,7 +508,7 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
     entry (raw, trace, "±30 s on all nodes", open group, copy raw). Filters: minimum
     level, nodes, search, and groups (set from the matrix, "entries", "show in log" or
     "show me"); its first page shows a spinner and "Loading the log…" until it arrives. Static file: the payload's example entries, 200 rows at a time, with the
-    equivalent `atlas-log entries CAPTURE --since … --until …`. Web (`urls.entries` set):
+    equivalent `ragnalog entries CAPTURE --since … --until …`. Web (`urls.entries` set):
     pages of 200 fetched from that URL with `since`, `until` (the window, or from 2 s
     before a clicked event, inside the window), `min_level`, `signature` (the groups,
     comma-separated), `node` (comma-separated), `contains` (the search, on the raw text),

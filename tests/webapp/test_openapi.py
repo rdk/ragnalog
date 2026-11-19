@@ -7,10 +7,10 @@ from typing import Any
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.service.documents import DOCUMENTS, ROW_COMPONENTS
-from atlas_log_analyzer.service.manifest import command_document, manifest_document
-from atlas_log_analyzer.webapp import Settings, create_app
-from atlas_log_analyzer.webapp.openapi import API_DOCUMENTS
+from ragnalog.service.documents import DOCUMENTS, ROW_COMPONENTS
+from ragnalog.service.manifest import command_document, manifest_document
+from ragnalog.webapp import Settings, create_app
+from ragnalog.webapp.openapi import API_DOCUMENTS
 
 
 def _openapi(client: TestClient) -> dict[str, Any]:

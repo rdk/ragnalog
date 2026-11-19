@@ -3,9 +3,9 @@
 Usage::
 
     uv run python scripts/demo_logs.py OUT          # OUT/week and OUT/prev, two nodes each
-    atlas-log --store DEMO ingest OUT/prev --cluster demo-jira --name prev
-    atlas-log --store DEMO ingest OUT/week --cluster demo-jira --name week
-    atlas-log --store DEMO serve
+    ragnalog --store DEMO ingest OUT/prev --cluster demo-jira --name prev
+    ragnalog --store DEMO ingest OUT/week --cluster demo-jira --name week
+    ragnalog --store DEMO serve
 
 Everything is invented: users ``user1``…, issue keys ``ABC-n``, ``jira.example.com``,
 ``10.0.x.x`` addresses, ``org.example`` plugins. ``week`` holds three days of two nodes

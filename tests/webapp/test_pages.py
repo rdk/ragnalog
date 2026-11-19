@@ -9,7 +9,7 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.report import asset_text
+from ragnalog.report import asset_text
 from tests.cluster import JOB_ID, export_zip
 
 from .test_cluster import _upload
@@ -87,7 +87,7 @@ def test_openapi_lists_routes(client: TestClient) -> None:
 
 
 def test_cli_does_not_import_fastapi() -> None:
-    code = "import sys, atlas_log_analyzer.cli.app; assert 'fastapi' not in sys.modules"
+    code = "import sys, ragnalog.cli.app; assert 'fastapi' not in sys.modules"
     subprocess.run([sys.executable, "-c", code], check=True)
 
 
@@ -106,7 +106,7 @@ def test_sets_page_groups_a_capture(client: TestClient, tmp_path: Path) -> None:
 
 
 def test_index_rows() -> None:
-    from atlas_log_analyzer.webapp.pages import index_rows
+    from ragnalog.webapp.pages import index_rows
 
     def item(i: str, capture: str | None, node: str | None, last: str) -> dict:  # type: ignore[type-arg]
         return {
@@ -149,7 +149,7 @@ def test_index_draws_activity_strips_on_one_axis(client: TestClient) -> None:
 
 
 def test_activity_strips_share_the_axis_and_merge_buckets() -> None:
-    from atlas_log_analyzer.webapp.pages import activity_strips
+    from ragnalog.webapp.pages import activity_strips
 
     base = 490_000
     strips, axis = activity_strips(
@@ -166,9 +166,9 @@ def test_activity_strips_share_the_axis_and_merge_buckets() -> None:
 
 
 def test_set_activity_counts_entries_and_errors_per_hour(client: TestClient) -> None:
-    from atlas_log_analyzer.service.views import set_activity
+    from ragnalog.service.views import set_activity
 
-    state = client.app.state.atlas  # type: ignore[attr-defined]
+    state = client.app.state.ragnalog  # type: ignore[attr-defined]
     ls = state.open(client.get("/api/sets/mini").json()["id"])
     hours = set_activity(ls)
     assert sum(n for _, n, _ in hours) == ls.manifest.entry_count
@@ -188,7 +188,7 @@ def test_page_errors_are_html_with_their_status(client: TestClient) -> None:
 def test_pages_answer_head_and_have_titles(client: TestClient) -> None:
     assert client.head("/").status_code == 200
     assert client.head("/sets/mini").status_code == 200
-    assert "<title>mini · atlas-log report</title>" in client.get("/sets/mini").text
+    assert "<title>mini · ragnalog report</title>" in client.get("/sets/mini").text
 
 
 def test_report_payload_is_gzipped_with_an_etag(client: TestClient) -> None:
@@ -211,7 +211,7 @@ def test_group_examples_accept_a_signature_prefix(client: TestClient) -> None:
 
 def test_time_ranges_carry_their_utc_ends(client: TestClient) -> None:
     """Pages print UTC; the ISO ends let webapp.js show the viewer's zone (shared preference)."""
-    from atlas_log_analyzer.webapp.pages import _fmt_range
+    from ragnalog.webapp.pages import _fmt_range
 
     page = client.get("/").text
     assert 'id="shell-tz"' in page and "data-tz-name" in page
@@ -299,7 +299,7 @@ def test_capture_entries_page(client: TestClient, tmp_path: Path) -> None:
 def test_entry_card_asset_is_served_before_the_page_scripts(client: TestClient) -> None:
     res = client.get("/assets/report/entry-card.js")
     assert res.status_code == 200 and res.text == asset_text("entry-card.js")
-    assert "AtlasEntryCard" in res.text
+    assert "RagnalogEntryCard" in res.text
     report = client.get("/sets/mini").text
     tags = [
         '<script src="/assets/report/entry-card.js"></script>',

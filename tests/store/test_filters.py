@@ -8,9 +8,9 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.core.models import LogLevel
-from atlas_log_analyzer.store.filters import EntryFilter, GroupFilter
-from atlas_log_analyzer.store.levels import InvalidLevel
+from ragnalog.core.models import LogLevel
+from ragnalog.store.filters import EntryFilter, GroupFilter
+from ragnalog.store.levels import InvalidLevel
 
 from .conftest import Built
 from .synth import BASE
@@ -116,8 +116,8 @@ def test_time_bounds_leave_untimed_entries_out() -> None:
 
 
 def test_store_views_shim_reexports_service_views() -> None:
-    from atlas_log_analyzer.service import views
-    from atlas_log_analyzer.store import views as old
+    from ragnalog.service import views
+    from ragnalog.store import views as old
 
     assert old.frames_view is views.frames_view and old.ENTRY_BRIEF is views.ENTRY_BRIEF
     assert set(old.__all__) <= set(views.__all__)
@@ -150,8 +150,8 @@ def test_logger_prefix_matches_the_forms_jira_abbreviates() -> None:
 
 def test_groups_in_a_window_need_an_entry_inside_it(tmp_path: Path) -> None:
     """A group seen before and after a window, but not in it, is not listed for it."""
-    from atlas_log_analyzer.store import Store
-    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from ragnalog.store import Store
+    from ragnalog.store.pipeline import ingest_paths
 
     log = tmp_path / "atlassian-jira.log"
     lines = [

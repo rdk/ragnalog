@@ -1,9 +1,9 @@
-# `atlas-log` command reference
+# `ragnalog` command reference
 
-`atlas-log --help` and `atlas-log COMMAND --help` print the same information;
+`ragnalog --help` and `ragnalog COMMAND --help` print the same information;
 this page is the long form. Column-level schemas of the stored tables are
-printed by `atlas-log schema`, the JSON Schema of every document by
-`atlas-log schema NAME.v1` (see also `design.md` §7 and `docs/formats/`).
+printed by `ragnalog schema`, the JSON Schema of every document by
+`ragnalog schema NAME.v1` (see also `design.md` §7 and `docs/formats/`).
 
 Typical flow:
 
@@ -23,7 +23,7 @@ sets a node, cluster or capture by hand (`cluster.md`). `capture`, `matrix`,
 `events`, `interactions`, `timeline`, `entries`, `context --all-nodes` and
 `report` show the nodes of a capture side by side (recipe "Clusters" at the
 end). Agents start with
-`atlas-log manifest` (bare `atlas-log` prints the same JSON when stdout is not a
+`ragnalog manifest` (bare `ragnalog` prints the same JSON when stdout is not a
 terminal): the workflow, every command with its usage, output document and exit
 codes, and where the document schemas are.
 
@@ -36,7 +36,7 @@ Global options may appear before or after the command name.
 | Option | Default | Meaning |
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
-| `--store DIR` | env `ATLAS_LOG_STORE` (a blank `--store` or variable is ignored), else `./.atlas-log` | The data directory, the folder that keeps the log sets (older text calls it the store); the option and variable that name it keep the name `--store` / `ATLAS_LOG_STORE`. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a data directory in a repository risks committing real logs. An existing `./.atlas-log` is used as before; an explicit `--store`/`ATLAS_LOG_STORE` is always used. |
+| `--store DIR` | env `RAGNALOG_STORE` (a blank `--store` or variable is ignored), else `./.ragnalog` | The data directory, the folder that keeps the log sets (older text calls it the store); the option and variable that name it keep the name `--store` / `RAGNALOG_STORE`. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a data directory in a repository risks committing real logs. An existing `./.ragnalog` is used as before; an explicit `--store`/`RAGNALOG_STORE` is always used. |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -52,13 +52,13 @@ blank variable counts as unset. A number that does not parse is error
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ATLAS_LOG_STORE` | `./.atlas-log` | Data directory holding the log sets (`--store` wins). |
-| `ATLAS_LOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
-| `ATLAS_LOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
-| `ATLAS_LOG_TOKEN` | none | `serve`: API token (`--token` wins). |
-| `ATLAS_LOG_ALLOWED_HOSTS` | none | `serve`: comma-separated host names a loopback server also answers (`logs.example.org`, behind a reverse proxy that passes the public `Host` through; `--allowed-host` wins). |
-| `ATLAS_LOG_MAX_UPLOAD_MB` | 2048 | `serve`: largest upload in MiB (`--max-upload-mb` wins). |
-| `ATLAS_LOG_REPORT_CACHE` | 8 | `serve`: report payloads kept in memory. |
+| `RAGNALOG_STORE` | `./.ragnalog` | Data directory holding the log sets (`--store` wins). |
+| `RAGNALOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
+| `RAGNALOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
+| `RAGNALOG_TOKEN` | none | `serve`: API token (`--token` wins). |
+| `RAGNALOG_ALLOWED_HOSTS` | none | `serve`: comma-separated host names a loopback server also answers (`logs.example.org`, behind a reverse proxy that passes the public `Host` through; `--allowed-host` wins). |
+| `RAGNALOG_MAX_UPLOAD_MB` | 2048 | `serve`: largest upload in MiB (`--max-upload-mb` wins). |
+| `RAGNALOG_REPORT_CACHE` | 8 | `serve`: report payloads kept in memory. |
 
 ### Output modes
 
@@ -99,8 +99,8 @@ libraries (`com.atlassian.`, `io.atlassian.`, `org.ofbiz.`, `webwork.`,
 `io.netty.`, `com.zaxxer.`) and JDBC drivers (`org.postgresql.`, `oracle.`,
 `com.mysql.`, `com.microsoft.sqlserver.`); every other frame — plugin code,
 Groovy scripts — is an *application* frame. Set the environment variable
-`ATLAS_LOG_APP_PACKAGES` to comma-separated prefixes
-(`ATLAS_LOG_APP_PACKAGES=com.acme.,org.example.`) to invert this: a frame is
+`RAGNALOG_APP_PACKAGES` to comma-separated prefixes
+(`RAGNALOG_APP_PACKAGES=com.acme.,org.example.`) to invert this: a frame is
 then an application frame only when it starts with one of them.
 
 Values: timestamps are ISO 8601 strings; stored timestamps are UTC
@@ -126,11 +126,11 @@ In `json`/`jsonl` mode errors are written to **stdout** as
 ```json
 {"schema": "error.v1", "error": {"code": "store_error", "message": "no log set 'x'",
  "hint": "available sets: prod-1029, prod-1030", "reason": "set_not_found",
- "store": ".atlas-log"}}
+ "store": ".ragnalog"}}
 ```
 
 `"hint"` (optional) suggests the next step (available set names for an unknown
-set; `atlas-log groups SET` for an unknown signature; `atlas-log CMD --help`
+set; `ragnalog groups SET` for an unknown signature; `ragnalog CMD --help`
 for a `usage` error from argument parsing); other optional keys carry context
 such as `"store"`. An argument a command does not take is reported as, e.g.,
 `unexpected argument 'nope'; sets takes no arguments` or `unexpected argument
@@ -139,7 +139,7 @@ such as `"store"`. An argument a command does not take is reported as, e.g.,
 
 Error codes, with the CLI's exit code and the web API's HTTP status (one table in
 `service/errors.py`, `SPEC`; `internal_error` is an unexpected exception: set
-`ATLAS_LOG_DEBUG=1` for the traceback):
+`RAGNALOG_DEBUG=1` for the traceback):
 
 | Code | Exit | HTTP | Meaning |
 |---|---|---|---|
@@ -161,7 +161,7 @@ Error codes, with the CLI's exit code and the web API's HTTP status (one table i
 | `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
 | `store_error` | 3 | 500 | Data directory failure: corrupt manifest or damaged set, newer schema, data directory refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
 | `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
-| `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
+| `internal_error` | 1 | 500 | Unexpected exception (set `RAGNALOG_DEBUG=1` for the traceback). |
 
 Some failures carry a `"reason"` that is the same in the CLI and the API, where the
 two report them under different codes (the codes predate it and stay as they are;
@@ -641,7 +641,7 @@ first `--limit` application frames (`0` = all) and `app_frames_total` counts
 them; `frames_total` is the number of frames in the log text and
 `omitted_frames` the `... N more` count. `--all` returns all application frames
 and adds `frames`: every frame with an `"app": true|false` flag.
-`app_packages` echoes `ATLAS_LOG_APP_PACKAGES` (`null` when unset). `jsonl`:
+`app_packages` echoes `RAGNALOG_APP_PACKAGES` (`null` when unset). `jsonl`:
 one exception per line. The table prints each exception with its frames as
 text. Only the first exception chain of an entry is parsed (`design.md` §11),
 and the chain ends at the first line that is not a frame.
@@ -652,7 +652,7 @@ Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 
 DuckDB SQL over the views `entries`, `groups` and (when present) `merges`. One
 statement only (a trailing `;` is fine): several are a `usage` error.
-`atlas-log query --help` lists the same columns; `atlas-log schema NAME` adds
+`ragnalog query --help` lists the same columns; `ragnalog schema NAME` adds
 types and descriptions. The session time zone is UTC whatever the machine's
 zone: timestamps in the result are UTC, as in `entries`, and
 `date_trunc('day', ts)` buckets at UTC midnight. An `INTERVAL` result
@@ -840,7 +840,7 @@ rejected, with `reason`:
 
 1. `stale` / `recipe`: its `recipe_key` differs from SET's. `stale` when one
    of the two was built with an older recipe (the `hint` names
-   `atlas-log upgrade SET`), `recipe` for another signature spec or extra rules.
+   `ragnalog upgrade SET`), `recipe` for another signature spec or extra rules.
 2. `other_node`: both sets have a `node` and they differ. Each node is
    compared with its own past, never with its neighbour's logs.
 3. `superset` / `subset`: its source digests (`sources[].xxh3`) contain all of
@@ -908,7 +908,7 @@ SET's sources, or tiny (a set signed with another recipe still fails as in
   summary and one table per list, with the warnings on stderr.
 
 SET is one set: a capture reference is a `usage` error whose hint is
-`atlas-log capture REF --triage`, which gives the verdict of every node
+`ragnalog capture REF --triage`, which gives the verdict of every node
 against its own previous set (`cluster.md` §5).
 
 Exit: 0 whatever the verdict (also `no_baseline`); 1 bad option, invalid level,
@@ -994,7 +994,7 @@ current, or whose format is not registered, are skipped with a reason (an
 unknown format is also printed on stderr).
 
 Jira sets built before format version 2 (`recipe_key` `jira@1|…`) are stale:
-run `atlas-log upgrade --all` once. Their entries are re-assembled from the
+run `ragnalog upgrade --all` once. Their entries are re-assembled from the
 stored rows alone (the log files are not needed): banners are attached to the
 entry they announce (`context.preamble`, see `ingest`), entries with a blank
 message get their title from the body, and `entry_count`, the per-source counts
@@ -1055,14 +1055,14 @@ name (`usage`).
 of compact JSON (its budget is 16 KB), for agents:
 
 ```json
-{"schema": "manifest.v1", "tool": "atlas-log", "version": "0.5.0", "usage": "...", "notes": [str],
+{"schema": "manifest.v1", "tool": "ragnalog", "version": "0.6.0", "usage": "...", "notes": [str],
  "workflow": [{"run": "triage LOGSET", "purpose": "new kinds of errors since the previous set?"}, ...],
  "when": [{"run": "query LOGSET SQL", "purpose": "..."}],
  "commands": {"groups": {"usage": "LOGSET [--level str] ... [--limit int=50] ... [--brief]", "output": "groups.v1", "exit": [0, 1, 3]}, ...},
  "help": {"--limit": "Maximum number of rows; 0 = all", ...},
  "global_options": {"--output": "table|json|jsonl: Output mode", ...},
- "exit_codes": {"0": "ok", ...}, "documents": {"get": "atlas-log schema NAME ...", "names": [...]},
- "presets": {"groups": [...], "entries": [...], "show, context": [...]}, "env": {"ATLAS_LOG_STORE": "...", ...}}
+ "exit_codes": {"0": "ok", ...}, "documents": {"get": "ragnalog schema NAME ...", "names": [...]},
+ "presets": {"groups": [...], "entries": [...], "show, context": [...]}, "env": {"RAGNALOG_STORE": "...", ...}}
 ```
 
 Generated from the command definitions (usage with types and defaults, the
@@ -1072,8 +1072,8 @@ and `env` are written by hand (`cli/manifest.py`). The documents are generated
 into the package (`service/manifest.json`, by `docs/formats/generate.py`; a test
 fails when it is out of date) and read from there. A command of the workflow
 or `when` has no `summary` (its `purpose` says it). `help` gives each
-parameter name once, as most commands word it; `atlas-log COMMAND --help` has
-each command's own. Bare `atlas-log` prints this document when stdout is not
+parameter name once, as most commands word it; `ragnalog COMMAND --help` has
+each command's own. Bare `ragnalog` prints this document when stdout is not
 a terminal (with `--output table`, or on a terminal, it prints the text help);
 the web app serves it at `GET /api/manifest`.
 
@@ -1098,13 +1098,13 @@ A set whose `manifest.json` cannot be read is removed by its directory name
 Runs the web app over the data directory until interrupted (needs the `web` extra). Pages:
 `/` (sets with triage verdicts and upload), `/sets/SET` (report, `?compare=auto|SET`),
 `/sets/SET/triage`; JSON API under `/api` with the same documents as this CLI and
-OpenAPI at `/docs`. `--token` (env `ATLAS_LOG_TOKEN`) requires
+OpenAPI at `/docs`. `--token` (env `RAGNALOG_TOKEN`) requires
 `Authorization: Bearer T` on `/api`; `--max-upload-mb` defaults to env
-`ATLAS_LOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
+`RAGNALOG_MAX_UPLOAD_MB`, else 2048. `--reload` passes every setting to the
 reloading process through these environment variables. At startup the newest
 capture's cluster page payload is built in the background (its first open is a
 cache hit). On a loopback `--host` only loopback `Host` names (and the
-`--allowed-host` names, `ATLAS_LOG_ALLOWED_HOSTS`) are answered, and
+`--allowed-host` names, `RAGNALOG_ALLOWED_HOSTS`) are answered, and
 requests that change something from a page of another site are refused (see
 `docs/webapp.md`, Security). A `--host` off loopback without a token prints a
 warning on stderr. Nothing is printed to stdout; the server logs to stderr. See `docs/webapp.md`. One server per data directory: a
@@ -1116,18 +1116,18 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.5.0", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.6.0", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
 ```
 
 ### `batch`
 
 Runs many commands in one process, to avoid the start-up cost of each call
 (about 0.45 s, mostly imports). stdin is JSON Lines, one command per line as a
-JSON array of its arguments, without `atlas-log` and without global options:
+JSON array of its arguments, without `ragnalog` and without global options:
 
 ```sh
 printf '%s\n' '["groups", "prod", "--brief", "--limit", "5"]' '["stats", "nope"]' '["version"]' \
-  | atlas-log --store /data/store batch
+  | ragnalog --store /data/store batch
 ```
 
 Each line runs with the global options of the `batch` call (`--store`, `--quiet`,
@@ -1150,38 +1150,38 @@ Diagnostics of the commands go to stderr as usual.
 
 ```sh
 # Upgrade comparison: what is new or louder after the upgrade?
-atlas-log ingest logs-before/ --name before
-atlas-log ingest logs-after/ --name after
-atlas-log diff before after --min-level WARN --limit 20 --rate   # rates if spans differ
+ragnalog ingest logs-before/ --name before
+ragnalog ingest logs-after/ --name after
+ragnalog diff before after --min-level WARN --limit 20 --rate    # rates if spans differ
 
 # Who triggers a group? (users and request URLs of one signature)
-atlas-log query after "select user, count(*) n from entries
+ragnalog query after "select user, count(*) n from entries
   where signature = '0123456789abcdef' group by 1 order by 2 desc"
 
 # Hourly error rate
-atlas-log query after "select date_trunc('hour', ts) h,
+ragnalog query after "select date_trunc('hour', ts) h,
   count(*) filter (where level >= 50) errors, count(*) total,
   round(100.0 * errors / total, 1) pct from entries group by 1 order by 1"
 
 # Exceptions at any level (DEBUG stack traces included), then one exception type
-atlas-log groups after --with-exception --brief
-atlas-log entries after --exception InternalException --brief
+ragnalog groups after --with-exception --brief
+ragnalog entries after --exception InternalException --brief
 
 # What broke since the previous snapshot? (verdict, new types, growth, coverage)
-atlas-log triage after --baseline before
+ragnalog triage after --baseline before
 
 # The last 2 hours of the log (relative to its last entry)
-atlas-log groups after --since 2h --min-level ERROR
-atlas-log entries after --since 2h --level ERROR --raw
+ragnalog groups after --since 2h --min-level ERROR
+ragnalog entries after --since 2h --level ERROR --raw
 
 # Clusters: the nodes of one export side by side
-atlas-log ingest jira-logs_2026-11-05_EXPORT.zip --cluster jira-test   # one set per node
-atlas-log captures --brief
-atlas-log capture cluster:jira-test            # per node: coverage, errors/h, verdict, events
-atlas-log matrix cluster:jira-test --spread only --min-level WARN   # groups on one node only
-atlas-log matrix cluster:jira-test --sort lead --limit 10           # who saw it first
-atlas-log events cluster:jira-test --kind start,index_replay,cluster_lock
-atlas-log interactions cluster:jira-test        # mentions, co-bursts, concurrent jobs
-atlas-log context jira-test_node1 ENTRY_ID --all-nodes   # every node, ±30 s
-atlas-log report cluster:jira-test --open       # the cluster page
+ragnalog ingest jira-logs_2026-11-05_EXPORT.zip --cluster jira-test    # one set per node
+ragnalog captures --brief
+ragnalog capture cluster:jira-test             # per node: coverage, errors/h, verdict, events
+ragnalog matrix cluster:jira-test --spread only --min-level WARN    # groups on one node only
+ragnalog matrix cluster:jira-test --sort lead --limit 10            # who saw it first
+ragnalog events cluster:jira-test --kind start,index_replay,cluster_lock
+ragnalog interactions cluster:jira-test         # mentions, co-bursts, concurrent jobs
+ragnalog context jira-test_node1 ENTRY_ID --all-nodes    # every node, ±30 s
+ragnalog report cluster:jira-test --open        # the cluster page
 ```

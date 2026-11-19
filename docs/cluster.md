@@ -11,7 +11,7 @@ its payload) and `webapp.md`; the commands are in `cli.md`.
 
 A Jira Data Center cluster writes one `atlassian-jira.log*` family per node. A
 cluster log export (one ZIP with `job.json` and `<NODE>_atlassian-jira.log*`
-files) or a support zip per node is the usual input. Today atlas-log can only
+files) or a support zip per node is the usual input. Today ragnalog can only
 ingest each node as an unrelated set, or mix the nodes into one set where
 nothing says which line came from which node. This design makes the node a
 first-class dimension. You see the nodes side by side, find what happens on
@@ -64,11 +64,11 @@ does not change, so labelling an existing set only rewrites its manifest.
 ## 3. Ingest
 
 ```
-atlas-log ingest export.zip --cluster jira-test       # export ZIP: one set per node, one capture
-atlas-log ingest node1/ node2/ --split dir           # one directory per node
-atlas-log ingest logs/ --split prefix                # NODE_atlassian-jira.log* in one folder
-atlas-log ingest logs/ --node NODE1 --cluster jira-test   # a single node
-atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing set
+ragnalog ingest export.zip --cluster jira-test        # export ZIP: one set per node, one capture
+ragnalog ingest node1/ node2/ --split dir            # one directory per node
+ragnalog ingest logs/ --split prefix                 # NODE_atlassian-jira.log* in one folder
+ragnalog ingest logs/ --node NODE1 --cluster jira-test    # a single node
+ragnalog label SET --node NODE1 --cluster jira-test [--capture ID]    # existing set
 ```
 
 - **Splitting.** `--split auto|prefix|dir|none`. The default `auto` recognises
@@ -133,10 +133,10 @@ atlas-log label SET --node NODE1 --cluster jira-test [--capture ID]   # existing
   without a node (after "ends before", before the span rule).
 - Per-node triage: each node is triaged against that node's previous set.
   As built, this is part of `capture.v1` (`verdict` and `baseline` per node;
-  `atlas-log capture REF`, on by default, `--no-triage` to skip;
+  `ragnalog capture REF`, on by default, `--no-triage` to skip;
   `GET /api/captures/{ref}?triage=true`) and of the cluster page, not a
   `triage.v1` variant: `triage CAPTURE` is a `usage` error whose hint is
-  `atlas-log capture REF --triage`. One triage document per node already says
+  `ragnalog capture REF --triage`. One triage document per node already says
   what is new on that node; a merged `triage.v1` with a `nodes` list per `new`
   row was left out (the matrix's `spread` answers "on one node or on all").
   It costs a few tens of milliseconds per node on two nodes of about 700k
@@ -209,7 +209,7 @@ can change without rebuilding sets. They are versioned
   - `cache_peer` (`CachingRMICachePeerManager` re-creating a peer of node X);
   - `job_run`, carrying the job key.
 
-  A user rules file (`ATLAS_LOG_EVENT_RULES`) can add rules later.
+  A user rules file (`RAGNALOG_EVENT_RULES`) can add rules later.
 - **Mentions.** An entry on node A whose message or variables contain the id
   of another member node B is an edge A→B. Node ids are known from the
   capture, so this needs no rule. The matrix counts edges per pair, with the
@@ -239,7 +239,7 @@ can change without rebuilding sets. They are versioned
 
 ## 8. UI
 
-The page is `/captures/{ref}`, with a static twin from `atlas-log report
+The page is `/captures/{ref}`, with a static twin from `ragnalog report
 CAPTURE`. It consumes `cluster-report.v1`, as the report consumes `report.v1`:
 vanilla JS, no build, state in `location.hash`, light and dark.
 
@@ -285,7 +285,7 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   `spread` and `lead` chips, and filters `spread=only|skewed|all` and `node=`.
   The drawer shows per-node hourly lines, first and last seen per node,
   examples per node in tabs, co-bursting groups on other nodes, and the CLI
-  equivalents (`atlas-log matrix … --signature`).
+  equivalents (`ragnalog matrix … --signature`).
 - **Interactions.**
   - An N×N mention matrix; a click on a cell lists its entries.
   - Co-bursts and event pairs as compact rows (co-bursts strongest first, event
@@ -324,7 +324,7 @@ an export-style ZIP inside the test, so no real ZIP is ever committed.
 | D. Correlation and export | co-bursts with lift, lead/lag in the matrix, the clock skew estimate, `cluster-report.v1` and the static `report CAPTURE` | M |
 
 The acceptance check for each phase runs on the two-node sample capture in
-`../atlas-log-analyzer-data`. Its expected findings are listed in that
+`../ragnalog-data`. Its expected findings are listed in that
 capture's `NOTES.md`, kept outside the repository because they quote real
 node names.
 
@@ -577,7 +577,7 @@ too far apart for a skew estimate.
   (the set id for a one-node capture without id), `context` =
   `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`, `set_report` =
   `/sets/{set}`. The payload is cached as bytes per member set versions, nodes
-  and options (`ATLAS_LOG_REPORT_CACHE` entries) and the whole cache is
+  and options (`RAGNALOG_REPORT_CACHE` entries) and the whole cache is
   dropped whenever any set changes (members and baselines may change).
   `/captures/{ref}` is the page, with a navigation bar (sets, node reports);
   the report of a member set gets a node switcher and "Open cluster view"; a

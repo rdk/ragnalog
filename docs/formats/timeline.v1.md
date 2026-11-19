@@ -2,7 +2,7 @@
 
 Entry counts per time bucket: `GET /api/sets/{ref}/timeline`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`timeline.v1.schema.json`](timeline.v1.schema.json), also `atlas-log schema timeline.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`timeline.v1.schema.json`](timeline.v1.schema.json), also `ragnalog schema timeline.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

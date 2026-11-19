@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 import xxhash
 
-from atlas_log_analyzer.core.reader import (
+from ragnalog.core.reader import (
     Line,
     iter_lines,
     iter_raw_lines,
@@ -63,7 +63,7 @@ def test_iter_lines_offsets_crlf_and_bad_bytes(tmp_path: Path) -> None:
 
 
 def test_iter_lines_block_boundaries(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    import atlas_log_analyzer.core.reader as reader
+    import ragnalog.core.reader as reader
 
     monkeypatch.setattr(reader, "_CHUNK", 7)
     data = "".join(f"line {i} éé\n" for i in range(50)).encode() + b"\xfe\n tail"
@@ -105,7 +105,7 @@ def test_long_lines_are_cut_with_exact_offsets(
 ) -> None:
     import random
 
-    import atlas_log_analyzer.core.reader as reader
+    import ragnalog.core.reader as reader
 
     monkeypatch.setattr(reader, "_CHUNK", chunk)
     rnd = random.Random(chunk * 1000 + limit)
@@ -139,7 +139,7 @@ def test_newline_free_file_is_read_in_bounded_memory(tmp_path: Path) -> None:
 
 
 def test_default_line_cap(tmp_path: Path) -> None:
-    from atlas_log_analyzer.core.reader import MAX_LINE_BYTES
+    from ragnalog.core.reader import MAX_LINE_BYTES
 
     path = tmp_path / "x.log"
     path.write_bytes(b"z" * (MAX_LINE_BYTES + 5) + b"\nok")
@@ -162,7 +162,7 @@ def test_byte_order_mark_is_dropped_from_the_first_line(tmp_path: Path) -> None:
 def test_max_bytes_stops_reading(
     tmp_path: Path, limit: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from atlas_log_analyzer.core import reader
+    from ragnalog.core import reader
 
     monkeypatch.setattr(reader, "_CHUNK", 4)  # limits that fall inside and across blocks
     path = tmp_path / "live.log"
@@ -173,9 +173,9 @@ def test_max_bytes_stops_reading(
 
 
 def test_a_growing_file_is_parsed_up_to_its_hashed_size(tmp_path: Path) -> None:
-    from atlas_log_analyzer.core.formats.jira import JiraFormat
-    from atlas_log_analyzer.core.parser import parse_sources
-    from atlas_log_analyzer.core.reader import discover_sources
+    from ragnalog.core.formats.jira import JiraFormat
+    from ragnalog.core.parser import parse_sources
+    from ragnalog.core.reader import discover_sources
 
     path = tmp_path / "atlassian-jira.log"
     line = "2026-10-29 10:00:0{},000+0100 exec-1 ERROR      [org.acme.A] boom {}\n"
@@ -217,7 +217,7 @@ def test_gzip_rotations_read_decompressed_in_order(tmp_path: Path) -> None:
     """A rotated x.log.N.gz reads like x.log.N: decompressed, ordered by N."""
     import gzip
 
-    from atlas_log_analyzer.core.reader import discover_sources, is_gzip
+    from ragnalog.core.reader import discover_sources, is_gzip
 
     text = "line one\nline two\n"
     (tmp_path / "app.log").write_text("newest\n", encoding="utf-8")
@@ -240,7 +240,7 @@ def test_gzip_rotations_read_decompressed_in_order(tmp_path: Path) -> None:
 def test_a_cut_short_gzip_is_named_not_a_crash(tmp_path: Path) -> None:
     import gzip
 
-    from atlas_log_analyzer.core.reader import DamagedFileError
+    from ragnalog.core.reader import DamagedFileError
 
     whole = tmp_path / "app.log.1.gz"
     with gzip.open(whole, "wb") as f:

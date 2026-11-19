@@ -10,7 +10,7 @@ from pathlib import Path
 import polars as pl
 import pytest
 
-from atlas_log_analyzer.cli.output import (
+from ragnalog.cli.output import (
     ExitCode,
     OpError,
     Output,
@@ -20,9 +20,9 @@ from atlas_log_analyzer.cli.output import (
     error_from_exception,
     jsonable_rows,
 )
-from atlas_log_analyzer.core.formats.registry import UnknownFormatError
-from atlas_log_analyzer.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
-from atlas_log_analyzer.store.store import StoreError
+from ragnalog.core.formats.registry import UnknownFormatError
+from ragnalog.core.models import ExceptionInfo, Frame, LogEntry, LogLevel, SourceRef
+from ragnalog.store.store import StoreError
 
 
 def make_output(mode: str) -> tuple[Output, io.StringIO, io.StringIO]:

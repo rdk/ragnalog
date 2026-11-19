@@ -23,7 +23,7 @@ NEW_ERROR = (
 
 def is_level(value: Any, name: str) -> bool:
     """Levels may be stored as names or as LogLevel integer values."""
-    from atlas_log_analyzer.core.models import LogLevel
+    from ragnalog.core.models import LogLevel
 
     return value == name or value == int(LogLevel[name])
 
@@ -429,7 +429,7 @@ def test_sample_fixture_roundtrip(jcli: Invoke) -> None:
 def test_ingest_refuses_large_named_file_not_in_format(
     jcli: Invoke, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import atlas_log_analyzer.store.pipeline as pipeline
+    import ragnalog.store.pipeline as pipeline
 
     blob = tmp_path / "dump.log"
     blob.write_bytes(b'{"minified": "json without a line break"}' * 100)

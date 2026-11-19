@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.decoration import is_banner_text, is_decoration, lead_line
-from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, banner_window_ms, titles_from_body
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
-from atlas_log_analyzer.core.models import LogEntry, LogLevel
-from atlas_log_analyzer.core.parser import attach_banners, is_banner, parse, parse_file
-from atlas_log_analyzer.core.pipeline import Recipe
-from atlas_log_analyzer.core.signature import DEFAULT_SPEC, Signer
+from ragnalog.core.decoration import is_banner_text, is_decoration, lead_line
+from ragnalog.core.formats.base import CTX_PREAMBLE, banner_window_ms, titles_from_body
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.masking import GENERIC_RULES, Masker
+from ragnalog.core.models import LogEntry, LogLevel
+from ragnalog.core.parser import attach_banners, is_banner, parse, parse_file
+from ragnalog.core.pipeline import Recipe
+from ragnalog.core.signature import DEFAULT_SPEC, Signer
 
 from .conftest import FIXTURES
 

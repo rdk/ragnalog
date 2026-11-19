@@ -2,7 +2,7 @@
 
 One command in full: `manifest COMMAND`, `GET /api/manifest/{command}`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`manifest-command.v1.schema.json`](manifest-command.v1.schema.json), also `atlas-log schema manifest-command.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`manifest-command.v1.schema.json`](manifest-command.v1.schema.json), also `ragnalog schema manifest-command.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -11,7 +11,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `version` | `string` | yes | Tool version. |
 | `usage` | `string` | yes | As in manifest.v1 commands. |
 | `description` | `string` | yes | The command's --help text without the parameter list (output, exit codes). |
-| `output` | `string \| null` | no | Document printed (atlas-log schema NAME). |
+| `output` | `string \| null` | no | Document printed (ragnalog schema NAME). |
 | `exit` | `list<integer>` | no | Possible exit codes (see manifest.v1 exit_codes). |
 | `params` | `list<ManifestParam>` | no | Arguments, then options, in --help order. |
 | `params[].name` | `string` | yes | LOGSET (argument, ... = several) or --option. |

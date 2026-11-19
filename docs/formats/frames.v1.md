@@ -2,7 +2,7 @@
 
 An entry's exception chain, application frames first: `frames`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`frames.v1.schema.json`](frames.v1.schema.json), also `atlas-log schema frames.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`frames.v1.schema.json`](frames.v1.schema.json), also `ragnalog schema frames.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -14,7 +14,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `level_name` | `string` | yes | Entry level. |
 | `logger` | `string \| null` | yes | Entry logger. |
 | `message` | `string \| null` | yes | First message line. |
-| `app_packages` | `list<string> \| null` | yes | Echo of ATLAS_LOG_APP_PACKAGES. |
+| `app_packages` | `list<string> \| null` | yes | Echo of RAGNALOG_APP_PACKAGES. |
 | `count` | `integer` | yes | Exceptions in the chain. |
 | `items` | `list<ChainException>` | yes | The chain, outermost first. |
 | `items[].type` | `string` | yes | Exception class. |

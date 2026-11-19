@@ -5,8 +5,8 @@ from __future__ import annotations
 import dataclasses
 from datetime import UTC, datetime, timedelta
 
-from atlas_log_analyzer.store.manifest import LogSetManifest, SourceInfo
-from atlas_log_analyzer.store.triage import (
+from ragnalog.store.manifest import LogSetManifest, SourceInfo
+from ragnalog.store.triage import (
     MAX_LISTED_CANDIDATES,
     explicit_baseline,
     rank_baselines,
@@ -85,13 +85,13 @@ def test_rules_in_order() -> None:
     assert warning.startswith("No baseline: none of the other jira sets qualifies: ")
     assert warning.endswith(f"; and {len(sets) - 2 - MAX_LISTED_CANDIDATES} more")
     stale = next(r for r in choice.rejected if r.reason == "stale")
-    assert stale.hint == "atlas-log upgrade stale" and "mask_rules_version" in stale.detail
+    assert stale.hint == "ragnalog upgrade stale" and "mask_rules_version" in stale.detail
     assert stale.item() == {
         "id": "id-stale",
         "name": "stale",
         "reason": "stale",
         "detail": stale.detail,
-        "hint": "atlas-log upgrade stale",
+        "hint": "ragnalog upgrade stale",
     }
     recipe = next(r for r in choice.rejected if r.reason == "recipe")
     assert recipe.hint is not None and "regroup frames" in recipe.hint
@@ -100,7 +100,7 @@ def test_rules_in_order() -> None:
 def test_a_stale_set_names_itself_in_the_hint() -> None:
     me = m("old", 100, 8, key="jira@1|L+G+E+F0|sig0|mask1")
     [rejection] = rank_baselines([me, m("new", 80, 8)], me).rejected
-    assert rejection.reason == "stale" and rejection.hint == "atlas-log upgrade old"
+    assert rejection.reason == "stale" and rejection.hint == "ragnalog upgrade old"
     assert "this set was built with an older recipe" in rejection.detail
 
 
@@ -144,9 +144,7 @@ def test_explicit_baseline_warnings() -> None:
     fine = explicit_baseline(ME, m("fine", 80, 8))
     assert fine.warnings == () and fine.resolved_by == "param" and fine.reason
     stale = explicit_baseline(ME, m("stale", 80, 8, key="jira@1|L+G+E+F0|sig1|mask0"))
-    assert ["older recipe" in w and "atlas-log upgrade stale" in w for w in stale.warnings] == [
-        True
-    ]
+    assert ["older recipe" in w and "ragnalog upgrade stale" in w for w in stale.warnings] == [True]
     sub = explicit_baseline(ME, m("sub", 104, 4, files=("c",), entries=5))
     assert len(sub.warnings) == 2 and sub.shared_sources == 1
     assert "is a subset of this set's sources" in sub.warnings[0]

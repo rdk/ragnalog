@@ -6,12 +6,12 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.service import queries
-from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.service.params import EntryQuery, GroupQuery, Page, Select, TextCap
-from atlas_log_analyzer.service.sets import Sets, open_set
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.store import Store
+from ragnalog.service import queries
+from ragnalog.service.errors import OpError
+from ragnalog.service.params import EntryQuery, GroupQuery, Page, Select, TextCap
+from ragnalog.service.sets import Sets, open_set
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.store import Store
 
 MINI = Path(__file__).resolve().parents[1] / "cli" / "data" / "mini.log"
 ALL = Select()

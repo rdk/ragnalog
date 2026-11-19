@@ -1,4 +1,4 @@
-"""``atlas-log triage``: verdict, new exceptions below --min-level, coverage warnings."""
+"""``ragnalog triage``: verdict, new exceptions below --min-level, coverage warnings."""
 
 from __future__ import annotations
 
@@ -187,8 +187,8 @@ def test_triage_table_and_jsonl(cli: Invoke, sets: dict[str, str], store_dir: Pa
 
 
 def test_store_rank_baselines(jcli: Invoke, sets: dict[str, str], store_dir: Path) -> None:
-    from atlas_log_analyzer.store import Store
-    from atlas_log_analyzer.store.triage import rank_baselines
+    from ragnalog.store import Store
+    from ragnalog.store.triage import rank_baselines
 
     store = Store(store_dir)
     manifests = store.list()

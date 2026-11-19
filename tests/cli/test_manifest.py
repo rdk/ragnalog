@@ -1,4 +1,4 @@
-"""`manifest` (and bare `atlas-log` on a pipe): the agent manifest, manifest.v1."""
+"""`manifest` (and bare `ragnalog` on a pipe): the agent manifest, manifest.v1."""
 
 from __future__ import annotations
 
@@ -9,19 +9,19 @@ from pathlib import Path
 
 import msgspec
 
-from atlas_log_analyzer.cli.app import app
-from atlas_log_analyzer.cli.manifest import ENV, WORKFLOW, build_command, build_manifest
-from atlas_log_analyzer.service.documents import (
+from ragnalog.cli.app import app
+from ragnalog.cli.manifest import ENV, WORKFLOW, build_command, build_manifest
+from ragnalog.service.documents import (
     DOCUMENTS,
     Manifest,
     ManifestCommandDetail,
     convert,
 )
-from atlas_log_analyzer.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
+from ragnalog.service.views import DETAIL_BRIEF, ENTRY_BRIEF, GROUP_BRIEF
 
 from .conftest import Invoke
 
-SRC = Path(__file__).resolve().parents[2] / "src" / "atlas_log_analyzer"
+SRC = Path(__file__).resolve().parents[2] / "src" / "ragnalog"
 COMMANDS = [n for n in app if not n.startswith("-")]
 
 
@@ -92,7 +92,7 @@ def test_manifest_presets_globals_documents_env(cli: Invoke) -> None:
     assert set(options) == {"--output", "--store", "--quiet", "--width", "--color"}
     assert options["--output"].startswith("table|json|jsonl: ")
     assert doc["documents"]["names"] == sorted(DOCUMENTS)  # type: ignore[index]
-    assert "atlas-log schema NAME" in doc["documents"]["get"]  # type: ignore[index]
+    assert "ragnalog schema NAME" in doc["documents"]["get"]  # type: ignore[index]
     assert doc["exit_codes"] == {
         "0": "ok",
         "1": "usage error",
@@ -104,7 +104,7 @@ def test_manifest_presets_globals_documents_env(cli: Invoke) -> None:
 def test_manifest_env_lists_every_variable_the_code_reads() -> None:
     mentioned = set()
     for path in SRC.rglob("*.py"):
-        mentioned |= set(re.findall(r"\bATLAS_LOG_[A-Z_]*[A-Z]\b", path.read_text("utf-8")))
+        mentioned |= set(re.findall(r"\bRAGNALOG_[A-Z_]*[A-Z]\b", path.read_text("utf-8")))
     assert mentioned <= set(ENV)
 
 
@@ -117,7 +117,7 @@ def test_bare_invocation_on_a_pipe_prints_the_manifest(cli: Invoke) -> None:
 def test_bare_invocation_in_table_mode_prints_the_help(cli: Invoke) -> None:
     result = cli("--output", "table")
     assert result.code == 0
-    assert result.stdout.startswith("Usage: atlas-log")
+    assert result.stdout.startswith("Usage: ragnalog")
 
 
 def test_manifest_table_mode_is_indented_json(cli: Invoke) -> None:

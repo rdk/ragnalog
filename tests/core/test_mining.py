@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.core import mining
+from ragnalog.core import mining
 
 
 def test_propose_merges() -> None:
@@ -34,5 +34,5 @@ def test_missing_drain3(monkeypatch: pytest.MonkeyPatch) -> None:
         return real_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
-    with pytest.raises(ImportError, match=r"atlas-log-analyzer\[mine\]"):
+    with pytest.raises(ImportError, match=r"ragnalog\[mine\]"):
         mining.propose_merges([("a", "b")])

@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.report import build_payload
-from atlas_log_analyzer.report.render import embed_json
-from atlas_log_analyzer.store import Store
+from ragnalog.cli.app import run
+from ragnalog.report import build_payload
+from ragnalog.report.render import embed_json
+from ragnalog.store import Store
 
 MINI_LOG = Path(__file__).parents[1] / "cli" / "data" / "mini.log"
 BYTES_PER_ENTRY_CEILING = 2000

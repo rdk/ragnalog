@@ -2,7 +2,7 @@
 
 One group with its histogram and first entries: `GET /api/sets/{ref}/groups/{sig}`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`group.v1.schema.json`](group.v1.schema.json), also `atlas-log schema group.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`group.v1.schema.json`](group.v1.schema.json), also `ragnalog schema group.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -17,7 +17,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 
 ### `EntryRow`
 
-One entry; the entries.v1 columns (atlas-log schema entries). Every column is optional.
+One entry; the entries.v1 columns (ragnalog schema entries). Every column is optional.
 
 | Column | Type | Description |
 |---|---|---|
@@ -56,7 +56,7 @@ One entry; the entries.v1 columns (atlas-log schema entries). Every column is op
 
 ### `GroupRow`
 
-One group; the groups.v1 columns (atlas-log schema groups). Every column is optional.
+One group; the groups.v1 columns (ragnalog schema groups). Every column is optional.
 
 | Column | Type | Description |
 |---|---|---|

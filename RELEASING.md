@@ -1,9 +1,9 @@
-# Releasing atlas-log-analyzer
+# Releasing ragnalog
 
 A release is a `vX.Y.Z` tag on `main`. Pushing the tag runs `.github/workflows/release.yml`:
 it runs the CI checks on that tag (Ubuntu and Windows), builds the wheel and sdist, creates
 the GitHub release with the tag's CHANGELOG section as its notes, and pushes the container
-image `ghcr.io/rdk/atlas-log-analyzer:X.Y.Z` plus `:latest`.
+image `ghcr.io/rdk/ragnalog:X.Y.Z` plus `:latest`.
 
 CI does not run on pushes (see `ci.yml`), so check locally before every release.
 
@@ -19,7 +19,7 @@ CI does not run on pushes (see `ci.yml`), so check locally before every release.
    Edge or Chrome) and `tests/test_version.py`, which fails until step 2 is complete.
 
 2. **Bump the version** everywhere it is quoted:
-   - `pyproject.toml` (`version`) and `src/atlas_log_analyzer/_version.py`;
+   - `pyproject.toml` (`version`) and `src/ragnalog/_version.py`;
    - `uv.lock`: run `uv lock` (it rewrites the package's own `version` line);
    - `README.md`: the release badge, the Docker image tags, the `git+ssh …@vX.Y.Z` install,
      the `gh release download vX.Y.Z` command and the wheel's file name;
@@ -31,7 +31,7 @@ CI does not run on pushes (see `ci.yml`), so check locally before every release.
 3. **CHANGELOG.md:** rename `## [Unreleased]` to `## [X.Y.Z] - YYYY-MM-DD`, open a new empty
    `## [Unreleased]` above it, and at the bottom point `[Unreleased]` at
    `compare/vX.Y.Z...HEAD` and add `[X.Y.Z]: …/releases/tag/vX.Y.Z`. Say there when stored
-   sets need `atlas-log upgrade --all` (a format, signature or masking version changed).
+   sets need `ragnalog upgrade --all` (a format, signature or masking version changed).
 
 4. **Commit and push** `main`: `git commit -m "X.Y.Z: …"` then `git push origin main`.
 
@@ -44,7 +44,7 @@ CI does not run on pushes (see `ci.yml`), so check locally before every release.
 
 6. **Verify:** `gh run watch` on the Release run, then `gh release view vX.Y.Z` (wheel and
    sdist attached, marked Latest) and the image tags
-   (`gh api user/packages/container/atlas-log-analyzer/versions`).
+   (`gh api user/packages/container/ragnalog/versions`).
 
 7. **Screenshots**, when the UI changed: regenerate `docs/img` from the synthetic demo logs
    with `scripts/screenshots.mjs` (its header has the commands). Never from real logs.

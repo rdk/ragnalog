@@ -8,15 +8,15 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.service import compare, meta
-from atlas_log_analyzer.service import ingest as service_ingest
-from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.store.manifest import LogSetManifest
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.query import IncompatibleSets
-from atlas_log_analyzer.store.query import diff as store_diff
-from atlas_log_analyzer.store.schema import SCHEMA_NAMES
-from atlas_log_analyzer.store.store import Store
+from ragnalog.service import compare, meta
+from ragnalog.service import ingest as service_ingest
+from ragnalog.service.errors import OpError
+from ragnalog.store.manifest import LogSetManifest
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.query import IncompatibleSets
+from ragnalog.store.query import diff as store_diff
+from ragnalog.store.schema import SCHEMA_NAMES
+from ragnalog.store.store import Store
 
 MINI = Path(__file__).resolve().parents[1] / "cli" / "data" / "mini.log"
 SAMPLE = Path(__file__).resolve().parents[1] / "fixtures" / "jira" / "sample.log"

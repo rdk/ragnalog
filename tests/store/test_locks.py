@@ -8,10 +8,10 @@ from pathlib import Path
 
 import pytest
 
-import atlas_log_analyzer.store.store as store_mod
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.store import Store, StoreError
-from atlas_log_analyzer.store.locks import FileLock
+import ragnalog.store.store as store_mod
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.store import Store, StoreError
+from ragnalog.store.locks import FileLock
 
 from .conftest import Built, build
 from .synth import WEIGHTS_A, WEIGHTS_B, FakeFormat, generate, source_files

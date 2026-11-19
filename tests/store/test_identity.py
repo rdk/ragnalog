@@ -7,10 +7,10 @@ import threading
 
 import pytest
 
-from atlas_log_analyzer.store import LogSetManifest, Store
-from atlas_log_analyzer.store.manifest import MANIFEST_FILE
-from atlas_log_analyzer.store.schema import SCHEMA_VERSION
-from atlas_log_analyzer.store.store import LogSetNotFound
+from ragnalog.store import LogSetManifest, Store
+from ragnalog.store.manifest import MANIFEST_FILE
+from ragnalog.store.schema import SCHEMA_VERSION
+from ragnalog.store.store import LogSetNotFound
 
 from .conftest import Built, build
 from .synth import WEIGHTS_B
@@ -29,7 +29,7 @@ def test_new_manifest_always_writes_the_three_keys(built: Built) -> None:
 
 
 def test_a_1_0_manifest_still_loads_and_is_not_stale(built: Built) -> None:
-    from atlas_log_analyzer.service.views import set_item
+    from ragnalog.service.views import set_item
 
     path = built.logset.path / MANIFEST_FILE
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -46,7 +46,7 @@ def test_a_1_0_manifest_still_loads_and_is_not_stale(built: Built) -> None:
 
 
 def test_ingest_records_the_identity(store: Store) -> None:
-    from atlas_log_analyzer.core.signature import SignatureSpec
+    from ragnalog.core.signature import SignatureSpec
 
     from .synth import FakeFormat, generate, source_files
 
@@ -105,7 +105,7 @@ def test_label_from_threads_keeps_every_field(built: Built) -> None:
 
 
 def test_regroup_keeps_the_identity(built: Built) -> None:
-    from atlas_log_analyzer.core.signature import SignatureSpec
+    from ragnalog.core.signature import SignatureSpec
 
     built.store.label("prod-a", node="NODE1", cluster="acme", capture="cap-1")
     ls = built.store.regroup("prod-a", SignatureSpec(frames=1))

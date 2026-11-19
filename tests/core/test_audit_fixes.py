@@ -8,12 +8,12 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.jira import HEADER_RE, JIRA_RULES, match_header
-from atlas_log_analyzer.core.java import parse_exceptions
-from atlas_log_analyzer.core.masking import GENERIC_RULES, Masker
-from atlas_log_analyzer.core.models import LogEntry, LogLevel, SourceRef
-from atlas_log_analyzer.core.reader import discover_sources
-from atlas_log_analyzer.core.signature import Signer
+from ragnalog.core.formats.jira import HEADER_RE, JIRA_RULES, match_header
+from ragnalog.core.java import parse_exceptions
+from ragnalog.core.masking import GENERIC_RULES, Masker
+from ragnalog.core.models import LogEntry, LogLevel, SourceRef
+from ragnalog.core.reader import discover_sources
+from ragnalog.core.signature import Signer
 
 TAB = "\t"
 BS = "\\"

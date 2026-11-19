@@ -2,7 +2,7 @@
 
 Stale sets rebuilt at the current recipe: `upgrade [SET...] [--all]`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`upgrade.v1.schema.json`](upgrade.v1.schema.json), also `atlas-log schema upgrade.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`upgrade.v1.schema.json`](upgrade.v1.schema.json), also `ragnalog schema upgrade.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -25,7 +25,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `items[].entry_count` | `integer` | yes | Rows in entries.parquet. |
 | `items[].group_count` | `integer` | yes | Rows in groups.parquet. |
 | `items[].created_at` | `string` | yes | ISO 8601 time (UTC) the set was written. |
-| `items[].tool_version` | `string` | yes | atlas-log-analyzer version that wrote the set. |
+| `items[].tool_version` | `string` | yes | ragnalog version that wrote the set. |
 | `items[].schema_version` | `string` | yes | Store schema version <major>.<minor>. |
 | `items[].signature_version` | `integer` | yes | Signature algorithm version. |
 | `items[].mask_rules_version` | `integer` | yes | Built-in masking rules version. |

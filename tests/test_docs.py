@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from types import ModuleType
 
-from atlas_log_analyzer.service.documents import document_names, document_schema
+from ragnalog.service.documents import document_names, document_schema
 
 ROOT = Path(__file__).resolve().parents[1]
 FORMATS = ROOT / "docs" / "formats"

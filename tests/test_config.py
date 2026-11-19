@@ -1,4 +1,4 @@
-"""Settings (``config.py``): flags over ``ATLAS_LOG_*`` over defaults, and the docs' table."""
+"""Settings (``config.py``): flags over ``RAGNALOG_*`` over defaults, and the docs' table."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.config import DEFAULT_STORE, ENV_VARS, Settings, parse_packages
+from ragnalog.config import DEFAULT_STORE, ENV_VARS, Settings, parse_packages
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -39,12 +39,12 @@ def test_defaults() -> None:
 
 def test_env_then_flags() -> None:
     env = {
-        "ATLAS_LOG_STORE": " /data/store ",
-        "ATLAS_LOG_TOKEN": "t",
-        "ATLAS_LOG_MAX_UPLOAD_MB": "7",
-        "ATLAS_LOG_REPORT_CACHE": "2",
-        "ATLAS_LOG_APP_PACKAGES": " org.acme. , com.example.,",
-        "ATLAS_LOG_DEBUG": "1",
+        "RAGNALOG_STORE": " /data/store ",
+        "RAGNALOG_TOKEN": "t",
+        "RAGNALOG_MAX_UPLOAD_MB": "7",
+        "RAGNALOG_REPORT_CACHE": "2",
+        "RAGNALOG_APP_PACKAGES": " org.acme. , com.example.,",
+        "RAGNALOG_DEBUG": "1",
     }
     s = Settings.load(env=env)
     assert s.store == Path("/data/store") and not s.implicit_store
@@ -63,8 +63,8 @@ def test_blank_variables_are_unset() -> None:
 @pytest.mark.parametrize(
     ("env", "message"),
     [
-        ({"ATLAS_LOG_MAX_UPLOAD_MB": "lots"}, "ATLAS_LOG_MAX_UPLOAD_MB='lots' is not an integer"),
-        ({"ATLAS_LOG_REPORT_CACHE": "0"}, "report_cache must be >= 1"),
+        ({"RAGNALOG_MAX_UPLOAD_MB": "lots"}, "RAGNALOG_MAX_UPLOAD_MB='lots' is not an integer"),
+        ({"RAGNALOG_REPORT_CACHE": "0"}, "report_cache must be >= 1"),
     ],
 )
 def test_bad_numbers(env: dict[str, str], message: str) -> None:
@@ -85,19 +85,19 @@ def test_parse_packages() -> None:
 
 def test_config_is_stdlib_only() -> None:
     script = (
-        "import json, sys; import atlas_log_analyzer.config\n"
-        "print(json.dumps(sorted(m for m in sys.modules if m.startswith('atlas_log_analyzer'))))"
+        "import json, sys; import ragnalog.config\n"
+        "print(json.dumps(sorted(m for m in sys.modules if m.startswith('ragnalog'))))"
     )
     out = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, check=True)
     assert json.loads(out.stdout) == [
-        "atlas_log_analyzer",
-        "atlas_log_analyzer._version",
-        "atlas_log_analyzer.config",
+        "ragnalog",
+        "ragnalog._version",
+        "ragnalog.config",
     ]
 
 
 def test_core_reads_no_environment() -> None:
-    core = ROOT / "src" / "atlas_log_analyzer" / "core"
+    core = ROOT / "src" / "ragnalog" / "core"
     for path in core.rglob("*.py"):
         text = path.read_text(encoding="utf-8")
         assert "os.environ" not in text and "getenv" not in text, path.name
@@ -106,9 +106,9 @@ def test_core_reads_no_environment() -> None:
 def test_cli_env_error(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    from atlas_log_analyzer.cli.app import run
+    from ragnalog.cli.app import run
 
-    monkeypatch.setenv("ATLAS_LOG_REPORT_CACHE", "many")
+    monkeypatch.setenv("RAGNALOG_REPORT_CACHE", "many")
     assert run(["--output", "json", "--store", str(tmp_path), "version"]) == 1
     err = json.loads(capsys.readouterr().out)["error"]
-    assert err["code"] == "invalid_value" and "ATLAS_LOG_REPORT_CACHE" in err["message"]
+    assert err["code"] == "invalid_value" and "RAGNALOG_REPORT_CACHE" in err["message"]

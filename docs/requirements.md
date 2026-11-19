@@ -4,18 +4,18 @@ Status: agreed 2026-10-29. Decisions recorded at the bottom.
 
 ## Context
 
-`atlas-log-analyzer` analyses application log files, starting with
+`ragnalog` analyses application log files, starting with
 `atlassian-jira.log` produced by Jira Data Center. The immediate consumers are
 humans at a terminal and, more importantly, coding/ops agents driving the CLI.
 A FastAPI web application for browsing log sets and comparing them with earlier
 ones will be added to this repository later; it is deliberately *not* designed
 yet, but the layout must leave an obvious slot for it.
 
-Sample data lives outside the repository in `../atlas-log-analyzer-data/`
+Sample data lives outside the repository in `../ragnalog-data/`
 (rotated `atlassian-jira.log*` files, ~20 MB and ~250k lines each, up to 11
 files per set; layout and conventions in that folder's `README.md`).
 
-## R1 — Core library (`atlas_log_analyzer.core`)
+## R1 — Core library (`ragnalog.core`)
 
 - **R1.1 Streaming parse.** Parse files of hundreds of MB and rotated file sets
   with bounded memory. Multi-line entries (Java stack traces with `Caused by:`
@@ -40,7 +40,7 @@ files per set; layout and conventions in that folder's `README.md`).
 - **R1.5 Composable.** Iterators and pure functions; no I/O hidden inside the
   models; no CLI or web framework dependency in the core.
 
-## R2 — Command line (`atlas-log`)
+## R2 — Command line (`ragnalog`)
 
 - **R2.1 Commands.** `ingest` (files/dirs → stored log set), `groups`
   (templates + stats), `show` (entries of one group), `entries`/`query`
@@ -83,4 +83,4 @@ recommend. See `research.md`.
 | Storage | Parquet for entries and groups, JSON manifest, DuckDB/polars for queries and diffs. |
 | Agent interface | JSON-output CLI now; command/output schemas shaped so an MCP server is a thin wrapper later. |
 | Test fixtures | Small excerpts of real logs with usernames/IPs/hostnames masked. |
-| Names | repo `rdk/atlas-log-analyzer`, package `atlas_log_analyzer`, CLI `atlas-log`. |
+| Names | repo `rdk/ragnalog`, package `ragnalog`, CLI `ragnalog`. |

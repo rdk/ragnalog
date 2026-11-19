@@ -13,11 +13,11 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, LogFormat
-from atlas_log_analyzer.core.models import LogEntry
-from atlas_log_analyzer.core.parser import DETECT_LINES, parse_file
-from atlas_log_analyzer.core.reader import iter_raw_lines
+from ragnalog.core import formats
+from ragnalog.core.formats.base import CTX_PREAMBLE, LogFormat
+from ragnalog.core.models import LogEntry
+from ragnalog.core.parser import DETECT_LINES, parse_file
+from ragnalog.core.reader import iter_raw_lines
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 FOREIGN = sorted((FIXTURES / "foreign").glob("*.log"))

@@ -1,4 +1,4 @@
-"""``atlas-log report`` run in-process against the module's tmp store."""
+"""``ragnalog report`` run in-process against the module's tmp store."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
+from ragnalog.cli.app import run
 
 from .conftest import report_data
 
@@ -127,7 +127,7 @@ def test_help(capsys: pytest.CaptureFixture[str]) -> None:
     capsys.readouterr()
     assert run(["report", "--help"]) == 0
     text = capsys.readouterr().out
-    assert "Usage: atlas-log report" in text
+    assert "Usage: ragnalog report" in text
     for needle in ("Exit codes:", "Output", '"schema"', "--compare", "--max-raw", "--open"):
         assert needle in text
     capsys.readouterr()

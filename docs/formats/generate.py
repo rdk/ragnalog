@@ -6,7 +6,7 @@ Writes, for every JSON document (``service.documents.DOCUMENTS``),
 column docs and gain a JSON section; ``report.v1.md`` is hand-written), and the
 generated column blocks of ``docs/cli.md`` (between
 ``<!-- generated:NAME ... -->`` and ``<!-- /generated -->``), and the agent
-manifest ``src/atlas_log_analyzer/service/manifest.json`` (``manifest.v1`` and
+manifest ``src/ragnalog/service/manifest.json`` (``manifest.v1`` and
 ``manifest-command.v1`` of every command, from the cyclopts app).
 
 Run: ``uv run python docs/formats/generate.py``
@@ -20,17 +20,17 @@ import textwrap
 from pathlib import Path
 from typing import Any
 
-from atlas_log_analyzer.service.documents import (
+from ragnalog.service.documents import (
     DOCUMENTS,
     ROW_COMPONENTS,
     document_names,
     document_schema,
 )
-from atlas_log_analyzer.store.schema import SCHEMA_NAMES, schema_json
+from ragnalog.store.schema import SCHEMA_NAMES, schema_json
 
 HERE = Path(__file__).parent
 CLI_MD = HERE.parent / "cli.md"
-PACKAGE_MANIFEST = HERE.parents[1] / "src" / "atlas_log_analyzer" / "service" / "manifest.json"
+PACKAGE_MANIFEST = HERE.parents[1] / "src" / "ragnalog" / "service" / "manifest.json"
 BLOCK_RE = re.compile(
     r"(?P<open><!-- generated:(?P<name>[\w-]+)[^>]*-->\n)"
     r"(?P<body>.*?)"
@@ -94,7 +94,7 @@ def render(name: str) -> str:
     return text + (
         f"\nIn JSON (`logset.v1` `merges` after `ingest --mine`, `query` over the `{name}` "
         f"view) a row is an object with these columns: `{TABLE_ROWS[name]}` in the "
-        "documents' JSON Schemas (`atlas-log schema logset.v1`).\n"
+        "documents' JSON Schemas (`ragnalog schema logset.v1`).\n"
     )
 
 
@@ -104,9 +104,9 @@ def render_table(name: str) -> str:
     lines = [
         f"# {doc['schema']}",
         "",
-        f"Schema version {doc['version']}. Generated from `atlas_log_analyzer.store.schema` "
+        f"Schema version {doc['version']}. Generated from `ragnalog.store.schema` "
         "by `docs/formats/generate.py`; machine-readable form: "
-        f"`atlas-log schema {name}`.",
+        f"`ragnalog schema {name}`.",
         "",
         INTRO[name],
         "",
@@ -213,9 +213,9 @@ def render_document(name: str, *, table: str | None = None) -> str:
         "",
         _cell(schema["description"]),
         "",
-        "Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; "
+        "Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; "
         f"JSON Schema: [`{name}.schema.json`]({name}.schema.json), also "
-        f"`atlas-log schema {name}`. A key with Required = no appears only in some modes "
+        f"`ragnalog schema {name}`. A key with Required = no appears only in some modes "
         "(see its description); readers ignore keys they do not know.",
         "",
         "| Key | Type | Required | Description |",
@@ -239,7 +239,7 @@ def outputs() -> dict[Path, str]:
         files[HERE / f"{name}.schema.json"] = render_schema(name)
         if name.removesuffix(".v1") not in SCHEMA_NAMES and name not in HAND_WRITTEN:
             files[HERE / f"{name}.md"] = render_document(name)
-    from atlas_log_analyzer.cli.manifest import render_package_file
+    from ragnalog.cli.manifest import render_package_file
 
     files[PACKAGE_MANIFEST] = render_package_file()
     return files

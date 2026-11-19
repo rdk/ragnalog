@@ -158,7 +158,7 @@
     },
     "IngestInfo": {
       "title": "IngestInfo",
-      "description": "What one ingest did (`atlas-log ingest`, `job.v1` `result`).",
+      "description": "What one ingest did (`ragnalog ingest`, `job.v1` `result`).",
       "type": "object",
       "properties": {
         "parsed_entries": {
@@ -203,7 +203,7 @@
     },
     "MergeRow": {
       "title": "merges.v1 row",
-      "description": "One Drain3 merge proposal (atlas-log schema merges).",
+      "description": "One Drain3 merge proposal (ragnalog schema merges).",
       "type": "object",
       "properties": {
         "cluster_id": {
@@ -385,7 +385,7 @@
           "type": "string"
         },
         "tool_version": {
-          "description": "atlas-log-analyzer version that wrote the set.",
+          "description": "ragnalog version that wrote the set.",
           "type": "string"
         },
         "schema_version": {

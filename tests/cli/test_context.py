@@ -64,7 +64,7 @@ def test_context_unknown_entry(jcli: Invoke, reqs: list[str]) -> None:
     res = jcli("context", "reqs", "0000000000000000")
     assert res.code == 2
     err = res.json()["error"]
-    assert err["code"] == "not_found" and "atlas-log entries reqs" in err["hint"]
+    assert err["code"] == "not_found" and "ragnalog entries reqs" in err["hint"]
 
 
 def test_context_bad_window(jcli: Invoke, reqs: list[str]) -> None:

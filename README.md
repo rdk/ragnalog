@@ -1,16 +1,18 @@
 <div align="center">
 
-<img src="docs/img/logo.svg" width="72" height="72" alt="atlas-log logo">
+<img src="docs/img/logo.svg" width="72" height="72" alt="Ragnalog logo">
 
-# atlas-log-analyzer
+# Ragnalog
+
+*Atlassian Data Center log analyzer for the end days. Forget Grafana, this is the best log viewer vibecoded this week!*
 
 **Turn gigabytes of Jira Data Center logs into a few hundred groups you can read,<br>
 compare and triage, in the browser, the terminal or from an agent.**
 
-[![Release](https://img.shields.io/badge/release-v0.5.0-2f6bc7?style=flat-square)](https://github.com/rdk/atlas-log-analyzer/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.6.0-2f6bc7?style=flat-square)](https://github.com/rdk/ragnalog/releases/latest)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/built_with-uv-de5fe9?style=flat-square&logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
-[![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/atlas-log-analyzer/pkgs/container/atlas-log-analyzer)
+[![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/ragnalog/pkgs/container/ragnalog)
 [![Jira Data Center](https://img.shields.io/badge/logs-Jira_Data_Center-0052cc?style=flat-square&logo=jira&logoColor=white)](docs/formats/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
 [![mypy strict](https://img.shields.io/badge/types-mypy_strict-1f5082?style=flat-square)](https://mypy-lang.org/)
@@ -68,7 +70,7 @@ compare and triage, in the browser, the terminal or from an agent.**
 ## Quick start
 
 Pick one: the **Docker image** runs the web app with nothing else installed; **without
-Docker** you get the `atlas-log` command (CLI and web app) on your machine.
+Docker** you get the `ragnalog` command (CLI and web app) on your machine.
 
 ### With Docker
 
@@ -84,18 +86,18 @@ named volume. It listens on all
 interfaces in the container, so give it a token:
 
 ```sh
-export ATLAS_LOG_TOKEN="$(openssl rand -hex 16)"
-docker run -d --name atlas-log -p 8321:8321 -v atlas-log:/data \
-  -e ATLAS_LOG_TOKEN ghcr.io/rdk/atlas-log-analyzer:0.5.0
-echo "http://localhost:8321/?token=$ATLAS_LOG_TOKEN"     # open once; the token is kept
+export RAGNALOG_TOKEN="$(openssl rand -hex 16)"
+docker run -d --name ragnalog -p 8321:8321 -v ragnalog:/data \
+  -e RAGNALOG_TOKEN ghcr.io/rdk/ragnalog:0.6.0
+echo "http://localhost:8321/?token=$RAGNALOG_TOKEN"      # open once; the token is kept
 ```
 
 Upload log files on the start page, or ingest a folder with the CLI from the same image
-(any `atlas-log` command works this way):
+(any `ragnalog` command works this way):
 
 ```sh
-docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
-  ghcr.io/rdk/atlas-log-analyzer:0.5.0 ingest /in --name prod-1030
+docker run --rm -v ragnalog:/data -v "$PWD/logs:/in:ro" \
+  ghcr.io/rdk/ragnalog:0.6.0 ingest /in --name prod-1030
 ```
 
 <details>
@@ -103,20 +105,20 @@ docker run --rm -v atlas-log:/data -v "$PWD/logs:/in:ro" \
 
 ```yaml
 services:
-  atlas-log:
-    image: ghcr.io/rdk/atlas-log-analyzer:0.5.0
+  ragnalog:
+    image: ghcr.io/rdk/ragnalog:0.6.0
     ports: ["8321:8321"]
     environment:
-      ATLAS_LOG_TOKEN: ${ATLAS_LOG_TOKEN:?set a token}
-    volumes: ["atlas-log:/data"]
+      RAGNALOG_TOKEN: ${RAGNALOG_TOKEN:?set a token}
+    volumes: ["ragnalog:/data"]
     restart: unless-stopped
 volumes:
-  atlas-log:
+  ragnalog:
 ```
 
 </details>
 
-To build the image yourself: `docker build -t atlas-log .`
+To build the image yourself: `docker build -t ragnalog .`
 
 ### Without Docker
 
@@ -126,33 +128,33 @@ repository is used; `[web]` adds the web app, `[mine]` the optional Drain3 templ
 mining):
 
 ```sh
-uv tool install "atlas-log-analyzer[web] @ git+ssh://git@github.com/rdk/atlas-log-analyzer.git@v0.5.0"
-atlas-log --version
+uv tool install "ragnalog[web] @ git+ssh://git@github.com/rdk/ragnalog.git@v0.6.0"
+ragnalog --version
 ```
 
 or install the wheel attached to the release:
 
 ```sh
-gh release download v0.5.0 -R rdk/atlas-log-analyzer -p '*.whl'
-uv tool install "atlas-log-analyzer[web] @ ./atlas_log_analyzer-0.5.0-py3-none-any.whl"
+gh release download v0.6.0 -R rdk/ragnalog -p '*.whl'
+uv tool install "ragnalog[web] @ ./ragnalog-0.6.0-py3-none-any.whl"
 ```
 
 Then choose a data directory, the folder that keeps the log sets (outside any git
-repository; the option and variable that name it are `--store` and `ATLAS_LOG_STORE`),
+repository; the option and variable that name it are `--store` and `RAGNALOG_STORE`),
 ingest some logs and open the web app:
 
 ```sh
-export ATLAS_LOG_STORE=~/atlas-log-data
-atlas-log ingest /var/atlassian/application-data/jira/log/ --name prod-1030
-atlas-log serve                                  # http://127.0.0.1:8321/
+export RAGNALOG_STORE=~/ragnalog-data
+ragnalog ingest /var/atlassian/application-data/jira/log/ --name prod-1030
+ragnalog serve                                   # http://127.0.0.1:8321/
 ```
 
 ### From source
 
 ```sh
-git clone git@github.com:rdk/atlas-log-analyzer.git && cd atlas-log-analyzer
+git clone git@github.com:rdk/ragnalog.git && cd ragnalog
 uv sync --all-extras --dev                       # .venv with every extra and the dev tools
-uv run atlas-log --help
+uv run ragnalog --help
 ```
 
 ### Try it with demo logs
@@ -161,14 +163,14 @@ No logs at hand? Generate the synthetic two-node cluster the screenshots use:
 
 ```sh
 uv run python scripts/demo_logs.py /tmp/demo     # two weeks, two nodes, invented data
-uv run atlas-log --store /tmp/demo-data ingest /tmp/demo/prev --cluster demo-jira --name prev
-uv run atlas-log --store /tmp/demo-data ingest /tmp/demo/week --cluster demo-jira --name week
-uv run atlas-log --store /tmp/demo-data serve
+uv run ragnalog --store /tmp/demo-data ingest /tmp/demo/prev --cluster demo-jira --name prev
+uv run ragnalog --store /tmp/demo-data ingest /tmp/demo/week --cluster demo-jira --name week
+uv run ragnalog --store /tmp/demo-data serve
 ```
 
 ## Web app
 
-`atlas-log serve` (or the container) serves:
+`ragnalog serve` (or the container) serves:
 
 | Page | What it shows |
 |---|---|
@@ -188,21 +190,21 @@ either light or dark mode, and is also available in exported HTML reports.
 ## CLI
 
 ```sh
-atlas-log ingest logs/ --name prod-1030                        # build a log set
-atlas-log triage prod-1030                                     # new kinds of errors vs the previous set?
-atlas-log groups prod-1030 --min-level WARN --brief            # one row per group
-atlas-log show prod-1030 83d1828c --brief                      # entries of a group (signature prefix)
-atlas-log frames prod-1030 83d1828c                            # its stack trace, application frames first
-atlas-log context prod-1030 ENTRY_ID --before 10               # what the thread did around one entry
-atlas-log diff prod-1029 prod-1030 --rate --limit 20           # new / vanished / changed vs an earlier set
-atlas-log report prod-1030 --compare prod-1029 --out r.html    # one self-contained HTML file
-atlas-log ingest jira-logs_export.zip --cluster jira-prod      # cluster export: one set per node
-atlas-log capture cluster:jira-prod                            # the nodes side by side, a verdict each
-atlas-log query prod-1030 "select level_name, count(*) from entries group by 1"
+ragnalog ingest logs/ --name prod-1030                         # build a log set
+ragnalog triage prod-1030                                      # new kinds of errors vs the previous set?
+ragnalog groups prod-1030 --min-level WARN --brief             # one row per group
+ragnalog show prod-1030 83d1828c --brief                       # entries of a group (signature prefix)
+ragnalog frames prod-1030 83d1828c                             # its stack trace, application frames first
+ragnalog context prod-1030 ENTRY_ID --before 10                # what the thread did around one entry
+ragnalog diff prod-1029 prod-1030 --rate --limit 20            # new / vanished / changed vs an earlier set
+ragnalog report prod-1030 --compare prod-1029 --out r.html     # one self-contained HTML file
+ragnalog ingest jira-logs_export.zip --cluster jira-prod       # cluster export: one set per node
+ragnalog capture cluster:jira-prod                             # the nodes side by side, a verdict each
+ragnalog query prod-1030 "select level_name, count(*) from entries group by 1"
 ```
 
 A set is referred to by name, id or unique id prefix. Sets are kept in a data directory:
-`--store DIR`, else `$ATLAS_LOG_STORE`, else `./.atlas-log` (never created inside a git
+`--store DIR`, else `$RAGNALOG_STORE`, else `./.ragnalog` (never created inside a git
 work tree, so real logs cannot end up in a repository). Full reference:
 [`docs/cli.md`](docs/cli.md).
 
@@ -214,10 +216,10 @@ error) and an `error.v1` document with a `hint` on failure. Start with the manif
 10 KB of JSON describing the workflow and every command:
 
 ```sh
-atlas-log manifest                                   # how to use the tool (manifest.v1)
-atlas-log triage today                               # verdict vs the previous set
-atlas-log groups today --min-level ERROR --brief     # check "total" / "truncated"
-printf '%s\n' '["groups","today","--brief"]' '["show","today","83d1"]' | atlas-log batch
+ragnalog manifest                                    # how to use the tool (manifest.v1)
+ragnalog triage today                                # verdict vs the previous set
+ragnalog groups today --min-level ERROR --brief      # check "total" / "truncated"
+printf '%s\n' '["groups","today","--brief"]' '["show","today","83d1"]' | ragnalog batch
 ```
 
 `batch` runs many commands in one process (one JSON document per line). The workflow,
@@ -225,7 +227,7 @@ conventions and a cookbook of common questions are in [`docs/agents.md`](docs/ag
 
 ## How it works
 
-`atlas-log` reads `atlassian-jira.log` files (rotated and gzipped ones too, ZIP exports,
+`ragnalog` reads `atlassian-jira.log` files (rotated and gzipped ones too, ZIP exports,
 Java stack traces) into a **log set**. Each entry is masked (issue keys, numbers, ids, URLs,
 users, IPs become placeholders such as `<ISSUE>`) and gets a signature from its level,
 logger, masked message and exception chain; entries with the same signature form a

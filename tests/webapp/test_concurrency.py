@@ -12,11 +12,11 @@ from typing import Any
 import pytest
 from fastapi.testclient import TestClient
 
-import atlas_log_analyzer.webapp.jobs as jobs_mod
-from atlas_log_analyzer.store.store import Store
-from atlas_log_analyzer.webapp import Settings, create_app
-from atlas_log_analyzer.webapp.jobs import UPLOADS_DIR, JobManager
-from atlas_log_analyzer.webapp.state import SERVER_LOCK_FILE, StoreInUse
+import ragnalog.webapp.jobs as jobs_mod
+from ragnalog.store.store import Store
+from ragnalog.webapp import Settings, create_app
+from ragnalog.webapp.jobs import UPLOADS_DIR, JobManager
+from ragnalog.webapp.state import SERVER_LOCK_FILE, StoreInUse
 
 from .conftest import MINI
 
@@ -79,7 +79,7 @@ def test_second_server_on_the_same_store_fails(store_dir: Path) -> None:
 
 
 def test_serve_refuses_a_store_that_is_already_served(store_dir: Path) -> None:
-    from atlas_log_analyzer.cli.app import run
+    from ragnalog.cli.app import run
 
     with TestClient(create_app(Settings(store=store_dir, sync_jobs=True))):
         assert run(["--output", "json", "--store", str(store_dir), "serve", "--port", "1"]) == 3
@@ -125,7 +125,7 @@ def test_shutdown_deletes_spools_of_queued_jobs(
 def test_server_runs_unlocked_when_the_lock_file_cannot_be_created(
     store_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from atlas_log_analyzer.store.locks import FileLock
+    from ragnalog.store.locks import FileLock
 
     def refuse(self: FileLock, timeout: float = 0.0) -> bool:
         raise PermissionError(13, "read-only (simulated)", str(self.path))

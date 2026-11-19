@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.events import (
+from ragnalog.core import formats
+from ragnalog.core.events import (
     EVENT_KINDS,
     SUBJECT_LOGGER,
     EventRule,
@@ -14,8 +14,8 @@ from atlas_log_analyzer.core.events import (
     event_rules,
     has_placeholder,
 )
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.formats.jira_events import JIRA_EVENT_RULES
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.formats.jira_events import JIRA_EVENT_RULES
 
 
 def test_abbreviate_compares_jira_shortened_loggers() -> None:

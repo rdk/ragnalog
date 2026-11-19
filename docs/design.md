@@ -7,12 +7,12 @@ implementation deviates from the original proposal.
 ## 1. Layout
 
 ```
-atlas-log-analyzer/
-├── pyproject.toml                 uv, Python 3.14, src layout, script `atlas-log`
+ragnalog/
+├── pyproject.toml                 uv, Python 3.14, src layout, script `ragnalog`
 ├── docs/                          requirements, research, design, format specs
 │   └── formats/                   entries.v1.md, groups.v1.md, logset.v1.md
-├── src/atlas_log_analyzer/
-│   ├── config.py                  Settings, ENV_VARS: flags > ATLAS_LOG_* > defaults (stdlib)
+├── src/ragnalog/
+│   ├── config.py                  Settings, ENV_VARS: flags > RAGNALOG_* > defaults (stdlib)
 │   ├── core/                      pure library — no I/O policy, no CLI, no web
 │   │   ├── models.py              LogEntry, LogLevel, ExceptionInfo, Frame, SourceRef
 │   │   ├── formats/               LogFormat protocol + registry
@@ -142,7 +142,7 @@ Exception chains are parsed by a shared `core/java.py` helper (`at …`,
 `Caused by:`, `... N more`, `Suppressed:`), which `log4j.py` will reuse.
 
 Registry: `formats.get("jira")`, `formats.detect(first_lines)`, entry points
-group `atlas_log_analyzer.formats` so external packages can add formats.
+group `ragnalog.formats` so external packages can add formats.
 
 ## 4. Parsing (`core/reader.py`, `core/parser.py`)
 
@@ -228,7 +228,7 @@ masking rules when there are any. The manifest records it as `recipe_key`
 (derived from the version fields for older manifests); `diff` refuses sets
 whose keys differ unless `--force`, naming the parts that differ. A set whose
 key differs from the current recipe for its format and spec is *stale*
-(`sets` items carry `stale`); `atlas-log upgrade` rebuilds it with its own
+(`sets` items carry `stale`); `ragnalog upgrade` rebuilds it with its own
 spec.
 
 Two signature granularities are stored per entry: `signature` (default spec)
@@ -250,7 +250,7 @@ class Group:
 ```
 
 Groups are computed at ingest and written to `groups.parquet`; they can also
-be recomputed from `entries.parquet` with a different spec (`atlas-log
+be recomputed from `entries.parquet` with a different spec (`ragnalog
 regroup`). The optional `mining.py` runs Drain3 over the distinct *templates*
 (not the raw entries — far fewer rows) and emits `MergeProposal(cluster_id,
 signatures, drain_template)` records that are stored in `merges.parquet` and
@@ -290,7 +290,7 @@ sample shrinks from 30.0 to 23.6 MB). This is a physical detail: the schema is
 unchanged and pyarrow, polars and DuckDB read it as before.
 
 Schemas are declared once in `store/schema.py` as pyarrow schemas and
-exported by `atlas-log schema` as JSON for agents. `SCHEMA_VERSION` bumps on
+exported by `ragnalog schema` as JSON for agents. `SCHEMA_VERSION` bumps on
 breaking changes; readers refuse newer majors.
 
 Dedup: when a set is built from files that overlap (snapshots), entries with
@@ -308,11 +308,11 @@ sample exactly one id changed, a startup banner line that was dropped as a
 duplicate before. A pure per-timestamp ordinal would have changed 19 ids of
 non-colliding entries (threads log slightly out of order).
 
-## 8. CLI (`atlas-log`)
+## 8. CLI (`ragnalog`)
 
 Global options: `--output table|json|jsonl` (default `table` on a TTY, `json`
-otherwise), `--quiet`, `--store DIR` (env `ATLAS_LOG_STORE`, default
-`./.atlas-log`; the data directory, the folder that keeps the log sets).
+otherwise), `--quiet`, `--store DIR` (env `RAGNALOG_STORE`, default
+`./.ragnalog`; the data directory, the folder that keeps the log sets).
 
 | Command | Purpose |
 |---|---|
@@ -342,7 +342,7 @@ import path, so a command loads only its module (`version` loads no polars).
 
 ## 9. Web app
 
-`src/atlas_log_analyzer/webapp/` (optional extra `[web]`, `atlas-log serve`)
+`src/ragnalog/webapp/` (optional extra `[web]`, `ragnalog serve`)
 exposes the data directory over FastAPI with the CLI's JSON documents; see
 `docs/webapp.md`. Nothing in `core`/`store`/`report` may import from `cli` or
 `webapp`.
@@ -416,7 +416,7 @@ reports `IngestProgress`.
 ### CLI and API parity
 
 `tests/contract/test_parity.py` is the written contract between
-`atlas-log --output json` and `/api`: its `CASES` table pairs a command line with
+`ragnalog --output json` and `/api`: its `CASES` table pairs a command line with
 a request; both run against one data directory and must return the same document once
 volatile keys (`created_at`, `elapsed_s`, `tool_version`, `report_url`) are
 dropped. Differences by design are listed per case in `allowed`, each with its
@@ -441,7 +441,7 @@ JSON Schemas are derived from the Arrow schemas of `store/schema.py`, every
 column optional. A key that only some commands, modes or front ends add is
 optional (`UNSET`); unknown keys are ignored, so v1 documents may gain keys.
 Generated from the Structs: the JSON Schemas and field tables in
-`docs/formats/` (`docs/formats/generate.py`, `atlas-log schema NAME.v1`), the
+`docs/formats/` (`docs/formats/generate.py`, `ragnalog schema NAME.v1`), the
 OpenAPI components and response schemas of the web app (`webapp/openapi.py`)
 and the document list of the agent manifest (`manifest.v1`, `cli/manifest.py`,
 which takes everything else but its workflow table from the cyclopts app and is
@@ -535,7 +535,7 @@ Struct fails it.
   `.spool/<id>` older than a day by directory mtime, so a running ingest touches
   its tmp and spool directories every few minutes (`store/fresh.py`). A set
   whose `manifest.json` cannot be read is not listed; `Store.unreadable()` names
-  it, `sets` warns on stderr and the web index shows a notice (`atlas-log remove NAME`
+  it, `sets` warns on stderr and the web index shows a notice (`ragnalog remove NAME`
   or `DELETE /api/sets/NAME` with the directory name clears it). The web app holds `<data dir>/.server.lock` (one
   server per data directory).
 - **CLI.** Extra commands `remove` and `version`; `formats --sample FILE`
@@ -545,6 +545,6 @@ Struct fails it.
   `frames` (application frames of a stack trace; library prefixes in
   `core/java.py`), paging (`--offset`), `--brief`/`--columns`, `--max-raw`,
   exception and request filters, `diff --rate` and coverage warnings. The
-  implicit `./.atlas-log` is not created inside a git work tree.
+  implicit `./.ragnalog` is not created inside a git work tree.
 - **Windows.** `tzdata` is a dependency on `win32`; polars/pyarrow cannot
   convert UTC timestamps to Python objects without it.

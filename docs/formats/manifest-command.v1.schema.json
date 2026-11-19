@@ -27,7 +27,7 @@
       "type": "string"
     },
     "output": {
-      "description": "Document printed (atlas-log schema NAME).",
+      "description": "Document printed (ragnalog schema NAME).",
       "anyOf": [
         {
           "type": "string"

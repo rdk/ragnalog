@@ -104,7 +104,7 @@ def test_large_results_stream_the_same_documents(
     jcli: Invoke, mini: str, store_dir: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Above STREAM_ABOVE rows are serialised a batch at a time; the output is the same."""
-    from atlas_log_analyzer.store import logset
+    from ragnalog.store import logset
 
     def outputs() -> list[object]:
         docs: list[object] = [
@@ -121,7 +121,7 @@ def test_large_results_stream_the_same_documents(
     assert streamed == whole
     assert any(e.get("body_truncated") for e in whole[0]["items"])  # type: ignore[index]
 
-    from atlas_log_analyzer.store import Store
+    from ragnalog.store import Store
 
     rows = logset.RecordStream(Store(store_dir).open(mini).entries(), batch=3)
     assert len(rows) == len(list(rows)) and rows[-1] == list(rows)[-1]

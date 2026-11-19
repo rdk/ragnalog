@@ -6,9 +6,9 @@ import os
 import time
 from pathlib import Path
 
-from atlas_log_analyzer.store import Store
-from atlas_log_analyzer.store.fresh import keep_fresh
-from atlas_log_analyzer.store.store import LEFTOVER_AGE_S
+from ragnalog.store import Store
+from ragnalog.store.fresh import keep_fresh
+from ragnalog.store.store import LEFTOVER_AGE_S
 
 from .conftest import Built, build
 from .synth import WEIGHTS_B

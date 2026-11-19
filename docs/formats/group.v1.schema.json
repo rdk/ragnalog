@@ -67,7 +67,7 @@
     },
     "EntryRow": {
       "title": "entries.v1 row",
-      "description": "One entry; the entries.v1 columns (atlas-log schema entries).",
+      "description": "One entry; the entries.v1 columns (ragnalog schema entries).",
       "type": "object",
       "properties": {
         "id": {
@@ -445,7 +445,7 @@
     },
     "GroupRow": {
       "title": "groups.v1 row",
-      "description": "One group; the groups.v1 columns (atlas-log schema groups).",
+      "description": "One group; the groups.v1 columns (ragnalog schema groups).",
       "type": "object",
       "properties": {
         "signature": {

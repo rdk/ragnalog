@@ -2,7 +2,7 @@
 
 The nodes of a capture side by side: coverage, gaps, volume, events, verdicts.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`capture.v1.schema.json`](capture.v1.schema.json), also `atlas-log schema capture.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`capture.v1.schema.json`](capture.v1.schema.json), also `ragnalog schema capture.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

@@ -130,7 +130,7 @@ def test_single_set_hints_suggest_a_node(jcli: Invoke, tmp_path: Path) -> None:
     assert doc["node"] is None and doc["capture"] is None  # labels stay explicit
     assert doc["ingest"]["warnings"] == [
         "the log names node NODE1 (1 line(s)); pass --node NODE1 (or "
-        f"`atlas-log label {doc['id']} --node NODE1`) to label the set"
+        f"`ragnalog label {doc['id']} --node NODE1`) to label the set"
     ]
     assert "pass --node NODE1" in plain.stderr
     labelled = jcli("ingest", tmp_path / "n1", "--node", "NODE1", "--cluster", "acme").json()
@@ -240,7 +240,7 @@ def test_a_bare_capture_id_names_its_capture(jcli: Invoke, captured: str, tmp_pa
 def test_capture_usage_errors(jcli: Invoke, captured: str) -> None:
     triage = jcli("triage", captured)
     assert triage.code == 1 and triage.json()["error"]["code"] == "usage"
-    assert f"atlas-log capture {captured} --triage" in triage.json()["error"]["hint"]
+    assert f"ragnalog capture {captured} --triage" in triage.json()["error"]["hint"]
     for argv in (
         ("entries", "jira-test_node1", "--window", "union"),
         ("timeline", captured, "--signature", "aaaaaa,bbbbbb"),
@@ -262,7 +262,7 @@ def test_context_all_nodes_needs_a_capture(jcli: Invoke, tmp_path: Path) -> None
     result = jcli("context", "lone", first, "--all-nodes")
     error = result.json()["error"]
     assert result.code == 1 and error["code"] == "invalid_value"
-    assert "atlas-log label lone" in error["hint"] and entry["capture"] is None
+    assert "ragnalog label lone" in error["hint"] and entry["capture"] is None
 
 
 def test_capture_tables(cli: Invoke, archive: Path, store_dir: Path) -> None:
@@ -286,8 +286,8 @@ def test_capture_tables(cli: Invoke, archive: Path, store_dir: Path) -> None:
 def test_a_split_that_fails_halfway_removes_the_sets_it_added(
     jcli: Invoke, archive: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from atlas_log_analyzer.store import pipeline
-    from atlas_log_analyzer.store.store import StoreError
+    from ragnalog.store import pipeline
+    from ragnalog.store.store import StoreError
 
     real = pipeline.ingest_sources
     calls: list[str | None] = []
@@ -309,8 +309,8 @@ def test_a_split_that_fails_halfway_removes_the_sets_it_added(
 def test_a_failed_split_keeps_sets_that_existed(
     jcli: Invoke, archive: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from atlas_log_analyzer.store import pipeline
-    from atlas_log_analyzer.store.store import StoreError
+    from ragnalog.store import pipeline
+    from ragnalog.store.store import StoreError
 
     before = jcli("ingest", archive, "--cluster", "jira-test").json()["sets"]
     real = pipeline.ingest_sources

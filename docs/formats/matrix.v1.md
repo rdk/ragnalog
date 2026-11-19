@@ -2,7 +2,7 @@
 
 Groups by node: where each group occurs, how often, and which node saw it first.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`matrix.v1.schema.json`](matrix.v1.schema.json), also `atlas-log schema matrix.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`matrix.v1.schema.json`](matrix.v1.schema.json), also `ragnalog schema matrix.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

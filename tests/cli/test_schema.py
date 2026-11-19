@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from atlas_log_analyzer.service.documents import document_names, document_schema
+from ragnalog.service.documents import document_names, document_schema
 
 from .conftest import Invoke
 
@@ -34,4 +34,4 @@ def test_unknown_schema_names_the_choices(jcli: Invoke) -> None:
     assert result.code == 1
     err = result.json()["error"]
     assert err["code"] == "usage" and '"entries"' in err["message"]
-    assert "triage.v1" in err["message"] and err["hint"] == "atlas-log schema --help"
+    assert "triage.v1" in err["message"] and err["hint"] == "ragnalog schema --help"

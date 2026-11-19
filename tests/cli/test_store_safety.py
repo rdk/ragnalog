@@ -1,4 +1,4 @@
-"""The implicit default store ``./.atlas-log`` is not created inside a git work tree."""
+"""The implicit default store ``./.ragnalog`` is not created inside a git work tree."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from .conftest import MINI_LOG, Invoke
 
 @pytest.fixture
 def no_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("ATLAS_LOG_STORE", raising=False)
+    monkeypatch.delenv("RAGNALOG_STORE", raising=False)
 
 
 @pytest.fixture
@@ -35,8 +35,8 @@ def test_ingest_refuses_default_store_in_repo(cli: Invoke, repo: Path) -> None:
     err = res.json()["error"]
     assert err["code"] == "store_error"
     assert "committing real logs" in err["message"] and repo.name in err["message"]
-    assert "--store" in err["hint"] and "ATLAS_LOG_STORE" in err["hint"]
-    assert not Path(".atlas-log").exists()
+    assert "--store" in err["hint"] and "RAGNALOG_STORE" in err["hint"]
+    assert not Path(".ragnalog").exists()
 
 
 def test_git_file_counts_as_work_tree(cli: Invoke, tmp_path: Path, monkeypatch, no_env) -> None:
@@ -52,27 +52,27 @@ def test_explicit_store_or_env_is_allowed_in_repo(
 ) -> None:
     explicit = cli("--output", "json", "--store", tmp_path / "s1", "ingest", MINI_LOG)
     assert explicit.code == 0, explicit.stdout
-    monkeypatch.setenv("ATLAS_LOG_STORE", str(tmp_path / "s2"))
+    monkeypatch.setenv("RAGNALOG_STORE", str(tmp_path / "s2"))
     assert cli("--output", "json", "ingest", MINI_LOG).code == 0
-    assert (tmp_path / "s2").is_dir() and not Path(".atlas-log").exists()
+    assert (tmp_path / "s2").is_dir() and not Path(".ragnalog").exists()
 
 
 @pytest.mark.parametrize("blank", ["", "  "])
 def test_blank_env_counts_as_unset(
     cli: Invoke, repo: Path, monkeypatch: pytest.MonkeyPatch, blank: str
 ) -> None:
-    """``ATLAS_LOG_STORE=`` must not make the current directory the store."""
-    monkeypatch.setenv("ATLAS_LOG_STORE", blank)
+    """``RAGNALOG_STORE=`` must not make the current directory the store."""
+    monkeypatch.setenv("RAGNALOG_STORE", blank)
     res = cli("--output", "json", "ingest", MINI_LOG)
     assert res.code == 3 and res.json()["error"]["code"] == "store_error"
     assert list(Path.cwd().iterdir()) == []
     listing = cli("--output", "json", "sets").json()
-    assert listing["store"] == ".atlas-log"
+    assert listing["store"] == ".ragnalog"
 
 
 def test_existing_default_store_keeps_working(cli: Invoke, repo: Path) -> None:
-    made = cli("--output", "json", "--store", ".atlas-log", "ingest", MINI_LOG, "--name", "m")
-    assert made.code == 0 and Path(".atlas-log").is_dir()
+    made = cli("--output", "json", "--store", ".ragnalog", "ingest", MINI_LOG, "--name", "m")
+    assert made.code == 0 and Path(".ragnalog").is_dir()
     assert cli("--output", "json", "groups", "m").code == 0
     again = cli("--output", "json", "ingest", MINI_LOG, "--name", "m")
     assert again.code == 0 and again.json()["ingest"]["existing"] is True
@@ -81,7 +81,7 @@ def test_existing_default_store_keeps_working(cli: Invoke, repo: Path) -> None:
 def test_read_commands_do_not_need_a_store(cli: Invoke, repo: Path) -> None:
     res = cli("--output", "json", "sets")
     assert res.code == 0 and res.json()["count"] == 0
-    assert not Path(".atlas-log").exists()
+    assert not Path(".ragnalog").exists()
 
 
 def test_default_store_outside_repo(
@@ -94,7 +94,7 @@ def test_default_store_outside_repo(
     monkeypatch.chdir(work)
     res = cli("--output", "json", "ingest", MINI_LOG)
     assert res.code == 0, res.stdout
-    assert (work / ".atlas-log").is_dir()
+    assert (work / ".ragnalog").is_dir()
 
 
 def test_serve_refuses_default_store_in_repo(cli: Invoke, repo: Path) -> None:

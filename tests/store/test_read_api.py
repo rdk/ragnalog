@@ -11,9 +11,9 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.core.models import LogLevel
-from atlas_log_analyzer.core.reader import discover_sources, iter_sources
-from atlas_log_analyzer.store import (
+from ragnalog.core.models import LogLevel
+from ragnalog.core.reader import discover_sources, iter_sources
+from ragnalog.store import (
     AmbiguousLogSet,
     FormatNotDetected,
     IngestProgress,
@@ -25,8 +25,8 @@ from atlas_log_analyzer.store import (
     rows,
     to_records,
 )
-from atlas_log_analyzer.store.levels import LEVEL_NAMES, InvalidLevel, level_values, parse_levels
-from atlas_log_analyzer.store.logset import MANIFEST_FILE
+from ragnalog.store.levels import LEVEL_NAMES, InvalidLevel, level_values, parse_levels
+from ragnalog.store.logset import MANIFEST_FILE
 
 from .conftest import Built
 from .synth import BASE
@@ -287,7 +287,7 @@ SIDE_LINES = {
 
 
 def test_side_logs_of_a_jira_home_log_directory_are_skipped(tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import select_sources
+    from ragnalog.store.pipeline import select_sources
 
     folder = mixed_dir(tmp_path)
     for name, line in SIDE_LINES.items():
@@ -314,7 +314,7 @@ def test_side_logs_of_a_jira_home_log_directory_are_skipped(tmp_path: Path) -> N
 
 
 def test_select_sources_without_format_files(tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.pipeline import select_sources
+    from ragnalog.store.pipeline import select_sources
 
     folder = tmp_path / "only-access"
     folder.mkdir()
@@ -326,7 +326,7 @@ def test_select_sources_without_format_files(tmp_path: Path) -> None:
 def test_large_named_file_not_in_format_is_refused(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    import atlas_log_analyzer.store.pipeline as pipeline
+    import ragnalog.store.pipeline as pipeline
 
     folder = mixed_dir(tmp_path)
     access = folder / "atlassian-jira-http-access.log"
@@ -366,7 +366,7 @@ def test_reingest_under_another_name_warns(tmp_path: Path) -> None:
 
 
 def test_bucket_labels_before_1970() -> None:
-    from atlas_log_analyzer.store.logset import _bucket_iso
+    from ragnalog.store.logset import _bucket_iso
 
     assert _bucket_iso(-62_135_596_800_000) == "0001-01-01T00:00:00Z"  # fromtimestamp: OSError
     assert _bucket_iso(0) == "1970-01-01T00:00:00Z"

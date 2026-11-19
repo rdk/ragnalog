@@ -13,8 +13,8 @@ pytest.importorskip("httpx")
 from fastapi import Depends, FastAPI
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.service.params import EntryQuery, Select
-from atlas_log_analyzer.webapp.params import field_docs, query_model
+from ragnalog.service.params import EntryQuery, Select
+from ragnalog.webapp.params import field_docs, query_model
 
 
 @pytest.fixture(scope="module")

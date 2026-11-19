@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.store import Store
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.store import Store
 
 from .synth import WEIGHTS_A, FakeFormat, MiniGrouper, generate, source_files
 

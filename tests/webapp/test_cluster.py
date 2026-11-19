@@ -179,7 +179,7 @@ def test_stale_spool_is_removed_at_start(store_dir: Path) -> None:
     import os
     import time
 
-    from atlas_log_analyzer.webapp import Settings, create_app
+    from ragnalog.webapp import Settings, create_app
 
     spool = store_dir / ".spool"
     old, fresh = spool / "old", spool / "fresh"
@@ -243,12 +243,12 @@ def test_capture_timeline_takes_the_entry_filters(client: TestClient, tmp_path: 
 def test_warm_builds_the_newest_capture_page(
     client: TestClient, store_dir: Path, tmp_path: Path
 ) -> None:
-    from atlas_log_analyzer.service.capture_queries import CaptureWindow
-    from atlas_log_analyzer.webapp import Settings, create_app
+    from ragnalog.service.capture_queries import CaptureWindow
+    from ragnalog.webapp import Settings, create_app
 
     assert _upload(client, export_zip(tmp_path / "export.zip"))["state"] == "succeeded"
     app = create_app(Settings(store=store_dir), warm=True)
-    state = app.state.atlas
+    state = app.state.ragnalog
     state.warm().join(60)
     assert len(state._clusters) == 1
     built = next(iter(state._clusters.values()))
@@ -257,5 +257,5 @@ def test_warm_builds_the_newest_capture_page(
     )
     assert again is built
     empty = create_app(Settings(store=tmp_path / "none"))
-    empty.state.atlas.warm().join(60)  # no capture: nothing to build, no error
-    assert not empty.state.atlas._clusters
+    empty.state.ragnalog.warm().join(60)  # no capture: nothing to build, no error
+    assert not empty.state.ragnalog._clusters

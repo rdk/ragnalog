@@ -9,9 +9,9 @@ import polars as pl
 import pyarrow.parquet as pq
 import pytest
 
-from atlas_log_analyzer.core.models import LogLevel
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.store import (
+from ragnalog.core.models import LogLevel
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.store import (
     LogSet,
     LogSetManifest,
     Store,
@@ -21,15 +21,15 @@ from atlas_log_analyzer.store import (
     schema_json,
     to_records,
 )
-from atlas_log_analyzer.store.logset import ENTRIES_FILE, MANIFEST_FILE
-from atlas_log_analyzer.store.schema import (
+from ragnalog.store.logset import ENTRIES_FILE, MANIFEST_FILE
+from ragnalog.store.schema import (
     ENTRIES_SCHEMA,
     GROUPS_SCHEMA,
     SCHEMA_NAMES,
     SCHEMA_VERSION,
 )
-from atlas_log_analyzer.store.store import WRITE_LOCK_FILE, logset_id
-from atlas_log_analyzer.store.writer import iter_entries, write_merges
+from ragnalog.store.store import WRITE_LOCK_FILE, logset_id
+from ragnalog.store.writer import iter_entries, write_merges
 
 from .conftest import DUPLICATES, N_PER_SOURCE, PARSE_ERRORS, Built, build
 from .synth import BASE, KINDS, WEIGHTS_A, generate, source_files
@@ -125,8 +125,8 @@ def test_groups_recomputed_when_grouper_counts_duplicates(store: Store, built: B
 
 def test_pipeline_dedupes_before_grouping(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     """A repeated entry is dropped before the grouper: no recomputation of groups."""
-    import atlas_log_analyzer.store.writer as writer_mod
-    from atlas_log_analyzer.store.pipeline import ingest_paths
+    import ragnalog.store.writer as writer_mod
+    from ragnalog.store.pipeline import ingest_paths
 
     def recompute(*args: object, **kwargs: object) -> int:
         raise AssertionError("groups were recomputed from entries.parquet")
@@ -145,7 +145,7 @@ def test_pipeline_dedupes_before_grouping(tmp_path: Path, monkeypatch: pytest.Mo
 
 
 def test_writer_flushes_row_groups_by_text_size(tmp_path: Path) -> None:
-    from atlas_log_analyzer.store.writer import EntriesWriter
+    from ragnalog.store.writer import EntriesWriter
 
     signed = list(generate(source_files(["a.log"]), WEIGHTS_A, 60))
     unique = {se.entry.id for se in signed}
@@ -162,7 +162,7 @@ def test_writer_flushes_row_groups_by_text_size(tmp_path: Path) -> None:
 
 
 def test_unique_entries() -> None:
-    from atlas_log_analyzer.store.writer import unique_entries
+    from ragnalog.store.writer import unique_entries
 
     sources = source_files(["a.log", "b.log"])
     entries = [se.entry for se in generate(sources, WEIGHTS_A, 20, duplicates=5)]
@@ -661,7 +661,7 @@ def test_format_docs_up_to_date(name: str) -> None:
 def test_monotonic_columns_are_delta_encoded(built: Built) -> None:
     import duckdb
 
-    from atlas_log_analyzer.store.writer import DELTA_COLUMNS
+    from ragnalog.store.writer import DELTA_COLUMNS
 
     path = built.logset.entries_path
     meta = pq.ParquetFile(path).metadata
@@ -693,7 +693,7 @@ def test_old_leftover_write_directories_are_swept(tmp_path: Path) -> None:
     import os
     import time
 
-    from atlas_log_analyzer.store.store import LEFTOVER_AGE_S, Store
+    from ragnalog.store.store import LEFTOVER_AGE_S, Store
 
     store = Store(tmp_path)
     old, fresh = tmp_path / ".tmp-abc-12345678", tmp_path / ".trash-abc-87654321"
@@ -710,8 +710,8 @@ def test_old_zip_spool_entries_are_swept(tmp_path: Path) -> None:
     import os
     import time
 
-    from atlas_log_analyzer.store.split import SPOOL_DIR
-    from atlas_log_analyzer.store.store import LEFTOVER_AGE_S, Store
+    from ragnalog.store.split import SPOOL_DIR
+    from ragnalog.store.store import LEFTOVER_AGE_S, Store
 
     store = Store(tmp_path)
     spool = tmp_path / SPOOL_DIR

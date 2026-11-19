@@ -1,6 +1,6 @@
 # logset.v1
 
-Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema logset`.
+Schema version 1.1. Generated from `ragnalog.store.schema` by `docs/formats/generate.py`; machine-readable form: `ragnalog schema logset`.
 
 File `manifest.json` in `<store>/<id>/`, UTF-8 JSON. Timestamps are ISO 8601 with offset.
 The id is `xxh3_64` (hex) of the source files' xxh3 digests, sorted and joined with
@@ -22,7 +22,7 @@ in-progress writes and are ignored.
 | `entry_count` | `int64` | no | Rows in entries.parquet. |
 | `group_count` | `int64` | no | Rows in groups.parquet. |
 | `created_at` | `string` | no | ISO 8601 time (UTC) the set was written. |
-| `tool_version` | `string` | no | atlas-log-analyzer version that wrote the set. |
+| `tool_version` | `string` | no | ragnalog version that wrote the set. |
 | `schema_version` | `string` | no | Store schema version <major>.<minor>. |
 | `signature_version` | `int64` | no | Signature algorithm version. |
 | `mask_rules_version` | `int64` | no | Built-in masking rules version. |
@@ -36,7 +36,7 @@ in-progress writes and are ignored.
 
 A log set's manifest: `ingest`, `set`, `regroup`, `GET /api/sets/{ref}`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`logset.v1.schema.json`](logset.v1.schema.json), also `atlas-log schema logset.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`logset.v1.schema.json`](logset.v1.schema.json), also `ragnalog schema logset.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -56,7 +56,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 | `entry_count` | `integer` | yes | Rows in entries.parquet. |
 | `group_count` | `integer` | yes | Rows in groups.parquet. |
 | `created_at` | `string` | yes | ISO 8601 time (UTC) the set was written. |
-| `tool_version` | `string` | yes | atlas-log-analyzer version that wrote the set. |
+| `tool_version` | `string` | yes | ragnalog version that wrote the set. |
 | `schema_version` | `string` | yes | Store schema version <major>.<minor>. |
 | `signature_version` | `integer` | yes | Signature algorithm version. |
 | `mask_rules_version` | `integer` | yes | Built-in masking rules version. |
@@ -80,7 +80,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 
 ### `MergeRow`
 
-One Drain3 merge proposal (atlas-log schema merges). Every column is optional.
+One Drain3 merge proposal (ragnalog schema merges). Every column is optional.
 
 | Column | Type | Description |
 |---|---|---|

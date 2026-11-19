@@ -12,12 +12,12 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.report import (
+from ragnalog.report import (
     CLUSTER_SCHEMA,
     render_cluster_html,
     write_cluster_report,
 )
-from atlas_log_analyzer.report.render import asset_text
+from ragnalog.report.render import asset_text
 
 from .cluster_data import load_payload, with_nodes
 
@@ -156,7 +156,7 @@ def test_static_page_inlines_assets_and_payload(page: str, payload: dict[str, An
     assert "--n1: #2a78d6" in page  # cluster.css
     assert page.index("--lv-error") < page.index("--n1:")  # report.css first
     assert '"use strict"' in page and '$("cluster-data")' in page  # cluster.js
-    assert "<title>acme-jira · atlas-log cluster</title>" in page
+    assert "<title>acme-jira · ragnalog cluster</title>" in page
     for root in ROOT_IDS:
         assert f'id="{root}"' in page, root
     assert "data-report-url" not in page[: page.index("<head>")]
@@ -181,7 +181,7 @@ def test_script_breakers_are_escaped(payload: dict[str, Any]) -> None:
     assert "alert(1)</script>" not in out
     assert "<!-- y" not in out
     assert "</SCRIPT>" not in out
-    assert "<title>&lt;b&gt;c&lt;/b&gt; · atlas-log cluster</title>" in out
+    assert "<title>&lt;b&gt;c&lt;/b&gt; · ragnalog cluster</title>" in out
     data = cluster_data(out)
     assert data["entries"][entry_id]["raw"] == EVIL
     assert data["groups"][0]["template"] == EVIL
@@ -225,7 +225,7 @@ def test_renders_a_minimal_payload() -> None:
         "urls": None,
     }
     out = render_cluster_html(p)
-    assert "<title>cluster · atlas-log cluster</title>" in out
+    assert "<title>cluster · ragnalog cluster</title>" in out
     assert cluster_data(out) == p
 
 

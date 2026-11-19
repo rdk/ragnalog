@@ -1,0 +1,150 @@
+"""Self-contained HTML report of a log set (``ragnalog report``).
+
+Public API::
+
+    from ragnalog.report import build_report, write_report
+    html = build_report(logset, compare=baseline)
+    info = write_report(logset, Path("prod.html"))   # ReportInfo(path, bytes, ...)
+    info = write_cluster_report(payload, Path("cluster.html"))   # a cluster-report.v1 payload
+
+The page is driven by the ``report.v1`` payload from :func:`build_payload`
+(``docs/formats/report.v1.md``); the cluster page by a ``cluster-report.v1`` payload
+(``docs/cluster.md``), built by the service layer. The assets live in ``report/assets``.
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+from ragnalog.report.payload import REPORT_SCHEMA, build_payload, example_entries
+from ragnalog.report.render import (
+    CLUSTER_SCHEMA,
+    asset_text,
+    render_cluster_html,
+    render_html,
+)
+from ragnalog.store.logset import LogSet
+
+__all__ = [
+    "CLUSTER_SCHEMA",
+    "REPORT_SCHEMA",
+    "ClusterReportInfo",
+    "ReportInfo",
+    "asset_text",
+    "build_payload",
+    "build_report",
+    "example_entries",
+    "render_cluster_html",
+    "render_html",
+    "write_cluster_report",
+    "write_report",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class ReportInfo:
+    """What :func:`write_report` wrote."""
+
+    path: Path
+    bytes: int
+    groups: int
+    """Groups in the payload."""
+    entries: int
+    """Example entries in the payload."""
+    compare: bool
+    """Whether the report contains a comparison."""
+
+
+def build_report(
+    logset: LogSet,
+    *,
+    compare: LogSet | None = None,
+    min_level: str | None = None,
+    examples: int = 3,
+    max_raw: int = 4000,
+    max_groups: int | None = None,
+) -> str:
+    """Return the HTML report page for ``logset`` (options as for :func:`build_payload`)."""
+    payload = build_payload(
+        logset,
+        compare=compare,
+        min_level=min_level,
+        examples=examples,
+        max_raw=max_raw,
+        max_groups=max_groups,
+    )
+    return render_html(payload)
+
+
+def write_report(
+    logset: LogSet,
+    path: Path,
+    *,
+    compare: LogSet | None = None,
+    min_level: str | None = None,
+    examples: int = 3,
+    max_raw: int = 4000,
+    max_groups: int | None = None,
+) -> ReportInfo:
+    """Write the HTML report to ``path`` (UTF-8) and describe the result.
+
+    Raises:
+        ValueError: Invalid option or the sets are not comparable (see :func:`build_payload`).
+        OSError: ``path`` cannot be written.
+
+    """
+    payload: dict[str, Any] = build_payload(
+        logset,
+        compare=compare,
+        min_level=min_level,
+        examples=examples,
+        max_raw=max_raw,
+        max_groups=max_groups,
+    )
+    data = render_html(payload).encode("utf-8")
+    path.write_bytes(data)
+    return ReportInfo(
+        path=path,
+        bytes=len(data),
+        groups=len(payload["groups"]),
+        entries=len(payload["entries"]),
+        compare=payload["compare"] is not None,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class ClusterReportInfo:
+    """What :func:`write_cluster_report` wrote."""
+
+    path: Path
+    bytes: int
+    nodes: int
+    """Nodes of the capture."""
+    groups: int
+    """Groups in the payload."""
+    entries: int
+    """Example entries in the payload."""
+
+
+def write_cluster_report(payload: Mapping[str, Any], path: Path) -> ClusterReportInfo:
+    """Write the self-contained cluster page of a ``cluster-report.v1`` payload to ``path``.
+
+    Raises:
+        ValueError: ``payload`` is not a ``cluster-report.v1`` payload.
+        OSError: ``path`` cannot be written.
+
+    """
+    if payload.get("schema") != CLUSTER_SCHEMA:
+        raise ValueError(f"not a {CLUSTER_SCHEMA} payload: {payload.get('schema')!r}")
+    data = render_cluster_html(dict(payload)).encode("utf-8")
+    path.write_bytes(data)
+    return ClusterReportInfo(
+        path=path,
+        bytes=len(data),
+        nodes=len(payload.get("nodes") or []),
+        groups=len(payload.get("groups") or []),
+        entries=len(payload.get("entries") or {}),
+    )

@@ -2,7 +2,7 @@
 
 Jobs of this server process, newest first: `GET /api/jobs`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`jobs.v1.schema.json`](jobs.v1.schema.json), also `atlas-log schema jobs.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`jobs.v1.schema.json`](jobs.v1.schema.json), also `ragnalog schema jobs.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -12,7 +12,7 @@ Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.
 
 ### `MergeRow`
 
-One Drain3 merge proposal (atlas-log schema merges). Every column is optional.
+One Drain3 merge proposal (ragnalog schema merges). Every column is optional.
 
 | Column | Type | Description |
 |---|---|---|

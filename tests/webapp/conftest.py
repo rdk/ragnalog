@@ -12,9 +12,9 @@ pytest.importorskip("httpx")
 
 from fastapi.testclient import TestClient
 
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.store import Store
-from atlas_log_analyzer.webapp import Settings, create_app
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.store import Store
+from ragnalog.webapp import Settings, create_app
 
 ROOT = Path(__file__).resolve().parents[1]
 MINI = ROOT / "cli" / "data" / "mini.log"

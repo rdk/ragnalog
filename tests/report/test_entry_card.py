@@ -1,6 +1,6 @@
 """Entry cards of the report, cluster and entries pages: 500-line cap, "show all", banner preamble.
 
-``entry-card.js`` (``AtlasEntryCard.create(hooks)``: ``entryHtml`` and its helpers, shared by
+``entry-card.js`` (``RagnalogEntryCard.create(hooks)``: ``entryHtml`` and its helpers, shared by
 ``report.js``, ``cluster.js`` and the web app's ``entries.js``) runs in node with stub hooks,
 on entries from a real payload (``build_payload`` over an ingested log).
 """
@@ -16,10 +16,10 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.report import build_payload, render_html
-from atlas_log_analyzer.report.render import asset_text
-from atlas_log_analyzer.store import Store
-from atlas_log_analyzer.store.pipeline import ingest_paths
+from ragnalog.report import build_payload, render_html
+from ragnalog.report.render import asset_text
+from ragnalog.store import Store
+from ragnalog.store.pipeline import ingest_paths
 
 from .conftest import report_data
 
@@ -48,7 +48,7 @@ if (data.extra) {
     fullLoads: (id) => id === "r1",
   });
 }
-const page = win.AtlasEntryCard.create(hooks);
+const page = win.RagnalogEntryCard.create(hooks);
 const BANNER_RE = new RegExp(
   '<div class="e-pre"><span class="k">([^<]*)</span>((?:<div class="ln">(?:(?!</div>).)*</div>)*)');
 const bodyOf = (html) => {
@@ -186,8 +186,8 @@ def test_page_hooks_add_node_actions_raw_link_and_loading_note(
 
 def test_pages_share_the_card_code() -> None:
     """report.js, cluster.js and entries.js call the factory; none of them carries a copy."""
-    web = files("atlas_log_analyzer.webapp").joinpath("static", "entries.js")
+    web = files("ragnalog.webapp").joinpath("static", "entries.js")
     for source in (asset_text("report.js"), asset_text("cluster.js"), web.read_text("utf-8")):
-        assert "AtlasEntryCard.create(" in source
+        assert "RagnalogEntryCard.create(" in source
         assert "function entryHtml" not in source and "function traceHtml" not in source
     assert "function entryHtml" in asset_text("entry-card.js")

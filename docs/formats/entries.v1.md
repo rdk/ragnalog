@@ -1,6 +1,6 @@
 # entries.v1
 
-Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema entries`.
+Schema version 1.1. Generated from `ragnalog.store.schema` by `docs/formats/generate.py`; machine-readable form: `ragnalog schema entries`.
 
 File `entries.parquet` in a log-set directory: one row per log entry, deduplicated
 on `id`. Parquet, zstd compression, row groups of about 64k rows, rows in ingest order
@@ -51,7 +51,7 @@ on `id`. Parquet, zstd compression, row groups of about 64k rows, rows in ingest
 
 Entries: `entries` (a page), `show` (one group), `context` (around an entry).
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`entries.v1.schema.json`](entries.v1.schema.json), also `atlas-log schema entries.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`entries.v1.schema.json`](entries.v1.schema.json), also `ragnalog schema entries.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
@@ -82,7 +82,7 @@ Rows hold the columns above (`--columns`/`--brief` select them, so every column 
 
 ### `GroupRow`
 
-One group; the groups.v1 columns (atlas-log schema groups). Every column is optional.
+One group; the groups.v1 columns (ragnalog schema groups). Every column is optional.
 
 | Column | Type | Description |
 |---|---|---|

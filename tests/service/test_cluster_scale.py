@@ -9,9 +9,9 @@ from pathlib import Path
 import msgspec
 import pytest
 
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.service import cluster as C
-from atlas_log_analyzer.store import Store
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.service import cluster as C
+from ragnalog.store import Store
 from tests.store.synth import WEIGHTS_A, WEIGHTS_B, FakeFormat, MiniGrouper, generate, source_files
 
 N = 200_000

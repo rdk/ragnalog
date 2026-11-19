@@ -10,9 +10,9 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.report import build_payload
-from atlas_log_analyzer.report.payload import LEVEL_BUCKETS
-from atlas_log_analyzer.store import Store
+from ragnalog.report import build_payload
+from ragnalog.report.payload import LEVEL_BUCKETS
+from ragnalog.store import Store
 
 TOP_KEYS = {
     "schema", "generated_at", "tool_version", "options", "logset", "stats", "timeline",
@@ -168,7 +168,7 @@ def test_examples_option(store: Store) -> None:
 
 def test_more_examples_than_stored_come_from_the_entries(tmp_path: Path) -> None:
     """Groups store 3 examples; a larger --examples shows the first N-1 and the latest."""
-    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from ragnalog.store.pipeline import ingest_paths
 
     log = tmp_path / "atlassian-jira.log"
     log.write_text(
@@ -302,8 +302,8 @@ def _stray_log(tmp_path: Any, years: tuple[int, ...]) -> Any:
 
 def test_stray_years_do_not_stretch_the_timeline(tmp_path: Any) -> None:
     """A clock years off (1965, 2006) keeps the timeline to the densest span."""
-    from atlas_log_analyzer.report.payload import densest_hours
-    from atlas_log_analyzer.store.pipeline import ingest_paths
+    from ragnalog.report.payload import densest_hours
+    from ragnalog.store.pipeline import ingest_paths
 
     store = Store(tmp_path / "s")
     ls = ingest_paths(store, [_stray_log(tmp_path, (1965, 2006))], name="stray").logset
@@ -319,8 +319,8 @@ def test_stray_years_do_not_stretch_the_timeline(tmp_path: Any) -> None:
 def test_index_with_a_pre_1970_entry(tmp_path: Any) -> None:
     from fastapi.testclient import TestClient
 
-    from atlas_log_analyzer.store.pipeline import ingest_paths
-    from atlas_log_analyzer.webapp import Settings, create_app
+    from ragnalog.store.pipeline import ingest_paths
+    from ragnalog.webapp import Settings, create_app
 
     store = Store(tmp_path / "s")
     ingest_paths(store, [_stray_log(tmp_path, (1965,))], name="stray")

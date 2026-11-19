@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block title %}{{ title or "Not found" }} · ragnalog{% endblock %}
+{# the crumb line is just the way home: the h1 names the page #}
+{% block main %}
+<header class="page-head">
+  <h1>{{ title or "Not found" }}</h1>
+  <div class="page-tools">{% include "_tools.html" %}</div>
+</header>
+<section class="card empty notice">
+  <p class="muted">{{ message }}</p>
+  {% if hint %}<p class="muted small">{{ hint }}</p>{% endif %}
+  <p class="notice-actions">{% if back %}<a class="btn" href="{{ back }}">Try the defaults</a> {% endif %}<a class="btn" href="/">Back to the log sets</a></p>
+</section>
+{% endblock %}

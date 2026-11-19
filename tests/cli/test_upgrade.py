@@ -1,4 +1,4 @@
-"""``atlas-log upgrade`` and the ``stale`` flag of ``sets`` (CLI and API alike)."""
+"""``ragnalog upgrade`` and the ``stale`` flag of ``sets`` (CLI and API alike)."""
 
 from __future__ import annotations
 
@@ -40,8 +40,8 @@ def test_sets_flags_stale_sets(jcli: Invoke, store_dir: Path, mini: str) -> None
 def test_sets_stale_matches_the_api(jcli: Invoke, store_dir: Path, mini: str) -> None:
     from fastapi.testclient import TestClient
 
-    from atlas_log_analyzer.webapp.app import create_app
-    from atlas_log_analyzer.webapp.settings import Settings
+    from ragnalog.webapp.app import create_app
+    from ragnalog.webapp.settings import Settings
 
     _age(store_dir, mini)
     with TestClient(create_app(Settings(store=store_dir))) as client:

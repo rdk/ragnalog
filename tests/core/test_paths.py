@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from atlas_log_analyzer.core.paths import safe_name, windows_safe
+from ragnalog.core.paths import safe_name, windows_safe
 
 
 @pytest.mark.parametrize(

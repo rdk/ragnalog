@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.cli.output import highlight_entry
+from ragnalog.cli.output import highlight_entry
 from tests.cli.conftest import MINI_LOG, Invoke
 
 
@@ -92,7 +92,7 @@ def test_unknown_set_same_error_everywhere(
 def test_unknown_signature_hint(jcli: Invoke, mini: str) -> None:
     res = jcli("show", mini, "0000000000000000")
     assert res.code == 2
-    assert "atlas-log groups mini" in res.json()["error"]["hint"]
+    assert "ragnalog groups mini" in res.json()["error"]["hint"]
 
 
 def test_table_error_hint_on_stderr(cli: Invoke, store_dir: Path) -> None:
@@ -104,7 +104,7 @@ def test_table_error_hint_on_stderr(cli: Invoke, store_dir: Path) -> None:
 def test_ingest_table_next_line(cli: Invoke, store_dir: Path) -> None:
     res = cli("--output", "table", "--store", store_dir, "ingest", MINI_LOG, "--name", "m")
     assert res.code == 0
-    assert "next: atlas-log triage m" in res.stderr
+    assert "next: ragnalog triage m" in res.stderr
 
 
 def test_show_table_header(cli: Invoke, mini: str, store_dir: Path, jcli: Invoke) -> None:
@@ -211,7 +211,7 @@ def test_a_damaged_set_is_a_store_error(jcli: Invoke, mini: str, store_dir: Path
     result = jcli("set", mini)
     assert result.code == 3 and result.json()["error"]["code"] == "store_error"
     assert "groups.parquet is missing" in result.json()["error"]["message"]
-    assert f"atlas-log remove {set_id}" in result.json()["error"]["hint"]
+    assert f"ragnalog remove {set_id}" in result.json()["error"]["hint"]
 
 
 def test_report_into_a_missing_folder_names_the_folder(

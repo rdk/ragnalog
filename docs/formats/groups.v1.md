@@ -1,6 +1,6 @@
 # groups.v1
 
-Schema version 1.1. Generated from `atlas_log_analyzer.store.schema` by `docs/formats/generate.py`; machine-readable form: `atlas-log schema groups`.
+Schema version 1.1. Generated from `ragnalog.store.schema` by `docs/formats/generate.py`; machine-readable form: `ragnalog schema groups`.
 
 File `groups.parquet`: one row per primary signature, sorted by `count` descending.
 Computed at ingest (or by `regroup`) from the same entries as `entries.parquet`;
@@ -37,7 +37,7 @@ same columns (with `signature` = `coarse_signature`) plus `signatures` (member l
 
 One page of groups: `groups`, `GET /api/sets/{ref}/groups`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`groups.v1.schema.json`](groups.v1.schema.json), also `atlas-log schema groups.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`groups.v1.schema.json`](groups.v1.schema.json), also `ragnalog schema groups.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

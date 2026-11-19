@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from atlas_log_analyzer.service.captures import (
+from ragnalog.service.captures import (
     CaptureInfo,
     capture_id,
     captures_doc,
@@ -18,9 +18,9 @@ from atlas_log_analyzer.service.captures import (
     list_captures,
     resolve_capture,
 )
-from atlas_log_analyzer.service.errors import OpError
-from atlas_log_analyzer.store.logset import LogSet
-from atlas_log_analyzer.store.manifest import LogSetManifest
+from ragnalog.service.errors import OpError
+from ragnalog.store.logset import LogSet
+from ragnalog.store.manifest import LogSetManifest
 
 T0 = datetime(2026, 11, 5, 6, tzinfo=UTC)
 
@@ -121,7 +121,7 @@ def test_resolve_capture_errors(ref: str, code: str, reason: str | None) -> None
     err = info.value
     assert (err.code, err.reason) == (code, reason)
     if reason == "capture_not_found":
-        assert (err.exit_code, err.status) == (2, 404) and "atlas-log captures" in str(err.hint)
+        assert (err.exit_code, err.status) == (2, 404) and "ragnalog captures" in str(err.hint)
     if reason == "ambiguous_capture":
         assert (err.exit_code, err.status) == (1, 409)
         assert "2026-11-06_job, 2026-11-05_job" in err.message
@@ -167,8 +167,8 @@ def test_listing_captures_loads_no_polars(tmp_path: object) -> None:
     script = (
         "import json, sys\n"
         "from pathlib import Path\n"
-        "from atlas_log_analyzer.service.captures import captures_doc\n"
-        "from atlas_log_analyzer.store.store import Store\n"
+        "from ragnalog.service.captures import captures_doc\n"
+        "from ragnalog.store.store import Store\n"
         "captures_doc(Store(Path(sys.argv[1])))\n"
         "print(json.dumps('polars' in sys.modules))\n"
     )

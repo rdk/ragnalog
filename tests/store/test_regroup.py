@@ -12,15 +12,15 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.pipeline import Recipe
-from atlas_log_analyzer.core.signature import SignatureSpec
-from atlas_log_analyzer.store import LogSet, Store, diff
-from atlas_log_analyzer.store.logset import MANIFEST_FILE
-from atlas_log_analyzer.store.manifest import LogSetManifest, current_recipe_key
-from atlas_log_analyzer.store.pipeline import ingest_paths
-from atlas_log_analyzer.store.store import LogSetNotFound, StoreError
-from atlas_log_analyzer.store.writer import EntriesWriter, iter_entries, write_groups
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.pipeline import Recipe
+from ragnalog.core.signature import SignatureSpec
+from ragnalog.store import LogSet, Store, diff
+from ragnalog.store.logset import MANIFEST_FILE
+from ragnalog.store.manifest import LogSetManifest, current_recipe_key
+from ragnalog.store.pipeline import ingest_paths
+from ragnalog.store.store import LogSetNotFound, StoreError
+from ragnalog.store.writer import EntriesWriter, iter_entries, write_groups
 
 from ..cli.synth import PLUGIN_TRACE
 
@@ -238,7 +238,7 @@ def test_headerless_start_does_not_reach_back_to_1970(tmp_path: Path) -> None:
 
 def _during_rebuild(monkeypatch: pytest.MonkeyPatch, action: Callable[[], object]) -> None:
     """Run ``action`` while a regroup re-signs (after it read the set, before it installs)."""
-    from atlas_log_analyzer.store import regroup
+    from ragnalog.store import regroup
 
     real = regroup.resign_entries
 

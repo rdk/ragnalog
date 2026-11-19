@@ -5,9 +5,9 @@ from collections.abc import Sequence
 
 import pytest
 
-from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.formats import registry
-from atlas_log_analyzer.core.formats.jira import JiraFormat
+from ragnalog.core import formats
+from ragnalog.core.formats import registry
+from ragnalog.core.formats.jira import JiraFormat
 
 from .conftest import SAMPLE
 

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "manifest.v1.schema.json",
   "title": "manifest.v1",
-  "description": "How an agent uses atlas-log: `manifest`, bare `atlas-log` piped, `GET /api/manifest`.",
+  "description": "How an agent uses ragnalog: `manifest`, bare `ragnalog` piped, `GET /api/manifest`.",
   "type": "object",
   "properties": {
     "schema": {
@@ -51,7 +51,7 @@
       }
     },
     "help": {
-      "description": "One-line help by parameter name, as most commands give it (atlas-log COMMAND --help has each command's own): names several commands share and the parameters of the workflow and when commands.",
+      "description": "One-line help by parameter name, as most commands give it (ragnalog COMMAND --help has each command's own): names several commands share and the parameters of the workflow and when commands.",
       "type": "object",
       "additionalProperties": {
         "type": "string"
@@ -126,7 +126,7 @@
           "default": ""
         },
         "output": {
-          "description": "Document printed (atlas-log schema NAME).",
+          "description": "Document printed (ragnalog schema NAME).",
           "anyOf": [
             {
               "type": "string"

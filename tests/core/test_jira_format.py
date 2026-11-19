@@ -4,7 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
-from atlas_log_analyzer.core.formats.base import (
+from ragnalog.core.formats.base import (
     CTX_IP,
     CTX_REQUEST_ID,
     CTX_REQUEST_URL,
@@ -13,7 +13,7 @@ from atlas_log_analyzer.core.formats.base import (
     CTX_USER,
     LogFormat,
 )
-from atlas_log_analyzer.core.formats.jira import (
+from ragnalog.core.formats.jira import (
     CTX_SERVICE,
     HEADER_RE,
     UNKNOWN_TIMESTAMP,
@@ -22,7 +22,7 @@ from atlas_log_analyzer.core.formats.jira import (
     match_header,
     parse_timestamp,
 )
-from atlas_log_analyzer.core.models import LogLevel, SourceRef
+from ragnalog.core.models import LogLevel, SourceRef
 
 from .conftest import EDGE_CASES
 
@@ -378,7 +378,7 @@ def test_sniff_and_protocol(jira: JiraFormat) -> None:
 def test_node_hints(jira: JiraFormat) -> None:
     from collections import Counter
 
-    from atlas_log_analyzer.core.formats.base import node_hints
+    from ragnalog.core.formats.base import node_hints
 
     lines = [
         "2026-11-05 10:00:02,000+0000 main INFO      [org.acme.Node] Node info, nodeId: NODE1",

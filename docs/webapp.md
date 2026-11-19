@@ -1,37 +1,37 @@
 # Web app
 
-`atlas-log serve` runs a FastAPI app over one data directory (the folder that keeps the log sets). It answers the main
+`ragnalog serve` runs a FastAPI app over one data directory (the folder that keeps the log sets). It answers the main
 question, "compared with the previous snapshot, are there new kinds of
 errors?", on one page, opens any set in the interactive report, and ingests
 uploaded log files in the background. Every page has a JSON twin under `/api`
-with the same documents as `atlas-log --output json`, so a human and an agent
+with the same documents as `ragnalog --output json`, so a human and an agent
 can work from the same data.
 
 ```sh
-uv sync --extra web                      # or: uv tool install 'atlas-log-analyzer[web]'
-atlas-log --store ~/atlas-log-data serve   # http://127.0.0.1:8321/
-atlas-log serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"   # on a network
+uv sync --extra web                      # or: uv tool install 'ragnalog[web]'
+ragnalog --store ~/ragnalog-data serve     # http://127.0.0.1:8321/
+ragnalog serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"    # on a network
 ```
 
 | Flag | Env | Default |
 |---|---|---|
-| `--store DIR` (global) | `ATLAS_LOG_STORE` | `./.atlas-log` (not created inside a git work tree) |
+| `--store DIR` (global) | `RAGNALOG_STORE` | `./.ragnalog` (not created inside a git work tree) |
 | `--host` | | `127.0.0.1` |
 | `--port` | | `8321` |
-| `--token` | `ATLAS_LOG_TOKEN` | none: no auth |
-| `--max-upload-mb` | `ATLAS_LOG_MAX_UPLOAD_MB` | `2048` |
-| `--allowed-host` | `ATLAS_LOG_ALLOWED_HOSTS` | none: on loopback only loopback names |
-| | `ATLAS_LOG_REPORT_CACHE` | `8` report payloads kept in memory (and as many cluster payloads) |
+| `--token` | `RAGNALOG_TOKEN` | none: no auth |
+| `--max-upload-mb` | `RAGNALOG_MAX_UPLOAD_MB` | `2048` |
+| `--allowed-host` | `RAGNALOG_ALLOWED_HOSTS` | none: on loopback only loopback names |
+| | `RAGNALOG_REPORT_CACHE` | `8` report payloads kept in memory (and as many cluster payloads) |
 | `--reload` | | off (development) |
 
 Flags win over the environment. With `--reload` uvicorn runs the app in a child
 process that sees only the environment, so `serve` exports every setting
-(`ATLAS_LOG_STORE`, `ATLAS_LOG_TOKEN`, `ATLAS_LOG_ALLOWED_HOSTS`, `ATLAS_LOG_MAX_UPLOAD_MB`,
-`ATLAS_LOG_REPORT_CACHE`) before it starts: a reloading server keeps its token.
+(`RAGNALOG_STORE`, `RAGNALOG_TOKEN`, `RAGNALOG_ALLOWED_HOSTS`, `RAGNALOG_MAX_UPLOAD_MB`,
+`RAGNALOG_REPORT_CACHE`) before it starts: a reloading server keeps its token.
 
 With `--token` every page and `/api` route needs it, checked before an upload body is
 read (and an upload whose `Content-Length` is over `--max-upload-mb` is refused at
-once). Clients send `Authorization: Bearer TOKEN` or `X-Atlas-Token: TOKEN`; a browser
+once). Clients send `Authorization: Bearer TOKEN` or `X-Ragnalog-Token: TOKEN`; a browser
 opens any page once with `?token=TOKEN`, which sets an HttpOnly, SameSite=Strict
 cookie and redirects (a relative `Location`: path and the other query parameters) to
 the address without it. Pages without the token show a 401
@@ -42,8 +42,8 @@ page; `/static` and `/assets` (CSS, JS) need none.
 | Path | Page |
 |---|---|
 | `/` | Sets, newest first: time range with an **activity strip** (every row on one shared time axis: entries per hour up from a midline, errors down, so overlapping sets line up; hovering shows that hour on all rows, a click opens the row's report narrowed to it), entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The title line is compact (the data directory's path is in a tooltip) and the shell command for ingesting is folded under "Ingest from a shell". The sets of one capture (`captures`) are listed under one capture row (a tinted group head with an uppercase "capture" label above its indented node rows): cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |
-| `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. Every page has a navigation row (40 px, a hairline below it): the breadcrumb on the left (atlas-log with its menu of Log sets, Ingest and API, then the set switcher and, for a set of a capture, the node switcher, then the page; the switchers keep the URL hash, so filters survive switching sets), the view tabs on the right as a segmented control with an icon each (Report, Triage, Entries, Cluster view, Compare with previous; each has a tooltip card saying what the view shows, e.g. what triage compares; the current one is raised; at 1100 px and below only the icons show, at 720 px the tabs wrap under the breadcrumb). The page header under it has the title and meta on the left and on the right the page actions where a page has them (triage: the Baseline and Level selects; entries: "Open in report" or "Open in cluster view" when the filter is one group), a hairline, then settings as ghost icon buttons (time zone, theme, full screen width key `w`, help on the report and cluster pages); the width setting is shared by every page. On the report and cluster pages the settings end with a "⋯" menu *For scripts and agents* (Identifiers & CLI commands, Download the data as JSON). The triage crumb has a set switcher (it opens that set's triage); the index, 404 and 401 rows have the breadcrumb only. A set of a capture also gets a node crumb (its sibling node sets, keeping the hash). |
-| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, a bare capture id, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). When the nodes' logs do not overlap the page opens the `union` window instead of an error. The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` (with its level, group, node and search filters: `min_level`, `signature`, `node`, `contains`) and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through; `since`/`until` are UTC whichever zone the page shows its times in (header toggle). The breadcrumb (atlas-log / cluster) carries the capture id in its tooltip; left of the view tabs (Cluster view, Entries) a small framed "Nodes" group links each node's report (a dot in the node's colour and its name). An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
+| `/sets/{ref}` | The interactive report (`docs/report.md`). `?compare=auto` or `?compare=SET` adds the comparison; `min_level`, `examples` pass through. Every page has a navigation row (40 px, a hairline below it): the breadcrumb on the left (ragnalog with its menu of Log sets, Ingest and API, then the set switcher and, for a set of a capture, the node switcher, then the page; the switchers keep the URL hash, so filters survive switching sets), the view tabs on the right as a segmented control with an icon each (Report, Triage, Entries, Cluster view, Compare with previous; each has a tooltip card saying what the view shows, e.g. what triage compares; the current one is raised; at 1100 px and below only the icons show, at 720 px the tabs wrap under the breadcrumb). The page header under it has the title and meta on the left and on the right the page actions where a page has them (triage: the Baseline and Level selects; entries: "Open in report" or "Open in cluster view" when the filter is one group), a hairline, then settings as ghost icon buttons (time zone, theme, full screen width key `w`, help on the report and cluster pages); the width setting is shared by every page. On the report and cluster pages the settings end with a "⋯" menu *For scripts and agents* (Identifiers & CLI commands, Download the data as JSON). The triage crumb has a set switcher (it opens that set's triage); the index, 404 and 401 rows have the breadcrumb only. A set of a capture also gets a node crumb (its sibling node sets, keeping the hash). |
+| `/captures/{ref}` | The cluster page of a capture (`docs/cluster.md` §8, `docs/report.md` §5): `ref` is `capture:ID`, a bare capture id, `cluster:NAME[@YYYY-MM-DD]` or a set (its capture). When the nodes' logs do not overlap the page opens the `union` window instead of an error. The page fetches `/api/captures/{ref}/report`, its merged log `/api/captures/{ref}/entries` (with its level, group, node and search filters: `min_level`, `signature`, `node`, `contains`) and "±30 s on all nodes" `/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30`; `window=union` passes through; `since`/`until` are UTC whichever zone the page shows its times in (header toggle). The breadcrumb (ragnalog / cluster) carries the capture id in its tooltip; left of the view tabs (Cluster view, Entries) a small framed "Nodes" group links each node's report (a dot in the node's colour and its name). An unknown capture is the 404 page. After an upload that split into one set per node, the upload form opens this page. |
 | `/sets/{ref}/triage` | Verdict, a coverage warning when the spans differ by more than 4x, then new types (most severe first), new exceptions below the level filter, groups whose hourly rate grew at least ×2, vanished groups. The verdict line names the baseline (its id, files and why it was picked are in a tooltip); there are no tiles: the sticky section bar (one chip per section) carries the counts (levels and the rest in tooltips) and jumps between the sections; once stuck it marks the section in view (`aria-current="location"`) and its page name scrolls back to the top. Each section folds (Vanished starts folded) and shows its first 25 rows with "Show all". Each row links into the report with that group open. |
 | `/sets/{ref}/entries/{id}/raw` | One entry's exact text as in its log file (banner lines first), opened by the cards' "Open raw ↗": rendered by `entry-card.js`, so its stack trace is highlighted as in the cards (application frames marked, library frames dimmed, every frame shown), with Copy and "Plain text ↗" (`GET /api/sets/{ref}/entries/{id}/raw`). |
 | `/sets/{ref}/entries`, `/captures/{ref}/entries` | A table of the entries behind a filter, opened in a new tab by the drawers' "All N entries ↗" link (the group's `signature`; with a time window selected also `since`/`until`, and "in window" in the label). The query is the one of `GET /api/.../entries` (`signature`, `coarse_signature`, `level`, `since`, `until`, `contains`, `thread`, `user`, `logger`, `exception`, `request_id`, `node`; a capture also takes `NODE:SIGNATURE`), so a link can carry any subfilter; the page embeds the first 100 rows (a bad filter is an error page, not an empty table) and loads more from the API. Header: the group's template (placeholders as chips), level, logger, exception, entry count and time range (separated by space, not by dots, so a wrapped line never ends in one) and "Open in report" / "Open in cluster view" with the group open. Under it a time histogram of the entries (`GET .../timeline`, one group: its level's colour; the chart applies all of the page's filters (group, node, level, thread, user, request, logger, text and exception), for a capture too, so it counts what the table lists; bucket from a minute to a day, about 200 bars at most; the bar height is linear, a non-empty bucket is at least 5 px high and its tooltip, which opens above the pointer so it never covers the filter chips, has the true count): drag over it to select a time range, or click a bar for its bucket; that sets `since`/`until`, the chart zooms to the window (finer buckets) and "Full range" or the chip's × returns. Not drawn for several groups or a coarse group, nor with one bucket. A sticky bar holds the search box (`contains`, debounced), a removable chip for every active filter (the group chip shows the level and a short template, the signature is in its tooltip) and Reset; the URL follows the filters, so a filtered view can be bookmarked or shared. A click on a thread, node or level value in a row, or on thread / user / request / node in an open card, adds it as a filter (`thread`, `user`, `request_id`, `node`, `level`); a column whose value every row shares is left out. No match: the empty state lists the filters as removable chips. Columns: time, node (capture), level (unless the table is one group), thread and the first line of the message (one line, ellipsis, the full text in the tooltip; the header row sticks under the bar). A click or Enter opens the full entry card under the row (several at once; the shared `entry-card.js`: syntax-coloured message, stack trace, Raw, Open raw, Copy raw; an entry cut at 4,000 characters is fetched whole when opened); `j`/`k` move, `Esc` closes, `/` searches. The entries page has the same keyboard help as the report: `?` opens a Keyboard dialog (also reachable from the "? keys" button) listing `/`, `j`/`k`/arrows, Home/End, Enter/Space, Esc, `w` and `z`; `z` switches UTC / local time exactly like the header's time-zone button, and the shortcuts are ignored while typing in a field or while a dialog is open. A capture's rows are its nodes interleaved by time over the union window. |
@@ -112,7 +112,7 @@ CLI's:
 | `not_found` | 2 | 404 | No such group, entry or job; in the API also no such set. |
 | `store_error` | 3 | 500 | Data directory failure: corrupt manifest or damaged set, newer schema, data directory refused or in use, a path the system refuses (permission, a file where a directory belongs); in the CLI also an unknown or ambiguous set. |
 | `http` | 1 | 400 | Another HTTP error (the API sends its own status). |
-| `internal_error` | 1 | 500 | Unexpected exception (set `ATLAS_LOG_DEBUG=1` for the traceback). |
+| `internal_error` | 1 | 500 | Unexpected exception (set `RAGNALOG_DEBUG=1` for the traceback). |
 
 Where the CLI and the API report one failure under different codes (an unknown
 set is the CLI's `store_error` but the API's `not_found`), both carry the same
@@ -134,19 +134,19 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 |---|---|---|
 | `GET /api/health` | | `health.v1` |
 | `GET /api/version` | | `version.v1` |
-| `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `atlas-log manifest`) |
-| `GET /api/manifest/{command}` | | `manifest-command.v1`: one command in full (as `atlas-log manifest COMMAND`) |
-| `GET /api/formats` | | `formats.v1` (as `atlas-log formats`: `name`, `description`, `signature_spec`, `mask_rules`) |
+| `GET /api/manifest` | | `manifest.v1`, the agent manifest (as `ragnalog manifest`) |
+| `GET /api/manifest/{command}` | | `manifest-command.v1`: one command in full (as `ragnalog manifest COMMAND`) |
+| `GET /api/formats` | | `formats.v1` (as `ragnalog formats`: `name`, `description`, `signature_spec`, `mask_rules`) |
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary, stale, node, capture`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
-| `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `atlas-log set SET`) |
+| `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `ragnalog set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
-| `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `atlas-log label`) | `logset.v1` |
+| `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `ragnalog label`) | `logset.v1` |
 | `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
-| `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `atlas-log capture`) |
+| `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `ragnalog capture`) |
 | `GET /api/captures/{ref}/timeline` | `bucket` (`1h`), `window`, and the filters of `entries` (`signature` (one group), `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `node`) | `cluster-timeline.v1` (as `timeline CAPTURE`) |
-| `GET /api/captures/{ref}/matrix` | the filters of `/groups` (`since`/`until` set the window), `window`, `node`, `spread` (`all`, `only`, `skewed`), `sort` (`count`, `skew`, `lead`), `skew_min` (4.0), `signature`, `limit` (50; 0 = all), `offset` | `matrix.v1` (as `atlas-log matrix`) |
-| `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `atlas-log events`) |
-| `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `atlas-log interactions`) |
+| `GET /api/captures/{ref}/matrix` | the filters of `/groups` (`since`/`until` set the window), `window`, `node`, `spread` (`all`, `only`, `skewed`), `sort` (`count`, `skew`, `lead`), `skew_min` (4.0), `signature`, `limit` (50; 0 = all), `offset` | `matrix.v1` (as `ragnalog matrix`) |
+| `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `ragnalog events`) |
+| `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `ragnalog interactions`) |
 | `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window; `signature` may name several groups, comma-separated, each also `NODE:SIGNATURE`: that group on that node only), `node` (comma-separated: only those nodes, the window stays all nodes'; an unknown node is 400 `invalid_value`), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
 | `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
@@ -155,12 +155,12 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets/{ref}/groups/{sig}/examples` | `max_raw`; `since`, `until`, `limit` (3, max 50) | `report-entries.v1`: the group's examples keyed by id, in the report's entry shape; with `since`/`until` its first `limit` entries in that window instead (the report's time window) |
 | `GET /api/sets/{ref}/entries` | `signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`, `columns` (comma-separated and/or repeat), `brief`, `limit` (100, max 10000), `offset`, `max_raw` (4000; 0 = all); `node`, several signatures and `NODE:SIGNATURE` are 400 `usage` (they apply to a capture) | `entries.v1` with `total`, `next_offset`; cut rows get `body_truncated`, `raw_chars` |
 | `GET /api/sets/{ref}/entries/{id}/raw` | | `text/plain`: the exact text of the entry as in its log file, banner lines it carries first (the plain-text link of the entry text page; not in the OpenAPI schema) |
-| `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief`; `all_nodes` with `window` (30 s): every node of the set's capture around the entry | `entries.v1` with `anchor`, `thread`, `any_thread` (as `atlas-log context [--all-nodes]`; with `all_nodes` rows add `node`, `set`) |
-| `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `atlas-log frames`; `ATLAS_LOG_APP_PACKAGES` of the server) |
+| `GET /api/sets/{ref}/entries/{id}/context` | `before` (5), `after` (5), `any_thread`, `max_raw` (4000), `columns`, `brief`; `all_nodes` with `window` (30 s): every node of the set's capture around the entry | `entries.v1` with `anchor`, `thread`, `any_thread` (as `ragnalog context [--all-nodes]`; with `all_nodes` rows add `node`, `set`) |
+| `GET /api/sets/{ref}/frames/{id-or-sig}` | `limit` (10; 0 = all), `all` | `frames.v1` (as `ragnalog frames`; `RAGNALOG_APP_PACKAGES` of the server) |
 | `GET /api/sets/{ref}/timeline` | `bucket` (`1h`, `15m`, `1d` …) and the filters of `entries` (`signature`, `coarse_signature`, `level`, `min_level`, `logger`, `user`, `thread`, `request_id`, `since`, `until`, `contains`, `with_exception`, `exception`) | `timeline.v1`: `[{bucket, count}]` |
 | `GET /api/sets/{ref}/report` | `compare` (`auto` or a set), `min_level`, `examples` (3), `max_raw`, `max_groups` | `report.v1` (cached per set version and options) |
 | `GET /api/sets/{ref}/triage` | `baseline` (`auto`, a set, or `none`/empty for no baseline), `min_level` (`WARN`), `grow` (2.0), `limit` (50; 0 = all) | `triage.v1` |
-| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `atlas-log diff A B`; `warnings` when the spans differ by more than 4x) |
+| `GET /api/diff` | `a`, `b`, `min_level`, `coarse`, `force`, `limit` (rows per section, default 50, 0 = all), `rate` | `diff.v1` (as `ragnalog diff A B`; `warnings` when the spans differ by more than 4x) |
 | `POST /api/ingest` | multipart `files` (repeat; log files or ZIPs); `name`, `format`, `frames`, `mine`, `overwrite`, `force`, `node`, `cluster`, `capture`, `split` (`auto`, `prefix`, `dir`, `none`) as form fields or query (as the `ingest` options) | `job.v1`, status 202 and `Location` |
 | `GET /api/jobs` | | `jobs.v1` |
 | `GET /api/jobs/{id}` | | `job.v1` |
@@ -182,7 +182,7 @@ they parse as the CLI options do and their OpenAPI descriptions are the CLI's
 `invalid_value` with "did you mean" and the valid columns in `hint`.
 
 Each document's JSON Schema is in `docs/formats/NAME.schema.json` (and
-`atlas-log schema NAME`); `/openapi.json` holds the same schemas as components
+`ragnalog schema NAME`); `/openapi.json` holds the same schemas as components
 (`triage.v1`, `groups.v1`, … and the rows `EntryRow`, `GroupRow`, `DiffRow`,
 `MergeRow`), each operation's success response refers to its document, and
 every `/api` operation documents its errors as `error.v1` (status 400 for a bad
@@ -202,12 +202,12 @@ set: per-node verdicts are `GET /api/captures/{ref}?triage=true`.
 
 Differences from the CLI: `GET /api/sets/{ref}/entries` pages with
 `1 <= limit <= 10000` (no `limit=0` for "all"; follow `next_offset` instead),
-while `atlas-log entries --limit 0` returns every entry.
+while `ragnalog entries --limit 0` returns every entry.
 
 ### Triage
 
 `GET /api/sets/{ref}/triage` answers the question in one call. The document
-is built by `store/triage.py` and is the same as `atlas-log triage` prints
+is built by `store/triage.py` and is the same as `ragnalog triage` prints
 (`docs/cli.md`), plus the `report_url` links:
 
 ```jsonc
@@ -231,7 +231,7 @@ is built by `store/triage.py` and is the same as `atlas-log triage` prints
 
 The automatic baseline (`baseline=auto`, also `compare=auto` of the report and
 the verdicts of the index page) comes from `store.triage.rank_baselines`, the
-rule of `atlas-log triage` (`docs/cli.md`): other sets of the same format,
+rule of `ragnalog triage` (`docs/cli.md`): other sets of the same format,
 without those signed with another recipe (`stale`, `recipe`), whose sources are
 a superset or subset of this set's, that end later, that are tiny (under 1% of
 the entries) or whose span differs more than 16x; then a set that ends before
@@ -256,7 +256,7 @@ when the data directory's disk has less free than twice the upload plus 256 MiB 
 forgotten (`GET /api/jobs/{id}` then answers `not_found`). Jobs run one at a time in a worker thread. The job
 reports parsed entries, bytes read and the current file, and `fraction` goes
 from 0 to 1. A successful job's `result` is the `logset.v1` manifest with the
-`ingest` block, the same as `atlas-log ingest` prints (`ingest.warnings` says
+`ingest` block, the same as `ragnalog ingest` prints (`ingest.warnings` says
 when `name` was ignored because the set existed already). A failed job's `error`
 holds `code` and `message` (`no_sources`, `format_not_detected`,
 `unknown_format`, `not_in_format`, `store_error`, `invalid_value`,
@@ -270,7 +270,7 @@ queued are cancelled) and, for spools left by a crashed server, when the next
 server starts. Jobs live in memory, so a restart forgets them; the sets they
 created remain. Pages and `/api` keep answering while a job runs.
 
-A ZIP upload is extracted as by `atlas-log ingest` (only `job.json` and
+A ZIP upload is extracted as by `ragnalog ingest` (only `job.json` and
 `*.log*`, safe paths, at most 32 GiB, removed afterwards). When the upload splits
 into one set per node (a cluster log export; `split` as in `ingest`), the job
 also carries `capture`, the `ingest-capture.v1` document, and `result` is its
@@ -280,7 +280,7 @@ removes the sets it had added (as `ingest` does), so no half capture remains.
 
 One server per data directory: the server holds an OS lock on `<data dir>/.server.lock`
 (released when the process ends, also after a crash), and a second
-`atlas-log serve` on the same data directory exits with code 3 ("another atlas-log
+`ragnalog serve` on the same data directory exits with code 3 ("another ragnalog
 server is already using the data directory"). CLI commands, including `ingest`, may
 run next to the server.
 
@@ -314,7 +314,7 @@ run next to the server.
   on the fly. Concurrent requests for one uncached payload wait for a single
   build. With `triage` a cluster payload is also keyed on every set's version,
   so a baseline added or removed by the CLI next to the server is noticed.
-- **Warm start:** `atlas-log serve` builds the newest capture's cluster page payload
+- **Warm start:** `ragnalog serve` builds the newest capture's cluster page payload
   in a background thread at startup (about half a second for two nodes of 700k
   entries each), so its first open is a cache hit.
 - **Security:** binds to loopback by default; `--token` guards the pages and `/api`.
@@ -326,7 +326,7 @@ run next to the server.
   loopback `Host` names are answered (400 otherwise), so a page that rebinds its own
   DNS name to 127.0.0.1 cannot read the API. No header lifts that check (a
   rebinding page is same-origin and may send any): behind a reverse proxy that passes
-  the public `Host` through, name it with `--allowed-host` (`ATLAS_LOG_ALLOWED_HOSTS`);
+  the public `Host` through, name it with `--allowed-host` (`RAGNALOG_ALLOWED_HOSTS`);
   a proxy that rewrites `Host` to the upstream needs nothing (`--reload` checks it
   per connection, by the address it arrived on). A `--host` off loopback without
   `--token` prints a warning at startup: anyone who reaches the port may upload and
@@ -338,7 +338,7 @@ run next to the server.
   `_` prefix). Set
   references are one plain name (no separators, `..` or drive). Error messages,
   job errors included, do not include server paths (a path is cut to its file name), and
-  the access log prints `token=***` for the first visit's `?token=`. Arbitrary SQL (`atlas-log query`) is not exposed over HTTP.
+  the access log prints `token=***` for the first visit's `?token=`. Arbitrary SQL (`ragnalog query`) is not exposed over HTTP.
 
 ## Not built yet
 
@@ -349,10 +349,10 @@ implemented. Jobs are not persisted across restarts.
 ## Code
 
 ```
-src/atlas_log_analyzer/webapp/
+src/ragnalog/webapp/
   __init__.py   create_app, Settings
   app.py        create_app(): routers, static files, HTML/JSON error handling
-  settings.py   re-exports config.Settings (flags > ATLAS_LOG_* env > defaults), shared with the CLI
+  settings.py   re-exports config.Settings (flags > RAGNALOG_* env > defaults), shared with the CLI
   state.py      AppState (a service Sets): store, server lock, summary, report and cluster
                 payload caches, spool cleanup, JobManager
   api.py        /api routes: bind the request, call service/, add report_url

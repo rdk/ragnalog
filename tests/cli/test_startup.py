@@ -19,8 +19,8 @@ HEAVY_FOR_READS = (
     "duckdb",
     "pyarrow.compute",
     "rich.table",
-    "atlas_log_analyzer.store.pipeline",
-    "atlas_log_analyzer.store.writer",
+    "ragnalog.store.pipeline",
+    "ragnalog.store.writer",
 )
 """Not needed by a JSON read command: SQL engine, writer, ingest pipeline, tables."""
 
@@ -29,7 +29,7 @@ def _loaded_after(argv: list[str], modules: tuple[str, ...]) -> tuple[int, list[
     script = textwrap.dedent(
         """
         import contextlib, io, json, sys
-        from atlas_log_analyzer.cli.app import run
+        from ragnalog.cli.app import run
         with contextlib.redirect_stdout(io.StringIO()):
             code = run(json.loads(sys.argv[1]))
         print(json.dumps([code, [m for m in json.loads(sys.argv[2]) if m in sys.modules]]))

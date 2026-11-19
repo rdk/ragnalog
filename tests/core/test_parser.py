@@ -6,17 +6,17 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.core.formats.base import CTX_PREAMBLE, CTX_USER
-from atlas_log_analyzer.core.formats.jira import JiraFormat
-from atlas_log_analyzer.core.models import LogEntry, LogLevel
-from atlas_log_analyzer.core.parser import (
+from ragnalog.core.formats.base import CTX_PREAMBLE, CTX_USER
+from ragnalog.core.formats.jira import JiraFormat
+from ragnalog.core.models import LogEntry, LogLevel
+from ragnalog.core.parser import (
     ORPHAN_ERROR,
     TRUNCATED_ERROR,
     parse,
     parse_file,
     parse_lines,
 )
-from atlas_log_analyzer.core.reader import iter_lines, iter_sources
+from ragnalog.core.reader import iter_lines, iter_sources
 
 from .conftest import EDGE_CASES, SAMPLE
 
@@ -110,7 +110,7 @@ class _Strict(JiraFormat):
 
 def test_header_like_line_is_own_entry() -> None:
     lines = [HEADER.format(1), "cont", "2026-10-29 02:19:41,415+0100 broken", "after"]
-    from atlas_log_analyzer.core.reader import Line
+    from ragnalog.core.reader import Line
 
     entries = list(parse_lines((Line(i + 1, 0, t) for i, t in enumerate(lines)), _Strict(), "p"))
     assert len(entries) == 2
@@ -144,7 +144,7 @@ def test_parse_detects_and_orders(tmp_path: Path) -> None:
 
 
 def test_memory_bounded(tmp_path: Path, jira: JiraFormat, monkeypatch: pytest.MonkeyPatch) -> None:
-    import atlas_log_analyzer.core.reader as reader
+    import ragnalog.core.reader as reader
 
     monkeypatch.setattr(reader, "_CHUNK", 64 * 1024)
     path = tmp_path / "big.log"
@@ -163,9 +163,9 @@ def test_memory_bounded(tmp_path: Path, jira: JiraFormat, monkeypatch: pytest.Mo
 
 
 def test_identical_entries_in_one_millisecond_get_distinct_ids() -> None:
-    from atlas_log_analyzer.core import formats
-    from atlas_log_analyzer.core.parser import parse_lines
-    from atlas_log_analyzer.core.reader import Line
+    from ragnalog.core import formats
+    from ragnalog.core.parser import parse_lines
+    from ragnalog.core.reader import Line
 
     fmt = formats.get("jira")
     text = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] *****"
@@ -179,8 +179,8 @@ def test_identical_entries_in_one_millisecond_get_distinct_ids() -> None:
 
 
 def test_parse_file_gives_same_millisecond_duplicates_distinct_ids(tmp_path: Path) -> None:
-    from atlas_log_analyzer.core import formats
-    from atlas_log_analyzer.core.parser import parse_file
+    from ragnalog.core import formats
+    from ragnalog.core.parser import parse_file
 
     text = "2026-10-29 02:19:41,415+0100 IssueIndexer:thread-15 ERROR      [x.Y] *****\n"
     p = tmp_path / "a.log"
@@ -189,7 +189,7 @@ def test_parse_file_gives_same_millisecond_duplicates_distinct_ids(tmp_path: Pat
 
 
 def _entries(texts: list[str], **caps: int) -> list[LogEntry]:
-    from atlas_log_analyzer.core.reader import Line
+    from ragnalog.core.reader import Line
 
     lines = (Line(i + 1, i * 1000, t) for i, t in enumerate(texts))
     return list(parse_lines(lines, JiraFormat(), "x.log", **caps))
@@ -231,7 +231,7 @@ def test_truncated_orphan_keeps_orphan_error() -> None:
 
 
 def test_default_caps_bound_a_huge_entry(tmp_path: Path, jira: JiraFormat) -> None:
-    from atlas_log_analyzer.core.parser import MAX_ENTRY_LINES
+    from ragnalog.core.parser import MAX_ENTRY_LINES
 
     path = tmp_path / "big.log"
     lines = MAX_ENTRY_LINES + 50
@@ -249,7 +249,7 @@ ID_LINE_2 = ID_LINE.replace(",415", ",416")
 
 
 def _ids(texts: list[str]) -> list[str]:
-    from atlas_log_analyzer.core.reader import Line
+    from ragnalog.core.reader import Line
 
     lines = [Line(i + 1, i * 100, t) for i, t in enumerate(texts)]
     return [e.id for e in parse_lines(lines, JiraFormat(), "a.log")]
@@ -304,7 +304,7 @@ def test_non_adjacent_repeat_in_one_millisecond_gets_a_distinct_id() -> None:
 def test_repeat_ids_are_remembered_for_recent_milliseconds_only(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    import atlas_log_analyzer.core.parser as parser
+    import ragnalog.core.parser as parser
 
     other = [ID_LINE.replace(",415", f",{ms}") for ms in (500, 501)]
     texts = [ID_LINE, *other, ID_LINE]
@@ -322,7 +322,7 @@ def test_repeat_ids_are_remembered_for_recent_milliseconds_only(
 def test_with_id_copies_every_field(jira: JiraFormat) -> None:
     import dataclasses
 
-    from atlas_log_analyzer.core.parser import _with_id
+    from ragnalog.core.parser import _with_id
 
     entry = next(e for e in parse_file(SAMPLE, jira) if e.exceptions and e.context and e.body)
     entry = dataclasses.replace(entry, parse_error="x")
@@ -331,8 +331,8 @@ def test_with_id_copies_every_field(jira: JiraFormat) -> None:
 
 
 def test_a_line_repeated_past_the_id_cap_keeps_every_entry() -> None:
-    from atlas_log_analyzer.core.parser import IDS_PER_MILLISECOND, parse_lines
-    from atlas_log_analyzer.core.reader import Line
+    from ragnalog.core.parser import IDS_PER_MILLISECOND, parse_lines
+    from ragnalog.core.reader import Line
 
     # an unreadable time is stored at the epoch: every repeat recurs in that millisecond,
     # with other entries between them

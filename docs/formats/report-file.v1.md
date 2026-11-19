@@ -2,7 +2,7 @@
 
 A written HTML report: `report`.
 
-Generated from `atlas_log_analyzer.service.documents` by `docs/formats/generate.py`; JSON Schema: [`report-file.v1.schema.json`](report-file.v1.schema.json), also `atlas-log schema report-file.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
+Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`report-file.v1.schema.json`](report-file.v1.schema.json), also `ragnalog schema report-file.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|

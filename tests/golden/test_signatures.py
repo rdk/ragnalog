@@ -18,9 +18,9 @@ from typing import Any
 import pytest
 import xxhash
 
-from atlas_log_analyzer.core import formats
-from atlas_log_analyzer.core.parser import parse_file
-from atlas_log_analyzer.core.pipeline import Recipe
+from ragnalog.core import formats
+from ragnalog.core.parser import parse_file
+from ragnalog.core.pipeline import Recipe
 
 GOLDEN = Path(__file__).with_name("signatures.json")
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"

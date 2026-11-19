@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from atlas_log_analyzer.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, MERGES_SCHEMA
+from ragnalog.store.schema import ENTRIES_SCHEMA, GROUPS_SCHEMA, MERGES_SCHEMA
 
 from .conftest import MINI_LOG, Invoke
 
@@ -36,7 +36,7 @@ def test_unknown_column_hint(jcli: Invoke, mini: str) -> None:
     err = res.json()["error"]
     assert err["code"] == "sql_error" and "nope" in err["message"]
     assert err["hint"].startswith("candidate columns: ")
-    assert "atlas-log query --help" in err["hint"]
+    assert "ragnalog query --help" in err["hint"]
 
 
 def test_column_error_without_candidates_lists_views(jcli: Invoke, mini: str) -> None:

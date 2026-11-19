@@ -1,7 +1,7 @@
 """Browser smoke tests of the web UI: headless Chromium driven by ``smoke.mjs`` over CDP.
 
 Skipped when Node (>= 22, global WebSocket) or a Chromium-family browser is missing, or when
-``ATLAS_LOG_NO_BROWSER`` is set; ``ATLAS_LOG_BROWSER`` names the browser executable.
+``RAGNALOG_NO_BROWSER`` is set; ``RAGNALOG_BROWSER`` names the browser executable.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from atlas_log_analyzer.cli.app import run
-from atlas_log_analyzer.report import render_cluster_html, render_html
+from ragnalog.cli.app import run
+from ragnalog.report import render_cluster_html, render_html
 
 ROOT = Path(__file__).resolve().parents[2]
 DRIVER = Path(__file__).with_name("smoke.mjs")
@@ -50,8 +50,8 @@ POSIX_BROWSERS = ("google-chrome", "chromium", "chromium-browser", "msedge", "mi
 
 
 def find_browser() -> str | None:
-    """Return the browser executable: ``ATLAS_LOG_BROWSER``, else a usual install, else None."""
-    env = os.environ.get("ATLAS_LOG_BROWSER")
+    """Return the browser executable: ``RAGNALOG_BROWSER``, else a usual install, else None."""
+    env = os.environ.get("RAGNALOG_BROWSER")
     if env:
         return env if Path(env).is_file() else None
     if sys.platform == "win32":
@@ -144,14 +144,14 @@ def demo_logs(out: Path) -> None:
 @pytest.fixture(scope="module")
 def smoke(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
     """Serve a demo store, drive a headless browser over it and return the driver's result."""
-    if os.environ.get("ATLAS_LOG_NO_BROWSER"):
-        pytest.skip("ATLAS_LOG_NO_BROWSER is set")
+    if os.environ.get("RAGNALOG_NO_BROWSER"):
+        pytest.skip("RAGNALOG_NO_BROWSER is set")
     why = node_problem()
     if why is not None:
         pytest.skip(why)
     browser = find_browser()
     if browser is None:
-        pytest.skip("no Chromium-family browser found (set ATLAS_LOG_BROWSER to its path)")
+        pytest.skip("no Chromium-family browser found (set RAGNALOG_BROWSER to its path)")
 
     tmp = tmp_path_factory.mktemp("browser")
     logs, store = tmp / "logs", tmp / "store"
@@ -171,7 +171,7 @@ def smoke(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
             [
                 sys.executable,
                 "-c",
-                "from atlas_log_analyzer.cli.app import main; main()",
+                "from ragnalog.cli.app import main; main()",
                 "--store",
                 str(store),
                 "serve",
@@ -183,7 +183,7 @@ def smoke(tmp_path_factory: pytest.TempPathFactory) -> dict[str, Any]:
             start_new_session=posix,
         )
         procs.append(server)
-        wait_for(f"{base}/api/health", "atlas-log serve", server)
+        wait_for(f"{base}/api/health", "ragnalog serve", server)
 
         chrome = subprocess.Popen(
             [

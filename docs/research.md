@@ -30,7 +30,7 @@ Observations that drive the design:
 
 **Decision:** primary grouping is deterministic — mask known variable tokens
 (format-specific rules), canonicalise, hash together with level, logger and
-the exception signature. Drain3 is an optional extra (`atlas-log-analyzer[mine]`)
+the exception signature. Drain3 is an optional extra (`ragnalog[mine]`)
 used by a `mine` pass that proposes merging signatures whose templates Drain
 puts in the same cluster. The Drain algorithm is small enough that if the
 dependency becomes a problem we can vendor a ~300-line implementation.
@@ -71,7 +71,7 @@ tokenisation):
 | Option | Verdict |
 |---|---|
 | Parquet via [polars](https://pypi.org/project/polars) 2.1.0 (2026-10-25) / [pyarrow](https://pypi.org/project/pyarrow) 26.0.0 (cp314 wheels) | **Chosen.** Columnar, compressed (expect ~10× smaller than raw), zero-copy into polars/DuckDB, trivially served by a later web app. |
-| [DuckDB](https://pypi.org/project/duckdb) 2.0.0 (2026-10-21, `cp312-abi3` wheel, imports on 3.14) | **Chosen for queries/diffs.** Reads Parquet directly; gives agents an `atlas-log query "<SQL>"` escape hatch. |
+| [DuckDB](https://pypi.org/project/duckdb) 2.0.0 (2026-10-21, `cp312-abi3` wheel, imports on 3.14) | **Chosen for queries/diffs.** Reads Parquet directly; gives agents an `ragnalog query "<SQL>"` escape hatch. |
 | SQLite | Simple but row-oriented; scans over millions of rows and string-heavy columns are slow and the file is much larger. |
 | JSONL | Kept as the *streaming interchange* format (`parse --output jsonl`), not as the store. |
 

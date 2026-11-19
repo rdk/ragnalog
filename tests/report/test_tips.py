@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from atlas_log_analyzer.report import render_cluster_html, render_html
-from atlas_log_analyzer.report.render import asset_text
+from ragnalog.report import render_cluster_html, render_html
+from ragnalog.report.render import asset_text
 
 HARNESS = r"""
 const fs = require("fs");
@@ -19,11 +19,11 @@ const target = { addEventListener: (type) => listeners.push(type) };
 globalThis.window = target;
 globalThis.document = target;
 new Function(fs.readFileSync(process.argv[2], "utf8"))();
-const T = window.AtlasTips;
+const T = window.RagnalogTips;
 const once = T;
 new Function(fs.readFileSync(process.argv[2], "utf8"))();  // a second copy is a no-op
 const out = {
-  same: window.AtlasTips === once,
+  same: window.RagnalogTips === once,
   listeners: listeners.sort(),
   esc: T.esc(`<a href="x">'&'</a>`),
   card: T.card({
@@ -64,7 +64,7 @@ def test_card_escapes_text_and_keeps_trusted_markup(tmp_path: Path) -> None:
 
 def test_inlined_before_the_page_script() -> None:
     tips = asset_text("tips.js")
-    marker = "window.AtlasTips = {"
+    marker = "window.RagnalogTips = {"
     report = render_html({"schema": "report.v1", "logset": {"name": "x"}})
     assert report.count(marker) == 1
     assert report.index(marker) < report.index(asset_text("report.js")[:200])
