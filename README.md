@@ -4,10 +4,7 @@
 
 # Ragnalog
 
-*Atlassian Data Center log analyzer for the end days. Forget Grafana, this is the best log viewer vibecoded this week!*
-
-**Turn gigabytes of Jira Data Center logs into a few hundred groups you can read,<br>
-compare and triage, in the browser, the terminal or from an agent.**
+**Atlassian Data Center log analyzer for the end days. Forget Grafana, this is the best log viewer vibecoded this week.**
 
 [![Release](https://img.shields.io/badge/release-v0.6.0-2f6bc7?style=flat-square)](https://github.com/rdk/ragnalog/releases/latest)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
@@ -15,7 +12,6 @@ compare and triage, in the browser, the terminal or from an agent.**
 [![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/ragnalog/pkgs/container/ragnalog)
 [![Jira Data Center](https://img.shields.io/badge/logs-Jira_Data_Center-0052cc?style=flat-square&logo=jira&logoColor=white)](docs/formats/)
 [![Ruff](https://img.shields.io/badge/lint-ruff-d7ff64?style=flat-square&logo=ruff&logoColor=black)](https://docs.astral.sh/ruff/)
-[![mypy strict](https://img.shields.io/badge/types-mypy_strict-1f5082?style=flat-square)](https://mypy-lang.org/)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-3da639?style=flat-square)](LICENSE)
 
 [Quick start](#quick-start) · [Features](#features) · [Web app](#web-app) · [CLI](#cli) · [For agents](#for-agents) · [How it works](#how-it-works) · [Docs](#documentation)
@@ -27,7 +23,7 @@ compare and triage, in the browser, the terminal or from an agent.**
   <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="100%">
 </picture></a>
 
-<sub>Aurora is the default skin. All screenshots use synthetic demo logs (<code>scripts/demo_logs.py</code>), never real data. Click an image for full resolution; <a href="docs/img/hero-dark.png">view the dark report</a>.</sub>
+<sub>The report of one node, from synthetic demo logs.</sub>
 
 </div>
 
