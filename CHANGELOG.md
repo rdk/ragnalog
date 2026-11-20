@@ -16,6 +16,10 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 - The repository is public: install with `git+https://github.com/rdk/ragnalog.git@vX.Y.Z`
   or the release wheel's URL, and pull the image without signing in. CI runs again on
   pushes to `main` and on pull requests.
+- Test data re-masked: a JQL project key, workflow names, internal addresses, a user
+  name and a custom field id that came from a real log are replaced by invented ones
+  throughout the history. The hygiene test now checks every text file for private
+  addresses outside 10.0.0.0/16 and log fixtures for JQL project keys.
 
 ## [0.6.0] - 2026-11-19
 

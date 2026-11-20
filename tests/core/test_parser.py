@@ -258,8 +258,9 @@ def _ids(texts: list[str]) -> list[str]:
 @pytest.mark.parametrize(
     ("fixture", "count", "digest"),
     [
-        # sample.log was re-masked (logger, plugin and path names); the ids code is unchanged
-        (SAMPLE, 47, "6d179c20119ed7cd"),
+        # sample.log was re-masked (logger, plugin and path names, then a JQL project key and
+        # workflow names); the ids code is unchanged
+        (SAMPLE, 47, "c024ddc1e5b09f78"),
         (EDGE_CASES, 15, "e07a5219cc18eaf6"),
         (Path(__file__).parents[1] / "cli" / "data" / "mini.log", 10, "e35f07bdb9e3e630"),
     ],

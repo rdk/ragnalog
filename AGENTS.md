@@ -144,4 +144,6 @@ Real log sets live outside the repository in `../ragnalog-data/`
 `RAGNALOG_DATA`. Names of the real environment (its domain, company packages,
 in-house plugins, paths) are never written into the repository, not even as a
 guard: `tests/test_fixture_hygiene.py` reads them from `forbidden.txt` in that
-folder, and `scripts/make_fixture.py` takes the logs' domain as `--host-domain`.
+folder and checks every text file of the repository for them and for private
+addresses outside 10.0.0.0/16 (log fixtures also for issue and JQL project keys and
+hosts), and `scripts/make_fixture.py` takes the logs' domain as `--host-domain`.
