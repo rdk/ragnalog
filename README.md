@@ -4,7 +4,7 @@
 
 # Ragnalog
 
-**Atlassian Data Center log analyzer for the end days. Forget Grafana, this is the best log viewer vibecoded this week.**
+**Atlassian Data Center log analyzer for the end days. Forget Grafana/Loki, this is the best log viewer vibecoded this week!**
 
 [![Release](https://img.shields.io/badge/release-v0.6.0-2f6bc7?style=flat-square)](https://github.com/rdk/ragnalog/releases/latest)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
