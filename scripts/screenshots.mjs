@@ -7,10 +7,11 @@
 //   node scripts/screenshots.mjs http://127.0.0.1:8341 docs/img
 //
 // Needs Node 22+ (global WebSocket) and Edge or Chrome; RAGNALOG_BROWSER names the browser
-// when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 PNGs).
-// Writes hero-light, hero-dark, drawer, cluster, triage and entries .png. The hero shots are
-// cut below the table of groups (bottom margin = side margin) and get a soft shadow baked in
-// on a transparent background, since GitHub drops CSS from READMEs.
+// when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 before the
+// shadow). Writes hero-light, hero-dark, drawer, cluster, triage and entries .png, each with
+// rounded corners and a soft shadow baked in on a transparent background, since GitHub drops
+// CSS from READMEs. The hero shots are cut below the table of groups (bottom margin = side
+// margin).
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -85,8 +86,9 @@ const withShadow = async (png, h, dark) => {
   if (out.readUInt32BE(16) !== w * DPR || out.readUInt32BE(20) !== ht * DPR) throw new Error("Unexpected shadow PNG size");
   return out;
 };
+const shots = [];
 // cropBelow: cut the shot below that element, leaving the margin it has on its left side.
-const shot = async (name, { cropBelow = null, shadow = false } = {}) => {
+const shot = async (name, { cropBelow = null } = {}) => {
   const loaded = {
     "hero-light": '#t-body tr', "hero-dark": '#t-body tr', drawer: '#drawer .entry',
     cluster: '#c-timeline svg', triage: '.triage-sec', entries: '#e-body .entry',
@@ -109,14 +111,19 @@ const shot = async (name, { cropBelow = null, shadow = false } = {}) => {
     const r = document.querySelector(${JSON.stringify(cropBelow)}).getBoundingClientRect();
     return Math.min(${H}, Math.ceil(r.bottom + r.left)); })()`) : H;
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
-  let png = Buffer.from(res.result.data, "base64");
+  const png = Buffer.from(res.result.data, "base64");
   if (png.readUInt32BE(16) !== W * DPR || png.readUInt32BE(20) !== h * DPR) {
     throw new Error(`Unexpected PNG size: ${png.readUInt32BE(16)}×${png.readUInt32BE(20)}`);
   }
-  if (shadow) png = await withShadow(png, h, name.endsWith("dark"));
-  const width = png.readUInt32BE(16), height = png.readUInt32BE(20);
-  writeFileSync(join(out, `${name}.png`), png);
-  console.log(`wrote ${join(out, name)}.png (${width}×${height}, DPR ${DPR})`);
+  shots.push({ name, png, h });
+};
+// The shadows are added after all shots: withShadow navigates away from the page.
+const writeShots = async () => {
+  for (const { name, png, h } of shots) {
+    const framed = await withShadow(png, h, name.endsWith("dark"));
+    writeFileSync(join(out, `${name}.png`), framed);
+    console.log(`wrote ${join(out, name)}.png (${framed.readUInt32BE(16)}×${framed.readUInt32BE(20)}, DPR ${DPR})`);
+  }
 };
 const clickRow = (text) => evaluate(`(() => { const r = [...document.querySelectorAll("table.groups tbody tr[data-id]")]
   .find((x) => x.textContent.includes(${JSON.stringify(text)})); if (r) r.click(); return !!r; })()`);
@@ -134,7 +141,7 @@ try {
   for (const t of ["light", "dark"]) {
     await theme(t);
     await go(`${base}/sets/${node2.id}`);
-    await shot(`hero-${t}`, { cropBelow: "#groups", shadow: true });
+    await shot(`hero-${t}`, { cropBelow: "#groups" });
   }
   await theme("light");
   await go(`${base}/sets/${node2.id}`);
@@ -147,12 +154,12 @@ try {
   await shot("cluster");
   await go(`${base}/sets/${node1.id}/triage`);
   await shot("triage");
-  if (href) {
-    await go(href, 5000);
-    await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);
-    await sleep(2000);
-    await shot("entries");
-  }
+  if (!href) throw new Error("the drawer has no link to the group's entries");
+  await go(href, 5000);
+  await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);
+  await sleep(2000);
+  await shot("entries");
+  await writeShots();
   if (errors.length) console.error("page errors:", errors);
 } finally {
   ws.close();
