@@ -5,7 +5,7 @@ it runs the CI checks on that tag (Ubuntu and Windows), builds the wheel and sdi
 the GitHub release with the tag's CHANGELOG section as its notes, and pushes the container
 image `ghcr.io/rdk/ragnalog:X.Y.Z` plus `:latest`.
 
-CI does not run on pushes (see `ci.yml`), so check locally before every release.
+CI runs on every push to `main`, but check locally before every release anyway.
 
 ## Steps
 
@@ -21,8 +21,8 @@ CI does not run on pushes (see `ci.yml`), so check locally before every release.
 2. **Bump the version** everywhere it is quoted:
    - `pyproject.toml` (`version`) and `src/ragnalog/_version.py`;
    - `uv.lock`: run `uv lock` (it rewrites the package's own `version` line);
-   - `README.md`: the release badge, the Docker image tags, the `git+ssh …@vX.Y.Z` install,
-     the `gh release download vX.Y.Z` command and the wheel's file name;
+   - `README.md`: the release badge, the Docker image tags, the `git+https …@vX.Y.Z` install
+     and the wheel's download URL (`releases/download/vX.Y.Z/ragnalog-X.Y.Z-…`);
    - `docs/cli.md` (the `manifest.v1` and `version.v1` examples) and `docs/report.md`
      (`tool_version` in the payload example).
 

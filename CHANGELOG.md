@@ -11,6 +11,12 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Changed
+
+- The repository is public: install with `git+https://github.com/rdk/ragnalog.git@vX.Y.Z`
+  or the release wheel's URL, and pull the image without signing in. CI runs again on
+  pushes to `main` and on pull requests.
+
 ## [0.6.0] - 2026-11-19
 
 The project is renamed from atlas-log-analyzer to **Ragnalog**. No stored-format change: sets

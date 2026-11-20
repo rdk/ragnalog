@@ -70,12 +70,8 @@ Docker** you get the `ragnalog` command (CLI and web app) on your machine.
 
 ### With Docker
 
-The image is published to the GitHub Container Registry with each release. The
-repository is private, so sign in once with a token that has `read:packages`:
-
-```sh
-echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
-```
+The image is published to the GitHub Container Registry with each release; pulling it
+needs no sign-in.
 
 Run the web app on port 8321 with its data directory (where the log sets are kept) in a
 named volume. It listens on all
@@ -119,20 +115,18 @@ To build the image yourself: `docker build -t ragnalog .`
 ### Without Docker
 
 You need [uv](https://docs.astral.sh/uv/getting-started/installation/); it fetches
-Python 3.14 itself. Install a release straight from GitHub (your git access to the
-repository is used; `[web]` adds the web app, `[mine]` the optional Drain3 template
-mining):
+Python 3.14 itself. Install a release straight from GitHub (`[web]` adds the web app,
+`[mine]` the optional Drain3 template mining):
 
 ```sh
-uv tool install "ragnalog[web] @ git+ssh://git@github.com/rdk/ragnalog.git@v0.6.0"
+uv tool install "ragnalog[web] @ git+https://github.com/rdk/ragnalog.git@v0.6.0"
 ragnalog --version
 ```
 
 or install the wheel attached to the release:
 
 ```sh
-gh release download v0.6.0 -R rdk/ragnalog -p '*.whl'
-uv tool install "ragnalog[web] @ ./ragnalog-0.6.0-py3-none-any.whl"
+uv tool install "ragnalog[web] @ https://github.com/rdk/ragnalog/releases/download/v0.6.0/ragnalog-0.6.0-py3-none-any.whl"
 ```
 
 Then choose a data directory, the folder that keeps the log sets (outside any git

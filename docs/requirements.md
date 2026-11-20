@@ -65,7 +65,7 @@ files per set; layout and conventions in that folder's `README.md`).
 
 ## R4 — Project
 
-uv-managed, Python 3.14, `src/` layout, private GitHub repository, tests with
+uv-managed, Python 3.14, `src/` layout, public GitHub repository, tests with
 masked fixtures, ruff + type checking, CI. A future `webapp/` package sits next
 to `cli/` and reuses `core/` and `store/`.
 

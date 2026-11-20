@@ -76,10 +76,10 @@ uv run ragnalog --help               # the CLI from the working tree
 uv run python docs/formats/generate.py   # regenerate docs/formats (md + JSON Schema) and docs/cli.md lists
 ```
 
-CI (`.github/workflows/ci.yml`) does not run on pushes or pull requests: run the checks
-above locally before you push (the browser smoke tests are part of `pytest`). It can be
-started by hand, and the release workflow runs it (ubuntu-latest and windows-latest) before
-it publishes a tag; see `RELEASING.md`. UI changes: refresh the README screenshots with
+CI (`.github/workflows/ci.yml`, ubuntu-latest and windows-latest) runs on pushes to
+`main` and on pull requests; still run the checks above locally before you push (the
+browser smoke tests are part of `pytest`). The release workflow runs it again before it
+publishes a tag; see `RELEASING.md`. UI changes: refresh the README screenshots with
 `scripts/screenshots.mjs` on the demo logs, never from real logs.
 
 ## Conventions

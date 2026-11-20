@@ -23,7 +23,7 @@ QUOTED = {
         rf"badge/release-v{V}-",
         rf"ragnalog:{V}\b",
         rf"ragnalog\.git@v{V}\b",
-        rf"release download v{V}\b",
+        rf"releases/download/v{V}/",
         rf"ragnalog-{V}-py3",
     ],
     "docs/cli.md": [rf'"version": "{V}"'],
