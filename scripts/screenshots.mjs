@@ -8,7 +8,9 @@
 //
 // Needs Node 22+ (global WebSocket) and Edge or Chrome; RAGNALOG_BROWSER names the browser
 // when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 PNGs).
-// Writes hero-light, hero-dark, drawer, cluster, triage and entries .png.
+// Writes hero-light, hero-dark, drawer, cluster, triage and entries .png. The hero shots are
+// cut below the table of groups (bottom margin = side margin) and get a soft shadow baked in
+// on a transparent background, since GitHub drops CSS from READMEs.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -57,7 +59,34 @@ const send = (method, params = {}) => new Promise((r) => { const n = ++id; pendi
 const evaluate = async (e) => (await send("Runtime.evaluate", { expression: e, awaitPromise: true, returnByValue: true })).result?.result?.value;
 const theme = (t) => send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value: t }] });
 const go = async (u, wait = 4500) => { await send("Page.navigate", { url: u }); await sleep(wait); };
-const shot = async (name, h = H) => {
+// Room around a shadowed shot, in CSS pixels: the shadow falls mostly below.
+const PAD = { x: 32, top: 24, bottom: 48 };
+const withShadow = async (png, h, dark) => {
+  const w = W + 2 * PAD.x, ht = h + PAD.top + PAD.bottom;
+  const ink = dark ? "0,0,0" : "15,23,42", [a1, a2] = dark ? [0.7, 0.45] : [0.45, 0.18];
+  await send("Emulation.setDeviceMetricsOverride", { width: w, height: ht, deviceScaleFactor: DPR, mobile: false });
+  await send("Emulation.setDefaultBackgroundColorOverride", { color: { r: 0, g: 0, b: 0, a: 0 } });
+  await go("about:blank", 300);
+  await evaluate(`(async () => {
+    document.documentElement.style.background = "transparent";
+    document.body.style.cssText = "margin:0;padding:${PAD.top}px ${PAD.x}px ${PAD.bottom}px;background:transparent";
+    const img = new Image();
+    img.style.cssText = "display:block;width:${W}px;height:${h}px;border-radius:8px;"
+      + "box-shadow:0 14px 36px -6px rgba(${ink},${a1}),0 2px 8px rgba(${ink},${a2})";
+    img.src = "data:image/png;base64,${png.toString("base64")}";
+    document.body.append(img);
+    await img.decode();
+    await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+  })()`);
+  const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: w, height: ht, scale: 1 } });
+  await send("Emulation.setDefaultBackgroundColorOverride");
+  await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: DPR, mobile: false });
+  const out = Buffer.from(res.result.data, "base64");
+  if (out.readUInt32BE(16) !== w * DPR || out.readUInt32BE(20) !== ht * DPR) throw new Error("Unexpected shadow PNG size");
+  return out;
+};
+// cropBelow: cut the shot below that element, leaving the margin it has on its left side.
+const shot = async (name, { cropBelow = null, shadow = false } = {}) => {
   const loaded = {
     "hero-light": '#t-body tr', "hero-dark": '#t-body tr', drawer: '#drawer .entry',
     cluster: '#c-timeline svg', triage: '.triage-sec', entries: '#e-body .entry',
@@ -76,10 +105,16 @@ const shot = async (name, h = H) => {
     throw new Error(`Aurora skin is not active for ${name}`);
   }
   if (await evaluate("devicePixelRatio") !== DPR) throw new Error(`Unexpected DPR for ${name}`);
+  const h = cropBelow ? await evaluate(`(() => {
+    const r = document.querySelector(${JSON.stringify(cropBelow)}).getBoundingClientRect();
+    return Math.min(${H}, Math.ceil(r.bottom + r.left)); })()`) : H;
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
-  const png = Buffer.from(res.result.data, "base64");
+  let png = Buffer.from(res.result.data, "base64");
+  if (png.readUInt32BE(16) !== W * DPR || png.readUInt32BE(20) !== h * DPR) {
+    throw new Error(`Unexpected PNG size: ${png.readUInt32BE(16)}×${png.readUInt32BE(20)}`);
+  }
+  if (shadow) png = await withShadow(png, h, name.endsWith("dark"));
   const width = png.readUInt32BE(16), height = png.readUInt32BE(20);
-  if (width !== W * DPR || height !== h * DPR) throw new Error(`Unexpected PNG size: ${width}×${height}`);
   writeFileSync(join(out, `${name}.png`), png);
   console.log(`wrote ${join(out, name)}.png (${width}×${height}, DPR ${DPR})`);
 };
@@ -99,7 +134,7 @@ try {
   for (const t of ["light", "dark"]) {
     await theme(t);
     await go(`${base}/sets/${node2.id}`);
-    await shot(`hero-${t}`);
+    await shot(`hero-${t}`, { cropBelow: "#groups", shadow: true });
   }
   await theme("light");
   await go(`${base}/sets/${node2.id}`);

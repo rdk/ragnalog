@@ -20,10 +20,8 @@
 
 <a href="docs/img/hero-light.png"><picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/img/hero-dark.png">
-  <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="100%">
+  <img src="docs/img/hero-light.png" alt="The report of one node: entries per hour by level with an error spike, level filters and the table of groups" width="84%">
 </picture></a>
-
-<sub>The report of one node, from synthetic demo logs.</sub>
 
 </div>
 
