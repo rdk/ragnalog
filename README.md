@@ -6,7 +6,7 @@
 
 **Atlassian Data Center log analyzer for the end days. Forget Grafana/Loki, this is the best log viewer vibecoded this week!**
 
-[![Release](https://img.shields.io/badge/release-v0.6.0-2f6bc7?style=flat-square)](https://github.com/rdk/ragnalog/releases/latest)
+[![Release](https://img.shields.io/badge/release-v0.6.1-2f6bc7?style=flat-square)](https://github.com/rdk/ragnalog/releases/latest)
 [![Python 3.14](https://img.shields.io/badge/python-3.14-3776ab?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
 [![uv](https://img.shields.io/badge/built_with-uv-de5fe9?style=flat-square&logo=astral&logoColor=white)](https://docs.astral.sh/uv/)
 [![Docker image](https://img.shields.io/badge/image-ghcr.io-2496ed?style=flat-square&logo=docker&logoColor=white)](https://github.com/rdk/ragnalog/pkgs/container/ragnalog)
@@ -78,7 +78,7 @@ on this machine only and give the app a token:
 ```sh
 export RAGNALOG_TOKEN="$(openssl rand -hex 16)"
 docker run -d --name ragnalog -p 127.0.0.1:8321:8321 -v ragnalog:/data \
-  -e RAGNALOG_TOKEN ghcr.io/rdk/ragnalog:0.6.0
+  -e RAGNALOG_TOKEN ghcr.io/rdk/ragnalog:0.6.1
 echo "http://localhost:8321/?token=$RAGNALOG_TOKEN"      # open once; the token is kept
 ```
 
@@ -91,7 +91,7 @@ Upload log files on the start page, or ingest a folder with the CLI from the sam
 
 ```sh
 docker run --rm -v ragnalog:/data -v "$PWD/logs:/in:ro" \
-  ghcr.io/rdk/ragnalog:0.6.0 ingest /in --name prod-1030
+  ghcr.io/rdk/ragnalog:0.6.1 ingest /in --name prod-1030
 ```
 
 The container runs as user 10001. On Linux it can read only files that others may read:
@@ -109,7 +109,7 @@ notes say signatures changed, older sets show as stale; rebuild them with
 ```yaml
 services:
   ragnalog:
-    image: ghcr.io/rdk/ragnalog:0.6.0
+    image: ghcr.io/rdk/ragnalog:0.6.1
     ports: ["127.0.0.1:8321:8321"]
     environment:
       RAGNALOG_TOKEN: ${RAGNALOG_TOKEN:?set a token}
@@ -135,14 +135,14 @@ Python 3.14 itself. Install a release straight from GitHub (`[web]` adds the web
 `[mine]` the optional Drain3 template mining):
 
 ```sh
-uv tool install "ragnalog[web] @ git+https://github.com/rdk/ragnalog.git@v0.6.0"
+uv tool install "ragnalog[web] @ git+https://github.com/rdk/ragnalog.git@v0.6.1"
 ragnalog --version
 ```
 
 or install the wheel attached to the release:
 
 ```sh
-uv tool install "ragnalog[web] @ https://github.com/rdk/ragnalog/releases/download/v0.6.0/ragnalog-0.6.0-py3-none-any.whl"
+uv tool install "ragnalog[web] @ https://github.com/rdk/ragnalog/releases/download/v0.6.1/ragnalog-0.6.1-py3-none-any.whl"
 ```
 
 Then choose a data directory, the folder that keeps the log sets (outside any git

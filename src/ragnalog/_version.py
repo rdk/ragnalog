@@ -3,4 +3,4 @@
 Keep it equal to ``project.version`` in ``pyproject.toml`` (``tests/test_version.py`` checks).
 """
 
-__version__ = "0.6.0"
+__version__ = "0.6.1"

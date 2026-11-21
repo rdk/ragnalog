@@ -44,7 +44,7 @@ Size-driven conventions (2026-10-29, still `report.v1`):
 {
   "schema": "report.v1",
   "generated_at": "2026-10-29T10:00:00Z",
-  "tool_version": "0.6.0",
+  "tool_version": "0.6.1",
   "logset": { /* logset.v1 manifest incl. sources */ },
   "stats": { /* LogSet.stats(): entry_count, group_count, parse_errors, levels, loggers, hours, time_range */ },
   "timeline": {                               // per-hour counts by level for the overview chart

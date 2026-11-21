@@ -11,6 +11,11 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-21
+
+The repository is public, and the container image now runs natively on arm64 too. No change
+to the CLI or the stored formats: sets built by 0.6.0 need no `upgrade`.
+
 ### Changed
 
 - The repository is public: install with `git+https://github.com/rdk/ragnalog.git@vX.Y.Z`
@@ -263,7 +268,8 @@ Everything below; tagged only.
   network without a token.
 - The newest capture's cluster page is built at startup, so its first open is fast.
 
-[Unreleased]: https://github.com/rdk/ragnalog/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/rdk/ragnalog/compare/v0.6.1...HEAD
+[0.6.1]: https://github.com/rdk/ragnalog/releases/tag/v0.6.1
 [0.6.0]: https://github.com/rdk/ragnalog/releases/tag/v0.6.0
 [0.5.0]: https://github.com/rdk/ragnalog/releases/tag/v0.5.0
 [0.4.1]: https://github.com/rdk/ragnalog/releases/tag/v0.4.1
