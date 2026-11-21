@@ -72,15 +72,19 @@ The image is published to the GitHub Container Registry with each release; pulli
 needs no sign-in.
 
 Run the web app on port 8321 with its data directory (where the log sets are kept) in a
-named volume. It listens on all
-interfaces in the container, so give it a token:
+named volume. Whoever reaches the port can read, upload and delete log sets, so publish it
+on this machine only and give the app a token:
 
 ```sh
 export RAGNALOG_TOKEN="$(openssl rand -hex 16)"
-docker run -d --name ragnalog -p 8321:8321 -v ragnalog:/data \
+docker run -d --name ragnalog -p 127.0.0.1:8321:8321 -v ragnalog:/data \
   -e RAGNALOG_TOKEN ghcr.io/rdk/ragnalog:0.6.0
 echo "http://localhost:8321/?token=$RAGNALOG_TOKEN"      # open once; the token is kept
 ```
+
+In PowerShell, set the token with `$env:RAGNALOG_TOKEN = [guid]::NewGuid().ToString("N")`
+and put `docker run` on one line. To serve other machines, publish `-p 8321:8321`; the
+token then guards it alone.
 
 Upload log files on the start page, or ingest a folder with the CLI from the same image
 (any `ragnalog` command works this way):
@@ -90,6 +94,15 @@ docker run --rm -v ragnalog:/data -v "$PWD/logs:/in:ro" \
   ghcr.io/rdk/ragnalog:0.6.0 ingest /in --name prod-1030
 ```
 
+The container runs as user 10001. On Linux it can read only files that others may read:
+logs taken from a Jira server are often readable by its own user alone, so copy them into
+a folder of yours (or `chmod -R o+rX logs`).
+
+**Upgrading:** the log sets stay in the volume. Remove the container
+(`docker rm -f ragnalog`) and run the same `docker run` with the new tag. When the release
+notes say signatures changed, older sets show as stale; rebuild them with
+`docker exec ragnalog ragnalog upgrade --all`.
+
 <details>
 <summary>Docker Compose</summary>
 
@@ -97,7 +110,7 @@ docker run --rm -v ragnalog:/data -v "$PWD/logs:/in:ro" \
 services:
   ragnalog:
     image: ghcr.io/rdk/ragnalog:0.6.0
-    ports: ["8321:8321"]
+    ports: ["127.0.0.1:8321:8321"]
     environment:
       RAGNALOG_TOKEN: ${RAGNALOG_TOKEN:?set a token}
     volumes: ["ragnalog:/data"]
@@ -105,6 +118,11 @@ services:
 volumes:
   ragnalog:
 ```
+
+Keep the token in a `.env` file beside it (`RAGNALOG_TOKEN=...`), start with
+`docker compose up -d`, and ingest with
+`docker compose run --rm -v "$PWD/logs:/in:ro" ragnalog ingest /in --name prod-1030`.
+To upgrade, change the tag and run `docker compose up -d` again.
 
 </details>
 

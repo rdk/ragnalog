@@ -56,8 +56,12 @@ CI runs on every push to `main`, but check locally before every release anyway.
   to replace them, `uv build` in a checkout of the tag and `gh release upload vX.Y.Z
   dist/* --clobber`.
 - The newest release must finish last: every image push moves `:latest`.
-- The image is built without a provenance attestation (one manifest per tag); ghcr refused
-  to tag the attested image index.
+- The image is built for linux/amd64 and linux/arm64 (arm64 under QEMU, a few minutes) and
+  pushed as one index without provenance or SBOM attestations: ghcr refused to tag an
+  attested index. CI builds and runs the arm64 image too, so a Dockerfile change that breaks
+  it fails before a release.
+- ghcr lists the two platform images of each index as **untagged** versions. Never delete
+  untagged versions of releases after 0.6.0: that breaks the tagged image.
 
 ## Pitfalls
 

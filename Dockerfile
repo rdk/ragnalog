@@ -1,10 +1,12 @@
-# ragnalog with the web app: `docker run -p 8321:8321 -v ragnalog:/data -e RAGNALOG_TOKEN=... IMAGE`
+# ragnalog with the web app:
+#   docker run -p 127.0.0.1:8321:8321 -v ragnalog:/data -e RAGNALOG_TOKEN=... IMAGE
 # Any other command: `docker run --rm -v ragnalog:/data IMAGE groups SET --brief`.
-# The build stage and the runtime share one Python (python:3.14-slim-bookworm) and the
+# The build stage and the runtime share one Python (python:3.14-slim-trixie) and the
 # virtual environment's path (/app/.venv: its scripts name their interpreter by it), so
-# the copied environment runs as built.
+# the copied environment runs as built. Releases build it for linux/amd64 and linux/arm64
+# and add the OCI labels (release.yml).
 
-FROM ghcr.io/astral-sh/uv:0.9-python3.14-bookworm-slim AS build
+FROM ghcr.io/astral-sh/uv:0.9-python3.14-trixie-slim AS build
 WORKDIR /app
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=never
 COPY pyproject.toml uv.lock README.md LICENSE ./
@@ -12,7 +14,7 @@ RUN uv sync --locked --no-dev --extra web --no-install-project
 COPY src ./src
 RUN uv sync --locked --no-dev --extra web --no-editable
 
-FROM python:3.14-slim-bookworm
+FROM python:3.14-slim-trixie
 RUN useradd --create-home --uid 10001 ragnalog && mkdir /data && chown ragnalog /data
 COPY --from=build --chown=ragnalog /app/.venv /app/.venv
 ENV PATH=/app/.venv/bin:$PATH \

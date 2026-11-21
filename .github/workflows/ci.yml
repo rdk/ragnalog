@@ -105,3 +105,14 @@ jobs:
             | python3 -c 'import json, sys; d = json.load(sys.stdin); assert d["count"] == 1, d'
           docker logs web 2>&1 | tail -5
           docker rm -f web
+
+      - name: Set up QEMU (arm64 image)
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Build and run for arm64
+        shell: bash
+        run: |
+          docker build --platform linux/arm64 -t ragnalog:ci-arm64 .
+          docker run --rm --platform linux/arm64 ragnalog:ci-arm64 --version

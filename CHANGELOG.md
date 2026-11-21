@@ -20,6 +20,13 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
   name and a custom field id that came from a real log are replaced by invented ones
   throughout the history. The hygiene test now checks every text file for private
   addresses outside 10.0.0.0/16 and log fixtures for JQL project keys.
+- Container image: built for linux/arm64 as well as linux/amd64 (no emulation on Apple
+  silicon), on Debian 13 (trixie) instead of 12, with OCI labels (source, description,
+  licence, version, revision) that the package page shows.
+- README, Docker: the port is published on localhost only (`-p 127.0.0.1:8321:8321`), with
+  notes on PowerShell, serving other machines, file permissions of mounted logs, upgrading,
+  and ingesting with Docker Compose. The README screenshots are framed with a shadow; the
+  first one is cropped and has no caption.
 
 ## [0.6.0] - 2026-11-19
 

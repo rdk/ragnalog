@@ -81,13 +81,33 @@ jobs:
               --notes-file "$RUNNER_TEMP/notes.md"
           fi
 
+      - name: Set up QEMU (arm64 image)
+        uses: docker/setup-qemu-action@v4
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Container image
         shell: bash
         run: |
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          version="${{ steps.meta.outputs.version }}"
           echo "${{ github.token }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
-          # one image manifest, no attestation index
-          docker build --provenance=false \
-            -t "$image:${{ steps.meta.outputs.version }}" -t "$image:latest" .
-          docker push "$image:${{ steps.meta.outputs.version }}"
-          docker push "$image:latest"
+          # OCI metadata as labels of both images and annotations of the index (ghcr shows
+          # the index's on the package page); values without commas
+          meta=(
+            "org.opencontainers.image.title=ragnalog"
+            "org.opencontainers.image.description=Atlassian Data Center log analyzer: web app and CLI"
+            "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY"
+            "org.opencontainers.image.licenses=Apache-2.0"
+            "org.opencontainers.image.version=$version"
+            "org.opencontainers.image.revision=$(git rev-parse HEAD)"
+          )
+          args=()
+          for m in "${meta[@]}"; do args+=(--label "$m" --annotation "index:$m"); done
+          # one index of the amd64 and arm64 images, no attestations (ghcr refused to tag an
+          # attested index)
+          docker buildx build --platform linux/amd64,linux/arm64 --provenance=false --sbom=false \
+            "${args[@]}" -t "$image:$version" -t "$image:latest" --push .
