@@ -8,10 +8,13 @@ with the same documents as `ragnalog --output json`, so a human and an agent
 can work from the same data.
 
 ```sh
-uv sync --extra web                      # or install a release: README, Quick start
+uv sync --extra web                      # or install a release: install.md
 ragnalog --store ~/ragnalog-data serve     # http://127.0.0.1:8321/
 ragnalog serve --host 0.0.0.0 --token "$(openssl rand -hex 16)"    # on a network
 ```
+
+The container image runs the same server; [`install.md`](install.md#docker) has the
+`docker run` and Compose setup.
 
 | Flag | Env | Default |
 |---|---|---|

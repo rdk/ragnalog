@@ -21,8 +21,10 @@ CI runs on every push to `main`, but check locally before every release anyway.
 2. **Bump the version** everywhere it is quoted:
    - `pyproject.toml` (`version`) and `src/ragnalog/_version.py`;
    - `uv.lock`: run `uv lock` (it rewrites the package's own `version` line);
-   - `README.md`: the release badge, the Docker image tags, the `git+https …@vX.Y.Z` install
-     and the wheel's download URL (`releases/download/vX.Y.Z/ragnalog-X.Y.Z-…`);
+   - `README.md`: the release badge, the Docker image tag and the wheel's download URL
+     (`releases/download/vX.Y.Z/ragnalog-X.Y.Z-…`);
+   - `docs/install.md`: the Docker image tags, the wheel's download URL and the
+     `git+https …@vX.Y.Z` install;
    - `docs/cli.md` (the `manifest.v1` and `version.v1` examples) and `docs/report.md`
      (`tool_version` in the payload example).
 

@@ -1,8 +1,8 @@
 """The version is written in one place (pyproject.toml); everything that quotes it must agree.
 
 A release bumps them together (see RELEASING.md); these tests catch the one that was missed:
-the README's release badge, install and Docker commands, the version examples in the docs
-and the CHANGELOG section of the release.
+the README's release badge, install and Docker commands, those in docs/install.md, the
+version examples in the docs and the CHANGELOG section of the release.
 """
 
 import re
@@ -21,6 +21,11 @@ V = r"(\d+\.\d+\.\d+)"
 QUOTED = {
     "README.md": [
         rf"badge/release-v{V}-",
+        rf"ragnalog:{V}\b",
+        rf"releases/download/v{V}/",
+        rf"ragnalog-{V}-py3",
+    ],
+    "docs/install.md": [
         rf"ragnalog:{V}\b",
         rf"ragnalog\.git@v{V}\b",
         rf"releases/download/v{V}/",

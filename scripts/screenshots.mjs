@@ -8,9 +8,11 @@
 //
 // Needs Node 22+ (global WebSocket) and Edge or Chrome; RAGNALOG_BROWSER names the browser
 // when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 before the
-// shadow). Writes hero-light, hero-dark, drawer, cluster, triage and entries .png, each with
-// rounded corners and a soft shadow baked in on a transparent background, since GitHub drops
-// CSS from READMEs. The hero shots are cut below the table of groups (bottom margin = side
+// shadow). Writes hero-light and hero-dark (the README picks one by the reader's theme) and
+// one gallery shot per page in a fixed theme, two of each: drawer-dark, cluster-light,
+// triage-light, entries-dark. Each has rounded corners and a soft shadow baked in on a
+// transparent background, since GitHub drops CSS from READMEs. The hero shots are cut below
+// the table of groups and the triage shot below its last section (bottom margin = side
 // margin).
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -87,12 +89,13 @@ const withShadow = async (png, h, dark) => {
   return out;
 };
 const shots = [];
-// cropBelow: cut the shot below that element, leaving the margin it has on its left side.
+// cropBelow: cut the shot below the last element it matches, leaving the margin that element
+// has on its left side.
 const shot = async (name, { cropBelow = null } = {}) => {
   const loaded = {
-    "hero-light": '#t-body tr', "hero-dark": '#t-body tr', drawer: '#drawer .entry',
+    hero: '#t-body tr', drawer: '#drawer .entry',
     cluster: '#c-timeline svg', triage: '.triage-sec', entries: '#e-body .entry',
-  }[name];
+  }[name.replace(/-(light|dark)$/, "")];
   const deadline = Date.now() + 15000;
   while (!(await evaluate(`!!document.querySelector(${JSON.stringify(loaded)})`))) {
     if (Date.now() >= deadline) throw new Error(`Content did not load for ${name}`);
@@ -108,7 +111,7 @@ const shot = async (name, { cropBelow = null } = {}) => {
   }
   if (await evaluate("devicePixelRatio") !== DPR) throw new Error(`Unexpected DPR for ${name}`);
   const h = cropBelow ? await evaluate(`(() => {
-    const r = document.querySelector(${JSON.stringify(cropBelow)}).getBoundingClientRect();
+    const r = [...document.querySelectorAll(${JSON.stringify(cropBelow)})].at(-1).getBoundingClientRect();
     return Math.min(${H}, Math.ceil(r.bottom + r.left)); })()`) : H;
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
   const png = Buffer.from(res.result.data, "base64");
@@ -143,22 +146,25 @@ try {
     await go(`${base}/sets/${node2.id}`);
     await shot(`hero-${t}`, { cropBelow: "#groups" });
   }
-  await theme("light");
+  // the gallery: two shots in each theme, alternating across the README's 2x2 grid
+  await theme("dark");
   await go(`${base}/sets/${node2.id}`);
   if (!(await clickRow("Sync of directory"))) throw new Error("the outage group was not found");
   await sleep(2500);
-  await shot("drawer");
+  await shot("drawer-dark");
   const href = await evaluate(`(() => { const a = [...document.querySelectorAll("#drawer a")]
     .find((x) => /\\/entries\\?/.test(x.getAttribute("href") || "")); return a ? a.href : null; })()`);
+  await theme("light");
   await go(`${base}/captures/capture:${node2.capture}`, 6000);
-  await shot("cluster");
+  await shot("cluster-light");
   await go(`${base}/sets/${node1.id}/triage`);
-  await shot("triage");
+  await shot("triage-light", { cropBelow: ".triage-sec" });
   if (!href) throw new Error("the drawer has no link to the group's entries");
+  await theme("dark");
   await go(href, 5000);
   await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);
   await sleep(2000);
-  await shot("entries");
+  await shot("entries-dark");
   await writeShots();
   if (errors.length) console.error("page errors:", errors);
 } finally {

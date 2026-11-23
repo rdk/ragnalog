@@ -43,11 +43,13 @@ tests/
   browser/                   smoke tests of every web page in headless Edge/Chrome on the
                              demo logs (smoke.mjs; skip without Node 22+ or a browser)
   test_version.py            every quoted version (README, docs, CHANGELOG) = pyproject
-docs/        requirements, research, design, cli reference,
-             formats/*.v1.md and *.v1.schema.json (generated), img/ (README screenshots)
+docs/        install, cli reference, webapp, agents; design notes (requirements, research,
+             design, report, cluster); formats/*.v1.md and *.v1.schema.json (generated),
+             img/ (README screenshots, light and dark)
 scripts/     demo_logs.py (synthetic demo logs), screenshots.mjs (docs/img from them),
              make_fixture.py (cut and mask a fixture from a real log)
 RELEASING.md how to cut a release (version strings, tag, release workflow, pitfalls)
+CONTRIBUTING.md  checks, screenshots, reporting a parsing problem without real logs
 ```
 
 ## Dependency direction

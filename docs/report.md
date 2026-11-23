@@ -5,9 +5,10 @@ Status: design 2026-10-29, implemented in `ragnalog.report`.
 `ragnalog report SET` renders one analysed log set (optionally compared with a
 second one) into a **single self-contained HTML file**: no network requests, no
 CDN, works from a file share or an e-mail attachment, in light and dark mode.
-It is the static precursor of the future FastAPI app: the page consumes a
-`report.v1` JSON payload that the web app will later serve from an endpoint, so
-the front-end is written against the payload, never against the stored data.
+It came before the web app, which now shows the same page: the page consumes a
+`report.v1` JSON payload, embedded in the file or fetched from
+`/api/sets/{id}/report`, so the front-end is written against the payload, never
+against the stored data.
 
 ## 1. Payload (`report.v1`)
 
@@ -371,7 +372,7 @@ src/ragnalog/report/
 ```
 
 Dependency direction unchanged: `report` → `store` → `core`; `cli` → `report`.
-The future `webapp` serves `assets/` statically (`asset_text(name)`) and
+The `webapp` serves `assets/` statically (`asset_text(name)`) and
 `payload.py` output from an API route; its page is
 `render_html(data_url=..., inline_assets=False)`: an empty `#report-data`
 element, `data-report-url` on `<html>` and `<link>`/`<script src>` under
