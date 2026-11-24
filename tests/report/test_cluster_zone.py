@@ -71,7 +71,7 @@ def _run(zone: str, tmp_path: Path) -> Any:
     return json.loads(proc.stdout)
 
 
-def test_utc_is_the_default_and_unshifted(tmp_path: Path) -> None:
+def test_utc_is_unshifted(tmp_path: Path) -> None:
     utc = _run("Asia/Kolkata", tmp_path)["utc"]
     assert utc["ts16"] == "2026-10-25 00:15"
     assert utc["tsSec"] == "10-25 00:15:07"

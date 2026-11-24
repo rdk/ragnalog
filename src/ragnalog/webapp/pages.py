@@ -99,7 +99,7 @@ def _fmt_range(first: Any, last: Any) -> Markup:
     """``first → last`` (UTC) to the minute; the end drops the year (and date) it shares.
 
     The ISO ends ride along (``data-a``/``data-b``) so the page can show them in the
-    viewer's time zone when that preference is set (``webapp.js``, as in the report).
+    viewer's time zone, the default unless UTC is chosen (``webapp.js``, as in the report).
     """
     a, b = _ts_text(first), _ts_text(last)
     text = html.escape(_range_text(a, b))

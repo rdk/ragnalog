@@ -224,10 +224,11 @@ remove, or "Remove all filters".
   cluster of new groups; clicking a dot narrows the table to that hour sorted by
   first seen, the groups that started in it listed first. With a window the label
   says how many groups started in it (a button sorts by first seen).
-- Time zone: the header button switches every printed time, axis label and tooltip
-  between UTC and the browser's time zone (shown by its short name, e.g. CET). It
-  is a viewer preference like the theme (kept in `localStorage`, shared with the
-  cluster page; `tz=local|utc` in a link wins); the window in the hash stays UTC.
+- Time zone: every printed time, axis label and tooltip is in the browser's time zone
+  (shown by its short name, e.g. CET) or, switched with the header button, in UTC. It
+  is a viewer preference like the theme (the browser's zone until UTC is chosen; kept
+  in `localStorage`, shared with the cluster page; `tz=local|utc` in a link wins); the
+  window in the hash stays UTC.
 - Sort *Spike*: with a window, the group's rate in it over its rate outside it
   ("what started at 14:00?"); without one, its busiest hour over its average
   hour over the whole set (a group seen in one hour only is a spike). The ratio shows under the count (`×37`).
@@ -409,8 +410,8 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
 **Layout.**
 
 - Header, one row: cluster, window mode and range, group counts, the clock-skew
-  estimate ("estimate, not applied"), time zone toggle (UTC or
-  the browser's zone by its short name, as on the set report: every printed time, axis
+  estimate ("estimate, not applied"), time zone toggle (the browser's zone by its
+  short name, the default, or UTC, as on the set report: every printed time, axis
   tick and tooltip follows it; same `localStorage` key, `tz=local|utc` in a link wins,
   the window in the hash stays UTC), theme toggle, full width, help, and the "⋯" menu
   (identifiers & CLI, JSON download; for scripts and agents). A capture across a DST

@@ -101,8 +101,8 @@ ragnalog label SET --node NODE1 --cluster jira-test [--capture ID]    # existing
 ## 4. Time
 
 - All times stay UTC. Each node keeps its `tz_offset` per entry. The cluster
-  page can show them in the browser's time zone (a viewer preference; data and
-  links stay UTC).
+  page shows them in the browser's time zone or in UTC (a viewer preference,
+  the browser's zone by default; data and links stay UTC).
 - **Coverage.** Nodes rotate logs independently. In a 7-day export, one
   node's oldest kept line can be 12 hours later than the other's because its
   logs filled up faster. A group that seems to exist "only on NODE2" can

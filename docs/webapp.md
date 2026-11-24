@@ -60,10 +60,11 @@ reveals coverage metadata and the explanation of the baseline choice, while
 warnings remain visible. Report totals are under *Set details*, advanced report
 filters under *More filters*, and secondary cluster controls under *Chart options*.
 
-Pages print times in UTC; the header's zone button (and the report's and
-cluster page's own) switches them to the browser's time zone. It is one viewer
-preference for every page (`localStorage`, like the theme); links, windows in the
-hash and `/api` parameters stay UTC.
+Pages show times in the browser's time zone (the server prints UTC and the page
+converts it); the header's zone button (and the report's and cluster page's own)
+switches them to UTC. It is one viewer preference for every page (`localStorage`,
+like the theme; the browser's zone until UTC is chosen); links, windows in the hash
+and `/api` parameters stay UTC.
 
 The palette button beside the light/dark toggle switches between **Classic**, **Aurora**
 and **Mineral** without changing the compact layout. Aurora is the default when no valid

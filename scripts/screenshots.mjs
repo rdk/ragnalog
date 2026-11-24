@@ -140,7 +140,8 @@ try {
   const node1 = sets.find((s) => s.name === "week_node1"), node2 = sets.find((s) => s.name === "week_node2");
   if (!node1 || !node2) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");
   await go(`${base}/`);
-  await evaluate('localStorage.clear(); localStorage.setItem("ragnalog-skin", "aurora")');
+  // times in UTC, not the browser's zone (the default), so the shots do not depend on the machine
+  await evaluate('localStorage.clear(); localStorage.setItem("ragnalog-skin", "aurora"); localStorage.setItem("ragnalog-tz", "utc")');
   for (const t of ["light", "dark"]) {
     await theme(t);
     await go(`${base}/sets/${node2.id}`);

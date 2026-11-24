@@ -55,10 +55,10 @@
   // @zone: parseTs … tsFull (tests/report/test_cluster_zone.py runs this part and xTicks with node)
   const parseTs = (iso) => (iso == null || iso === "" ? NaN : Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1")));
   const isoOf = (ms) => (isNum(ms) ? new Date(ms).toISOString() : "");
-  // times show in UTC or, toggled, in the browser's time zone: a viewer preference shared with the
+  // times show in the browser's time zone or, toggled, in UTC: a viewer preference shared with the
   // set report (tz=local|utc in a link wins); windows in the hash and API parameters stay UTC
   const TZ_KEY = "ragnalog-tz";
-  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) === "local"; } catch { return false; } })();
+  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) !== "utc"; } catch { return true; } })();
   let TZ = "UTC";
   let TZ2 = false; // the shown zone changes its name inside the capture (a DST change)
   /** The browser zone's offset from UTC at instant ms, in ms (0 when times show in UTC). */

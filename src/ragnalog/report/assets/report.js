@@ -41,10 +41,10 @@
   }
   // @zone: parseTs … tsFull (tests/report/test_report_zone.py runs this part with node)
   const parseTs = (iso) => Date.parse(String(iso).replace(/(\.\d{3})\d+/, "$1"));
-  // times show in UTC or, toggled, in the browser's time zone: a viewer preference kept like the
+  // times show in the browser's time zone or, toggled, in UTC: a viewer preference kept like the
   // theme (tz=local|utc in a link wins); windows in the hash stay UTC either way
   const TZ_KEY = "ragnalog-tz";
-  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) === "local"; } catch { return false; } })();
+  let TZL = (() => { try { return localStorage.getItem(TZ_KEY) !== "utc"; } catch { return true; } })();
   let TZ = "UTC";
   /** The ISO time shifted into the shown zone (still printed with toISOString's layout). */
   function zoned(iso) {

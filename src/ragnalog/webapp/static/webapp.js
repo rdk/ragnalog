@@ -25,10 +25,10 @@
     setThemeLabel();
   }
 
-  // times: UTC or the viewer's zone, the preference the report and cluster pages share
+  // times: the viewer's zone (default) or UTC, the preference the report and cluster pages share
   const TZ_KEY = "ragnalog-tz";
-  let tzLocal = false;
-  try { tzLocal = localStorage.getItem(TZ_KEY) === "local"; } catch (e) { tzLocal = false; }
+  let tzLocal = true;
+  try { tzLocal = localStorage.getItem(TZ_KEY) !== "utc"; } catch (e) { tzLocal = true; }
   /** The ISO-like "YYYY-MM-DDTHH:MM" of ms in the shown zone. */
   const zoned = (ms) => new Date(tzLocal ? ms - new Date(ms).getTimezoneOffset() * 6e4 : ms).toISOString().slice(0, 16);
   function zoneName(ms) {

@@ -125,8 +125,8 @@ cluster's nodes collected together, such as one cluster log export.
 | **Cluster view** `/captures/CAPTURE` | the nodes side by side, cross-node moments, interactions and the merged log |
 
 Every page has a JSON twin under `/api` (OpenAPI at `/docs`): the same documents the CLI
-prints. Light and dark themes, UTC or local time and keyboard shortcuts (`?`); filters live
-in the URL, so a link reopens the same view. More in [`docs/webapp.md`](docs/webapp.md).
+prints. Light and dark themes, times in your time zone or UTC, and keyboard shortcuts (`?`);
+filters live in the URL, so a link reopens the same view. More in [`docs/webapp.md`](docs/webapp.md).
 
 ## CLI
 

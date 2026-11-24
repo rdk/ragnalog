@@ -11,6 +11,13 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Changed
+
+- Pages show times in the browser's time zone by default (for example CET) instead of UTC.
+  The zone button or `z` still switches to UTC, and a viewer who chose UTC keeps it. Links,
+  windows in the URL and `/api` parameters stay UTC.
+- New logo and tab icon: the serpent Jörmungandr around three log lines.
+
 ## [0.6.1] - 2026-11-21
 
 The repository is public, and the container image now runs natively on arm64 too. No change
