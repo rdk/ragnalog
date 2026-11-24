@@ -280,6 +280,26 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   - Selecting a group draws its per-node counts as a line over each band.
   - The brush on any band sets the window for every view, as the report's
     brush does now.
+  - **Zoom** (a toggle at the head of the timeline, on by default, prominent when
+    on): a drag zooms into the selection with finer bins, and the window of every
+    view follows it in whole buckets ("table: …" on the window bar); off, a drag sets
+    the window. Zoomed, `‹`/`›` and `[`/`]` move the zoom by its width, `+`/`-` zoom
+    in and out, *Reset zoom* shows the whole capture. **Undo** (left of Zoom, `u`)
+    steps back through window, zoom and bin changes, Clear included. **Bins** picks
+    the bin size: automatic (the finest with 5 px bars), or finer and coarser ones.
+    Bins of the payload's bucket (1 h or 15 min) and its multiples add up its counts;
+    finer ones (also the automatic bins of a capture shorter than a day) come from
+    `GET /api/captures/{ref}/timeline?bucket=…&since=…&until=…` (`urls.timeline`), the
+    selected group's line with `signature`; the static page stays at the payload's
+    bucket. At bins under it the cross-node moments and the per-bucket mention marks
+    are left out (the event glyphs and their arrows stay). In the hash: `z=` and
+    `bin=`, as on the report.
+  - **Grave errors** (`grave`): a red line through the node's lane and band at each
+    out of memory, stack overflow, other JVM error, exhausted resource (open files,
+    disk) or FATAL entry, a band over a run of them, and a red ⚠ badge in the node's
+    lane (OOM, STACK, JVM, LIMIT, FATAL; "×N" when markers are close). Hover: the
+    times, counts and the exception; click or Enter: the merged log at its first
+    entry. The legend's red button counts them and zooms to the first.
 - **Groups by node.** The report's table, filters and keyboard model, with
   one count-and-bar column per node; past 8 nodes, a heat strip. There are
   `spread` and `lead` chips, and filters `spread=only|skewed|all` and `node=`.
@@ -440,9 +460,11 @@ They match group templates, never raw text.
   "entries": { "<entry id>": { /* report.v1 entry shape */, "node": "NODE1", "set": "<set id>" } },
   "events": { /* events.v1 without "schema" */ },
   "interactions": { /* interactions.v1 without "schema" */ },
+  "grave": [ {"node": "NODE1", "kind": "oom", "ts": "…Z", "last_ts": "…Z", "count": 3,
+              "signature": "…", "entry_id": "…", "text": "java.lang.OutOfMemoryError: Java heap space"} ],
   "options": { "window": "overlap", "examples": 3, "max_raw": 4000, "max_groups": 500, "truncated_groups": 0 },
   "urls": null | { "entries": "/api/captures/{ref}/entries", "context": "/api/sets/{set}/entries/{id}/context?all_nodes=1&window=30s",
-                   "set_report": "/sets/{set}" }
+                   "set_report": "/sets/{set}", "timeline": "/api/captures/{ref}/timeline" }
 }
 ```
 

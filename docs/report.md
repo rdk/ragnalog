@@ -202,11 +202,15 @@ remove, or "Remove all filters".
     (the examples URL with `since`/`until`). The static file has only the
     stored examples, so it lists the ones inside the window first.
   - The compare column stays whole-set (its tooltip says so).
-- Zoom and bins: *Zoom in* on the window bar (or `+`) shows the window alone on the
-  timeline with finer bins; a drag on the zoomed chart zooms into the selection, `+`
-  into its middle third, `−` (or `-`) out to three times the width, and *Reset zoom*
-  back to the whole set (the window stays). Zoomed, `‹`/`›` and `[`/`]` move the zoom by
-  its own width. The window follows the zoom in whole hours (the table's counts are
+- Zoom and bins: **Zoom** at the head of the chart is a toggle, on by default and
+  filled when on: a drag on the chart zooms into the selection with finer bins (the
+  quick windows zoom too); off, a drag selects a window as before, and turning it on
+  zooms into the window. Zoomed, `+` zooms into the middle third, `−` (or `-`) out to
+  three times the width, *Reset zoom* back to the whole set (the window stays), and
+  `‹`/`›` and `[`/`]` move the zoom by its own width. **Undo** (left of Zoom, or `u`)
+  returns to the previous window, zoom and bins, one step at a time, also after
+  Clear (the viewer's toggle choice is kept in `localStorage`, shared with the
+  cluster page). The window follows the zoom in whole hours (the table's counts are
   per hour), and the bar says so ("table: 14:00 → 16:00"). The bin size is automatic,
   the finest whose bars keep 5 px (as the hourly chart always chose), and *Bins*
   picks another: finer down to 2 px a bar, or coarser, from 1 s to 7 d. A pick that
@@ -223,6 +227,17 @@ remove, or "Remove all filters".
   each group's first entry, and the listed groups' line (a search with no group
   open) is left out, with a note in the legend. Times on the axis and in the tooltip
   are 24-hour, as everywhere on the page.
+- Grave errors (`grave` in the payload, `report/grave.py`): entries whose exception
+  chain or message names an out of memory (`OutOfMemoryError`, GC overhead limit, no
+  native thread), a stack overflow, another JVM error, an exhausted resource (too
+  many open files, disk full), or that are logged at FATAL. The startup banner's JVM
+  options (`-XX:+HeapDumpOnOutOfMemoryError`) do not count. Entries of a kind within
+  60 s fold into one marker (first and last time, count; 500 a set at most, those with
+  the most entries). The chart draws each as a red line through the plot (a red band
+  over a run) with a red ⚠ badge above it (OOM, STACK, JVM, LIMIT, FATAL; "×N" for
+  markers less than 44 px apart); hover shows the times, counts and the exception,
+  click or Enter opens its group. The legend's red button counts them by kind and
+  zooms to the first; the group's row has a red pill.
 - Chart controls: each level in the timeline legend is a toggle (Shift-click
   shows only that level; `hl=WARN,INFO` in the hash). **Mute** (drawer button, or
   `m` on the selected row) leaves a group out of the chart and the window totals,

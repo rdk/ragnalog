@@ -61,7 +61,9 @@
     <div class="c-nodebar" id="c-cards" aria-label="Nodes"></div>
     <div class="card-head c-tl-head">
       <h2 id="tl-title">Entries per hour</h2>
+      <div class="tl-zoom" id="tl-zoom"></div>
       <div class="tl-window" id="tl-window"></div>
+      <div class="tl-bins" id="tl-bins"></div>
       <details class="chart-options disclosure" id="c-chart-options">
         <summary class="btn small">Chart options</summary>
         <div class="disclosure-panel tl-ctl">
@@ -167,15 +169,20 @@
     <dt><kbd>w</kbd></dt><dd>Full screen width / the centred page width (every page)</dd>
     <dt><kbd>c</kbd></dt><dd>Copy the selected signature</dd>
     <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page of groups</dd>
-    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window</dd>
+    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window (zoomed: earlier / later)</dd>
+    <dt><kbd>+</kbd> <kbd>-</kbd></dt><dd>Zoom the timeline into the window / out</dd>
+    <dt><kbd>u</kbd></dt><dd>Undo the last zoom or window change (also after Clear)</dd>
     <dt><kbd>1</kbd> <kbd>2</kbd> <kbd>3</kbd></dt><dd>Groups / Interactions / Merged log</dd>
     <dt><kbd>?</kbd></dt><dd>This help</dd>
   </dl>
-  <p class="muted">Timeline: drag across any band to set the time window of every view; click to clear.
+  <p class="muted">Timeline: with Zoom on (the default) a drag across any band zooms into the selection
+  with finer bins, the time window of every view following it; with Zoom off a drag sets the window,
+  a click clears it. Undo steps back; Bins picks a finer or coarser bin size. Red ⚠ markers show
+  grave errors (out of memory, stack overflow, FATAL …) on their node: click one for the merged log.
   Hover an event glyph for its text; click it to open the merged log at that moment.
   The thin "together" lane marks cross-node moments (two or more nodes far above their usual errors);
   click one, or Tab to it and press Enter, to open ±30 s on all nodes around its busiest moment.
-  The view (tab, filters, window, selection, y-scale) is kept in the URL — bookmark or paste it.</p>
+  The view (tab, filters, window, zoom, bins, selection, y-scale) is kept in the URL — bookmark or paste it.</p>
   <form method="dialog"><button class="btn small">Close</button></form>
 </dialog>
 <pre id="fatal" hidden></pre>

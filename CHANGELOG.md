@@ -21,6 +21,16 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
   `bin=`).
 - `ragnalog timeline SET --by-level` and `GET /api/sets/{ref}/timeline?by_level=true`:
   each bucket's entries per level (`levels`), the series of the report's chart.
+- Cluster view: zoom and bins on the timeline, as on the set report (bins under the
+  payload's bucket from `GET /api/captures/{ref}/timeline`; `urls.timeline`).
+- Zoom is a toggle on both charts, on by default: a drag zooms into the selection; off,
+  it selects the window. **Undo** next to it steps back through window, zoom and bin
+  changes, also after Clear (`u`).
+- Grave errors: out of memory, stack overflow, other JVM errors, exhausted resources
+  (open files, disk) and FATAL entries are found per set (`report/grave.py`; `grave` in
+  `report.v1` and, per node, `cluster-report.v1`) and drawn as red lines, bands and ⚠
+  badges on the report's chart and the cluster timeline, with a red legend button and
+  a red pill on the group's row.
 
 ### Changed
 

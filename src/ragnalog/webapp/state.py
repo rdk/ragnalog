@@ -394,6 +394,7 @@ class AppState:
                 set_report="/sets/{set}",
                 examples="/api/sets/{set}/groups/{sig}/examples?max_raw=0",
                 raw="/sets/{set}/entries/{id}/raw",
+                timeline=f"/api/captures/{target}/timeline",
             )
             return _ENCODER.encode(payload)
 

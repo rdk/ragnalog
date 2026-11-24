@@ -55,6 +55,13 @@
       "description": "interactions.v1 without schema.",
       "$ref": "#/$defs/ClusterInteractionsBody"
     },
+    "grave": {
+      "description": "Grave errors of every node in the window, by time, then node (at most 500 a node).",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/GraveMarker"
+      }
+    },
     "options": {
       "description": "Build options.",
       "$ref": "#/$defs/ClusterReportOptions"
@@ -82,6 +89,7 @@
     "entries",
     "events",
     "interactions",
+    "grave",
     "options",
     "urls"
   ],
@@ -797,6 +805,18 @@
             }
           ],
           "default": null
+        },
+        "timeline": {
+          "description": "The capture's timeline API: the page's bins under the payload's bucket.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [
@@ -1121,6 +1141,54 @@
       "required": [
         "node",
         "kind"
+      ]
+    },
+    "GraveMarker": {
+      "title": "GraveMarker",
+      "description": "Grave errors of one kind close together: what a chart marks loudly (report/grave.py).",
+      "type": "object",
+      "properties": {
+        "kind": {
+          "description": "oom (OutOfMemoryError, GC overhead limit, no native thread), stack_overflow, jvm_error (another VirtualMachineError), resource (too many open files, disk full) or fatal (any other FATAL entry).",
+          "type": "string"
+        },
+        "ts": {
+          "description": "Time of its first entry.",
+          "type": "string"
+        },
+        "last_ts": {
+          "description": "Time of its last entry (= ts when count is 1).",
+          "type": "string"
+        },
+        "count": {
+          "description": "Entries folded into the marker: same kind, each within 60 s of the previous.",
+          "type": "integer"
+        },
+        "signature": {
+          "description": "Group signature of the first entry.",
+          "type": "string"
+        },
+        "entry_id": {
+          "description": "Id of the first entry.",
+          "type": "string"
+        },
+        "text": {
+          "description": "The grave exception's type and the outermost message, else the template, at most 200 characters.",
+          "type": "string"
+        },
+        "node": {
+          "description": "Node id (cluster-report.v1 only).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "kind",
+        "ts",
+        "last_ts",
+        "count",
+        "signature",
+        "entry_id",
+        "text"
       ]
     },
     "JobRuns": {

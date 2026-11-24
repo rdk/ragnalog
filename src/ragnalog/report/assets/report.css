@@ -887,7 +887,7 @@ html[data-wide] .d-sec .entry .e-body { max-height: 60vh; }
   .filters { display: block !important; position: static; border: 0; padding: 0; margin: 0 0 8px; }
   .filters > .f-row { display: none; }
   .print-only { display: block; color: #52514e; font-size: 12px; }
-  .tl-clip, .tl-bins, .d-nav, .tl-window .seg, .tl-window .btn, .tl-window > .muted { display: none !important; }
+  .tl-clip, .tl-bins, .tl-zoom, .d-nav, .tl-window .seg, .tl-window .btn, .tl-window > .muted { display: none !important; }
   .drawer, .top-actions, .pager, .tooltip, .toast, .hit, .hover-band, #fatal { display: none !important; }
   body.drawer-open .body { grid-template-columns: minmax(0, 1fr); }
   .card, .tile, table.groups { border-color: #ccc; }
@@ -1007,14 +1007,37 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report .win-k { margin-right: var(--s1); }
 .report .tl-clip { margin-left: 0; }
 /* the chart's bins menu: a small boxed select like the filters' (label inside) */
-.report .tl-bins .sel { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding-left: var(--s2); gap: var(--s1); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); }
-.report .tl-bins .sel:hover { background: var(--hover); }
-.report .tl-bins .sel:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
-.report .tl-bins .sel select { height: calc(var(--ctl-h-sm) - 2px); border: 0; background: transparent; padding: 0 2px 0 0; outline: 0; cursor: pointer; font-size: var(--fs-meta); field-sizing: content; }
+:is(.report, .cluster) .tl-bins .sel { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding-left: var(--s2); gap: var(--s1); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); }
+:is(.report, .cluster) .tl-bins .sel:hover { background: var(--hover); }
+:is(.report, .cluster) .tl-bins .sel:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+:is(.report, .cluster) .tl-bins .sel select { height: calc(var(--ctl-h-sm) - 2px); border: 0; background: transparent; padding: 0 2px 0 0; outline: 0; cursor: pointer; font-size: var(--fs-meta); field-sizing: content; }
 .report .tl-window .zoom-what .win-k { color: var(--blue); }
 .report .tl-window .win-hours { font-variant-numeric: tabular-nums; }
+/* Undo and the zoom toggle: the chart's main controls, next to its title; on, the toggle is filled */
+:is(.report, .cluster) .tl-zoom { display: inline-flex; gap: 4px; align-items: center; }
+:is(.report, .cluster) .tl-zoom .zbtn { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }
+:is(.report, .cluster) .tl-zoom .zbtn svg { flex: none; }
+:is(.report, .cluster) .tl-zoom .z-toggle[aria-pressed="true"] { background: var(--blue); border-color: var(--blue); color: #fff; box-shadow: 0 0 0 2px color-mix(in srgb, var(--blue) 22%, transparent); }
+:is(.report, .cluster) .tl-zoom .z-toggle[aria-pressed="true"]:hover { background: color-mix(in srgb, var(--blue) 86%, #000); }
+:is(.report, .cluster) .tl-zoom .z-undo:disabled { opacity: 0.45; cursor: default; }
+/* grave errors: loud on purpose, in both themes (a red that reads on light and dark) */
+:root { --grave: #e5383b; --grave-ink: #fff; --grave-wash: color-mix(in srgb, #e5383b 16%, transparent); }
+:is(.timeline, .c-timeline) .grave-line { stroke: var(--grave); stroke-width: 2; pointer-events: none; }
+:is(.timeline, .c-timeline) .grave-band { fill: var(--grave-wash); pointer-events: none; }
+:is(.timeline, .c-timeline) .grave-badge { cursor: pointer; }
+:is(.timeline, .c-timeline) .grave-badge rect { fill: var(--grave); stroke: color-mix(in srgb, var(--grave) 70%, #000); stroke-width: 1; }
+:is(.timeline, .c-timeline) .grave-badge text { fill: var(--grave-ink); font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; pointer-events: none; }
+:is(.timeline, .c-timeline) .grave-badge:hover rect, :is(.timeline, .c-timeline) .grave-badge:focus-visible rect { fill: color-mix(in srgb, var(--grave) 82%, #000); }
+:is(.timeline, .c-timeline) .grave-badge:focus-visible { outline: none; }
+:is(.timeline, .c-timeline) .grave-badge:focus-visible rect { stroke: var(--ink); stroke-width: 2; }
+.grave-key { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl-h-sm); padding: 0 8px; border-radius: var(--r-sm); border: 1px solid var(--grave); background: var(--grave); color: var(--grave-ink); font-weight: 700; font-size: var(--fs-meta); cursor: pointer; }
+.grave-key:hover { background: color-mix(in srgb, var(--grave) 84%, #000); }
+.grave-pill { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: 3px; background: var(--grave); color: var(--grave-ink); font-size: 10.5px; font-weight: 700; line-height: 16px; vertical-align: 1px; }
+.tooltip .grave-h { color: var(--grave); }
+.tooltip .grave-row b { background: var(--grave); color: var(--grave-ink); border-radius: 3px; padding: 0 4px; font-size: 10.5px; }
+.tooltip .grave-tag { background: var(--grave); color: var(--grave-ink); border-radius: 3px; padding: 0 4px; font-size: 10.5px; font-weight: 700; }
 /* bins under an hour arrive from the server: the chart drawn so far fades until they are in */
-.timeline.loading > svg { opacity: 0.45; transition: opacity 0.15s; }
+:is(.timeline, .c-timeline).loading > svg { opacity: 0.45; transition: opacity 0.15s; }
 .report .card .seg button { height: calc(var(--ctl-h-sm) - 2px); background: transparent; color: var(--ink-2); }
 .report .card .seg button:hover { background: var(--hover); }
 .report .timeline { min-height: 0; }

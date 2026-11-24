@@ -16,7 +16,7 @@ from ragnalog.store import Store
 
 TOP_KEYS = {
     "schema", "generated_at", "tool_version", "options", "logset", "stats", "timeline",
-    "groups", "entries", "merges", "compare",
+    "groups", "entries", "merges", "compare", "grave",
 }  # fmt: skip
 GROUP_KEYS = {
     "signature", "template", "level", "level_name", "logger",

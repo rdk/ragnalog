@@ -740,6 +740,34 @@ class ReportOptions(Struct, kw_only=True):
     truncated_groups: Annotated[int, _d("Groups cut by max_groups.")]
 
 
+class GraveMarker(Struct, kw_only=True):
+    """Grave errors of one kind close together: what a chart marks loudly (report/grave.py)."""
+
+    kind: Annotated[
+        str,
+        _d(
+            "oom (OutOfMemoryError, GC overhead limit, no native thread), stack_overflow, "
+            "jvm_error (another VirtualMachineError), resource (too many open files, disk "
+            "full) or fatal (any other FATAL entry)."
+        ),
+    ]
+    ts: Annotated[str, _d("Time of its first entry.")]
+    last_ts: Annotated[str, _d("Time of its last entry (= ts when count is 1).")]
+    count: Annotated[
+        int, _d("Entries folded into the marker: same kind, each within 60 s of the previous.")
+    ]
+    signature: Annotated[str, _d("Group signature of the first entry.")]
+    entry_id: Annotated[str, _d("Id of the first entry.")]
+    text: Annotated[
+        str,
+        _d(
+            "The grave exception's type and the outermost message, else the template, "
+            "at most 200 characters."
+        ),
+    ]
+    node: Annotated[str, _d("Node id (cluster-report.v1 only).")] | UnsetType = UNSET
+
+
 class Report(Struct, kw_only=True, tag_field="schema", tag="report.v1"):
     """The HTML report's payload (envelope; docs/formats/report.v1.md has the parts)."""
 
@@ -753,6 +781,9 @@ class Report(Struct, kw_only=True, tag_field="schema", tag="report.v1"):
     entries: Annotated[dict[str, dict[str, Any]], _d("Example entries by id.")]
     merges: Annotated[list[dict[str, Any]], _d("Drain3 proposals within the groups.")]
     compare: Annotated[dict[str, Any] | None, _d("Comparison with --compare; null without.")]
+    grave: Annotated[
+        list[GraveMarker], _d("Grave errors by time (at most 500, those with most entries).")
+    ]
     entries_url: Annotated[str, _d("Web app: examples URL template.")] | UnsetType = UNSET
 
 
@@ -1216,6 +1247,9 @@ class ClusterReportUrls(Struct, kw_only=True):
         str | None, _d("A group's example entries on one node's set, in full (template).")
     ] = None
     raw: Annotated[str | None, _d("One entry's exact text as text/plain (template).")] = None
+    timeline: Annotated[
+        str | None, _d("The capture's timeline API: the page's bins under the payload's bucket.")
+    ] = None
 
 
 class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-report.v1"):
@@ -1238,6 +1272,10 @@ class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-repor
     ]
     events: Annotated[ClusterEventsBody, _d("events.v1 without schema.")]
     interactions: Annotated[ClusterInteractionsBody, _d("interactions.v1 without schema.")]
+    grave: Annotated[
+        list[GraveMarker],
+        _d("Grave errors of every node in the window, by time, then node (at most 500 a node)."),
+    ]
     options: Annotated[ClusterReportOptions, _d("Build options.")]
     urls: Annotated[ClusterReportUrls | None, _d("null; the web app fills it.")]
 

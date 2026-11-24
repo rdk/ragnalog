@@ -134,6 +134,15 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `interactions.jobs` | `list<JobRuns>` | yes | Job ownership: job_run events per node, most nodes first; at most 100. |
 | `interactions.jobs[].job` | `string` | yes | Job key. |
 | `interactions.jobs[].runs` | `map<string, integer>` | yes | job_run events by node. |
+| `grave` | `list<GraveMarker>` | yes | Grave errors of every node in the window, by time, then node (at most 500 a node). |
+| `grave[].kind` | `string` | yes | oom (OutOfMemoryError, GC overhead limit, no native thread), stack_overflow, jvm_error (another VirtualMachineError), resource (too many open files, disk full) or fatal (any other FATAL entry). |
+| `grave[].ts` | `string` | yes | Time of its first entry. |
+| `grave[].last_ts` | `string` | yes | Time of its last entry (= ts when count is 1). |
+| `grave[].count` | `integer` | yes | Entries folded into the marker: same kind, each within 60 s of the previous. |
+| `grave[].signature` | `string` | yes | Group signature of the first entry. |
+| `grave[].entry_id` | `string` | yes | Id of the first entry. |
+| `grave[].text` | `string` | yes | The grave exception's type and the outermost message, else the template, at most 200 characters. |
+| `grave[].node` | `string` | no | Node id (cluster-report.v1 only). |
 | `options` | `ClusterReportOptions` | yes | Build options. |
 | `options.window` | `"explicit" \| "overlap" \| "union"` | yes | Window mode. |
 | `options.examples` | `integer` | yes | Example entries per group and node. |
@@ -146,3 +155,4 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `urls.set_report` | `string` | yes | Report page of one node's set (template). |
 | `urls.examples` | `string \| null` | no | A group's example entries on one node's set, in full (template). |
 | `urls.raw` | `string \| null` | no | One entry's exact text as text/plain (template). |
+| `urls.timeline` | `string \| null` | no | The capture's timeline API: the page's bins under the payload's bucket. |

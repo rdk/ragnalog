@@ -88,6 +88,7 @@ from ragnalog.service.documents import (
     Entries,
     EventPair,
     EventSide,
+    GraveMarker,
     JobRuns,
     MatrixNodeCount,
     MatrixRow,
@@ -1851,6 +1852,7 @@ def cluster_payload(
 
     from ragnalog import __version__
     from ragnalog.report import example_entries
+    from ragnalog.report.grave import grave_markers
 
     for name, value in (("examples", examples), ("max_raw", max_raw), ("max_groups", max_groups)):
         if value < 0:
@@ -1870,6 +1872,14 @@ def cluster_payload(
         ids = _example_ids(db, window, signatures, examples)
         events_body = _events_body(db, window)
         interactions_body = _interactions(db, window, 300)
+    grave = sorted(
+        (
+            GraveMarker(**g, node=m.node)
+            for m in capture.nodes
+            for g in grave_markers(m.logset, since=_dt(since), until=_dt(until))
+        ),
+        key=lambda g: (g.ts, g.node),
+    )
     entries: dict[str, dict[str, Any]] = {}
     for m in capture.nodes:
         wanted = [i for per_node in ids.values() for i in per_node.get(m.node, [])]
@@ -1897,6 +1907,7 @@ def cluster_payload(
         entries=entries,
         events=events_body,
         interactions=interactions_body,
+        grave=grave,
         options=ClusterReportOptions(
             window=window.mode,
             examples=examples,

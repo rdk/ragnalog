@@ -558,6 +558,7 @@ def test_cluster_payload(capture: C.Capture, window: C.Window) -> None:
         "entries",
         "events",
         "interactions",
+        "grave",
         "options",
         "urls",
     ]

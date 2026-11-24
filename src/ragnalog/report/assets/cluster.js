@@ -245,6 +245,75 @@
     return a <= b ? [a, b] : null;
   })();
   const WIN_NAME = WMODE === "overlap" ? "overlap window" : WMODE === "union" ? "union window" : "window";
+  // ---- zoom and bins: the timeline shows a range [a, b) in ms (S.z, else the capture) in bins of a
+  // size (S.bin, else automatic). Bins of the base bucket (an hour, or 15 min) and its multiples
+  // add up the payload's counts; finer ones come from the capture's timeline API (web app only).
+  const TL_URL = URLS ? str(URLS.timeline || str(URLS.entries).replace(/\/entries(?=$|\?)/, "/timeline")) : "";
+  const FINE = !!(TL_URL && NB);
+  const BASE_KS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 96, 168, 336];
+  const SIZES = [...(FINE ? [1e3, 5e3, 1e4, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5].filter((ms) => ms < BMS) : []), ...BASE_KS.map((k) => k * BMS)];
+  const sizeKey = (ms) => (ms % 864e5 === 0 ? ms / 864e5 + "d" : ms % 3.6e6 === 0 ? ms / 3.6e6 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : Math.round(ms / 1e3) + "s");
+  const keyMs = (k) => { const m = /^(\d+)([smhd])$/.exec(k || ""); return m ? +m[1] * { s: 1e3, m: 6e4, h: 3.6e6, d: 864e5 }[m[2]] : 0; };
+  /** A bin size in the bins menu: "5 s", "15 min", "3 h", "1 d". */
+  const sizeShort = (ms) => sizeKey(ms).replace(/^(\d+)([smhd])$/, (_, n, u) => n + " " + (u === "m" ? "min" : u));
+  /** What one bin is, for the chart's title: "hour", "15 min", "5 s", "2 hours", "day". */
+  const sizeLabel = (ms) => (ms === 3.6e6 ? "hour" : ms === 864e5 ? "day" : ms < 6e4 ? Math.round(ms / 1e3) + " s"
+    : ms < 3.6e6 ? Math.round(ms / 6e4) + " min" : ms % 864e5 === 0 ? ms / 864e5 + " days" : Math.round((ms / 3.6e6) * 10) / 10 + " hours");
+  /** A zoom range inside the capture's timeline, or null (the whole timeline, or under 10 s). */
+  function clampZoom(z) {
+    if (!z || !NB || !isNum(TA)) return null;
+    let [a, b] = z;
+    if (!(isNum(a) && isNum(b))) return null;
+    if (a > b) [a, b] = [b, a];
+    a = Math.max(TA, a);
+    b = Math.min(TE, b);
+    return b - a < 1e4 || (a <= TA && b >= TE) ? null : [a, b];
+  }
+  /** The base buckets [first, last] covering the times [a, b): the window of a zoom. */
+  const bucketsCovering = (a, b) => [Math.max(0, Math.floor((a - TA) / BMS)), Math.min(NB - 1, Math.ceil((b - TA) / BMS) - 1)];
+  // the zoom toggle: on (the default), a drag on the timeline zooms into the selection; off, it
+  // selects the time window. A viewer preference shared with the set report.
+  const ZS_KEY = "ragnalog-dragzoom";
+  let ZOOMSEL = (() => { try { return localStorage.getItem(ZS_KEY) !== "0"; } catch { return true; } })();
+  /** Earlier timeline views (window, zoom, bin) for Undo, the newest last; Clear is undone too. */
+  const UNDO = [];
+  const viewKey = (s) => JSON.stringify([s.t || null, s.z || null, s.bin || ""]);
+  /** Bins of k base buckets over the buckets [ia, ib). */
+  function baseFrame(ia, ib, k) {
+    return {
+      kind: "base", ia, ib, k, size: k * BMS, nb: Math.max(1, Math.ceil((ib - ia) / k)), a: TA + ia * BMS, b: TA + ib * BMS,
+      binOf: (i) => Math.floor((i - ia) / k),
+      start: (b) => TA + (ia + b * k) * BMS,
+      end: (b) => Math.min(TA + ib * BMS, TA + (ia + (b + 1) * k) * BMS),
+    };
+  }
+  /** Bins of size ms (under the base bucket) over [a, b), aligned to the epoch as the server counts them. */
+  function fineFrame(a, b, size) {
+    const a0 = Math.floor(a / size) * size, b0 = Math.ceil(b / size) * size;
+    return { kind: "fine", k: 0, size, nb: Math.max(1, Math.round((b0 - a0) / size)), a: a0, b: b0, binOf: null,
+      start: (i) => a0 + i * size, end: (i) => a0 + (i + 1) * size };
+  }
+  /** "2026-10-29 14:05 – 14:10 CET" of bin b of a frame; seconds under a minute; each end's zone
+      when they differ (the repeated hour of a DST change). */
+  function frameRange(fr, b) {
+    const a = fr.start(b), e = Math.min(fr.end(b), Math.max(TE, a));
+    const n = fr.size < 6e4 ? 19 : 16;
+    const s = zoned(isoOf(a)), t = zoned(isoOf(e));
+    const za = zAt(a), zb = zAt(e);
+    return s.slice(0, 10) + " " + s.slice(11, n) + (za === zb ? "" : " " + za) + " – " +
+      (t.slice(0, 10) === s.slice(0, 10) ? "" : t.slice(5, 10) + " ") + t.slice(11, n) + " " + zb;
+  }
+  // grave errors (report/grave.py): out of memory, a stack overflow, a JVM error, an exhausted
+  // resource or FATAL, per node, entries of a kind within 60 s folded into one marker
+  const GRAVE_KINDS = ["oom", "stack_overflow", "jvm_error", "resource", "fatal"];  // most grave first
+  const GRAVE_LABEL = { oom: "Out of memory", stack_overflow: "Stack overflow", jvm_error: "JVM error", resource: "Resource exhausted", fatal: "FATAL" };
+  const GRAVE_TAG = { oom: "OOM", stack_overflow: "STACK", jvm_error: "JVM", resource: "LIMIT", fatal: "FATAL" };
+  const GRAVE = arr(D.grave).map((g) => ({
+    node: str(g.node), kind: Object.hasOwn(GRAVE_TAG, g.kind) ? g.kind : "fatal", ts: str(g.ts), last_ts: str(g.last_ts || g.ts),
+    ms: parseTs(g.ts), last: parseTs(g.last_ts || g.ts), count: num(g.count) || 1, sig: str(g.signature), entry: str(g.entry_id), text: str(g.text),
+  })).filter((g) => isNum(g.ms) && NIDX.has(g.node)).sort((a, b) => a.ms - b.ms);
+  const GRAVE_N = Object.fromEntries(NODES.map((n) => [n, GRAVE.filter((g) => g.node === n)]));
+  const graveTop = (items) => items.reduce((k, g) => (GRAVE_KINDS.indexOf(g.kind) < GRAVE_KINDS.indexOf(k) ? g.kind : k), items[0].kind);
 
   // groups
   function denseOf(pairs) {
@@ -399,6 +468,16 @@
   const windowText = (t, t0, unit) =>
     unit < 6e4 ? t[0] + "-" + t[1] : stamp(t0 + t[0] * unit) + "-" + stamp(t0 + (t[1] + 1) * unit);
   const parseWindow = (s) => windowOf(s, TA, BMS, NB);
+  // the timeline's zoom (z=20261029T1400-20261029T1530, UTC, seconds when needed) and bin (bin=5m)
+  const zstamp = (ms) => new Date(ms).toISOString().slice(0, 19).replace(/[-:]/g, "").replace(/(T\d{4})00$/, "$1");
+  function unzstamp(s) {
+    const m = /^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)?$/.exec(s);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : NaN;
+  }
+  function parseZoom(s) {
+    const m = /^(\d{8}T\d{4}(?:\d\d)?)-(\d{8}T\d{4}(?:\d\d)?)$/.exec(s || "");
+    return m ? clampZoom([unzstamp(m[1]), unzstamp(m[2])]) : null;
+  }
   const nodeList = (s) => (s ? s.split(",").filter((n) => NIDX.has(n)) : []);
   function parseHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
@@ -418,6 +497,8 @@
       sig: get("sig"),
       ex: get("ex"),
       t: parseWindow(get("t")),
+      z: parseZoom(get("z")),
+      bin: keyMs(get("bin")) ? get("bin") : "",
       y: Y_MODES.includes(get("y")) ? get("y") : "shared",
       fit: get("fit") !== "0",
       arrows: get("arrows") !== "0",
@@ -445,6 +526,8 @@
     if (s.nd) p.set("nd", s.nd);
     if (s.sort !== "count") p.set("sort", s.sort);
     if (s.t) p.set("t", windowText(s.t, TA, BMS));
+    if (s.z) p.set("z", zstamp(s.z[0]) + "-" + zstamp(s.z[1]));
+    if (s.bin) p.set("bin", s.bin);
     if (s.y !== "shared") p.set("y", s.y);
     if (!s.fit) p.set("fit", "0");
     if (!s.arrows) p.set("arrows", "0");
@@ -469,6 +552,10 @@
   let CUR = "";
 
   function commit(patch, opts = {}) {
+    if (!opts.noUndo && ("t" in patch || "z" in patch || "bin" in patch) && viewKey(S) !== viewKey({ ...S, ...patch })) {
+      UNDO.push({ t: S.t ? [...S.t] : null, z: S.z ? [...S.z] : null, bin: S.bin || "" });
+      if (UNDO.length > 100) UNDO.shift();
+    }
     Object.assign(S, patch);
     if (opts.keepPage !== true && !("p" in patch)) S.p = 0;
     // a moment outside a newly set window is dropped (the log shows the window)
@@ -488,7 +575,7 @@
   function onNav() {
     clearTimeout(qTimer);
     clearTimeout(mqTimer);
-    const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t;
+    const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t + S.z + S.bin;
     S = parseHash();
     if (S.theme === "dark" || S.theme === "light") {
       // back/forward to a link that names a theme shows it, as opening that link does
@@ -499,7 +586,7 @@
     if (S.tz && (S.tz === "local") !== TZL) applyZone(S.tz === "local", true);
     $("f-search").value = S.q;
     $("l-search").value = S.mq;
-    update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t);
+    update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t + S.z + S.bin);
   }
   window.addEventListener("popstate", onNav);
   window.addEventListener("hashchange", () => {
@@ -643,24 +730,24 @@
   }
   /** x-axis ticks: the smallest step whose labels are >= 64 px apart, aligned to the shown zone's
       clock (midnight, whole hours; a half-hour zone's ticks fall on its own :00). */
-  function xTicks(xOfMs, pxPerMs, W, padR) {
-    const steps = [9e5, 18e5, 36e5, 72e5, 108e5, 216e5, 432e5, 864e5, 1728e5, 6048e5, 12096e5];
+  function xTicks(xOfMs, pxPerMs, W, padR, a = TA, b = TE) {
+    const steps = [1e3, 2e3, 5e3, 1e4, 15e3, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5, 36e5, 72e5, 108e5, 216e5, 432e5, 864e5, 1728e5, 6048e5, 12096e5];
     const step = steps.find((s) => s * pxPerMs >= 64) || 12096e5;
     const out = [];
     let last = -Infinity;
-    if (!isNum(TA) || !isNum(TE)) return out;
+    if (!isNum(a) || !isNum(b)) return out;
     // L is a wall-clock time in the zone (as if UTC); t the first instant the clock shows it: a
     // skipped hour (spring-forward) has no tick, a repeated one (fall-back) one; dates at midnight
-    const endL = TE + zoff(TE) + step;
-    for (let L = Math.ceil((TA + zoff(TA)) / step) * step; L <= endL; L += step) {
+    const endL = b + zoff(b) + step;
+    for (let L = Math.ceil((a + zoff(a)) / step) * step; L <= endL; L += step) {
       const t = wallToMs(L);
-      if (!(t === t) || t < TA || t <= last) continue;
-      if (t > TE) break;
+      if (!(t === t) || t < a || t <= last) continue;
+      if (t > b) break;
       last = t;
       const x = xOfMs(t);
       if (x > W - padR - 14) continue;
       const iso = zoned(isoOf(t));
-      out.push([x, iso.slice(11, 16) === "00:00" ? iso.slice(5, 10) : iso.slice(11, 16)]);
+      out.push([x, iso.slice(11, 19) === "00:00:00" ? iso.slice(5, 10) : step < 6e4 ? iso.slice(11, 19) : iso.slice(11, 16)]);
     }
     return out;
   }
@@ -726,6 +813,52 @@
 
   // ---------------------------------------------------------------- timeline (small multiples)
   let TLG = null;
+  let BINS = { auto: BMS, choices: [], size: BMS };
+  let TL_WANT = "", TL_NOTE = "";
+  const FINE_CACHE = new Map();
+  /** Counts of a fine frame from the capture's timeline API, per node {lev, tot, g}, once they are
+      in; {err} when the request failed; undefined while it runs (the chart redraws when done). */
+  function fineData(fr, sig) {
+    const key = [fr.a, fr.b, fr.size, sig || ""].join("|");
+    const hit = FINE_CACHE.get(key);
+    if (hit) return hit.value;
+    const entry = { value: undefined };
+    FINE_CACHE.set(key, entry);
+    if (FINE_CACHE.size > 30) FINE_CACHE.delete(FINE_CACHE.keys().next().value);
+    const u = new URL(TL_URL, location.href);
+    u.searchParams.set("bucket", sizeKey(fr.size));
+    u.searchParams.set("since", isoOf(fr.a));
+    u.searchParams.set("until", isoOf(fr.b));
+    if (WMODE === "overlap" || WMODE === "union") u.searchParams.set("window", WMODE);
+    const g = new URL(u.toString());
+    if (sig) g.searchParams.set("signature", sig);
+    const at = (doc) => arr(obj(doc).buckets).map((b) => Math.round((parseTs(b) - fr.a) / fr.size));
+    Promise.all([fetchJson(u.toString()), sig ? fetchJson(g.toString()) : null]).then(([all, one]) => {
+      const idx = at(all), gi = one ? at(one) : [];
+      const out = {};
+      for (const n of NODES) {
+        const tl = obj(obj(obj(all).nodes)[n]);
+        const lev = {};
+        for (const b of BUCKETS) lev[b] = new Float64Array(fr.nb);
+        const tot = new Float64Array(fr.nb);
+        for (const [name, values] of Object.entries(obj(tl.levels))) {
+          const b = BUCKETS.includes(name) ? name : bucketOf(levelNum(name));
+          arr(values).forEach((v, j) => { const i = idx[j]; if (i >= 0 && i < fr.nb) { lev[b][i] += num(v); tot[i] += num(v); } });
+        }
+        let gl = null;
+        if (one) {
+          gl = new Float64Array(fr.nb);
+          for (const values of Object.values(obj(obj(obj(obj(one).nodes)[n]).levels))) {
+            arr(values).forEach((v, j) => { const i = gi[j]; if (i >= 0 && i < fr.nb) gl[i] += num(v); });
+          }
+        }
+        out[n] = { lev, tot, g: gl };
+      }
+      entry.value = out;
+    }).catch((err) => { entry.value = { err: str(err && err.message ? err.message : err) }; })
+      .finally(() => { if (TL_WANT === key) renderTimeline(); });
+    return undefined;
+  }
   const renderTimeline = guard(function renderTimeline() {
     const el = $("c-timeline");
     if (!NB || !NODES.length || !isNum(TA)) {
@@ -739,33 +872,81 @@
     const N = NODES.length;
     const padL = 116, padR = 12;
     const plotW = W - padL - padR;
-    const k = chooseBin(NB, plotW);
-    const nb = Math.ceil(NB / k);
+    // the frame: the zoom (else the capture) in bins of the picked size, else the automatic one
+    // (the finest whose bars keep 5 px, as before); bins under the base bucket from the server
+    const [za, zb] = S.z || [TA, TE];
+    const span = zb - za;
+    const floor = !FINE ? BMS : !S.z && span >= 864e5 ? BMS : 1e3;
+    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 5 <= plotW) || SIZES[SIZES.length - 1];
+    const choices = SIZES.filter((ms) => { const c = Math.ceil(span / ms); return c >= 2 && c <= Math.floor(plotW / 2); });
+    const want = keyMs(S.bin);
+    const size = want && choices.includes(want) ? want : auto;
+    BINS = { auto, choices, size };
+    const selSig = S.sig && GBY.get(S.sig) ? S.sig : "";
+    let fr = null, fine = null;
+    TL_NOTE = "";
+    if (size < BMS) {
+      fr = fineFrame(za, zb, size);
+      TL_WANT = [fr.a, fr.b, fr.size, selSig].join("|");
+      fine = fineData(fr, selSig);
+      if (fine === undefined) {
+        // keep the chart drawn so far, faded, until the counts are in
+        el.classList.add("loading");
+        if (!TLG || !el.firstElementChild) el.innerHTML = `<div class="empty">Loading entries per ${esc(sizeLabel(size))}…</div>`;
+        renderBins();
+        return;
+      }
+      if (fine.err) {
+        TL_NOTE = `Entries per ${sizeLabel(size)} could not be loaded (${fine.err}); showing ${binLabel(1)}s`;
+        fr = null;
+        fine = null;
+      }
+    }
+    if (!fr) {
+      TL_WANT = "";
+      const ia = Math.max(0, Math.floor((za - TA) / BMS)), ib = Math.min(NB, Math.max(ia + 1, Math.ceil((zb - TA) / BMS)));
+      fr = baseFrame(ia, ib, Math.max(1, Math.round(Math.max(size, BMS) / BMS)));
+    }
+    el.classList.remove("loading");
+    const k = fr.k;  // base buckets per bin (0 in a fine frame)
+    const nb = fr.nb;
     const slot = plotW / nb;
-    const bw = Math.min(24, Math.max(2, slot - GAP));
+    // thin bars (a finer bin than the automatic one) keep a hairline gap, then none
+    const bw = slot >= 4 ? Math.min(24, Math.max(2, slot - GAP)) : Math.max(0.8, slot - (slot >= 2.5 ? 1 : 0.3));
     const RULER = WIN ? 14 : 4, LANE = 18, ROWGAP = 6, AXIS = 20;
     const XM = MULTI ? 14 : 0; // the cross-node moments lane above the first node
     const BAND = N <= 2 ? 52 : N <= 4 ? 64 : N <= 8 ? 56 : 44;
     const rowTop = (i) => RULER + XM + i * (LANE + BAND + ROWGAP);
     const bottomAll = rowTop(N - 1) + LANE + BAND;
     const H = bottomAll + AXIS;
-    const pxPerMs = slot / (BMS * k);
-    const xOfMs = (ms) => padL + (ms - TA) * pxPerMs;
-    const xEnd = Math.min(padL + plotW, xOfMs(TE));
+    const pxPerMs = slot / fr.size;
+    const xOfMs = (ms) => padL + (ms - fr.a) * pxPerMs;
+    const xEnd = Math.min(padL + plotW, xOfMs(Math.min(fr.b, TE)));
     const clampX = (x) => Math.max(padL, Math.min(xEnd, x));
     const sel = S.sig ? GBY.get(S.sig) || null : null;
     const fit = !!sel && S.fit;
     const ERR = S.y === "err"; // only the ERROR columns, on one scale: WARN no longer flattens them
+    // a base frame adds up base buckets [ia, ib); a fine frame has the server's counts
+    const binB = (src) => {
+      const out = new Float64Array(nb);
+      for (let i = fr.ia; i < fr.ib && i < src.length; i++) if (src[i]) out[fr.binOf(i)] += src[i];
+      return out;
+    };
+    const inCover = (n, a, b) => !!COVT[n] && b > COVT[n][0] && a < COVT[n][1] && !GAPS[n].some(([x, y]) => a >= x && b <= y);
     const rows = NODES.map((n, i) => {
       const f = S.y === "pct" ? 100 / Math.max(1, NSUM[n]) : 1;
-      const levAll = BUCKETS.map((b) => binArr(LEV[n][b], k, nb));
-      const all = binArr(NTOT[n], k, nb);
+      const fd = fine && fine[n];
+      const levAll = BUCKETS.map((b) => (fd ? fd.lev[b] : binB(LEV[n][b])));
+      const all = fd ? fd.tot : binB(NTOT[n]);
+      const has = new Uint8Array(nb);
+      if (fd) for (let b = 0; b < nb; b++) has[b] = all[b] > 0 || inCover(n, fr.start(b), fr.end(b)) ? 1 : 0;
+      else for (let j = fr.ia; j < fr.ib; j++) if (hasLogs(n, j)) has[fr.binOf(j)] = 1;
       return {
         n, i, f, top: rowTop(i), levAll, all,
         lev: ERR ? levAll.map((a, s) => (BUCKETS[s] === "ERROR" ? a : new Float64Array(nb))) : levAll,
         tot: ERR ? levAll[0] : all,
-        has: binHas(n, k, nb),
-        g: sel ? binArr(denseOf(sel.hourly[n]), k, nb) : null,
+        has,
+        g: sel ? (fd ? fd.g || new Float64Array(nb) : binB(denseOf(sel.hourly[n]))) : null,
       };
     });
     // errors mode: a spike far above the rest (max > 4 × the 95th percentile) is clipped and labelled,
@@ -808,18 +989,19 @@
       }
     }
     // cross-node moments: the bins where 2 or more nodes log errors far above their own usual
-    const XMS = MULTI ? crossMoments(rows, nb, k) : [];
+    const XMS = MULTI && fr.kind === "base" ? crossMoments(rows, fr) : [];
     if (XM) {
       const y = RULER + 3;
       P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end"${tipAttr({ h: "Cross-node moments",
-        body: esc(`The ${binLabel(k)}s holding a ${binLabel(1)} in which two or more nodes log more than 3× their own usual errors (the median of their ${binLabel(1)}s with errors).`),
+        body: esc(`The ${sizeLabel(fr.size)} bins holding a ${binLabel(1)} in which two or more nodes log more than 3× their own usual errors (the median of their ${binLabel(1)}s with errors)${fr.kind === "fine" ? "; marked at bins of a " + binLabel(1) + " or more" : ""}.`),
         note: "Click a mark, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment." })}>together</text>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${y + 5.5}" y2="${y + 5.5}"/>`);
       for (const m of XMS) {
         const x = padL + m.b * slot + Math.max(0, (slot - Math.max(3, bw)) / 2);
-        P.push(`<rect class="xm" data-xm="${m.b}" tabindex="0" role="button" aria-label="${esc(xmLabel(m, k))}" x="${r1(x)}" y="${y + 1}" width="${r1(Math.max(3, Math.min(bw, slot)))}" height="9" rx="2" style="--xa:${r1(0.45 + 0.55 * Math.min(1, (m.nodes.length - 1) / Math.max(1, N - 1)))}"/>`);
+        P.push(`<rect class="xm" data-xm="${m.b}" tabindex="0" role="button" aria-label="${esc(xmLabel(m, fr))}" x="${r1(x)}" y="${y + 1}" width="${r1(Math.max(3, Math.min(bw, slot)))}" height="9" rx="2" style="--xa:${r1(0.45 + 0.55 * Math.min(1, (m.nodes.length - 1) / Math.max(1, N - 1)))}"/>`);
       }
     }
+    const GB = [];  // grave badges: {n, y, x0, x1, items}
     for (const r of rows) {
       const n = r.n;
       const laneY = r.top + LANE / 2;
@@ -914,6 +1096,16 @@
         if (x < padL - 2 || x > xEnd + 2) continue;
         P.push(glyph(e.kind, x, laneY, rg && !inRange(e.ms, rg) ? " dim" : ""));
       }
+      // grave errors: a red line through the node's lane and band (a band for a run of them), a
+      // badge in its lane (drawn last, over the hit areas)
+      for (const g of GRAVE_N[n]) {
+        if (g.last < fr.a || g.ms >= fr.b) continue;
+        const x0 = clampX(xOfMs(g.ms)), x1 = clampX(xOfMs(g.last + 1));
+        if (x1 - x0 > 2) P.push(`<rect class="grave-band g-${g.kind}" x="${r1(x0)}" y="${bTop}" width="${r1(x1 - x0)}" height="${BAND}"/>`);
+        P.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="${r.top + 1}" y2="${bBot}"/>`);
+        const lastB = GB.length && GB[GB.length - 1];
+        if (lastB && lastB.n === n && x0 - lastB.x1 < 44) { lastB.items.push(g); lastB.x1 = x0; } else GB.push({ n, y: laneY, x0, x1: x0, items: [g] });
+      }
     }
     // mention arrows: from the reporting node's lane to the subject's lane
     const arrow = (from, to, x, cls) => {
@@ -931,10 +1123,10 @@
       const x = xOfMs(e.ms);
       if (x < padL || x > xEnd) continue;
       arrow(e.node, e.subject, x, "");
-      seen.add(e.node + "\n" + e.subject + "\n" + Math.floor((e.ms - TA) / (BMS * k)));
+      seen.add(e.node + "\n" + e.subject + "\n" + Math.floor((e.ms - fr.a) / fr.size));
     }
     const MARKS = [];
-    for (const m of MENT) {
+    for (const m of fr.kind === "base" ? MENT : []) {  // per base bucket: not at finer bins
       const from = str(m.from), to = str(m.to);
       if (!NIDX.has(from) || !NIDX.has(to) || from === to) continue;
       const bins = new Map();
@@ -942,7 +1134,8 @@
         const g = GBY.get(str(sig));
         if (!g) continue;
         for (const [i, c] of g.hourly[from]) {
-          const b = Math.floor(i / k);
+          if (i < fr.ia || i >= fr.ib) continue;
+          const b = fr.binOf(i);
           const cur = bins.get(b) || { count: 0, sigs: new Set() };
           cur.count += num(c);
           cur.sigs.add(g.sig);
@@ -955,7 +1148,7 @@
       }
     }
     // x axis
-    for (const [x, label] of xTicks(xOfMs, pxPerMs, W, padR)) {
+    for (const [x, label] of xTicks(xOfMs, pxPerMs, W, padR, fr.a, Math.min(fr.b, TE))) {
       P.push(`<line class="base" x1="${r1(x) + 0.5}" x2="${r1(x) + 0.5}" y1="${bottomAll}" y2="${bottomAll + 4}"/>`);
       P.push(`<text class="axis" x="${r1(x)}" y="${H - 5}" text-anchor="middle">${esc(label)}</text>`);
     }
@@ -964,19 +1157,30 @@
       P.push(`<rect class="lane-hit" data-row="${r.i}" x="${padL}" y="${r.top}" width="${r1(xEnd - padL)}" height="${LANE}"/>`);
       P.push(`<rect class="hit" data-row="${r.i}" x="${padL}" y="${r.bTop}" width="${r1(xEnd - padL)}" height="${BAND}"/>`);
     }
+    GB.forEach((c, i) => {
+      const kind = graveTop(c.items);
+      const label = GRAVE_TAG[kind] + (c.items.length > 1 ? " ×" + c.items.length : "");
+      const w = 10 + label.length * 6.6;
+      const x = Math.min(xEnd - w, Math.max(padL - 4, (c.x0 + c.x1) / 2 - w / 2));
+      P.push(`<g class="grave-badge g-${kind}" data-grave="${i}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.n, c.items))}">` +
+        `<rect x="${r1(x)}" y="${r1(c.y - 7.5)}" width="${r1(w)}" height="15" rx="3"/><text x="${r1(x + w / 2)}" y="${r1(c.y + 4)}" text-anchor="middle">⚠ ${esc(label)}</text></g>`);
+    });
     P.push(`</svg>`);
     el.innerHTML = P.join("");
     const svg = el.firstElementChild;
     TLG = {
-      svg, padL, slot, k, nb, rows, xOfMs, pxPerMs, marks: MARKS, sel, xms: XMS,
+      svg, padL, slot, k, nb, rows, xOfMs, pxPerMs, marks: MARKS, sel, xms: XMS, frame: fr, graves: GB, plotW, xEnd,
       band: svg.querySelector(".hover-band"), brush: svg.querySelector(".brush"),
       binAt: (clientX) => Math.max(0, Math.min(nb - 1, Math.floor((clientX - svg.getBoundingClientRect().left - padL) / slot))),
     };
-    $("tl-title").innerHTML = `${ERR ? "Errors" : "Entries"} per ${esc(binLabel(k))} <span class="h-sub">${ERR ? "ERROR and FATAL" : "by level"}</span>`;
-    $("tl-title").title = "One band per node; the columns are stacked by level. Drag across a band to select a time window.";
+    $("tl-title").innerHTML = `${ERR ? "Errors" : "Entries"} per ${esc(sizeLabel(fr.size))} <span class="h-sub">${ERR ? "ERROR and FATAL" : "by level"}</span>`;
+    $("tl-title").title = "One band per node; the columns are stacked by level. " +
+      (ZOOMSEL ? "Drag across a band to zoom into a time range (Zoom is on)." : "Drag across a band to select a time window.");
     bindTimeline(TLG);
     showWindow(TLG);
     renderTlLegend();
+    renderBins();
+    renderZoomCtl();
   });
 
   /** A node at a glance: name, set, entries, errors, coverage (the timeline's row labels). */
@@ -990,25 +1194,40 @@
   function renderTlLegend() {
     $("tl-legend").innerHTML = BUCKETS.filter((b) => (S.y !== "err" || b === "ERROR") && NODES.some((n) => LEV[n][b].some((v) => v > 0))).map((b) =>
       `<span title="${esc(LV_TITLE[b])}"><i class="sw sw-${b}"></i>${b}</span>`).join("") +
-      `<span title="Time a node has no logs for: before its oldest or after its newest entry, and gaps"><svg width="12" height="12" aria-hidden="true"><rect class="nolog-bg" width="12" height="12"/><rect class="nolog" width="12" height="12"/></svg>no logs</span>`;
+      `<span title="Time a node has no logs for: before its oldest or after its newest entry, and gaps"><svg width="12" height="12" aria-hidden="true"><rect class="nolog-bg" width="12" height="12"/><rect class="nolog" width="12" height="12"/></svg>no logs</span>` +
+      (TL_NOTE ? `<span class="tl-muted">${esc(TL_NOTE)}</span>` : "");
     const counts = new Map();
     for (const e of EVENTS) counts.set(e.kind, (counts.get(e.kind) || 0) + 1);
     const ev = KINDS.map((kd) => `<span class="ev-key${kd === "job_run" && !S.jobs ? " off" : ""}" title="${esc(kd === "job_run" && !S.jobs ? "Job runs are hidden from the lanes: the Job runs button shows them" : `${kindCount(kd, counts.get(kd) || 0)} on all nodes (${kd})`)}">${glyphKey(kd)}${esc(kindLabel(kd))} <span class="n">${fmt(counts.get(kd))}</span></span>`);
     const arrows = EVENTS.some((e) => e.subject && e.subject !== e.node && NIDX.has(e.subject)) || MENT.length;
     if (arrows) ev.push(`<span class="ev-key" title="An entry on one node names another node: the arrow goes from the node that logs it to the node it names">↕ mention</span>`);
+    if (GRAVE.length) {
+      const by = new Map();
+      for (const g of GRAVE) by.set(g.kind, (by.get(g.kind) || 0) + 1);
+      const what = GRAVE_KINDS.filter((kd) => by.has(kd)).map((kd) => `${GRAVE_TAG[kd]} ${fmt(by.get(kd))}×`).join(" · ");
+      const nodes = [...new Set(GRAVE.map((g) => NLABEL(g.node)))].join(", ");
+      ev.unshift(`<button type="button" class="grave-key" data-grave-first title="Grave errors (out of memory, stack overflow, JVM errors, exhausted resources, FATAL) on ${esc(nodes)}: click to zoom to the first">⚠ ${esc(what)}</button>`);
+    }
     $("tl-events").innerHTML = ev.length
       ? ev.join("")
       : `<span class="lg-k">No cluster events detected in this capture.</span>`;
   }
   function showWindow(geo, range) {
     if (!geo) return;
-    const w = range || (S.t ? [S.t[0] / geo.k, S.t[1] / geo.k] : null);
+    const fr = geo.frame;
+    const pos = (ms) => (ms - fr.a) / fr.size;
+    const w = range || (S.t ? [pos(TA + S.t[0] * BMS), pos(TA + (S.t[1] + 1) * BMS - 1)] : null);
     if (!w) {
       geo.brush.setAttribute("visibility", "hidden");
       return;
     }
-    const x0 = geo.padL + Math.floor(w[0]) * geo.slot;
-    const x1 = geo.padL + (Math.floor(w[1]) + 1) * geo.slot;
+    const x0 = geo.padL + Math.max(0, Math.floor(w[0])) * geo.slot;
+    const x1 = geo.padL + Math.min(geo.nb, Math.floor(w[1]) + 1) * geo.slot;
+    // a zoomed timeline inside its window: shading all of it would say nothing
+    if (x1 <= x0 || (!range && S.z && x0 <= geo.padL && x1 >= geo.padL + geo.plotW - 0.5)) {
+      geo.brush.setAttribute("visibility", "hidden");
+      return;
+    }
     geo.brush.setAttribute("x", r1(x0));
     geo.brush.setAttribute("width", r1(Math.max(1, x1 - x0)));
     geo.brush.setAttribute("visibility", "visible");
@@ -1031,9 +1250,13 @@
   function bandTip(geo, row, b) {
     const r = geo.rows[row];
     const n = r.n;
-    const out = [`<div class="tt-h">${esc(binRange(b, geo.k))}</div>`];
+    const fr = geo.frame, b0 = fr.start(b), b1 = fr.end(b);
+    const out = [`<div class="tt-h">${esc(frameRange(fr, b))}</div>`];
     out.push(`<div class="tt-r tt-n">${nodeBadge(n)}<span>${esc(n)}</span></div>`);
-    if (!r.has[b]) out.push(`<div class="muted">No logs from ${esc(NLABEL(n))} here (${COVT[n] && TA + b * geo.k * BMS >= COVT[n][0] && TA + b * geo.k * BMS < COVT[n][1] ? "gap" : "outside its coverage"})</div>`);
+    for (const g of GRAVE_N[n].filter((x) => x.last >= b0 && x.ms < b1).slice(0, 3)) {
+      out.push(`<div class="tt-r grave-row"><b class="g-${g.kind}">⚠ ${esc(GRAVE_TAG[g.kind])}</b><span>${esc(tsSec(g.ts))}${g.count > 1 ? ` · ${fmt(g.count)} entries` : ""}</span></div>`);
+    }
+    if (!r.has[b]) out.push(`<div class="muted">No logs from ${esc(NLABEL(n))} here (${COVT[n] && b0 >= COVT[n][0] && b0 < COVT[n][1] ? "gap" : "outside its coverage"})</div>`);
     for (let s = BUCKETS.length - 1; s >= 0; s--) {
       const v = r.levAll[s][b];
       if (v) out.push(`<div class="tt-r"><b>${fmt(v)}</b><i class="sw-${BUCKETS[s]}"></i><span>${BUCKETS[s]}</span></div>`);
@@ -1053,7 +1276,7 @@
       log more than 3× their usual errors (the median of their base buckets with errors):
       [{b, nodes: [{n, e, x}]}], each with its strongest bucket. Found at the base resolution,
       so a narrow chart (2-hour bins, where a spike averages out) marks the same moments. */
-  function crossMoments(rows, nb, k) {
+  function crossMoments(rows, fr) {
     const errs = rows.map((r) => (LEV[r.n] && LEV[r.n].ERROR) || []);
     const base = errs.map((a) => {
       const nz = [];
@@ -1062,26 +1285,26 @@
       return nz.length ? nz[Math.floor((nz.length - 1) / 2)] : 0;
     });
     const best = new Map();
-    for (let j = 0; j < NB; j++) {
+    for (let j = fr.ia; j < fr.ib; j++) {
       const nodes = [];
       rows.forEach((r, i) => {
         const e = errs[i][j] || 0;
         if (base[i] > 0 && e > 3 * base[i]) nodes.push({ n: r.n, e, x: e / base[i] });
       });
       if (nodes.length < 2) continue;
-      const b = Math.floor(j / k);
-      if (b >= nb) continue;
+      const b = fr.binOf(j);
+      if (b >= fr.nb) continue;
       const score = nodes.length * 1e9 + nodes.reduce((t, o) => t + o.e, 0);
       const old = best.get(b);
       if (!old || score > old.score) best.set(b, { b, nodes, score });
     }
     return [...best.values()].sort((x, y) => x.b - y.b);
   }
-  const xmLabel = (m, k) => `Cross-node moment ${binRange(m.b, k)}: ` +
+  const xmLabel = (m, fr) => `Cross-node moment ${frameRange(fr, m.b)}: ` +
     m.nodes.map((o) => `${NLABEL(o.n)} ${fmt(o.e)} errors in its peak ${binLabel(1)} (×${ratioText(o.x)} its usual)`).join(", ") +
     ". Opens the merged log ±30 s around its busiest moment.";
-  function xmTip(m, k) {
-    return `<div class="tt-h">Cross-node moment · ${esc(binRange(m.b, k))}</div>` +
+  function xmTip(m, fr) {
+    return `<div class="tt-h">Cross-node moment · ${esc(frameRange(fr, m.b))}</div>` +
       m.nodes.map((o) => `<div class="tt-r"><b>${fmt(o.e)}</b>${nodeBadge(o.n)}<span>errors in the peak ${esc(binLabel(1))}, ×${esc(ratioText(o.x))} its usual</span></div>`).join("") +
       `<div class="muted tt-note">Two or more nodes log more than 3× their usual errors at once (usual: the median of a node's ${esc(binLabel(1))}s with errors). Click: the window moves here and the merged log opens ±30 s on all nodes around the busiest moment.</div>`;
   }
@@ -1089,7 +1312,8 @@
       (web app: the 10 s with the most errors on two or more nodes; static: the window's errors). */
   let xmReq = 0;
   function openMoment(geo, b) {
-    const t = [b * geo.k, Math.min(NB - 1, (b + 1) * geo.k - 1)];
+    const fr = geo.frame;
+    const t = [fr.ia + b * fr.k, Math.min(NB - 1, fr.ia + (b + 1) * fr.k - 1)];
     const m = arr(geo.xms).find((x) => x.b === b);
     const fallback = () => {
       commit({ t, tab: "l", ml: "ERROR", at: "", ae: "", ctx: "", cts: "", ms: [], mn: m ? new Set(m.nodes.map((o) => o.n)) : null, mq: "" }, { keepPage: true });
@@ -1140,9 +1364,15 @@
         return;
       }
       const t = e.target;
+      const gb = t.closest && t.closest("[data-grave]");
+      if (gb) {
+        const c = geo.graves[+gb.dataset.grave];
+        if (c) showTip(e, graveTip(c.n, c.items));
+        return;
+      }
       if (t.dataset && t.dataset.xm != null) {
         const m = geo.xms.find((x) => x.b === +t.dataset.xm);
-        if (m) showTip(e, xmTip(m, geo.k));
+        if (m) showTip(e, xmTip(m, geo.frame));
         return;
       }
       const row = rowOf(t);
@@ -1160,7 +1390,7 @@
         const n = NODES[row];
         const ms = geo.marks.filter((m) => m.from === n && m.b === b);
         if (ms.length) {
-          return showTip(e, `<div class="tt-h">${esc(binRange(b, geo.k))}</div>` + ms.map((m) =>
+          return showTip(e, `<div class="tt-h">${esc(frameRange(geo.frame, b))}</div>` + ms.map((m) =>
             `<div class="tt-e">${nodeBadge(m.from)} → ${nodeBadge(m.to)} named ${fmt(m.count)}× by ${m.sigs.map((s) => `<div class="tt-x">${tplHtml(trunc((GBY.get(s) || {}).tpl || s, 120))}</div>`).join("")}</div>`).join(""));
         }
         tip.hidden = true;
@@ -1174,6 +1404,7 @@
       tip.hidden = true;
     });
     svg.addEventListener("pointerdown", (e) => {
+      if (e.target.closest && e.target.closest("[data-grave]")) return;  // a badge is a button
       const row = rowOf(e.target);
       if (row < 0 || e.button !== 0) return;
       geo.dragging = { b0: geo.binAt(e.clientX), x0: e.clientX, b1: geo.binAt(e.clientX), moved: false, row, lane: e.target.classList.contains("lane-hit") };
@@ -1191,19 +1422,34 @@
           const near = nearEvents(geo, d.row, e.clientX);
           if (near.length) return openLogAt(near[0].ts, near[0].entry);
         }
-        if (S.t) commit({ t: null });
+        if (S.t && !S.z) commit({ t: null });
         return;
       }
-      const a = Math.min(d.b0, d.b1), b = Math.max(d.b0, d.b1);
-      commit({ t: [a * geo.k, Math.min(NB - 1, (b + 1) * geo.k - 1)] });
+      const fr = geo.frame;
+      const a = fr.start(Math.min(d.b0, d.b1)), b = fr.end(Math.max(d.b0, d.b1));
+      // zoom on: the selection is the zoom (the window follows it, in whole buckets); off: the window
+      if (ZOOMSEL) zoomTo([a, b]);
+      else commit({ t: bucketsCovering(a, b) });
     };
     svg.addEventListener("pointerup", end);
     svg.addEventListener("pointercancel", end);
+    const openGrave = (el) => {
+      const c = geo.graves[+el.dataset.grave];
+      if (c) openLogAt(c.items[0].ts, c.items[0].entry);
+    };
     svg.addEventListener("click", (e) => {
+      const g = e.target.closest && e.target.closest("[data-grave]");
+      if (g) return openGrave(g);
       const m = e.target.closest && e.target.closest("[data-xm]");
       if (m) openMoment(geo, +m.dataset.xm);
     });
     svg.addEventListener("keydown", (e) => {
+      const g = e.target.closest && e.target.closest("[data-grave]");
+      if (g && (e.key === "Enter" || e.key === " ")) {
+        e.preventDefault();
+        e.stopPropagation();
+        return openGrave(g);
+      }
       const m = e.target.closest && e.target.closest("[data-xm]");
       if (!m || (e.key !== "Enter" && e.key !== " ")) return;
       e.preventDefault();
@@ -1215,7 +1461,7 @@
       const x = m && geo.xms.find((v) => v.b === +m.dataset.xm);
       if (!x) return;
       const r = m.getBoundingClientRect();
-      showTip({ clientX: r.left, clientY: r.bottom }, xmTip(x, geo.k));
+      showTip({ clientX: r.left, clientY: r.bottom }, xmTip(x, geo.frame));
     });
     svg.addEventListener("focusout", () => { tip.hidden = true; });
   }
@@ -1224,10 +1470,89 @@
     .map(([ms, label]) => [Math.round(ms / BMS), label]).filter(([nb]) => nb >= 1 && nb < NB);
   /** Move the window by its own width (dir -1 / +1), clamped to the capture. */
   function shiftWindow(dir) {
+    if (S.z) {
+      const [a, b] = S.z, w = b - a;
+      const na = Math.max(TA, Math.min(TE - w, a + dir * w));
+      if (na !== a) zoomTo([na, na + w]);
+      return;
+    }
     if (!S.t) return;
     const [a, b] = S.t, w = b - a + 1;
     const na = Math.max(0, Math.min(NB - w, a + dir * w));
     if (na !== a) commit({ t: [na, na + w - 1] });
+  }
+  /** "10-29 14:05" (the start with its date) or "14:20", with seconds when the zoom needs them. */
+  function zoomStamp(iso, a, b, first) {
+    const z = zoned(iso), secs = a % 6e4 || b % 6e4;
+    return (first ? z.slice(0, 10) + " " : z.slice(0, 10) === zoned(isoOf(a)).slice(0, 10) ? "" : z.slice(5, 10) + " ") + z.slice(11, secs ? 19 : 16);
+  }
+  /** Zoom the timeline into [a, b) (null: the whole timeline); the window becomes its buckets. */
+  function zoomTo(range) {
+    const z = clampZoom(range);
+    if (!z) return commit({ z: null }, { keepPage: true });
+    commit({ z, t: bucketsCovering(z[0], z[1]) });
+  }
+  /** + : into the window, or (zoomed) into the middle third. */
+  function zoomIn() {
+    if (S.z) {
+      const [a, b] = S.z, w = (b - a) / 3;
+      if (w >= 1e4) zoomTo([a + w, b - w]);
+    } else if (S.t) zoomTo([TA + S.t[0] * BMS, TA + (S.t[1] + 1) * BMS]);
+    else toast("Select a time window on the timeline first");
+  }
+  /** − : three times as wide around the middle, kept inside the timeline. */
+  function zoomOut() {
+    if (!S.z) return;
+    const [a, b] = S.z, w = (b - a) * 3;
+    const na = Math.max(TA, Math.min(TE - w, (a + b) / 2 - w / 2));
+    zoomTo([na, na + w]);
+  }
+  /** The zoom toggle: off shows the whole capture (the window stays) and drags select windows; on
+      zooms into the window, if one is set, and drags zoom. */
+  function toggleZoomSel() {
+    ZOOMSEL = !ZOOMSEL;
+    try { localStorage.setItem(ZS_KEY, ZOOMSEL ? "1" : "0"); } catch { /* storage unavailable */ }
+    if (!ZOOMSEL && S.z) commit({ z: null }, { keepPage: true });
+    else if (ZOOMSEL && S.t && !S.z) zoomTo([TA + S.t[0] * BMS, TA + (S.t[1] + 1) * BMS]);
+    else renderTimeline();
+    toast(ZOOMSEL ? "Zoom on: a drag zooms into the selection" : "Zoom off: a drag selects the time window");
+  }
+  /** Undo: the timeline's previous window, zoom and bin (Clear included). */
+  function undo() {
+    const v = UNDO.pop();
+    if (!v) return toast("Nothing to undo");
+    commit({ t: v.t, z: v.z, bin: v.bin }, { noUndo: true, keepPage: true });
+  }
+  const MAG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14M5 7h4M7 5v4"/></svg>`;
+  const UNDO_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3 2.5 6l3 3"/><path d="M2.5 6H10a3.5 3.5 0 0 1 0 7H7"/></svg>`;
+  /** Undo and the zoom toggle, at the head of the timeline. */
+  function renderZoomCtl() {
+    const el = $("tl-zoom");
+    if (!el) return;
+    if (!NB || !isNum(TA)) { el.innerHTML = ""; return; }
+    el.innerHTML = `<button type="button" class="btn small zbtn z-undo" data-undo ${UNDO.length ? "" : "disabled"} title="Undo: back to the previous zoom, window and bins, also after Clear (u)">${UNDO_SVG}<span>Undo</span></button>` +
+      `<button type="button" class="btn small zbtn z-toggle" data-zoomsel aria-pressed="${ZOOMSEL}" title="${ZOOMSEL ? "Zoom is on: a drag across a band zooms into the selection, with finer bins. Click: the whole capture again, and drags select the time window" : "Zoom is off: a drag selects the time window. Click: zoom into the window, and drags zoom"}">${MAG}<span>Zoom</span></button>`;
+  }
+  /** The bins menu: automatic, or a finer or coarser bin the timeline's width allows. */
+  function renderBins() {
+    const el = $("tl-bins");
+    if (!el) return;
+    if (!NB || BINS.choices.length < 2) { el.innerHTML = ""; return; }
+    const cur = S.bin && BINS.choices.includes(keyMs(S.bin)) ? sizeKey(keyMs(S.bin)) : "";
+    const opts = [`<option value=""${cur ? "" : " selected"}>Auto (${esc(sizeShort(BINS.auto))})</option>`]
+      .concat(BINS.choices.map((ms) => `<option value="${sizeKey(ms)}"${sizeKey(ms) === cur ? " selected" : ""}>${esc(sizeShort(ms))}</option>`));
+    const finer = FINE ? "" : ` Bins under ${binLabel(1) === "hour" ? "an hour" : binLabel(1)} need the web app (ragnalog serve).`;
+    el.innerHTML = `<label class="sel" title="Bin size of the timeline: Auto fits the shown range; pick a finer one to see more detail.${esc(finer)}"><span>Bins</span><select id="tl-binsel" aria-label="Bin size">${opts.join("")}</select></label>`;
+  }
+  const graveLabel = (n, items) => `${NLABEL(n)}: ` + (items.length === 1
+    ? `${GRAVE_LABEL[items[0].kind]} at ${tsShort(items[0].ts)} ${zAt(items[0].ms)}${items[0].count > 1 ? `, ${fmt(items[0].count)} entries` : ""}`
+    : `${items.length} grave errors from ${tsShort(items[0].ts)} ${zAt(items[0].ms)}`) + ". Opens the merged log there.";
+  function graveTip(n, items) {
+    const rows = items.slice(0, 6).map((g) => `<div class="tt-e"><div class="tt-eh"><b class="grave-tag g-${g.kind}">⚠ ${esc(GRAVE_TAG[g.kind])}</b>${nodeBadge(n)}<span class="tt-ts">${esc(tsSec(g.ts))}${g.count > 1 ? ` – ${esc(tsSec(g.last_ts).slice(6))} · ${fmt(g.count)} entries` : ""}</span></div>` +
+      (g.text ? `<div class="tt-x">${esc(trunc(g.text, 180))}</div>` : "") + `</div>`).join("");
+    return `<div class="tt-h grave-h">⚠ ${esc(items.length === 1 ? GRAVE_LABEL[items[0].kind] : `${items.length} grave errors`)}</div>${rows}` +
+      (items.length > 6 ? `<div class="tt-more">+${fmt(items.length - 6)} more</div>` : "") +
+      `<div class="tt-note">Click to open the merged log here</div>`;
   }
   function renderTimelineControls() {
     const modes = [["shared", "Shared", "One y-scale for every node: compare volumes"], ["node", "Per node", "Each band scaled to its own maximum: compare shapes"],
@@ -1245,7 +1570,7 @@
     jb.hidden = !tl || !EVENTS.some((e) => e.kind === "job_run");
     const w = $("tl-window");
     const presets = PRESETS.map(([nb, label]) => {
-      const on = S.t && S.t[0] === NB - nb && S.t[1] === NB - 1;
+      const on = S.t && S.t[0] === NB - nb && S.t[1] === NB - 1 && (!S.z || (S.z[0] === TA + (NB - nb) * BMS && S.z[1] === TE));
       return `<button type="button" data-win="${nb}" aria-pressed="${!!on}" title="The last ${label} of the capture">${label}</button>`;
     }).join("");
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
@@ -1253,6 +1578,17 @@
       w.innerHTML = "";
     } else if (!S.t) {
       w.innerHTML = seg;
+    } else if (S.z) {
+      // zoomed: the zoom leads, the window (the table's buckets around it) follows it
+      const rg = tRange(), [za, zb] = S.z;
+      w.innerHTML = `<span class="win-what zoom-what"><span class="win-k">Zoom</span> <b>${esc(rangeText(za, zb, (s) => zoomStamp(s, za, zb, true), (s) => zoomStamp(s, za, zb, false)))}</b> (${esc(spanText(zb - za))})</span>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= TA ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
+        `<button type="button" class="btn small" data-shift="1" ${zb >= TE ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
+        `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
+        `<button type="button" class="btn small" data-zoom="reset" title="Show the whole capture again; the window stays">Reset zoom</button>` +
+        (rg ? `<span class="muted win-hours" title="The groups table counts whole buckets: the window around the zoom">table: ${esc(rangeText(rg[0], rg[1]))}</span>` : "") +
+        seg + `<button type="button" class="btn small" data-clear-t title="Show the whole capture">Clear</button>`;
     } else {
       const rg = tRange();
       let entries = 0, errors = 0;
@@ -2574,7 +2910,8 @@
     compute();
     renderTabs();
     renderTimelineControls();
-    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs, S.t ? S.t.join("-") : ""].join("|");
+    renderZoomCtl();
+    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs, S.t ? S.t.join("-") : "", S.z ? S.z.join("-") : "", S.bin].join("|");
     if (forceTl || tlKey !== lastTl) {
       lastTl = tlKey;
       renderTimeline();
@@ -3043,6 +3380,20 @@
         });
       }, { passive: true });
     }
+    $("tl-zoom").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled) return;
+      if (b.dataset.undo != null) undo();
+      else if (b.dataset.zoomsel != null) toggleZoomSel();
+    });
+    $("tl-bins").addEventListener("change", (e) => {
+      if (e.target.id === "tl-binsel") commit({ bin: e.target.value }, { keepPage: true, replace: true });
+    });
+    $("tl-events").addEventListener("click", (e) => {
+      if (!e.target.closest("[data-grave-first]") || !GRAVE.length) return;
+      const g = GRAVE[0];
+      zoomTo([g.ms - 15 * 6e4, g.last + 15 * 6e4]);
+    });
     for (const id of ["drawer-body", "c-cards", "p-inter", "p-log", "tl-sel", "tl-window", "c-timeline"]) {
       $(id).addEventListener("click", (e) => {
         if (id === "tl-sel") {
@@ -3050,11 +3401,16 @@
           if (e.target.closest("[data-unsel]")) return commit({ sig: "" }, { keepPage: true });
         }
         if (id === "tl-window") {
-          if (e.target.closest("[data-clear-t]")) return commit({ t: null });
+          if (e.target.closest("[data-clear-t]")) return commit({ t: null, z: null });
           const sh = e.target.closest("[data-shift]");
           if (sh && !sh.disabled) return shiftWindow(Number(sh.dataset.shift));
+          const zb = e.target.closest("[data-zoom]");
+          if (zb && !zb.disabled) return zb.dataset.zoom === "in" ? zoomIn() : zb.dataset.zoom === "out" ? zoomOut() : commit({ z: null }, { keepPage: true });
           const pw = e.target.closest("[data-win]");
-          if (pw) return commit({ t: [NB - Number(pw.dataset.win), NB - 1] });
+          if (pw) {
+            const nb = Number(pw.dataset.win);
+            return ZOOMSEL ? zoomTo([TA + (NB - nb) * BMS, TE]) : commit({ t: [NB - nb, NB - 1], z: null });
+          }
         }
         if (id === "drawer-body" && e.target.closest("[data-clip]")) {
           const r = GBY.get(S.sig);
@@ -3202,6 +3558,9 @@
         case "p": if (S.tab === "g" && S.p > 0) commit({ p: S.p - 1 }, { keepPage: true }); break;
         case "[": shiftWindow(-1); break;
         case "]": shiftWindow(1); break;
+        case "+": case "=": zoomIn(); break;
+        case "-": zoomOut(); break;
+        case "u": undo(); break;
         case "1": commit({ tab: "g" }, { keepPage: true }); break;
         case "2": commit({ tab: "i" }, { keepPage: true }); break;
         case "3": commit({ tab: "l" }, { keepPage: true }); break;

@@ -15,6 +15,7 @@ import polars as pl
 
 from ragnalog import __version__
 from ragnalog.core.formats.base import CTX_PREAMBLE
+from ragnalog.report.grave import grave_markers
 from ragnalog.store.filters import LEVEL_BUCKETS, GroupFilter, has_time, level_bucket
 from ragnalog.store.logset import LogSet, to_records
 from ragnalog.store.query import diff
@@ -380,6 +381,7 @@ def build_payload(
         "entries": entries,
         "merges": _merges(logset, set(signatures)),
         "compare": compare_block,
+        "grave": grave_markers(logset),
     }
     if entries_url is not None:
         payload["entries_url"] = entries_url

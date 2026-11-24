@@ -56,6 +56,7 @@
 <section class="overview card" aria-label="Overview">
   <div class="card-head">
     <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
+    <div class="tl-zoom" id="tl-zoom"></div>
     <div class="legend" id="tl-legend"></div>
     <div class="tl-window" id="tl-window"></div>
     <div class="tl-bins" id="tl-bins"></div>
@@ -150,11 +151,13 @@
     <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page</dd>
     <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window (zoomed: earlier / later)</dd>
     <dt><kbd>+</kbd> <kbd>-</kbd></dt><dd>Zoom the chart into the window / out</dd>
+    <dt><kbd>u</kbd></dt><dd>Undo the last zoom or window change (also after Clear)</dd>
     <dt><kbd>?</kbd></dt><dd>This help</dd>
   </dl>
-  <p class="muted">Timeline: drag to filter groups to a time window, click to clear; Zoom in
-  (or <kbd>+</kbd>) shows the window with finer bins, a drag on the zoomed chart zooms further, and
-  Bins picks a finer or coarser bin size.
+  <p class="muted">Timeline: with Zoom on (the default) a drag zooms into the selection with
+  finer bins, the window following it; with Zoom off a drag filters the groups to a time window,
+  a click clears it. Undo steps back, Bins picks a finer or coarser bin size, and red ⚠ markers
+  show grave errors (out of memory, stack overflow, FATAL …): click one for its group.
   The view (filters, sort, page, selection) is kept in the URL — bookmark or paste it.</p>
   <form method="dialog"><button class="btn small">Close</button></form>
 </dialog>

@@ -174,6 +174,26 @@
   const hoursCovering = (a, b) => [
     Math.max(0, Math.floor((a - T0MS) / HOUR)), Math.min(NH - 1, Math.ceil((b - T0MS) / HOUR) - 1),
   ];
+  // the zoom toggle: on (the default), a drag on the chart zooms into the selection; off, it
+  // selects a time window. A viewer preference like the theme, shared with the cluster page.
+  const ZS_KEY = "ragnalog-dragzoom";
+  let ZOOMSEL = (() => { try { return localStorage.getItem(ZS_KEY) !== "0"; } catch { return true; } })();
+  /** Earlier chart views (window, zoom, bin) for Undo, the newest last; Clear is undone too. */
+  const UNDO = [];
+  const viewKey = (s) => JSON.stringify([s.t || null, s.z || null, s.bin || ""]);
+
+  // ---------------------------------------------------------------- grave errors
+  // report/grave.py: out of memory, a stack overflow, a JVM error, an exhausted resource or FATAL,
+  // entries of a kind within 60 s folded into one marker; drawn loudly over the chart
+  const GRAVE_KINDS = ["oom", "stack_overflow", "jvm_error", "resource", "fatal"];  // most grave first
+  const GRAVE_LABEL = { oom: "Out of memory", stack_overflow: "Stack overflow", jvm_error: "JVM error", resource: "Resource exhausted", fatal: "FATAL" };
+  const GRAVE_TAG = { oom: "OOM", stack_overflow: "STACK", jvm_error: "JVM", resource: "LIMIT", fatal: "FATAL" };
+  const GRAVE = (D.grave || []).map((g) => ({
+    kind: Object.hasOwn(GRAVE_TAG, g.kind) ? g.kind : "fatal", ts: g.ts, last_ts: g.last_ts || g.ts,
+    ms: parseTs(g.ts), last: parseTs(g.last_ts || g.ts), count: g.count || 1, sig: g.signature || "", text: g.text || "",
+  })).filter((g) => g.ms === g.ms).sort((a, b) => a.ms - b.ms);
+  const GRAVE_SIGS = new Map();
+  for (const g of GRAVE) if (!GRAVE_SIGS.has(g.sig)) GRAVE_SIGS.set(g.sig, g.kind);
 
   const CMP = CMPD ? new Map() : null;
   if (CMPD) {
@@ -430,6 +450,10 @@
 
   function commit(patch, opts = {}) {
     if ("sig" in patch && patch.sig !== S.sig) CLIP.d = null; // each group's chart starts automatic
+    if (!opts.noUndo && ("t" in patch || "z" in patch || "bin" in patch) && viewKey(S) !== viewKey({ ...S, ...patch })) {
+      UNDO.push({ t: S.t ? [...S.t] : null, z: S.z ? [...S.z] : null, bin: S.bin || "" });
+      if (UNDO.length > 100) UNDO.shift();
+    }
     Object.assign(S, patch);
     if (opts.keepPage !== true && !("p" in patch)) S.p = 0;
     const h = hashOf(S);
@@ -504,6 +528,8 @@
   const seenTitle = (x) => (x && x.approx ? "Within this hour: the exact time of the group's entries inside the window is not in the report" : "");
   /** Signatures of a row (its members for a coarse or merged row) that have entries here. */
   const sigsOf = (r) => (r.members || [r]).filter((m) => !m.gone).map((m) => m.sig);
+  /** The grave kind of a row (any of its signatures), or "". */
+  const graveKind = (r) => { for (const s of r.sigs || [r.sig]) if (GRAVE_SIGS.has(s)) return GRAVE_SIGS.get(s); return ""; };
   const isMuted = (r) => S.mute.size > 0 && !r.gone && sigsOf(r).every((s) => S.mute.has(s));
   let LVKEY = null, LV_EFF = null;
   /** The timeline's level series without the entries of muted groups. */
@@ -721,7 +747,9 @@
     const p95 = nz.length ? nz[Math.floor(0.95 * (nz.length - 1))] : 0;
     const spiky = p95 > 0 && maxT > 4 * p95;
     const clip = spiky && CLIP[opts.clipKey || "tl"] !== false;
-    const padT = clip ? 18 : 8;
+    // grave errors in the frame get a badge row above the plot
+    const gv = opts.grave ? opts.grave.filter((g) => g.last >= frame.a && g.ms < frame.b) : [];
+    const padT = (clip ? 18 : 8) + (gv.length ? 16 : 0);
     const plotH = H - padT - padB;
     const ticks = small ? niceTicks(clip ? p95 : maxT, 2, true) : niceTicks(clip ? p95 : maxT);
     const yMax = ticks[ticks.length - 1];
@@ -854,12 +882,35 @@
         parts[svgAt] = parts[svgAt].replace("<svg ", `<svg class="has-ov" `);
       }
     }
+    const badges = [];
+    if (gv.length) {
+      // a red line (and a band for a run of them) through the plot at each grave error
+      const xs = (ms) => Math.max(padL, Math.min(padL + plotW, padL + frame.pos(ms) * slot));
+      const marks = [];
+      for (const g of gv) {
+        const x0 = xs(g.ms), x1 = xs(g.last + 1);
+        if (x1 - x0 > 2) marks.push(`<rect class="grave-band g-${g.kind}" x="${r1(x0)}" y="${padT}" width="${r1(x1 - x0)}" height="${r1(plotH)}"/>`);
+        marks.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="${padT - 3}" y2="${r1(bottom0)}"/>`);
+        // one badge for markers less than 44 px apart
+        const last = badges[badges.length - 1];
+        if (last && x0 - last.x1 < 44) { last.items.push(g); last.x1 = x0; } else badges.push({ x0, x1: x0, items: [g] });
+      }
+      parts.push(`<g class="grave" aria-hidden="true">${marks.join("")}</g>`);
+    }
     parts.push(`<rect class="brush" x="0" y="${padT}" width="0" height="${plotH}" visibility="hidden"/>`);
     parts.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/>`);
+    badges.forEach((c, i) => {
+      const kind = c.items.reduce((k, g) => (GRAVE_KINDS.indexOf(g.kind) < GRAVE_KINDS.indexOf(k) ? g.kind : k), c.items[0].kind);
+      const label = GRAVE_TAG[kind] + (c.items.length > 1 ? " ×" + c.items.length : "");
+      const bwid = 10 + label.length * 6.6;
+      const bx = Math.min(W - padR - bwid, Math.max(padL - 6, (c.x0 + c.x1) / 2 - bwid / 2));
+      parts.push(`<g class="grave-badge g-${kind}" data-grave="${i}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.items))}">` +
+        `<rect x="${r1(bx)}" y="1" width="${r1(bwid)}" height="15" rx="3"/><text x="${r1(bx + bwid / 2)}" y="12" text-anchor="middle">⚠ ${esc(label)}</text></g>`);
+    });
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, frame, ovName: opts.overlay ? opts.overlay.name : "" };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, frame, graves: badges, ovName: opts.overlay ? opts.overlay.name : "" };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -910,7 +961,7 @@
         rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} first seen</span></div>` +
           `<div class="tt-note">Click the dot under the axis to list them</div>`);
       } else if (geo.top) {
-        rows.push(`<div class="tt-note">${S.z ? "Drag to zoom in further; − or Reset zooms out" : S.t ? "Drag for another window; click to clear it; + zooms in" : "Drag to select a time window"}</div>`);
+        rows.push(`<div class="tt-note">${ZOOMSEL ? (S.z ? "Drag to zoom in further; − zooms out, Undo goes back" : "Drag to zoom into a time range") : S.t ? "Drag for another window; click to clear it" : "Drag to select a time window"}</div>`);
       }
       tip.innerHTML = `<div class="tt-h">${esc(geo.frame.range(b))}</div>${rows.join("")}`;
       if (tip.hidden && window.RagnalogTips) window.RagnalogTips.hide();  // one tooltip at a time
@@ -1000,6 +1051,12 @@
       html += `<span class="lg-sel" title="${what}: entries per bin as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest bin"><i class="sw-sel"></i>${esc(ov.name.charAt(0).toUpperCase() + ov.name.slice(1))}</span>`;
     }
     if (TL_NOTE) html += `<span class="tl-muted">${esc(TL_NOTE)}</span>`;
+    if (GRAVE.length) {
+      const by = new Map();
+      for (const g of GRAVE) by.set(g.kind, (by.get(g.kind) || 0) + 1);
+      const what = GRAVE_KINDS.filter((k) => by.has(k)).map((k) => `${GRAVE_TAG[k]} ${fmt(by.get(k))}×`).join(" · ");
+      html = `<button type="button" class="grave-key" data-grave-first title="Grave errors in the set (out of memory, stack overflow, JVM errors, exhausted resources, FATAL): click to zoom to the first">⚠ ${esc(what)}</button>` + html;
+    }
     $("tl-legend").innerHTML = html;
   }
   // ---- the top chart's frame and its counts
@@ -1151,9 +1208,17 @@
     TL_NOTE = note;
     renderLegend();
     el.classList.remove("loading");
-    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level`, overlay, births: birthsIn(frame), top: true, ovLane: true });
+    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level`, overlay, births: birthsIn(frame), top: true, ovLane: true, grave: GRAVE });
+    for (const b of TL.svg.querySelectorAll("[data-grave]")) {
+      const items = TL.graves[+b.dataset.grave].items;
+      b.addEventListener("pointermove", (e) => { tip.innerHTML = graveTip(items); tip.hidden = false; placeTip(e); });
+      b.addEventListener("pointerleave", () => { tip.hidden = true; });
+      const go = () => openGrave(items[0]);
+      b.addEventListener("click", go);
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+    }
     $("tl-bin").textContent = binName(frame.size);
-    el.title = S.z ? "Drag across the chart to zoom in further" : "Drag across the chart to select a time window; click to clear it";
+    el.title = ZOOMSEL ? (S.z ? "Drag across the chart to zoom in further" : "Drag across the chart to zoom into a time range") : "Drag across the chart to select a time window; click to clear it";
     $("tl-clip").innerHTML = clipBtn(TL);
     renderBins();
     const hit = TL.svg.querySelector(".hit");
@@ -1188,8 +1253,8 @@
         return;
       }
       const a = f.start(Math.min(d.b0, d.b1)), b = f.end(Math.max(d.b0, d.b1));
-      // zoomed: the selection is the next zoom (the window follows it, in whole hours)
-      if (S.z) zoomTo([a, b]);
+      // zoom on: the selection is the zoom (the window follows it, in whole hours); off: the window
+      if (ZOOMSEL) zoomTo([a, b]);
       else commit({ t: hoursCovering(a, b) });
     };
     hit.addEventListener("pointerup", end);
@@ -1216,6 +1281,47 @@
     let na = (a + b) / 2 - w / 2;
     na = Math.max(T0MS, Math.min(T1MS - w, na));
     zoomTo([na, na + w]);
+  }
+  /** The zoom toggle: off shows the whole set (the window stays) and drags select windows; on
+   *  zooms into the window, if one is set, and drags zoom. */
+  function toggleZoomSel() {
+    ZOOMSEL = !ZOOMSEL;
+    try { localStorage.setItem(ZS_KEY, ZOOMSEL ? "1" : "0"); } catch { /* storage unavailable */ }
+    if (!ZOOMSEL && S.z) commit({ z: null }, { keepPage: true });
+    else if (ZOOMSEL && S.t && !S.z) zoomTo([T0MS + S.t[0] * HOUR, T0MS + (S.t[1] + 1) * HOUR]);
+    else { renderZoomCtl(); renderTimeline(); }
+    toast(ZOOMSEL ? "Zoom on: a drag zooms into the selection" : "Zoom off: a drag selects a time window");
+  }
+  /** Undo: the chart's previous window, zoom and bin (Clear included). */
+  function undo() {
+    const v = UNDO.pop();
+    if (!v) return toast("Nothing to undo");
+    commit({ t: v.t, z: v.z, bin: v.bin }, { noUndo: true, keepPage: true });
+  }
+  const MAG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14M5 7h4M7 5v4"/></svg>`;
+  const UNDO_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3 2.5 6l3 3"/><path d="M2.5 6H10a3.5 3.5 0 0 1 0 7H7"/></svg>`;
+  /** Undo and the zoom toggle, at the head of the chart. */
+  function renderZoomCtl() {
+    const el = $("tl-zoom");
+    if (!el) return;
+    if (!NH) { el.innerHTML = ""; return; }
+    el.innerHTML = `<button type="button" class="btn small zbtn z-undo" data-undo ${UNDO.length ? "" : "disabled"} title="Undo: back to the previous zoom, window and bins, also after Clear (u)">${UNDO_SVG}<span>Undo</span></button>` +
+      `<button type="button" class="btn small zbtn z-toggle" data-zoomsel aria-pressed="${ZOOMSEL}" title="${ZOOMSEL ? "Zoom is on: a drag on the chart zooms into the selection, with finer bins. Click: the whole set again, and drags select a time window" : "Zoom is off: a drag selects a time window. Click: zoom into the window, and drags zoom"}">${MAG}<span>Zoom</span></button>`;
+  }
+  const graveLabel = (items) => items.length === 1
+    ? `${GRAVE_LABEL[items[0].kind]} at ${tsShort(items[0].ts)} ${TZ}${items[0].count > 1 ? `, ${fmt(items[0].count)} entries` : ""}`
+    : `${items.length} grave errors from ${tsShort(items[0].ts)} ${TZ}`;
+  function graveTip(items) {
+    const rows = items.slice(0, 6).map((g) => `<div class="tt-g grave-row"><b class="g-${g.kind}">${esc(GRAVE_TAG[g.kind])}</b><span>` +
+      `${esc(tsShort(g.ts))}${g.count > 1 ? ` – ${esc(tsShort(g.last_ts).slice(6))} · ${fmt(g.count)} entries` : ""}<br>${esc(g.text)}</span></div>`).join("");
+    return `<div class="tt-h grave-h">⚠ ${esc(items.length === 1 ? GRAVE_LABEL[items[0].kind] : `${items.length} grave errors`)} <span class="muted">${TZ}</span></div>${rows}` +
+      (items.length > 6 ? `<div class="tt-note">+${fmt(items.length - 6)} more</div>` : "") +
+      `<div class="tt-note">Click: open its group</div>`;
+  }
+  /** A grave error: its group in the drawer (its line on the chart). */
+  function openGrave(g) {
+    if (lookup(g.sig)) open(g.sig);
+    else toast("Its group is not in this report (max groups)");
   }
   /** The bins menu: automatic, or a finer or coarser bin the chart's width allows. */
   function renderBins() {
@@ -1264,7 +1370,7 @@
       return;
     }
     const presets = PRESETS.map(([h, label]) => {
-      const on = !S.z && S.t && S.t[0] === NH - h && S.t[1] === NH - 1;
+      const on = S.t && S.t[0] === NH - h && S.t[1] === NH - 1 && (!S.z || (S.z[0] === T0MS + (NH - h) * HOUR && S.z[1] === T1MS));
       return `<button type="button" data-win="${h}" aria-pressed="${!!on}" title="The last ${label} of the set">${label}</button>`;
     }).join("");
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
@@ -1302,7 +1408,6 @@
     el.innerHTML = win + what.join("") +
       `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
       `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
-      `<button type="button" class="btn small" data-zoom="in" title="Zoom the chart into the window, with finer bins (+)">Zoom in</button>` +
       seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
   }
 
@@ -1423,7 +1528,7 @@
       `<td class="c-count" data-tip-k="rpt-count"><div class="cnt"><span class="num">${fmt(n)}${of}</span>${track}</div></td>` +
       `<td class="c-lv">${badge(r.lvl, r.level)}</td>` +
       `<td class="c-logger" data-tip-k="rpt-logger">${loggerHtml(r.logger, true)}</td>` +
-      `<td class="c-tpl" data-tip-k="rpt-group"><span class="tpl">${multi}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${markHtml(tplHtml(r.tpl), Q.text)}</span><span class="sub">${markHtml(loggerHtml(r.logger, true), Q.text)}${r.exc ? " · " + markHtml(excHtml(r.exc, true), Q.text) : ""}</span></td>` +
+      `<td class="c-tpl" data-tip-k="rpt-group"><span class="tpl">${multi}${graveKind(r) ? `<span class="grave-pill g-${graveKind(r)}" title="${esc(GRAVE_LABEL[graveKind(r)])}: this group holds grave errors (a red marker on the chart)">⚠ ${GRAVE_TAG[graveKind(r)]}</span>` : ""}${isMuted(r) ? `<span class="badge-mute" title="Left out of the chart (m)">muted</span>` : ""}${markHtml(tplHtml(r.tpl), Q.text)}</span><span class="sub">${markHtml(loggerHtml(r.logger, true), Q.text)}${r.exc ? " · " + markHtml(excHtml(r.exc, true), Q.text) : ""}</span></td>` +
       `<td class="c-exc"${r.exc ? ` data-tip-k="rpt-exc"` : ""}>${r.exc ? excHtml(r.exc) : nilHtml()}</td>` +
       `<td class="c-spark"${r.hourly.length ? ` data-tip-k="rpt-spark"` : ""}>${spark(r)}</td>` +
       `<td class="c-last"${last ? ` data-tip-k="rpt-seen"` : ""}>${last ? tsHtml(seenText(last)) : nilHtml()}</td>` +
@@ -2465,6 +2570,7 @@
     renderTable(v);
     if (TL && tlKey() !== TLK) renderTimeline();
     renderWindowLabel();
+    renderZoomCtl();
     if (TL) showWindow(TL);
     renderDrawer();
     updateSticky();
@@ -2759,7 +2865,8 @@
       else if (b.dataset.sortFirst != null) commit({ sort: "first_seen" });
       else if (b.dataset.win != null) {
         const h = Number(b.dataset.win);
-        commit({ t: h > 0 ? [NH - h, NH - 1] : null, z: null });
+        if (h > 0 && ZOOMSEL) zoomTo([T0MS + (NH - h) * HOUR, T1MS]);
+        else commit({ t: h > 0 ? [NH - h, NH - 1] : null, z: null });
       }
     });
     $("f-search").addEventListener("input", (e) => {
@@ -2890,6 +2997,17 @@
     $("btn-theme").onclick = toggleTheme;
     if ($("btn-tz")) $("btn-tz").onclick = toggleTz;
     $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
+    $("tl-zoom").addEventListener("click", (e) => {
+      const b = e.target.closest("button");
+      if (!b || b.disabled) return;
+      if (b.dataset.undo != null) undo();
+      else if (b.dataset.zoomsel != null) toggleZoomSel();
+    });
+    $("tl-legend").addEventListener("click", (e) => {
+      if (!e.target.closest("[data-grave-first]") || !GRAVE.length) return;
+      const g = GRAVE[0];
+      zoomTo([g.ms - 15 * 6e4, g.last + 15 * 6e4]);
+    });
     $("tl-bins").addEventListener("change", (e) => {
       if (e.target.id === "tl-binsel") commit({ bin: e.target.value }, { keepPage: true, replace: true });
     });
@@ -3009,6 +3127,7 @@
         case "]": shiftWindow(1); break;
         case "+": case "=": zoomIn(); break;
         case "-": zoomOut(); break;
+        case "u": undo(); break;
         case "?": help.showModal(); break;
         default:
       }
