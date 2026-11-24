@@ -212,12 +212,16 @@ remove, or "Remove all filters".
   Clear (the viewer's toggle choice is kept in `localStorage`, shared with the
   cluster page). The window follows the zoom in whole hours (the table's counts are
   per hour), and the zoom's tooltip says which. The bin size is automatic,
-  the finest whose bars keep 5 px (as the hourly chart always chose), and *Bins*
+  the finest whose bars keep 6 px (bars fill their slot but for a gap of an eighth, 1-4 px;
+  in the web app also finer than an hour when not zoomed), and *Bins*
   picks another: finer down to 2 px a bar, or coarser, from 1 s to 7 d. A pick that
   does not fit the shown range falls back to automatic until it fits again. In the
   hash: `z=20261029T1400-20261029T1530` (UTC, seconds when needed) and `bin=5m`.
   Bins of an hour or more add up the payload's hourly counts, on the shown zone's
-  clock. Bins under an hour (also the automatic bins of a set shorter than a day) are
+  clock. The y-axis ends just above the tallest column (its ticks at nice values below);
+  *Log scale* next to *Bins* (`log=1`) draws each column log(1 + n) high, its levels keeping
+  their share, so one entry still shows next to thousands (spikes are not clipped then).
+  Bins under an hour (also the automatic bins of a set shorter than a day) are
   counted by the server: `GET /api/sets/{id}/timeline?bucket=…&since=…&until=…&by_level=true`,
   with a muted group's own timeline subtracted and the open group's drawn as the
   line; the chart drawn so far fades while they load. The static file makes no
@@ -490,8 +494,12 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
   node) where no event arrow exists; "Arrows" hides them. Job runs (`job_run`) are left out of the lanes (and the events table) unless "Job runs" is on (`#jobs=1`): they repeat on a schedule and would hide the rare events. `reindex` has its own glyph (a circular arrow), apart from `index_replay`'s dot. y-scale: shared, per node,
   % of node (counts over the node's entries in the range), or *Errors* (`y=err`: only the
   ERROR column of every node on one scale, so a flood of WARN does not flatten them; a
-  spike above 4× the 95th percentile is clipped and labelled `↑ 18.3K`). The y-scale and
-  the two toggles wrap as one group on a narrow page. With two or more nodes a thin
+  spike above 4× the 95th percentile is clipped and labelled `↑ 18.3K`). Each band's axis
+  ends just above its tallest column. *Log scale* (Chart options, `log=1`) draws each column
+  log(1 + n) high (log(1 + n / 0.1) on the % scale), its levels keeping their share, with
+  ticks at powers of ten; in *Errors* mode spikes are then not clipped. The bins are
+  automatic as on the set report (bars of at least 6 px; in the web app finer than the base
+  bucket also unzoomed). The y-scale and the toggles wrap as one group on a narrow page. With two or more nodes a thin
   *together* lane above the first node marks cross-node moments: the drawn buckets
   holding a timeline bucket (an hour, or 15 min) in which two or more nodes log more
   than 3× their own usual errors (usual: the median of that node's timeline buckets with

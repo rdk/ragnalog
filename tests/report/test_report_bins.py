@@ -78,11 +78,11 @@ def _run(tmp_path: Path) -> Any:
 
 def test_automatic_bin_fits_the_span(tmp_path: Path) -> None:
     out = _run(tmp_path)
-    # bars of at least 10 px over 1100 px
-    assert out["week"] == 7_200_000  # a week: 2-hour bins, 84 bars of 13 px (hours: 6.5 px)
-    assert out["twoHours"] == 120_000  # zoomed into 2 hours: 2 min (minute bars would be 9 px)
+    # bars of at least 6 px over 1100 px
+    assert out["week"] == 3_600_000  # a week keeps hourly bins: 168 bars of 6.5 px
+    assert out["twoHours"] == 60_000  # 2 hours: minutes (30 s bars would be 4.6 px)
     assert out["twoHoursOffline"] == 3_600_000  # the standalone file has hours only
-    assert out["tenMinutes"] == 10_000
+    assert out["tenMinutes"] == 5_000
 
 
 def test_bins_menu_offers_finer_and_coarser_bins(tmp_path: Path) -> None:

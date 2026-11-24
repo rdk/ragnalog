@@ -543,6 +543,7 @@
       fit: get("fit") !== "0",
       arrows: get("arrows") !== "0",
       jobs: get("jobs") === "1",
+      log: get("log") === "1",
       ml: LOG_LEVELS.includes(get("ml")) ? get("ml") : "",
       mn: mn.length ? new Set(mn) : null,
       mq: get("mq"),
@@ -572,6 +573,7 @@
     if (!s.fit) p.set("fit", "0");
     if (!s.arrows) p.set("arrows", "0");
     if (s.jobs) p.set("jobs", "1");
+    if (s.log) p.set("log", "1");
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.ex) p.set("ex", s.ex);
@@ -620,7 +622,7 @@
   function onNav() {
     clearTimeout(qTimer);
     clearTimeout(mqTimer);
-    const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t + S.z + S.bin;
+    const prevY = S.y + S.fit + S.arrows + S.jobs + S.log + S.sig + S.t + S.z + S.bin;
     S = parseHash();
     zoomSelFor(S);
     if (S.theme === "dark" || S.theme === "light") {
@@ -632,7 +634,7 @@
     if (S.tz && (S.tz === "local") !== TZL) applyZone(S.tz === "local", true);
     $("f-search").value = S.q;
     $("l-search").value = S.mq;
-    update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.sig + S.t + S.z + S.bin);
+    update(prevY !== S.y + S.fit + S.arrows + S.jobs + S.log + S.sig + S.t + S.z + S.bin);
   }
   window.addEventListener("popstate", onNav);
   window.addEventListener("hashchange", () => {
@@ -746,6 +748,28 @@
     for (let v = 0; v < max + step * 0.999; v += step) out.push(Math.round(v * 1e6) / 1e6);
     if (out[out.length - 1] < max) out.push(out[out.length - 1] + step);
     return out;
+  }
+  /** Log bar heights (the y-scale option): log(1 + v / k), so 1 entry still shows next to
+      10,000; k is 1 entry (0.1 % on the percentage scale). */
+  const lg = (v, k) => Math.log1p(Math.max(0, v) / k);
+  /** The ticks of a log axis up to max: powers of ten from k, at most 3 (no 0: it would crowd
+      the 1 just above it; the baseline says it). */
+  function logTicks(max, k) {
+    const pw = [];
+    for (let t = k; t <= max * 1.0001; t *= 10) pw.push(Math.round(t * 1e6) / 1e6);
+    const step = Math.max(1, Math.ceil(pw.length / 3));
+    return pw.filter((_, i) => (pw.length - 1 - i) % step === 0);
+  }
+  /** The y range of a chart whose tallest bar is top: it ends just above it (a nice tick
+      would leave up to twice the room), the ticks at nice values below it. */
+  function yRange(top, parts, int, log, k) {
+    if (log) {
+      const yMax = top > 0 ? Math.max(top * 1.02, k * 2) : k * 10;
+      return { yMax, ticks: logTicks(yMax, k) };
+    }
+    const ticks = niceTicks(top, parts, int);
+    const yMax = top > 0 ? top * 1.04 : ticks[ticks.length - 1] || 1;
+    return { yMax, ticks: ticks.filter((t) => t <= yMax) };
   }
   function binArr(src, k, nb) {
     const out = new Float64Array(nb);
@@ -946,9 +970,9 @@
     // (the finest whose bars keep 5 px, as before); bins under the base bucket from the server
     const [za, zb] = S.z || [TA, TE];
     const span = zb - za;
-    const floor = FINE && S.z ? 1e3 : BMS;
-    // the finest bin whose bars keep 10 px (thinner ones read as hairlines)
-    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 10 <= plotW) || SIZES[SIZES.length - 1];
+    const floor = FINE ? 1e3 : BMS;  // bins under the base bucket come from the server
+    // the finest bin whose bars keep 6 px (they fill their slot, so the chart reads as a histogram)
+    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 6 <= plotW) || SIZES[SIZES.length - 1];
     const choices = SIZES.filter((ms) => { const c = Math.ceil(span / ms); return c >= 2 && c <= Math.floor(plotW / 2); });
     const want = keyMs(S.bin);
     const size = want && choices.includes(want) ? want : auto;
@@ -1025,7 +1049,7 @@
     // errors mode: a spike far above the rest (max > 4 × the 95th percentile) is clipped and labelled,
     // so one burst does not flatten every other hour's errors
     let clipAt = 0;
-    if (ERR && !fit) {
+    if (ERR && !fit && !S.log) {  // the log scale shows a spike without clipping it
       const nz = [];
       let mx = 0;
       for (const r of rows) for (let b = 0; b < nb; b++) if (r.tot[b] > 0) { nz.push(r.tot[b]); mx = Math.max(mx, r.tot[b]); }
@@ -1041,10 +1065,14 @@
       r.peak = m;
       shared = Math.max(shared, m);
     }
+    const LOG = S.log, LOGK = S.y === "pct" ? 0.1 : 1;
     for (const r of rows) {
-      r.ticks = niceTicks(S.y === "node" ? r.peak : shared, BAND < 70 ? 2 : 3, S.y !== "pct" && !fit);
-      r.yMax = r.ticks[r.ticks.length - 1] || 1;
+      const yr = yRange(S.y === "node" ? r.peak : shared, BAND < 70 ? 2 : 3, S.y !== "pct" && !fit, LOG && !clipAt, LOGK);
+      r.ticks = yr.ticks;
+      r.yMax = yr.yMax;
     }
+    /** Pixels of a value in a band plotH high: linear, or log (S.log). */
+    const hOf = (r, v, plotH) => (LOG && !clipAt ? (plotH * lg(v, LOGK)) / lg(r.yMax, LOGK) : (plotH * v) / r.yMax);
     const tickText = (t) => (S.y === "pct" ? compact(t) + "%" : compact(t));
     const P = [];
     P.push(`<svg class="${S.arrows ? "" : "arrows-off"}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${ERR ? "Errors" : "Entries"} per ${esc(sizeLabel(fr.size))}${ERR ? "" : " by level"}, one band per node, with event lanes">`);
@@ -1062,7 +1090,10 @@
       }
     }
     // cross-node moments: the bins where 2 or more nodes log errors far above their own usual
-    const XMS = MULTI && fr.kind === "base" ? crossMoments(rows, fr) : [];
+    // found per base bucket (also when the bins are finer), drawn across that bucket's time
+    const mfr = fr.kind === "base" ? fr
+      : baseFrame(Math.max(0, Math.floor((fr.a - TA) / BMS)), Math.min(NB, Math.max(1, Math.ceil((Math.min(fr.b, TE) - TA) / BMS))), 1);
+    const XMS = MULTI ? crossMoments(rows, mfr) : [];
     if (XM) {
       const y = RULER + 3;
       P.push(`<text class="xm-lbl" x="${padL - 6}" y="${y + 9}" text-anchor="end"${tipAttr({ h: "Cross-node moments",
@@ -1070,8 +1101,10 @@
         note: "Click a mark, or focus it and press Enter: the window moves there and the merged log opens ±30 s on all nodes around its busiest moment." })}>together</text>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${y + 5.5}" y2="${y + 5.5}"/>`);
       for (const m of XMS) {
-        const x = padL + m.b * slot + Math.max(0, (slot - Math.max(3, bw)) / 2);
-        P.push(`<rect class="xm" data-xm="${m.b}" tabindex="0" role="button" aria-label="${esc(xmLabel(m, fr))}" x="${r1(x)}" y="${y + 1}" width="${r1(Math.max(3, Math.min(bw, slot)))}" height="9" rx="2" style="--xa:${r1(0.45 + 0.55 * Math.min(1, (m.nodes.length - 1) / Math.max(1, N - 1)))}"/>`);
+        const x0 = clampX(xOfMs(mfr.start(m.b))), x1 = clampX(xOfMs(mfr.end(m.b)));
+        const w = Math.max(3, x1 - x0 - Math.min(4, Math.max(1, (x1 - x0) / 8)));
+        const x = x0 + Math.max(0, (x1 - x0 - w) / 2);
+        P.push(`<rect class="xm" data-xm="${m.b}" tabindex="0" role="button" aria-label="${esc(xmLabel(m, mfr))}" x="${r1(x)}" y="${y + 1}" width="${r1(w)}" height="9" rx="2" style="--xa:${r1(0.45 + 0.55 * Math.min(1, (m.nodes.length - 1) / Math.max(1, N - 1)))}"/>`);
       }
     }
     const GB = [];  // grave badges: {n, y, x0, x1, items}
@@ -1108,7 +1141,7 @@
       for (const [a, b] of GAPS[n]) hatch(clampX(xOfMs(a)), clampX(xOfMs(b)), "gap");
       // y grid
       for (const t of r.ticks) {
-        const y = r1(bBot - (plotH * t) / r.yMax) + 0.5;
+        const y = r1(bBot - hOf(r, t, plotH)) + 0.5;
         if (t > 0) P.push(`<line class="grid" x1="${padL}" x2="${r1(xEnd)}" y1="${y}" y2="${y}"/>`);
         P.push(`<text class="axis" x="${padL - 6}" y="${y + 4}" text-anchor="end">${esc(tickText(t))}</text>`);
       }
@@ -1120,10 +1153,14 @@
         let topIdx = -1;
         for (let s = 0; s < BUCKETS.length; s++) if (r.lev[s][b]) topIdx = s;
         let y = bBot, firstSeg = true;
+        // the column's height (log or linear), shared by its levels in proportion
+        let sum = 0;
+        for (let s = 0; s < BUCKETS.length; s++) sum += r.lev[s][b] * r.f;
+        const hCol = hOf(r, sum, plotH);
         for (let s = 0; s < BUCKETS.length; s++) {
           const v = r.lev[s][b] * r.f;
           if (!v) continue;
-          const hpx = (plotH * v) / r.yMax;
+          const hpx = (hCol * v) / sum;
           const bottom = firstSeg ? y : y - GAP;
           if (bottom <= plotT) break;
           let top = Math.max(plotT, y - hpx);
@@ -1158,7 +1195,7 @@
         for (let b = 0; b < nb; b++) {
           if (!r.has[b] && !r.g[b]) { pts.push(null); continue; }
           const v = Math.min(r.yMax, r.g[b] * r.f);
-          pts.push([padL + b * slot + slot / 2, bBot - (plotH * v) / r.yMax]);
+          pts.push([padL + b * slot + slot / 2, bBot - hOf(r, v, plotH)]);
         }
         const { d, dots } = linePath(pts);
         if (d) P.push(`<path class="ghalo" d="${d}"/><path class="gline" d="${d}"/>`);
@@ -1203,8 +1240,8 @@
       arrow(e.node, e.subject, x, "");
       seen.add(e.node + "\n" + e.subject + "\n" + Math.floor((e.ms - fr.a) / fr.size));
     }
-    const MARKS = [];
-    for (const m of fr.kind === "base" ? MENT : []) {  // per base bucket: not at finer bins
+    const MARKS = [];  // the hover card's mentions: per bin of a base frame only
+    for (const m of MENT) {  // per base bucket; at finer bins the arrow stands at the bucket's middle
       const from = str(m.from), to = str(m.to);
       if (!NIDX.has(from) || !NIDX.has(to) || from === to) continue;
       const bins = new Map();
@@ -1212,8 +1249,8 @@
         const g = GBY.get(str(sig));
         if (!g) continue;
         for (const [i, c] of g.hourly[from]) {
-          if (i < fr.ia || i >= fr.ib) continue;
-          const b = fr.binOf(i);
+          if (i < mfr.ia || i >= mfr.ib) continue;
+          const b = mfr.binOf(i);
           const cur = bins.get(b) || { count: 0, sigs: new Set() };
           cur.count += num(c);
           cur.sigs.add(g.sig);
@@ -1221,8 +1258,9 @@
         }
       }
       for (const [b, v] of bins) {
-        MARKS.push({ from, to, b, count: v.count, sigs: [...v.sigs] });
-        if (!seen.has(from + "\n" + to + "\n" + b)) arrow(from, to, padL + b * slot + slot / 2, " arrow-m");
+        if (fr.kind === "base") MARKS.push({ from, to, b, count: v.count, sigs: [...v.sigs] });
+        const xm = xOfMs((mfr.start(b) + mfr.end(b)) / 2);
+        if (xm >= padL && xm <= xEnd && !seen.has(from + "\n" + to + "\n" + Math.floor((xm - padL) / slot))) arrow(from, to, xm, " arrow-m");
       }
     }
     // x axis
@@ -1253,11 +1291,11 @@
     const svg = el.firstElementChild;
     fitBadges(svg, padL - 4, xEnd);
     TLG = {
-      svg, padL, slot, k, nb, rows, xOfMs, pxPerMs, marks: MARKS, sel, xms: XMS, frame: fr, graves: GB, plotW, xEnd,
+      svg, padL, slot, k, nb, rows, xOfMs, pxPerMs, marks: MARKS, sel, xms: XMS, xmFrame: mfr, frame: fr, graves: GB, plotW, xEnd,
       band: svg.querySelector(".hover-band"), brush: svg.querySelector(".brush"),
       binAt: (clientX) => Math.max(0, Math.min(nb - 1, Math.floor((clientX - svg.getBoundingClientRect().left - padL) / slot))),
     };
-    $("tl-title").innerHTML = `${ERR ? "Errors" : "Entries"} per ${esc(sizeLabel(fr.size))} <span class="h-sub">${ERR ? "ERROR and FATAL" : "by level"}</span>`;
+    $("tl-title").innerHTML = `${ERR ? "Errors" : "Entries"} per ${esc(sizeLabel(fr.size))} <span class="h-sub">${ERR ? "ERROR and FATAL" : "by level"}${LOG && !clipAt ? ", log scale" : ""}</span>`;
     $("tl-title").title = "One band per node; the columns are stacked by level. " +
       (ZOOMSEL ? "Drag across a band to zoom into a time range (Zoom is on)." : "Drag across a band to select a time window.");
     bindTimeline(TLG);
@@ -1423,7 +1461,7 @@
       (web app: the 10 s with the most errors on two or more nodes; static: the window's errors). */
   let xmReq = 0;
   function openMoment(geo, b) {
-    const fr = geo.frame;
+    const fr = geo.xmFrame || geo.frame;  // moments are base buckets
     const t = [fr.ia + b * fr.k, Math.min(fr.ib - 1, fr.ia + (b + 1) * fr.k - 1)];
     const m = arr(geo.xms).find((x) => x.b === b);
     const fallback = () => {
@@ -1483,7 +1521,7 @@
       }
       if (t.dataset && t.dataset.xm != null) {
         const m = geo.xms.find((x) => x.b === +t.dataset.xm);
-        if (m) showTip(e, xmTip(m, geo.frame));
+        if (m) showTip(e, xmTip(m, geo.xmFrame));
         return;
       }
       const row = rowOf(t);
@@ -1572,7 +1610,7 @@
       const x = m && geo.xms.find((v) => v.b === +m.dataset.xm);
       if (!x) return;
       const r = m.getBoundingClientRect();
-      showTip({ clientX: r.left, clientY: r.bottom }, xmTip(x, geo.frame));
+      showTip({ clientX: r.left, clientY: r.bottom }, xmTip(x, geo.xmFrame));
     });
     svg.addEventListener("focusout", () => { tip.hidden = true; });
   }
@@ -1679,6 +1717,9 @@
     ab.hidden = !tl || !(MENT.length || EVENTS.some((e) => e.subject));
     const jb = $("tl-jobs");
     jb.setAttribute("aria-pressed", String(S.jobs));
+    const lb = $("tl-log");
+    lb.setAttribute("aria-pressed", String(S.log));
+    lb.hidden = !tl;
     jb.hidden = !tl || !EVENTS.some((e) => e.kind === "job_run");
     const w = $("tl-window");
     const presets = PRESETS.map(([nb, label]) => {
@@ -3179,7 +3220,7 @@
     renderTabs();
     renderTimelineControls();
     renderZoomCtl();
-    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs, S.t ? S.t.join("-") : "", S.z ? S.z.join("-") : "", S.bin].join("|");
+    const tlKey = [S.y, S.fit, S.sig, S.arrows, S.jobs, S.log, S.t ? S.t.join("-") : "", S.z ? S.z.join("-") : "", S.bin].join("|");
     if (forceTl || tlKey !== lastTl) {
       lastTl = tlKey;
       renderTimeline();
@@ -3792,6 +3833,7 @@
     });
     $("tl-arrows").onclick = () => commit({ arrows: !S.arrows }, { keepPage: true, replace: true });
     $("tl-jobs").onclick = () => commit({ jobs: !S.jobs }, { keepPage: true, replace: true });
+    $("tl-log").onclick = () => commit({ log: !S.log }, { keepPage: true, replace: true });
     $("l-level").addEventListener("click", (e) => {
       const b = e.target.closest("[data-ml]");
       if (b) commit({ ml: b.dataset.ml }, { keepPage: true });

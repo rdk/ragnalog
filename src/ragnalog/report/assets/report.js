@@ -143,10 +143,10 @@
   }
   /** A bin size in the bins menu: "5 s", "1 min", "3 h", "1 d". */
   const binShort = (ms) => binKey(ms).replace(/^(\d+)([smhd])$/, (_, n, u) => n + " " + (u === "m" ? "min" : u));
-  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 10 px
-   *  (thinner ones read as hairlines), and not finer than floor ms. */
+  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 6 px
+   *  (they fill their slot, so the chart reads as a histogram), not finer than floor ms. */
   function autoBin(span, plotW, floor) {
-    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 10 <= plotW) return ms;
+    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 6 <= plotW) return ms;
     return BIN_SIZES[BIN_SIZES.length - 1][1];
   }
   /** The bins a viewer may pick for span ms over plotW px: 2 bars at least, one per 2 px at most
@@ -459,6 +459,7 @@
       tab: p.get("tab") === "users" ? "users" : "",
       user: p.get("user") || "",
       bin: Object.hasOwn(BIN_MS, p.get("bin") || "") ? p.get("bin") : "",
+      log: p.get("log") === "1",
       theme: p.get("theme") || "",
       tz: ["local", "utc"].includes(p.get("tz")) ? p.get("tz") : "",
       mute: new Set((p.get("mute") || "").split(",").filter((x) => BASE_BY.has(x))),
@@ -481,6 +482,7 @@
     if (s.tab) p.set("tab", s.tab);
     if (s.user) p.set("user", s.user);
     if (s.bin) p.set("bin", s.bin);
+    if (s.log) p.set("log", "1");
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.theme) p.set("theme", s.theme);
@@ -666,8 +668,18 @@
   const GAP = 2;
   const r1 = (x) => Math.round(x * 10) / 10;
   function chooseBin(nh, plotW) {
-    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 10 <= plotW) return k;
+    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 6 <= plotW) return k;
     return 168;
+  }
+  /** Log bar heights (the top chart's option): log(1 + v), so 1 entry still shows next to 10,000. */
+  const lg = (v) => Math.log1p(Math.max(0, v));
+  /** The ticks of a log axis up to max: powers of ten, at most 3 (no 0: it would crowd the 1
+   *  just above it; the baseline says it). */
+  function logTicks(max) {
+    const pw = [];
+    for (let t = 1; t <= max * 1.0001; t *= 10) pw.push(t);
+    const step = Math.max(1, Math.ceil(pw.length / 3));
+    return pw.filter((_, i) => (pw.length - 1 - i) % step === 0);
   }
   function niceTicks(max, parts = 3, int = false) {
     if (max <= 0) return [0, 1];
@@ -796,13 +808,19 @@
     const nz = [...totals].filter((x) => x > 0).sort((x, y) => x - y);
     const p95 = nz.length ? nz[Math.floor(0.95 * (nz.length - 1))] : 0;
     const spiky = p95 > 0 && maxT > 4 * p95;
-    const clip = spiky && CLIP[opts.clipKey || "tl"] !== false;
+    const log = !!opts.log;  // log heights show a spike without clipping it
+    const clip = !log && spiky && CLIP[opts.clipKey || "tl"] !== false;
     // grave errors in the frame get a badge row above the plot
     const gv = opts.grave ? opts.grave.filter((g) => g.last >= frame.a && g.ms < frame.b) : [];
     const padT = (clip ? 18 : 8) + (gv.length ? 16 : 0);
     const plotH = H - padT - padB;
-    const ticks = small ? niceTicks(clip ? p95 : maxT, 2, true) : niceTicks(clip ? p95 : maxT);
-    const yMax = ticks[ticks.length - 1];
+    // the range ends just above the tallest column (a nice tick would leave up to twice the
+    // room), the ticks at nice values below it
+    const topV = clip ? p95 : maxT;
+    const nice = small ? niceTicks(topV, 2, true) : niceTicks(topV);
+    const yMax = log ? Math.max(2, maxT * 1.02) : topV > 0 ? topV * 1.04 : nice[nice.length - 1];
+    const ticks = log ? logTicks(yMax) : nice.filter((t) => t <= yMax);
+    const hOf = (v) => (log ? (plotH * lg(v)) / lg(yMax) : (plotH * v) / yMax);
     const slot = plotW / nb;
     // bars fill their slot but for a gap of an eighth (1-4 px); thin ones (a finer bin than
     // the automatic one) keep a hairline gap
@@ -815,10 +833,11 @@
       let topIdx = -1;
       for (let s = 0; s < series.length; s++) if (binned[s][b]) topIdx = s;
       let y = bottom0, firstSeg = true;
+      const hCol = hOf(totals[b]);  // the column's height, shared by its levels in proportion
       for (let s = 0; s < series.length; s++) {
         const v = binned[s][b];
         if (!v) continue;
-        const hpx = (plotH * v) / yMax;
+        const hpx = (hCol * v) / totals[b];
         const bottom = firstSeg ? y : y - GAP;
         if (bottom <= padT) break;
         let top = Math.max(padT, y - hpx);
@@ -835,7 +854,7 @@
       parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
     }
     for (const t of ticks) {
-      const y = r1(bottom0 - (plotH * t) / yMax) + 0.5;
+      const y = r1(bottom0 - hOf(t)) + 0.5;
       if (t > 0) parts.push(`<line class="grid" x1="${padL}" x2="${W - padR}" y1="${y}" y2="${y}"/>`);
       // with the "new" lane under the axis its label takes the place of the 0
       if (t > 0 || !born) parts.push(`<text class="axis" x="${padL - 6}" y="${y + 4}" text-anchor="end">${compact(t)}</text>`);
@@ -915,7 +934,7 @@
       }
       parts.push(`<g class="ov-lane">${cells.join("")}</g>`);
       if (ovMax >= 0.06 * yMax) {
-        const yOf = (v) => r1(bottom0 - (plotH * Math.min(v, yMax)) / yMax);
+        const yOf = (v) => r1(bottom0 - hOf(Math.min(v, yMax)));
         // one stepped outline per run of bins with entries, down to the baseline at its ends:
         // no line along the baseline where the group is silent (it read as a second axis)
         let d = "";
@@ -1052,7 +1071,7 @@
       : "";
   const TL_TOTALS = {};
   let TLK = "";
-  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",") + "|" + TZ + "|" + overlayKey() + "|" + (S.z ? S.z.join("-") : "") + "|" + S.bin;
+  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",") + "|" + TZ + "|" + overlayKey() + "|" + (S.z ? S.z.join("-") : "") + "|" + S.bin + "|" + S.log;
   /** Groups first seen per hour (signatures; the set's first hour left out: everything starts
    *  there) and the highest level among them: a deploy or an incident shows as a cluster of
    *  new groups. */
@@ -1115,7 +1134,7 @@
   const viewRange = () => S.z || [T0MS, T1MS];
   /** Bins under an hour need the server; without a zoom a timeline of a day or more keeps
    *  hourly bins at least (a page opens without waiting for a request). */
-  const autoFloor = (span) => (!FINE ? HOUR : !S.z && span >= 24 * HOUR ? HOUR : 1e3);
+  const autoFloor = () => (FINE ? 1e3 : HOUR);  // bins under an hour come from the server
   let BINS = { auto: HOUR, choices: [], size: HOUR, span: 0 };
   /** The bin size of the top chart over plotW px: the viewer's pick when it fits, else automatic. */
   function chooseFrameBin(plotW) {
@@ -1262,7 +1281,7 @@
     TL_NOTE = note;
     renderLegend();
     el.classList.remove("loading");
-    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level`, overlay, births: birthsIn(frame), top: true, ovLane: true, grave: GRAVE });
+    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level${S.log ? ", log scale" : ""}`, overlay, births: birthsIn(frame), top: true, ovLane: true, grave: GRAVE, log: S.log });
     for (const b of TL.svg.querySelectorAll("[data-grave]")) {
       const items = TL.graves[+b.dataset.grave].items;
       b.addEventListener("pointermove", (e) => { tip.innerHTML = graveTip(items); tip.hidden = false; placeTip(e); });
@@ -1390,8 +1409,9 @@
   function renderBins() {
     const el = $("tl-bins");
     if (!el) return;
+    const logBtn = NH ? `<button type="button" class="btn small toggle" id="tl-log" aria-pressed="${S.log}" title="Logarithmic bar heights, log(1 + n): one entry still shows next to a burst of thousands (the levels keep their share of each column)">Log scale</button>` : "";
     if (!NH || BINS.choices.length < 2) {
-      el.innerHTML = "";
+      el.innerHTML = logBtn;
       return;
     }
     const cur = S.bin && BINS.choices.includes(BIN_MS[S.bin]) ? S.bin : "";
@@ -1402,7 +1422,7 @@
     const finer = FINE ? "" : " Bins under an hour need the web app (ragnalog serve).";
     const focused = document.activeElement && document.activeElement.id === "tl-binsel";
     if (focused) queueMicrotask(() => { const s = $("tl-binsel"); if (s) s.focus({ preventScroll: true }); });
-    el.innerHTML = `<label class="sel" title="Bin size of the chart: Auto fits the shown range; pick a finer one to see more detail.${finer}"><span>Bins</span><select id="tl-binsel" aria-label="Bin size">${opts.join("")}</select></label>`;
+    el.innerHTML = `<label class="sel" title="Bin size of the chart: Auto fits the shown range; pick a finer one to see more detail.${finer}"><span>Bins</span><select id="tl-binsel" aria-label="Bin size">${opts.join("")}</select></label>${logBtn}`;
   }
   /** Quick windows ending at the last hour of the set: those shorter than the set. */
   const PRESETS = [[1, "1 h"], [6, "6 h"], [24, "24 h"], [168, "7 d"]].filter(([h]) => h < NH);
@@ -3323,6 +3343,9 @@
       if (!e.target.closest("[data-grave-first]") || !GRAVE.length) return;
       const g = GRAVE[0];
       zoomTo([g.ms - 15 * 6e4, g.last + 15 * 6e4]);
+    });
+    $("tl-bins").addEventListener("click", (e) => {
+      if (e.target.closest("#tl-log")) commit({ log: !S.log }, { keepPage: true, replace: true });
     });
     $("tl-bins").addEventListener("change", (e) => {
       if (e.target.id === "tl-binsel") commit({ bin: e.target.value }, { keepPage: true, replace: true });
