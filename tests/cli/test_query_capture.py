@@ -10,6 +10,7 @@ import pytest
 
 from ragnalog.cli.app import run
 from ragnalog.store.store import Store
+from tests.cli.conftest import MINI_LOG, Invoke
 from tests.contract.test_parity import cluster_dir  # noqa: F401 (fixture)
 
 
@@ -84,3 +85,14 @@ def test_capture_query_errors(
     assert (code, doc["error"]["reason"]) == (2, "capture_not_found")
     code, doc = _query(cluster_dir, "cap-acme", "select 1", "--baseline", "nope", capsys=capsys)
     assert (code, doc["error"]["reason"]) == (3, "set_not_found")
+
+
+def test_sql_naming_a_set_file_is_not_a_damaged_set(jcli: Invoke, store_dir: Path) -> None:
+    """Only the reader's error about a set's own file (its full path) is a store_error."""
+    assert jcli("ingest", MINI_LOG, "--name", "mini").code == 0
+    r = jcli("query", "mini", "select error('bad entries.parquet')")
+    assert (r.code, r.json()["error"]["code"]) == (1, "sql_error")
+    set_id = jcli("set", "mini").json()["id"]
+    (store_dir / set_id / "entries.parquet").write_bytes(b"PAR1 not a parquet file PAR1")
+    r = jcli("query", "mini", "select count(*) from entries")
+    assert (r.code, r.json()["error"]["code"]) == (3, "store_error")

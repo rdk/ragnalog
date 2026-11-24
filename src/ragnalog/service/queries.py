@@ -655,8 +655,10 @@ def run_select(
             "or run it where the data directory is",
         ) from exc
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        own = {s.path.name for sources in views.values() for s in sources}
-        if damaged_file(exc) and any(name in str(exc) for name in own):
+        # the reader names a file by the path read_parquet got (run_sql: resolved, POSIX);
+        # a bare file name ("entries.parquet") can come from the user's own SQL
+        own = {s.path.resolve().as_posix() for sources in views.values() for s in sources}
+        if damaged_file(exc) and any(path in str(exc) for path in own):
             raise  # a damaged set file, not the SQL: store_error
         message = str(exc).strip()
         raise OpError("sql_error", message, hint=sql_hint(message, columns)) from exc
