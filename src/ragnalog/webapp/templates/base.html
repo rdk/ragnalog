@@ -31,6 +31,6 @@
 <main class="page">
 {% block main %}{% endblock %}
 </main>
-<footer class="foot muted">ragnalog {{ tool_version }} · JSON for every page under <a href="/docs">/api</a></footer>
+{% set b = build() %}<footer class="foot muted">ragnalog {{ tool_version }}{% if b.label() %} · <span class="foot-build" title="{{ b.title() }}">{{ b.label() }}</span>{% endif %} · JSON for every page under <a href="/docs">/api</a></footer>
 </body>
 </html>

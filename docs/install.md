@@ -89,8 +89,15 @@ To upgrade, change the tag and run `docker compose up -d` again.
 ### Build the image yourself
 
 ```sh
-docker build -t ragnalog .
+docker build -t ragnalog \
+  --build-arg RAGNALOG_BUILD_NUMBER="$(git rev-list --count HEAD)" \
+  --build-arg RAGNALOG_BUILD_GIT="$(git rev-parse --short=7 HEAD)" .
 ```
+
+The two build arguments record the build (the commit count of the built commit, and its
+hash); the image adds its build time. The pages show "build N" next to the version, with
+the time and hash on hover, and `ragnalog version` has them under `build`. Without them the
+image knows only its build time.
 
 ## The `ragnalog` command
 

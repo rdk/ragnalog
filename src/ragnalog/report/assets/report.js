@@ -2837,11 +2837,16 @@
     restoreFocus(fk);
   }
   let lastSig = "", prevSig = "", stuckRaf = 0;
+  /** " · build 412 (built … UTC · git e141465)" of the web app's build, else "". */
+  function buildText() {
+    const m = document.querySelector('meta[name="ragnalog-build"]');
+    return m && m.content ? ` · ${m.content}` + (m.dataset.title ? ` (${m.dataset.title})` : "") : "";
+  }
   /** The "IDs & CLI" dialog: the set's identifiers, its source files and the commands to reproduce the view. */
   function renderIds() {
     const row = (k, v, copyText) => `<div class="ids-row"><span class="k">${k}</span><span class="v mono">${esc(v)}</span>${copyText ? iconCopy(copyText, k) : ""}</div>`;
     const facts = [["Set id", LS.id, LS.id], ["Name", LS.name], ["Format", LS.format], ["Node", LS.node], ["Cluster", LS.cluster],
-      ["Unparsed lines", String((D.stats || {}).parse_errors || 0)], ["Generated", D.generated_at ? ts16(D.generated_at) + " " + TZ : ""], ["Tool", D.tool_version ? "ragnalog " + D.tool_version : ""]]
+      ["Unparsed lines", String((D.stats || {}).parse_errors || 0)], ["Generated", D.generated_at ? ts16(D.generated_at) + " " + TZ : ""], ["Tool", D.tool_version ? "ragnalog " + D.tool_version + buildText() : ""]]
       .filter((x) => x[1]).map((x) => row(x[0], x[1], x[2])).join("");
     const paths = SRC_PATHS.filter(Boolean);
     const files = paths.length ? `<h3>${fmt(paths.length)} source file${paths.length === 1 ? "" : "s"}</h3><ul class="ids-files mono">` +
@@ -3473,10 +3478,21 @@
   update();
   const T1 = performance.now();
   let T2 = 0;
+  /** The web app's build (a meta tag of its pages; none in a standalone file): " · build 412". */
+  function footBuild(foot) {
+    const m = document.querySelector('meta[name="ragnalog-build"]');
+    if (!m || !m.content) return;
+    const s = document.createElement("span");
+    s.className = "foot-build";
+    s.textContent = m.content;
+    s.title = m.dataset.title || "";
+    foot.append(" · ", s);
+  }
   function renderFoot() {
     if (!T2) return;
     const foot = $("foot");
     foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by ragnalog ${D.tool_version || ""}`;
+    footBuild(foot);
     $("report-provenance").textContent = `${D.schema} · ` +
       `${fmt(BASE.length)} groups, ${ENTRIES_URL ? "examples fetched per group" : fmt(Object.keys(ENTRIES).length) + " example entries"} · ` +
       `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(T2)} ms after navigation start`;

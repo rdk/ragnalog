@@ -20,6 +20,7 @@ from markupsafe import Markup
 from starlette.responses import HTMLResponse, Response
 
 from ragnalog import __version__
+from ragnalog.build import build
 from ragnalog.report import asset_text, render_cluster_html, render_html
 from ragnalog.report.payload import MAX_TIMELINE_HOURS, densest_hours
 from ragnalog.report.render import asset_version, embed_json
@@ -49,6 +50,7 @@ StateDep = Annotated[AppState, Depends(get_state)]
 EntryQ = Annotated[EntryQuery, Depends(query_model(EntryQuery))]
 templates = Jinja2Templates(directory=str(resources.files("ragnalog.webapp") / "templates"))
 templates.env.globals["tool_version"] = __version__
+templates.env.globals["build"] = build
 
 
 def _static_stamp() -> tuple[tuple[str, int], ...]:
@@ -559,8 +561,16 @@ def _capture_shell(capture: Capture) -> str:
 def _head() -> str:
     """Return the web app's own head tags on the report and cluster pages."""
     v = asset_v()
+    b = build()
+    # the build, for the pages' footers (their scripts add it next to the version)
+    meta = (
+        f'<meta name="ragnalog-build" content="{html.escape(b.label())}"'
+        f' data-title="{html.escape(b.title())}">'
+        if b.label()
+        else ""
+    )
     return (
-        '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
+        meta + '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
         f'<link rel="stylesheet" href="/static/webapp.css?v={v}">'
         f'<script defer src="/static/webapp.js?v={v}"></script>'
     )

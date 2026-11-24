@@ -3010,12 +3010,23 @@
     restoreFocus(fk);
   }
   let T2 = 0; // first paint (ms after navigation start), once known
+  /** The web app's build (a meta tag of its pages; none in a standalone file): " · build 412". */
+  function footBuild(foot) {
+    const m = document.querySelector('meta[name="ragnalog-build"]');
+    if (!m || !m.content) return;
+    const s = document.createElement("span");
+    s.className = "foot-build";
+    s.textContent = m.content;
+    s.title = m.dataset.title || "";
+    foot.append(" · ", s);
+  }
   function renderFoot() {
     if (!T2) return;
     const foot = $("foot");
     foot.textContent = `Generated ${ts16(D.generated_at)} ${TZ} by ragnalog ${D.tool_version || ""} · ${D.schema} · ` +
       `${plural(NODES.length, "node")}, ${plural(ROWS.length, "group")}, ${plural(STATIC_LOG.length, "example entry", "example entries")}, ${plural(EVENTS.length, "event")} · ` +
       `rendered in ${Math.round(T1 - T0)} ms (script), first paint ${Math.round(T2)} ms after navigation start`;
+    footBuild(foot);
     foot.dataset.script = String(Math.round(T1 - T0));
     foot.dataset.paint = String(Math.round(T2));
   }

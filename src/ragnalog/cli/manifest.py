@@ -85,9 +85,11 @@ ENV: dict[str, str] = {
     **{var.name: var.short for var in ENV_VARS},
     "NO_COLOR": "--color auto: no colour",
     "COLUMNS": "default of --width",
+    "RAGNALOG_BUILD_FILE": "the image's build record (version build)",
 }
 """Environment variables read by ragnalog: the settings' (:data:`~ragnalog.config.
-ENV_VARS`) and the two of the terminal."""
+ENV_VARS`), the two of the terminal and the build record a container image sets
+(:mod:`ragnalog.build`)."""
 
 _OUTPUT = re.compile(r'"schema": "([\w.-]+\.v\d+)"')
 _EXIT = re.compile(r"(?:Exit codes:|;)\s*(\d)\b")

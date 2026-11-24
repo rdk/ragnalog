@@ -1214,8 +1214,14 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 5, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 5, "python": "3.14.2",
+ "build": {"number": 412, "git": "e141465", "time": "2026-11-24T19:58:12Z", "source": "image"}}
 ```
+
+`build` is the installation's build. A container image records its number (the commit
+count of the built commit), git hash and build time when it is built (`source: "image"`;
+[`install.md`](install.md) has the build arguments); a git checkout gives the number and
+hash of HEAD and no time (`"checkout"`); an installed wheel knows none (`"unknown"`, nulls).
 
 ### `batch`
 

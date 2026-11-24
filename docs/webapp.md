@@ -42,6 +42,11 @@ page; `/static` and `/assets` (CSS, JS) need none.
 
 ## Pages
 
+Every page's footer names the version and the build ("ragnalog 0.6.1 · build 412"; the
+build time and git hash on hover; `ragnalog.build`, as `version.v1` has it); the report
+and cluster pages read it from a `<meta name="ragnalog-build">` the web app adds to their
+head (a standalone report file names the version only).
+
 | Path | Page |
 |---|---|
 | `/` | Sets, newest first: time range with an **activity strip** (every row on one shared time axis: entries per hour up from a midline, errors down, so overlapping sets line up; hovering shows that hour on all rows, a click opens the row's report narrowed to it), entries, groups, error and warning counts, a triage verdict against the previous set, and an upload form with live job progress. The title line is compact (the data directory's path is in a tooltip) and the shell command for ingesting is folded under "Ingest from a shell". The sets of one capture (`captures`) are listed under one capture row (a tinted group head with an uppercase "capture" label above its indented node rows): cluster, capture id, node count, time range, summed counts and the worst verdict of its nodes (each against its own previous set), with a link to the capture page `/captures/capture:ID`; each member row shows its node. |

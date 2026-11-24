@@ -17,6 +17,12 @@ files needed).
 
 ### Added
 
+- The build is recorded and shown: the pages' footers say "build N" next to the version
+  (the build time and git hash on hover), and `ragnalog version` / `GET /api/version` have
+  a `build` object (`number`, `git`, `time`, `source`). The build number is the commit
+  count of the built commit; the image records it, the hash and its build time from build
+  arguments (`RAGNALOG_BUILD_NUMBER`, `RAGNALOG_BUILD_GIT`; CI and releases pass them), and
+  a source checkout reads its git.
 - README: an example of a failure that spreads across nodes, in the cluster view (zoomed,
   5 min bins, per-node scale, job lanes). `scripts/demo_logs.py` writes the four-node
   `incident` capture it shows, and `scripts/screenshots.mjs` takes it (and takes only the

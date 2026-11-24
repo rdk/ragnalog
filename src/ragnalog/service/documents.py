@@ -679,6 +679,22 @@ class Formats(Struct, kw_only=True, tag_field="schema", tag="formats.v1"):
     items: Annotated[list[FormatInfo], _d("The formats (sorted by confidence with --sample).")]
 
 
+class VersionBuild(Struct, kw_only=True):
+    """The build of the running ragnalog."""
+
+    number: Annotated[
+        int | None, _d("Build number: the commit count of the built commit (null: unknown).")
+    ]
+    git: Annotated[str | None, _d("The built commit's hash, 7 characters (null: unknown).")]
+    time: Annotated[
+        str | None, _d("When the container image was built, ISO 8601 UTC (null: not an image).")
+    ]
+    source: Annotated[
+        Literal["image", "checkout", "unknown"],
+        _d("image: recorded when the image was built; checkout: a git checkout's HEAD; unknown."),
+    ]
+
+
 class Version(Struct, kw_only=True, tag_field="schema", tag="version.v1"):
     """Tool, schema and signature versions: `version`, `GET /api/version`."""
 
@@ -687,6 +703,7 @@ class Version(Struct, kw_only=True, tag_field="schema", tag="version.v1"):
     signature_version: Annotated[int, _d("Signature algorithm version.")]
     mask_rules_version: Annotated[int, _d("Built-in masking rules version.")]
     python: Annotated[str, _d("Python version.")]
+    build: Annotated[VersionBuild, _d("The build: number, git hash and build time.")]
 
 
 class Health(Struct, kw_only=True, tag_field="schema", tag="health.v1"):

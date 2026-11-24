@@ -27,7 +27,8 @@ TABLES = ("entries", "groups", "merges", "logset")
 
 
 def version() -> Doc:
-    """``version.v1``: tool, schema, signature and masking-rule versions."""
+    """``version.v1``: tool, schema, signature and masking-rule versions, and the build."""
+    from ragnalog.build import build
     from ragnalog.core.masking import MASK_RULES_VERSION
     from ragnalog.core.signature import SIGNATURE_VERSION
     from ragnalog.store.schema import SCHEMA_VERSION
@@ -39,6 +40,7 @@ def version() -> Doc:
         "signature_version": SIGNATURE_VERSION,
         "mask_rules_version": MASK_RULES_VERSION,
         "python": sys.version.split()[0],
+        "build": build().doc(),
     }
 
 

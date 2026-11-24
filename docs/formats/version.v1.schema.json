@@ -29,6 +29,10 @@
     "python": {
       "description": "Python version.",
       "type": "string"
+    },
+    "build": {
+      "description": "The build: number, git hash and build time.",
+      "$ref": "#/$defs/VersionBuild"
     }
   },
   "required": [
@@ -37,6 +41,63 @@
     "schema_version",
     "signature_version",
     "mask_rules_version",
-    "python"
-  ]
+    "python",
+    "build"
+  ],
+  "$defs": {
+    "VersionBuild": {
+      "title": "VersionBuild",
+      "description": "The build of the running ragnalog.",
+      "type": "object",
+      "properties": {
+        "number": {
+          "description": "Build number: the commit count of the built commit (null: unknown).",
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "git": {
+          "description": "The built commit's hash, 7 characters (null: unknown).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "time": {
+          "description": "When the container image was built, ISO 8601 UTC (null: not an image).",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source": {
+          "description": "image: recorded when the image was built; checkout: a git checkout's HEAD; unknown.",
+          "enum": [
+            "checkout",
+            "image",
+            "unknown"
+          ]
+        }
+      },
+      "required": [
+        "number",
+        "git",
+        "time",
+        "source"
+      ]
+    }
+  }
 }

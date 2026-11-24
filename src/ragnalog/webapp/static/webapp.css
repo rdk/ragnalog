@@ -117,6 +117,8 @@ body.app table.sets th, body.app .tip-label {
 body.app .field { display: inline-flex; align-items: center; gap: var(--s2); color: var(--muted); font-size: var(--fs-ctl); }
 body.app .field select { max-width: 280px; text-overflow: ellipsis; color: var(--ink); }
 body.app .foot a, body.app .page a { color: var(--blue); }
+/* the build next to the version: its time and git hash on hover */
+.foot-build { cursor: help; text-decoration: underline dotted; text-underline-offset: 2px; }
 body.app .page a.btn { color: var(--ink); text-decoration: none; }
 body.app .page table.sets .actions a.btn { color: var(--blue); }
 body.app .page table.sets .actions a.btn:hover { color: var(--ink); }

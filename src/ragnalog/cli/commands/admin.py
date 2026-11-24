@@ -241,7 +241,12 @@ def version() -> None:
 
     Output (json):
       {"schema": "version.v1", "version": str, "schema_version": str,
-       "signature_version": int, "mask_rules_version": int, "python": str}
+       "signature_version": int, "mask_rules_version": int, "python": str,
+       "build": {"number": int | null, "git": str | null, "time": str | null,
+                 "source": "image" | "checkout" | "unknown"}}
+    "build" is this installation's build: a container image records its number (the
+    commit count of the built commit), git hash and build time; a git checkout gives
+    the number and hash of HEAD.
 
     Exit codes: 0 ok.
     """
