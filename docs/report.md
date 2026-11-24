@@ -227,6 +227,20 @@ remove, or "Remove all filters".
   each group's first entry, and the listed groups' line (a search with no group
   open) is left out, with a note in the legend. Times on the axis and in the tooltip
   are 24-hour, as everywhere on the page.
+- Users: the drawer's **Users** section lists every user with entries of the group (web app:
+  `GET /api/sets/{id}/users?signature=…&limit=0`, in the window when one is set): rank,
+  entries with a bar, share of the group's entries, first and last seen, threads, the **top
+  user** called out above the table ("412 of 980 entries (42%) · next bob (11%)"), the first 12
+  rows and "All N users". A name opens that user's entries of the group on the entries page;
+  "all groups" opens the user in the Users tab. The standalone file has each group's 10 most
+  frequent users (`top_users`) and says so. The **Users tab** (next to Groups above the table,
+  `tab=users`) is the set's user angle: every user of the entries the filters list (levels,
+  logger, exception, has exception, window; the search matches user names) with entries,
+  errors, warnings, groups, threads, last seen and the largest group, sortable by any column.
+  A row (`user=NAME`) opens the user: their facts, "All their entries ↗" and their groups (up
+  to 50, `top=50`) with counts and shares, each opening the group in the drawer. The tab needs
+  the web app; the standalone file says so. Jira's `anonymous` (no one signed in) is marked
+  "not signed in", and the summary always says which levels it counts.
 - Grave errors (`grave` in the payload, `report/grave.py`): entries whose exception
   chain or message names an out of memory (`OutOfMemoryError`, GC overhead limit, no
   native thread), a stack overflow, another JVM error, an exhausted resource (too

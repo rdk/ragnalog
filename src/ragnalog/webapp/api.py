@@ -531,6 +531,25 @@ def timeline(
     return queries.timeline(state, ref, q, bucket=bucket, by_level=by_level, front="api")
 
 
+@router.get("/sets/{ref}/users")
+def users(
+    ref: str,
+    state: StateDep,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
+    limit: Annotated[int, Query(ge=0, le=BIG)] = 100,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
+    top: int = 3,
+) -> dict[str, Any]:
+    """Entries per user (``users.v1``), of the entries ``entries`` would list.
+
+    The filters are those of ``GET /api/sets/{ref}/entries`` (a group's users:
+    ``signature``; a window: ``since``/``until``; one user's groups: ``user`` and a
+    larger ``top``), as ``ragnalog users``; ``limit=0`` lists every user, ``top`` (1-1000,
+    default 3) is how many of each user's largest groups are listed.
+    """
+    return queries.users(state, ref, q, Page(limit or None, offset), top=top, front="api")
+
+
 @router.get("/sets/{ref}/report")
 async def report(
     ref: str,

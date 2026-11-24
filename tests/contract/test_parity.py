@@ -180,6 +180,17 @@ CASES: list[Case] = [
         ],
         "/api/sets/sample/timeline?bucket=1d&with_exception=true&contains=at%20&logger=com",
     ),
+    Case("users", ["users", "sample"], "/api/sets/sample/users?limit=50"),
+    Case(
+        "users-top",
+        ["users", "sample", "--top", "10", "--limit", "2"],
+        "/api/sets/sample/users?top=10&limit=2",
+    ),
+    Case(
+        "users-group-window",
+        ["users", "sample", "--signature", "{sig}", "--min-level", "WARN", "--limit", "0"],
+        "/api/sets/sample/users?signature={sig}&min_level=WARN&limit=0",
+    ),
     Case(
         "timeline-by-level",
         ["timeline", "sample", "--bucket", "15m", "--by-level", "--min-level", "WARN"],

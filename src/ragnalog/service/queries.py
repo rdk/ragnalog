@@ -1,4 +1,4 @@
-"""Read documents: sets, set, stats, groups, group/show, entries, context, frames, timeline, query.
+"""Read documents: sets, set, stats, groups, show, entries, context, frames, timeline, users, query.
 
 Every builder takes the :class:`~ragnalog.service.sets.Sets` to read from,
 the set reference and the request models of :mod:`~ragnalog.service.params`,
@@ -62,6 +62,7 @@ __all__ = [
     "sql_hint",
     "stats",
     "timeline",
+    "users",
     "view_fields",
 ]
 
@@ -412,6 +413,44 @@ def timeline(
         "logset": ls.manifest.id,
         "bucket": bucket,
         "count": len(items),
+        "items": items,
+    }
+
+
+def users(sets: Sets, ref: str, q: EntryQuery, page: Page, *, top: int = 3, front: Front) -> Doc:
+    """``users.v1``: the matching entries per user, most first, one page.
+
+    The filters are those of :func:`entries` (a group's users: ``signature``; a window:
+    ``since``/``until``; one user's groups: ``user`` and a larger ``top``); ``total``
+    counts the users, ``entries`` and ``without_user`` the matching entries with and
+    without one; ``top`` is how many of each user's largest groups are listed.
+
+    Raises:
+        OpError: ``invalid_value`` for ``top`` outside 1-1000.
+
+    """
+    q.check(front=front)
+    if not 1 <= top <= 1000:
+        raise OpError("invalid_value", f"{flag('top', front)} must be between 1 and 1000")
+    ls = open_set(sets, ref, front=front)
+    where = _where(ls, q, front)
+    rows, anonymous = ls.users(where=where, top=top)
+    end = None if page.limit is None else page.offset + page.limit
+    items = rows[page.offset : end]
+    for r in items:
+        for k in ("first_ts", "last_ts"):
+            r[k] = None if r[k] is None else r[k].isoformat(timespec="milliseconds")
+    nxt = page.offset + len(items)
+    return {
+        "schema": "users.v1",
+        "logset": ls.manifest.id,
+        "count": len(items),
+        "total": len(rows),
+        "offset": page.offset,
+        "next_offset": nxt if nxt < len(rows) else None,
+        "truncated": nxt < len(rows),
+        "entries": sum(r["entries"] for r in rows),
+        "without_user": anonymous,
         "items": items,
     }
 

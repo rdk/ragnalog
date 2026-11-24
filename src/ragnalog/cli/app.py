@@ -78,6 +78,7 @@ COMMANDS: tuple[tuple[str, str], ...] = (
     ("query", "browse:query"),
     ("stats", "browse:stats"),
     ("timeline", "cluster:timeline"),
+    ("users", "browse:users"),
     ("matrix", "cluster:matrix"),
     ("events", "cluster:events"),
     ("interactions", "cluster:interactions"),

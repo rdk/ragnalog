@@ -144,6 +144,27 @@ def test_histogram(built: Built) -> None:
             ls.histogram(bad)
 
 
+def test_users(built: Built) -> None:
+    """Entries per user add up to the entries with a user; each row's numbers are its own."""
+    ls = built.logset
+    rows, anonymous = ls.users()
+    df = ls.entries(columns=["user", "level", "signature"])
+    named = df.filter(df["user"].is_not_null() & (df["user"] != ""))
+    assert sum(r["entries"] for r in rows) == named.height
+    assert anonymous == df.height - named.height
+    assert [r["entries"] for r in rows] == sorted((r["entries"] for r in rows), reverse=True)
+    for r in rows[:3]:
+        mine = named.filter(named["user"] == r["user"])
+        assert r["entries"] == mine.height
+        assert r["errors"] == mine.filter(mine["level"] >= 50).height
+        assert r["groups"] == mine["signature"].n_unique()
+        assert 1 <= len(r["top"]) <= 3 and r["top"][0]["count"] <= r["entries"]
+    sig = ls.groups()["signature"][0]
+    one, _ = ls.users(signature=sig)
+    assert sum(r["entries"] for r in one) <= ls.count_entries(signature=sig)
+    assert all(r["groups"] == 1 and r["top"][0]["signature"] == sig for r in one)
+
+
 def test_histogram_by_level(built: Built) -> None:
     """by_level splits each bucket into the chart series; the buckets stay the same."""
     ls = built.logset

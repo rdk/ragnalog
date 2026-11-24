@@ -45,6 +45,7 @@ __all__ = [
     "stats",
     "timeline_levels",
     "triage",
+    "users",
 ]
 
 type Doc = dict[str, Any]
@@ -321,6 +322,26 @@ def cluster_timeline(console: Console, doc: Doc) -> None:
         rows.append(row)
     what = f"group {doc['signature']}" if one else "entries"
     console.print(rows_table(rows, title=f"{what} per {doc['bucket']} and node (blank: no logs)"))
+
+
+def users(console: Console, doc: Doc) -> None:
+    """``users``: one row per user, the counts and the user's largest group."""
+    rows = [
+        {
+            "user": r["user"],
+            "entries": r["entries"],
+            "errors": r["errors"],
+            "warnings": r["warnings"],
+            "groups": r["groups"],
+            "threads": r["threads"],
+            "last_ts": r["last_ts"],
+            "top": f"{r['top'][0]['signature']} ({r['top'][0]['count']})" if r["top"] else "",
+        }
+        for r in doc["items"]
+    ]
+    rest = f"; {doc['without_user']} entries without a user" if doc["without_user"] else ""
+    title = f"users of {doc['logset']}: {doc['count']} of {doc['total']}{rest}"
+    console.print(rows_table(rows, title=title))
 
 
 def timeline_levels(console: Console, doc: Doc) -> None:

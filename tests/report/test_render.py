@@ -12,7 +12,7 @@ from typing import Any
 import pytest
 
 from ragnalog.report import build_payload, build_report, render_html, write_report
-from ragnalog.report.render import asset_text, embed_json
+from ragnalog.report.render import asset_text, asset_version, embed_json
 from ragnalog.store import Store
 
 from .conftest import report_data
@@ -132,8 +132,9 @@ def test_render_shell_with_data_url() -> None:
     page = render_html(data_url='/api/sets/a"b/report?x=1&y=2', inline_assets=False)
     assert '<html data-report-url="/api/sets/a&quot;b/report?x=1&amp;y=2"' in page
     assert '<script type="application/json" id="report-data"></script>' in page
-    assert '<link rel="stylesheet" href="/static/report.css">' in page
-    assert '<script src="/static/report.js"></script>' in page
+    v = asset_version()  # the links change with the assets' content
+    assert f'<link rel="stylesheet" href="/static/report.css?v={v}">' in page
+    assert f'<script src="/static/report.js?v={v}"></script>' in page
     assert "--lv-error" not in page and '"use strict"' not in page
     for marker in (
         "__REPORT_TITLE__",
@@ -146,7 +147,7 @@ def test_render_shell_with_data_url() -> None:
 
 def test_render_linked_assets_with_payload(payload: dict[str, Any]) -> None:
     page = render_html(payload, inline_assets=False, asset_base="/assets/v1/")
-    assert '<script src="/assets/v1/report.js"></script>' in page
+    assert f'<script src="/assets/v1/report.js?v={asset_version()}"></script>' in page
     assert "data-report-url" not in page
     assert report_data(page) == payload
 

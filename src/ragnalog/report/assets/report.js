@@ -416,6 +416,8 @@
       sig: p.get("sig") || "",
       t: parseWindow(p.get("t")),
       z: parseZoom(p.get("z")),
+      tab: p.get("tab") === "users" ? "users" : "",
+      user: p.get("user") || "",
       bin: Object.hasOwn(BIN_MS, p.get("bin") || "") ? p.get("bin") : "",
       theme: p.get("theme") || "",
       tz: ["local", "utc"].includes(p.get("tz")) ? p.get("tz") : "",
@@ -436,6 +438,8 @@
     if (s.cmp !== "all") p.set("cmp", s.cmp);
     if (s.t) p.set("t", windowText(s.t, T0MS, 3.6e6));
     if (s.z) p.set("z", zstamp(s.z[0]) + "-" + zstamp(s.z[1]));
+    if (s.tab) p.set("tab", s.tab);
+    if (s.user) p.set("user", s.user);
     if (s.bin) p.set("bin", s.bin);
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
@@ -1825,6 +1829,181 @@
     const label = `All ${fmt(n)} ${n === 1 ? "entry" : "entries"}${S.t ? " in window" : ""} ↗`;
     return `<a class="d-all" href="/sets/${encodeURIComponent(LS.id)}/entries?${esc(p.toString())}" target="_blank" rel="noopener" title="Every entry of this group${S.t ? " inside the selected window" : ""}, as a table in a new tab">${label}</a>`;
   }
+  // ---------------------------------------------------------------- users
+  // GET /api/sets/{id}/users (users.v1) counts the matching entries per user; the standalone
+  // file knows each group's 10 most frequent users only (top_users)
+  const USERS_URL = FINE ? `/api/sets/${encodeURIComponent(LS.id)}/users` : "";
+  const USERS_CACHE = new Map();
+  /** The users.v1 document of a query: once in, {err} if it failed, undefined while it loads
+   *  (then redraw runs). */
+  function usersDoc(qs, redraw) {
+    const hit = USERS_CACHE.get(qs);
+    if (hit) return hit.value;
+    const entry = { value: undefined };
+    USERS_CACHE.set(qs, entry);
+    if (USERS_CACHE.size > 60) USERS_CACHE.delete(USERS_CACHE.keys().next().value);
+    fetch(USERS_URL + "?" + qs, { headers: { Accept: "application/json" } })
+      .then((res) => (res.ok ? res.json() : res.json().catch(() => ({})).then((d) => { throw new Error((d.error && d.error.message) || "HTTP " + res.status); })))
+      .then((d) => { entry.value = d; }, (err) => { entry.value = { err: String((err && err.message) || err) }; })
+      .finally(redraw);
+    return undefined;
+  }
+  /** The window as since/until (UTC, whole hours), added to p. */
+  function winParams(p) {
+    if (S.t) {
+      p.set("since", isoOf(T0MS + S.t[0] * HOUR));
+      p.set("until", isoOf(T0MS + (S.t[1] + 1) * HOUR));
+    }
+    return p;
+  }
+  /** p with the group's filter (its signature, or a coarse row's coarse signature). */
+  function groupParam(r, p) {
+    p.set(r.kind === "coarse" ? "coarse_signature" : "signature", r.kind === "coarse" ? r.coarse : r.sig);
+    return p;
+  }
+  const share = (n, of) => {
+    if (!(of > 0)) return "";
+    const v = (100 * n) / of;
+    return n > 0 && v < 0.1 ? "<0.1%" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
+  };
+  const nounN = (n, one, many = one + "s") => `${fmt(n)} ${n === 1 ? one : many}`;
+  /** A user's name, Jira's "anonymous" (no one signed in) marked as such. */
+  const userHtml = (u) => esc(u) + (u === "anonymous" ? ` <span class="muted u-anon" title="Jira logs requests of no signed-in user as anonymous">not signed in</span>` : "");
+  /** The entries page with one user's entries (of a group, when r is given), in the window. */
+  function userEntriesUrl(user, r) {
+    if (!ENTRIES_URL || !LS.id) return "";
+    const p = new URLSearchParams();
+    if (r) groupParam(r, p);
+    p.set("user", user);
+    return `/sets/${encodeURIComponent(LS.id)}/entries?${winParams(p)}`;
+  }
+  const USERS_SHOWN = 12;
+  const USERS_ALL = new Set();  // groups whose drawer lists every user
+  /** The drawer's Users section: every user of the group (web app) with entries, share, first
+   *  and last seen and threads, the top user first; the standalone file: the 10 most frequent. */
+  function usersSection(r) {
+    const of = cnt(r);
+    const whereText = S.t ? " in the window" : "";
+    let rows, note = "", full = false;
+    if (FINE && r.kind !== "merged") {
+      const d = usersDoc(winParams(groupParam(r, new URLSearchParams({ limit: "0" }))).toString(), redrawDrawer);
+      if (d === undefined) return secId("d-s-users", "Users", `<div class="muted">Counting the entries per user…</div>`);
+      if (d.err) return secId("d-s-users", "Users", `<div class="ex-err">Could not load the users (${esc(d.err)}).</div>`);
+      rows = d.items.map((u) => ({ user: u.user, n: u.entries, first: u.first_ts, last: u.last_ts, threads: u.threads }));
+      full = true;
+      if (d.without_user) note = `${fmt(d.without_user)} of the entries${whereText} name no user.`;
+    } else {
+      rows = mergeTops(r.members || [r], "top_users").filter((x) => x.value != null && x.value !== "").map((x) => ({ user: String(x.value), n: x.count }));
+      note = `The ${fmt(rows.length)} most frequent of ${fmt(r.users || rows.length)} users, in the whole set` +
+        (FINE ? " (a merged row has no complete list)." : "; the web app (ragnalog serve) lists every user, with first and last seen.");
+    }
+    if (!rows.length) return secId("d-s-users", "Users", `<div class="muted">No entry of this group${whereText} names a user.</div>`);
+    const top = rows[0], of2 = full ? of : r.count;
+    const lead = `<p class="u-top"><span class="u-k">Top user</span> <b>${userHtml(top.user)}</b> <span class="muted">${fmt(top.n)} of ${fmt(of2)} entries${full ? whereText : ""} (${share(top.n, of2)})` +
+      (rows.length > 1 ? ` · next ${esc(rows[1].user)} (${share(rows[1].n, of2)})` : "") + `</span></p>`;
+    const all = USERS_ALL.has(r.id), list = all ? rows : rows.slice(0, USERS_SHOWN);
+    const line = (u, i) => {
+      const href = userEntriesUrl(u.user, r);
+      const name = href ? `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(u.user)}'s entries of this group${whereText}, in a new tab">${userHtml(u.user)}</a>` : userHtml(u.user);
+      return `<tr><td class="u-rank">${i + 1}</td><td class="u-name">${name}</td>` +
+        `<td class="num u-n"><span class="u-bar" style="--w:${((100 * u.n) / top.n).toFixed(1)}%"></span><span>${fmt(u.n)}</span></td><td class="num muted">${share(u.n, of2)}</td>` +
+        (full ? `<td class="u-t">${esc(tsShort(u.first))}</td><td class="u-t">${esc(tsShort(u.last))}</td><td class="num">${fmt(u.threads)}</td>` : "") +
+        (FINE ? `<td><button type="button" class="btn small link" data-user-tab="${esc(u.user)}" title="${esc(u.user)} across the set: all their groups, in the Users tab">all groups</button></td>` : "") + `</tr>`;
+    };
+    const head = `<tr><th>#</th><th>User</th><th class="num">Entries</th><th class="num">Share</th>` +
+      (full ? `<th>First</th><th>Last</th><th class="num" title="Distinct threads">Threads</th>` : "") + (FINE ? "<th></th>" : "") + `</tr>`;
+    const more = rows.length > USERS_SHOWN
+      ? `<button type="button" class="btn small" data-users-all>${all ? "Fewer users" : `All ${fmt(rows.length)} users`}</button>` : "";
+    return secId("d-s-users", `Users (${fmt(full ? rows.length : r.users || rows.length)})`,
+      lead + `<div class="u-wrap"><table class="u-tbl"><thead>${head}</thead><tbody>${list.map(line).join("")}</tbody></table></div>` + more +
+      (note ? `<p class="muted small u-note">${esc(note)}</p>` : ""));
+  }
+  // the Users tab: every user of what the filters list (levels, logger, exception, window),
+  // the search matching user names; a row opens the user's groups
+  const LV_PARAM = { ERROR: "ERROR,FATAL", WARN: "WARN", INFO: "INFO", DEBUG: "DEBUG,TRACE", OTHER: "UNKNOWN" };
+  function usersQs(extra) {
+    const p = new URLSearchParams({ limit: "0", ...extra });
+    if (![...PRESENT].every((b) => S.lv.has(b))) p.set("level", [...S.lv].map((b) => LV_PARAM[b]).join(","));
+    if (S.lg) p.set("logger", S.lg);
+    if (S.ex) p.set("exception", S.ex);
+    if (S.hx) p.set("with_exception", "true");
+    return winParams(p).toString();
+  }
+  const UCOLS = [
+    ["user", "User", (a, b) => cmpStr(a.user, b.user)],
+    ["entries", "Entries", (a, b) => b.entries - a.entries],
+    ["errors", "Errors", (a, b) => b.errors - a.errors],
+    ["warnings", "Warnings", (a, b) => b.warnings - a.warnings],
+    ["groups", "Groups", (a, b) => b.groups - a.groups],
+    ["threads", "Threads", (a, b) => b.threads - a.threads],
+    ["last", "Last seen", (a, b) => cmpStr(b.last_ts || "", a.last_ts || "")],
+  ];
+  let USORT = "entries", USHOW = 200;
+  const redrawUsers = () => { if (S.tab === "users") renderUsers(); };
+  function renderUsers() {
+    const el = $("u-view");
+    document.body.classList.toggle("tab-users", S.tab === "users");
+    for (const b of $("t-tabs").querySelectorAll("[data-tab]")) {
+      const on = (b.dataset.tab || "") === S.tab;
+      b.setAttribute("aria-selected", String(on));
+      b.setAttribute("aria-pressed", String(on));
+    }
+    $("f-search").placeholder = S.tab === "users" ? "Search users" : "Search groups";
+    if (S.tab !== "users") { el.hidden = true; return; }
+    el.hidden = false;
+    if (!FINE) {
+      el.innerHTML = `<div class="empty">The Users tab counts every entry per user, so it needs the web app (<code>ragnalog serve</code>). Each group's drawer lists its 10 most frequent users.</div>`;
+      return;
+    }
+    if (!S.lv.size) { el.innerHTML = `<div class="empty">No level is selected: pick one above.</div>`; return; }
+    const d = usersDoc(usersQs(), redrawUsers);
+    if (d === undefined) { if (!el.querySelector("table")) el.innerHTML = `<div class="empty">Counting the entries per user…</div>`; el.classList.add("loading"); return; }
+    el.classList.remove("loading");
+    if (d.err) { el.innerHTML = `<div class="ex-err">Could not load the users (${esc(d.err)}).</div>`; return; }
+    const q = S.q.trim().toLowerCase();
+    const sorter = (UCOLS.find((c) => c[0] === USORT) || UCOLS[1])[2];
+    const items = d.items.filter((u) => !q || u.user.toLowerCase().includes(q))
+      .sort((a, b) => sorter(a, b) || b.entries - a.entries || cmpStr(a.user, b.user));
+    const max = Math.max(1, ...d.items.map((u) => u.entries));
+    // what is counted: the levels of the level chips (always said), the other filters, the window
+    const lvText = [...PRESENT].every((b) => S.lv.has(b)) ? "all levels" : BUCKETS.filter((b) => S.lv.has(b)).join(", ") + " entries";
+    const scope = [lvText, S.t ? "in the window" : "", activeFilters().filter(([k]) => !["q", "t", "cmp", "lv"].includes(k)).map(([, l]) => l).join(", ")].filter(Boolean).join(" · ");
+    const head = `<div class="u-sum"><b>${fmt(items.length)}</b> ${items.length === 1 ? "user" : "users"}${q ? ` matching “${esc(S.q.trim())}” (of ${fmt(d.total)})` : ""} · ${fmt(d.entries)} entries with a user` +
+      (d.without_user ? ` · ${fmt(d.without_user)} without one` : "") + (scope ? ` <span class="muted">· ${esc(scope)}</span>` : "") +
+      (d.items.length ? ` · top: <b>${userHtml(d.items[0].user)}</b> <span class="muted">${share(d.items[0].entries, d.entries)} of the entries</span>` : "") + `</div>`;
+    if (!items.length) { el.innerHTML = head + `<div class="empty">No user ${q ? "matches the search" : "in these entries"}.</div>`; return; }
+    const th = UCOLS.map(([k, label]) => `<th class="${k === "user" ? "" : "num"}"><button type="button" class="u-sort" data-usort="${k}" aria-pressed="${USORT === k}">${label}${USORT === k ? " ↓" : ""}</button></th>`).join("") + `<th>Largest group</th>`;
+    const rows = items.slice(0, USHOW).map((u) => {
+      const open = S.user === u.user;
+      const g = u.top[0] && BASE_BY.get(u.top[0].signature);
+      const main = `<tr class="u-row${open ? " open" : ""}" data-user="${esc(u.user)}" tabindex="0" aria-expanded="${open}">` +
+        `<td class="u-name"><span class="u-caret" aria-hidden="true">${open ? "▾" : "▸"}</span>${userHtml(u.user)}</td>` +
+        `<td class="num u-n"><span class="u-bar" style="--w:${((100 * u.entries) / max).toFixed(1)}%"></span><span>${fmt(u.entries)}</span></td>` +
+        `<td class="num${u.errors ? " w-err" : " muted"}">${fmt(u.errors)}</td><td class="num${u.warnings ? "" : " muted"}">${fmt(u.warnings)}</td>` +
+        `<td class="num">${fmt(u.groups)}</td><td class="num">${fmt(u.threads)}</td><td class="num u-t">${esc(tsShort(u.last_ts))}</td>` +
+        `<td class="u-g">${g ? `${badge(g.lvl, g.level)} <span class="tpl">${tplHtml(g.tpl)}</span>` : u.top[0] ? `<span class="mono">${esc(u.top[0].signature)}</span>` : ""}</td></tr>`;
+      return main + (open ? `<tr class="u-detail"><td colspan="${UCOLS.length + 1}">${userDetail(u)}</td></tr>` : "");
+    }).join("");
+    const more = items.length > USHOW ? `<button type="button" class="btn small" data-umore>Show ${fmt(Math.min(200, items.length - USHOW))} more of ${fmt(items.length - USHOW)}</button>` : "";
+    el.innerHTML = head + `<div class="u-wrap"><table class="u-tbl u-all"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>` + more;
+  }
+  /** An opened user: their groups (up to 50) with their share of the user's entries, and links. */
+  function userDetail(u) {
+    const d = usersDoc(usersQs({ user: u.user, top: "50" }), redrawUsers);
+    const one = d && !d.err ? d.items[0] : null;
+    const tops = one ? one.top : u.top;
+    const list = tops.map((x) => {
+      const g = BASE_BY.get(x.signature);
+      return `<li><span class="num u-gn">${fmt(x.count)}</span><span class="muted u-gp">${share(x.count, u.entries)}</span>` +
+        (g ? `${badge(g.lvl, g.level)} <button type="button" class="btn link u-open" data-open-group="${esc(x.signature)}" title="Open this group in the drawer">${tplHtml(g.tpl)}</button>`
+          : `<span class="mono">${esc(x.signature)}</span> <span class="muted">(not in this report)</span>`) + `</li>`;
+    }).join("");
+    const href = userEntriesUrl(u.user, null);
+    const facts = `${nounN(u.entries, "entry", "entries")} · <span class="${u.errors ? "w-err" : ""}">${nounN(u.errors, "error")}</span> · ${nounN(u.warnings, "warning")} · ${nounN(u.groups, "group")} · ${nounN(u.threads, "thread")} · ${esc(tsShort(u.first_ts))} → ${esc(tsShort(u.last_ts))} ${TZ}`;
+    return `<div class="u-dh">${facts}${href ? ` · <a href="${esc(href)}" target="_blank" rel="noopener">All their entries${S.t ? " in the window" : ""} ↗</a>` : ""}</div>` +
+      `<div class="u-dk">${one ? (u.groups > tops.length ? `Their ${fmt(tops.length)} largest of ${fmt(u.groups)} groups` : `Their ${fmt(u.groups)} ${u.groups === 1 ? "group" : "groups"}`) : d && d.err ? "Their largest groups (the full list did not load)" : "Their largest groups (loading the rest…)"}</div>` +
+      `<ol class="u-glist">${list}</ol>`;
+  }
   const copyBtn = (text, label = "Copy") => `<button type="button" class="btn small" data-copy="${esc(text)}">${label}</button>`;
   function mergeTops(rows, key) {
     const m = new Map();
@@ -2068,8 +2247,8 @@
     else if (!r.gone && (pending || !winEx())) out.push(secId("d-s-examples", exTitle.replace(/ \(\d+\)$/, ""), `<div class="muted">${pending ? "Loading examples…" : "No examples in this report."}</div>`));
     if (!r.gone) {
       const src = r.members || [r];
+      out.push(usersSection(r));
       const tops = [
-        ["Top users", mergeTops(src, "top_users"), r.users, "users", false],
         ["Top threads", mergeTops(src, "top_threads"), r.threads, "threads", false],
         ["Sources", mergeTops(src, "sources"), r.nsrc, "sources", true],
       ];
@@ -2568,6 +2747,7 @@
     renderTiles();
     renderControls(v);
     renderTable(v);
+    renderUsers();
     if (TL && tlKey() !== TLK) renderTimeline();
     renderWindowLabel();
     renderZoomCtl();
@@ -2937,6 +3117,29 @@
       const th = e.target.closest("[data-sort]");
       if (th) commit({ sort: th.dataset.sort });
     });
+    $("t-tabs").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-tab]");
+      if (b) commit({ tab: b.dataset.tab || "" }, { keepPage: true });
+    });
+    const uv = $("u-view");
+    const toggleUser = (row) => commit({ user: S.user === row.dataset.user ? "" : row.dataset.user }, { keepPage: true, replace: true });
+    uv.addEventListener("click", (e) => {
+      const s = e.target.closest("[data-usort]");
+      if (s) { USORT = s.dataset.usort; renderUsers(); return; }
+      if (e.target.closest("[data-umore]")) { USHOW += 200; renderUsers(); return; }
+      const g = e.target.closest("[data-open-group]");
+      if (g) { open(g.dataset.openGroup); return; }
+      if (e.target.closest("a, button")) return;
+      const row = e.target.closest("tr[data-user]");
+      if (row) toggleUser(row);
+    });
+    uv.addEventListener("keydown", (e) => {
+      const row = e.target.closest && e.target.closest("tr[data-user]");
+      if (!row || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleUser(row);
+    });
     $("t-body").addEventListener("click", (e) => {
       const tr = e.target.closest("tr[data-id]");
       if (tr) open(tr.dataset.id);
@@ -2973,6 +3176,18 @@
       if (r) copy(ticketText(r), "Copied for a Jira ticket");
     };
     $("drawer-body").addEventListener("click", (e) => {
+      const ub = e.target.closest("[data-users-all],[data-user-tab]");
+      if (ub) {
+        if (ub.dataset.userTab != null) {
+          commit({ tab: "users", user: ub.dataset.userTab }, { keepPage: true });
+          $("table-wrap").scrollIntoView({ block: "start" });
+        } else {
+          const id = S.sig;
+          if (USERS_ALL.has(id)) USERS_ALL.delete(id); else USERS_ALL.add(id);
+          redrawDrawer();
+        }
+        return;
+      }
       const t = e.target.closest("[data-copy],[data-copy-raw],[data-open],[data-clip],[data-unfold],[data-all-lines],[data-raw-view],[data-retry-ex]");
       if (!t) return;
       if (t.dataset.retryEx != null) {

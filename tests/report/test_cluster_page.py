@@ -17,7 +17,7 @@ from ragnalog.report import (
     render_cluster_html,
     write_cluster_report,
 )
-from ragnalog.report.render import asset_text
+from ragnalog.report.render import asset_text, asset_version
 
 from .cluster_data import load_payload, with_nodes
 
@@ -254,9 +254,10 @@ def test_web_shell_links_assets_and_sets_the_data_url() -> None:
     )
     assert '<html data-report-url="/api/captures/a&quot;b/report?x=1&amp;y=2"' in out
     assert '<script type="application/json" id="cluster-data"></script>' in out
-    assert '<link rel="stylesheet" href="/assets/report/report.css">' in out
-    assert '<link rel="stylesheet" href="/assets/report/cluster.css">' in out
-    assert '<script src="/assets/report/cluster.js"></script>' in out
+    v = asset_version()  # the links change with the assets' content
+    assert f'<link rel="stylesheet" href="/assets/report/report.css?v={v}">' in out
+    assert f'<link rel="stylesheet" href="/assets/report/cluster.css?v={v}">' in out
+    assert f'<script src="/assets/report/cluster.js?v={v}"></script>' in out
     assert out.index("report.css") < out.index("cluster.css")
     assert "--lv-error" not in out and "--n1:" not in out and '"use strict"' not in out
     for marker in (
@@ -278,7 +279,7 @@ def test_web_page_with_payload(payload: dict[str, Any]) -> None:
         "set_report": "/sets/{set}",
     }
     out = render_cluster_html(p, asset_base="/static/")
-    assert '<script src="/static/cluster.js"></script>' in out
+    assert f'<script src="/static/cluster.js?v={asset_version()}"></script>' in out
     assert "data-report-url" not in out[: out.index("<head>")]
     assert cluster_data(out) == p
 

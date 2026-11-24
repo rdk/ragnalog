@@ -30,6 +30,12 @@ needed).
 - Zoom is a toggle on both charts, on by default: a drag zooms into the selection; off,
   it selects the window. **Undo** next to it steps back through window, zoom and bin
   changes, also after Clear (`u`).
+- Users: `ragnalog users SET` and `GET /api/sets/{ref}/users` (`users.v1`): the matching
+  entries per user with errors, warnings, groups, threads, first and last seen and the
+  user's largest groups (`--top`), with the filters of `entries` (`--signature` for one
+  group's users). The set report's group drawer lists every user of the group with the top
+  user called out, and a Users tab next to Groups shows who logs what for the current
+  filters and window, a row opening the user's groups.
 - Grave errors: out of memory, stack overflow, other JVM errors, exhausted resources
   (open files, disk) and FATAL entries are found per set (`report/grave.py`; `grave` in
   `report.v1` and, per node, `cluster-report.v1`) and drawn as red lines, bands and ⚠

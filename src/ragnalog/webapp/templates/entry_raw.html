@@ -21,6 +21,6 @@
 <div class="toast" id="raw-toast" role="status" aria-live="polite" hidden></div>
 </div>
 <script type="application/json" id="raw-data">{{ data }}</script>
-<script defer src="/assets/report/entry-card.js"></script>
-<script defer src="/static/entry_raw.js"></script>
+<script defer src="/assets/report/entry-card.js?v={{ asset_v }}"></script>
+<script defer src="/static/entry_raw.js?v={{ asset_v }}"></script>
 {% endblock %}

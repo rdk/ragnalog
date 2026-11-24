@@ -37,7 +37,7 @@ def test_report_page_fetches_payload(client: TestClient) -> None:
     assert res.status_code == 200
     page = res.text
     assert f'data-report-url="/api/sets/{sid}/report?compare=auto&amp;examples=3"' in page
-    assert '<script src="/assets/report/report.js"></script>' in page
+    assert '<script src="/assets/report/report.js?v=' in page
     assert 'class="crumbs"' in page and 'id="shell-set"' in page
     assert f'href="/sets/{sid}/triage"' in page and 'aria-label="Views of this set"' in page
     assert page.count('aria-current="page"') == 2  # the Report tab and the breadcrumb's last crumb
@@ -302,9 +302,9 @@ def test_entry_card_asset_is_served_before_the_page_scripts(client: TestClient) 
     assert "RagnalogEntryCard" in res.text
     report = client.get("/sets/mini").text
     tags = [
-        '<script src="/assets/report/entry-card.js"></script>',
-        '<script src="/assets/report/tips.js"></script>',
-        '<script src="/assets/report/report.js"></script>',
+        '<script src="/assets/report/entry-card.js?v=',
+        '<script src="/assets/report/tips.js?v=',
+        '<script src="/assets/report/report.js?v=',
     ]
     assert [report.index(t) for t in tags] == sorted(report.index(t) for t in tags)
 
@@ -314,3 +314,17 @@ def test_drawers_link_to_the_entries_page_only_when_served() -> None:
     report, cluster = asset_text("report.js"), asset_text("cluster.js")
     assert "if (!ENTRIES_URL || !LS.id ||" in report and "/entries?" in report
     assert "if (!WEB_LOG || !r.sig) return" in cluster and "URLS.entries.replace" in cluster
+
+
+def test_asset_links_carry_a_version(client: TestClient) -> None:
+    """Pages link assets with ?v=, cached for good; a new release has another URL."""
+    from ragnalog.webapp.pages import ASSET_V
+
+    page = client.get("/").text
+    assert f'/assets/report/report.css?v={ASSET_V}"' in page
+    assert f'/static/webapp.js?v={ASSET_V}"' in page
+    report = client.get("/sets/mini").text
+    assert "/assets/report/report.js?v=" in report and f"/static/webapp.js?v={ASSET_V}" in report
+    versioned = client.get(f"/assets/report/report.js?v={ASSET_V}")
+    assert "immutable" in versioned.headers["cache-control"]
+    assert client.get("/assets/report/report.js").headers["cache-control"] == "public, max-age=300"

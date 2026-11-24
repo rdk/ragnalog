@@ -1,0 +1,164 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "users.v1.schema.json",
+  "title": "users.v1",
+  "description": "Entries per user: `users`, `GET /api/sets/{ref}/users`.",
+  "type": "object",
+  "properties": {
+    "schema": {
+      "enum": [
+        "users.v1"
+      ]
+    },
+    "logset": {
+      "description": "Set id.",
+      "type": "string"
+    },
+    "count": {
+      "description": "Rows in items.",
+      "type": "integer"
+    },
+    "total": {
+      "description": "Users with matching entries.",
+      "type": "integer"
+    },
+    "offset": {
+      "description": "Index of the first row.",
+      "type": "integer"
+    },
+    "next_offset": {
+      "description": "offset of the next page; null on the last.",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "truncated": {
+      "description": "Whether more users follow.",
+      "type": "boolean"
+    },
+    "entries": {
+      "description": "Matching entries with a user.",
+      "type": "integer"
+    },
+    "without_user": {
+      "description": "Matching entries without one (blank or missing).",
+      "type": "integer"
+    },
+    "items": {
+      "description": "Users, most entries first, ties by name.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/UserRow"
+      }
+    }
+  },
+  "required": [
+    "schema",
+    "logset",
+    "count",
+    "total",
+    "offset",
+    "next_offset",
+    "truncated",
+    "entries",
+    "without_user",
+    "items"
+  ],
+  "$defs": {
+    "UserGroup": {
+      "title": "UserGroup",
+      "description": "One of a user's largest groups.",
+      "type": "object",
+      "properties": {
+        "signature": {
+          "description": "Group signature.",
+          "type": "string"
+        },
+        "count": {
+          "description": "The user's entries in the group.",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "signature",
+        "count"
+      ]
+    },
+    "UserRow": {
+      "title": "UserRow",
+      "description": "One user: how many of the matching entries are theirs, and of what.",
+      "type": "object",
+      "properties": {
+        "user": {
+          "description": "User name, as logged.",
+          "type": "string"
+        },
+        "entries": {
+          "description": "Matching entries of the user.",
+          "type": "integer"
+        },
+        "errors": {
+          "description": "Of them ERROR or FATAL.",
+          "type": "integer"
+        },
+        "warnings": {
+          "description": "Of them WARN.",
+          "type": "integer"
+        },
+        "groups": {
+          "description": "Distinct signatures.",
+          "type": "integer"
+        },
+        "threads": {
+          "description": "Distinct threads.",
+          "type": "integer"
+        },
+        "first_ts": {
+          "description": "First entry with a timestamp.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_ts": {
+          "description": "Last entry with a timestamp.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "top": {
+          "description": "The user's largest groups (--top, default 3), most entries first.",
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/UserGroup"
+          }
+        }
+      },
+      "required": [
+        "user",
+        "entries",
+        "errors",
+        "warnings",
+        "groups",
+        "threads",
+        "first_ts",
+        "last_ts",
+        "top"
+      ]
+    }
+  }
+}

@@ -646,6 +646,50 @@ def stats(logset: str, /) -> None:
     )
 
 
+def users(
+    logset: str,
+    /,
+    *,
+    q: Annotated[EntryQuery, Parameter(name="*")] = params.ALL_ENTRIES,
+    limit: int = 50,
+    offset: int = 0,
+    top: int = 3,
+) -> None:
+    """Count the entries of a log set per user: who logs what, most entries first.
+
+    Takes the filters of `entries` (--signature: the users of one group;
+    --since/--until: a window; --level, --logger, --exception …), so it counts
+    what the listing shows. Each user row has the entries, how many are
+    ERROR/FATAL and WARN, the distinct groups and threads, the first and last
+    timestamp and the user's largest groups (--top, default 3; one user's groups:
+    --user NAME --top 50).
+
+    Output (json):
+      {"schema": "users.v1", "logset": id, "count": int, "total": int,
+       "offset": int, "next_offset": int | null, "truncated": bool,
+       "entries": int, "without_user": int,
+       "items": [{"user", "entries", "errors", "warnings", "groups", "threads",
+                  "first_ts", "last_ts", "top": [{"signature", "count"}]}]}
+    "total" counts the users, "entries" the matching entries with a user and
+    "without_user" those without one. Table mode prints one row per user.
+
+    Exit codes: 0 ok; 1 bad option, level, time or --top (1-1000), or an
+    ambiguous signature prefix; 3 unknown set or store error.
+
+    Args:
+        logset: Log set id, unique id prefix or name.
+        q: Entry filters (the options --signature to --until, see EntryQuery).
+        limit: Users per page (0 = all).
+        offset: Users to skip.
+        top: Largest groups listed per user (1-1000).
+
+    """
+    page = Page.parse(limit, offset, front="cli")
+    doc = queries.users(ctx.store(), logset, q, page, top=top, front="cli")
+    out = ctx.out()
+    out.document(doc, table=lambda console: render.users(console, doc))
+
+
 MERGE_FIELDS: tuple[str, ...] = tuple(MERGES_SCHEMA.names)
 """Columns of merges.v1."""
 

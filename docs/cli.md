@@ -727,6 +727,26 @@ where the node has no logs; `--by-level`: a column per level). Exit: 0; 1 bad op
 a set-only filter (`--level`, `--thread` …) with a capture, `--window` with a set, `--by-level` with a capture, ambiguous signature prefix;
 2 unknown capture or group; 3.
 
+### `users SET [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--since] [--until] [--limit 50] [--offset 0] [--top 3]`
+
+Who logs what: the matching entries per user, most entries first (ties by name); the twin of
+`GET /api/sets/{ref}/users`. It takes the filters of `entries`: `--signature` gives the users
+of one group, `--since`/`--until` a window, `--user NAME --top 50` one user's groups. Each row
+has the user's entries, how many are ERROR/FATAL and WARN, the distinct groups and threads, the
+first and last timestamp and the user's `--top` largest groups (default 3, at most 1000).
+`total` counts the users, `entries` the matching entries with a user and `without_user` those
+without one (a blank or missing user); `--limit 0` lists every user.
+
+```json
+{"schema": "users.v1", "logset": "…", "count": 50, "total": 812, "offset": 0, "next_offset": 50,
+ "truncated": true, "entries": 41922, "without_user": 1203,
+ "items": [{"user", "entries", "errors", "warnings", "groups", "threads", "first_ts", "last_ts",
+            "top": [{"signature", "count"}]}]}
+```
+
+The table prints one row per user with the largest group. Exit: 0; 1 bad option, level, time or
+`--top`, ambiguous signature prefix; 3.
+
 ### `matrix REF [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--window overlap|union] [--node N] [--spread all|only|skewed] [--sort count|skew|lead] [--skew-min 4.0] [--signature SIG] [--limit 50] [--offset 0]`
 
 "Is it cluster-wide or one node's problem, and which node saw it first?": one

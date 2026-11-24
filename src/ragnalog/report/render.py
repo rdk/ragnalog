@@ -21,9 +21,11 @@ Both pages load ``skins.css`` after their page CSS and run ``entry-card.js``, ``
 
 from __future__ import annotations
 
+import hashlib
 import html
 import json
 import re
+from functools import cache
 from importlib.resources import files
 from typing import Any
 
@@ -128,9 +130,29 @@ def _sub_once(text: str, pattern: re.Pattern[str], value: str) -> str:
     return out
 
 
+@cache
+def asset_version() -> str:
+    """Return a short hash of the report assets, the ``?v=`` of their links.
+
+    A linked asset's URL changes with its content, so a browser fetches a new version at
+    once instead of running a cached script against a newer server.
+    """
+    digest = hashlib.sha256()
+    for name in ASSETS:
+        digest.update(asset_text(name).encode("utf-8"))
+    return digest.hexdigest()[:10]
+
+
+def _href(base: str, name: str) -> str:
+    """Return ``base`` (escaped) and ``name`` with the assets' version."""
+    return f"{base}{name}?v={asset_version()}"
+
+
 def _script_tags(base: str, page_js: str) -> str:
     """``<script src>`` of the shared scripts and ``page_js`` under the escaped ``base``."""
-    return "\n".join(f'<script src="{base}{name}"></script>' for name in (*SHARED_JS, page_js))
+    return "\n".join(
+        f'<script src="{_href(base, name)}"></script>' for name in (*SHARED_JS, page_js)
+    )
 
 
 def render_html(
@@ -176,8 +198,8 @@ def render_html(
         page = _sub_once(
             page,
             _CSS_BLOCK,
-            f'<link rel="stylesheet" href="{base}report.css">\n'
-            f'<link rel="stylesheet" href="{base}{SKINS_CSS}">',
+            f'<link rel="stylesheet" href="{_href(base, "report.css")}">\n'
+            f'<link rel="stylesheet" href="{_href(base, SKINS_CSS)}">',
         )
         page = _sub_once(
             page,
@@ -223,12 +245,14 @@ def render_cluster_html(
         page = _inline(page, CLUSTER_JS, *SHARED_JS, "cluster.js")
     else:
         base = html.escape(asset_base, quote=True)
-        page = _sub_once(page, _CSS_BLOCK, f'<link rel="stylesheet" href="{base}report.css">')
+        page = _sub_once(
+            page, _CSS_BLOCK, f'<link rel="stylesheet" href="{_href(base, "report.css")}">'
+        )
         page = _sub_once(
             page,
             _CLUSTER_CSS_BLOCK,
-            f'<link rel="stylesheet" href="{base}cluster.css">\n'
-            f'<link rel="stylesheet" href="{base}{SKINS_CSS}">',
+            f'<link rel="stylesheet" href="{_href(base, "cluster.css")}">\n'
+            f'<link rel="stylesheet" href="{_href(base, SKINS_CSS)}">',
         )
         page = _sub_once(
             page,

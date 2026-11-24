@@ -181,6 +181,7 @@ EXTRA: list[Extra] = [
     Extra("manifest-command.v1", cli=["manifest", "frames"], api="/api/manifest/frames"),
     Extra("health.v1", api="/api/health"),
     Extra("timeline.v1", api="/api/sets/edge/timeline"),
+    Extra("users.v1", api="/api/sets/edge/users"),
     Extra("report.v1", api="/api/sets/edge/report?compare=sample"),
     Extra("report-entries.v1", api="/api/sets/edge/groups/{sig}/examples"),
     Extra("entries.v1", cli=["show", "edge", "{sig}", "--brief"]),
@@ -297,6 +298,7 @@ PARITY_DOCUMENTS = {
     "frames.v1",
     "diff.v1",
     "triage.v1",
+    "users.v1",
     "error.v1",
 }
 """Documents that the parity cases produce."""

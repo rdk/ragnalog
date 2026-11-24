@@ -176,6 +176,9 @@ def test_stats_and_timeline(client: TestClient) -> None:
     assert tl["schema"] == "timeline.v1"
     assert sum(b["count"] for b in tl["items"]) == 10
     assert all("levels" not in b for b in tl["items"])
+    users = _json(client, "/api/sets/mini/users?limit=0")
+    assert users["schema"] == "users.v1" and users["count"] == users["total"]
+    assert users["entries"] + users["without_user"] == 10
     lv = _json(client, "/api/sets/mini/timeline?bucket=5m&by_level=true")
     assert sum(b["count"] for b in lv["items"]) == 10
     assert all(sum(b["levels"].values()) == b["count"] for b in lv["items"])

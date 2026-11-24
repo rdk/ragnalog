@@ -561,6 +561,78 @@ class LogSet:
             out.append(item)
         return out
 
+    def users(
+        self,
+        *,
+        where: EntryFilter | None = None,
+        top: int = 3,
+        **filters: Unpack[EntryFilterArgs],
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Entries per user, most entries first (ties by user name).
+
+        Each row is ``{"user", "entries", "errors", "warnings", "groups", "threads",
+        "first_ts", "last_ts", "top"}``: ERROR and FATAL entries, WARN entries, distinct
+        signatures and threads, the first and last timestamp (``None`` when no entry has
+        one) and ``top``, the user's ``top`` largest groups as ``[{"signature", "count"}]``.
+
+        Args:
+            where: Entry filters (see :meth:`entries`).
+            top: Largest groups listed per user.
+            **filters: The fields of :class:`EntryFilter` instead of ``where``.
+
+        Returns:
+            The rows and the number of entries without a user (blank or missing).
+
+        Raises:
+            TypeError: Both ``where`` and keyword filters.
+
+        """
+        cond = entry_filter(where, filters).predicate()
+        lf = self.entries_lazy()
+        if cond is not None:
+            lf = lf.filter(cond)
+        has_user = pl.col("user").is_not_null() & (pl.col("user") != "")
+        timed = pl.col("ts").filter(has_time())
+        named = lf.filter(has_user)
+        per_user, per_group, anonymous = pl.collect_all(
+            [
+                named.group_by("user").agg(
+                    pl.len().alias("entries"),
+                    (pl.col("level") >= 50).sum().alias("errors"),
+                    (pl.col("level") == 40).sum().alias("warnings"),
+                    pl.col("signature").n_unique().alias("groups"),
+                    pl.col("thread").drop_nulls().n_unique().alias("threads"),
+                    timed.min().alias("first_ts"),
+                    timed.max().alias("last_ts"),
+                ),
+                named.group_by("user", "signature").agg(pl.len().alias("count")),
+                lf.filter(~has_user).select(pl.len()),
+            ]
+        )
+        tops: dict[str, list[dict[str, Any]]] = {}
+        for user, sig, count in per_group.sort(
+            ["user", "count", "signature"], descending=[False, True, False]
+        ).iter_rows():
+            mine = tops.setdefault(user, [])
+            if len(mine) < top:
+                mine.append({"signature": sig, "count": int(count)})
+        rows = []
+        for r in per_user.sort(["entries", "user"], descending=[True, False]).iter_rows(named=True):
+            rows.append(
+                {
+                    "user": r["user"],
+                    "entries": int(r["entries"]),
+                    "errors": int(r["errors"]),
+                    "warnings": int(r["warnings"]),
+                    "groups": int(r["groups"]),
+                    "threads": int(r["threads"]),
+                    "first_ts": r["first_ts"],
+                    "last_ts": r["last_ts"],
+                    "top": tops.get(r["user"], []),
+                }
+            )
+        return rows, int(anonymous.item())
+
     def context(
         self,
         entry_id: str,

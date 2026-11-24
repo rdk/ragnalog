@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import html
 import math
 import re
@@ -19,7 +20,7 @@ from starlette.responses import HTMLResponse, Response
 from ragnalog import __version__
 from ragnalog.report import asset_text, render_cluster_html, render_html
 from ragnalog.report.payload import MAX_TIMELINE_HOURS, densest_hours
-from ragnalog.report.render import embed_json
+from ragnalog.report.render import asset_version, embed_json
 from ragnalog.service import capture_queries, queries
 from ragnalog.service.errors import OpError
 from ragnalog.service.params import DEFAULT_MAX_RAW, EntryQuery, Page, Select, TextCap
@@ -46,6 +47,21 @@ StateDep = Annotated[AppState, Depends(get_state)]
 EntryQ = Annotated[EntryQuery, Depends(query_model(EntryQuery))]
 templates = Jinja2Templates(directory=str(resources.files("ragnalog.webapp") / "templates"))
 templates.env.globals["tool_version"] = __version__
+
+
+def _asset_v() -> str:
+    """Return a short hash of the report assets and ``webapp/static``, their links' ``?v=``."""
+    digest = hashlib.sha256(asset_version().encode())
+    static = resources.files("ragnalog.webapp") / "static"
+    for item in sorted(static.iterdir(), key=lambda p: p.name):
+        if item.is_file():
+            digest.update(item.name.encode() + item.read_bytes())
+    return digest.hexdigest()[:10]
+
+
+ASSET_V = _asset_v()
+"""Changes with any asset, so a browser never runs a cached script against a newer server."""
+templates.env.globals["asset_v"] = ASSET_V
 
 REPORT_ASSETS = (
     "report.css",
@@ -334,15 +350,18 @@ def favicon() -> Response:
 
 
 @router.get("/assets/report/{name}")
-def report_asset(name: str) -> Response:
-    """Serve the report's own CSS/JS so the web app and the static file share one code base."""
+def report_asset(name: str, v: str = "") -> Response:
+    """Serve the report's own CSS/JS so the web app and the static file share one code base.
+
+    A versioned URL (``?v=``, the pages' links) is cached for good: a new version has
+    another URL. Without one, five minutes.
+    """
     if name not in REPORT_ASSETS:
         return Response(f"no report asset {name!r}\n", 404, media_type="text/plain")
     media = "text/css" if name.endswith(".css") else "text/javascript"
+    cache = "public, max-age=31536000, immutable" if v else "public, max-age=300"
     return Response(
-        asset_text(name),
-        media_type=f"{media}; charset=utf-8",
-        headers={"Cache-Control": "public, max-age=300"},
+        asset_text(name), media_type=f"{media}; charset=utf-8", headers={"Cache-Control": cache}
     )
 
 
@@ -516,8 +535,8 @@ def _capture_shell(capture: Capture) -> str:
 
 _HEAD = (
     '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
-    '<link rel="stylesheet" href="/static/webapp.css">'
-    '<script defer src="/static/webapp.js"></script>'
+    f'<link rel="stylesheet" href="/static/webapp.css?v={ASSET_V}">'
+    f'<script defer src="/static/webapp.js?v={ASSET_V}"></script>'
 )
 _BODY = re.compile(r"<body[^>]*>")
 

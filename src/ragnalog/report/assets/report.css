@@ -1013,6 +1013,45 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 :is(.report, .cluster) .tl-bins .sel select { height: calc(var(--ctl-h-sm) - 2px); border: 0; background: transparent; padding: 0 2px 0 0; outline: 0; cursor: pointer; font-size: var(--fs-meta); field-sizing: content; }
 .report .tl-window .zoom-what .win-k { color: var(--blue); }
 .report .tl-window .win-hours { font-variant-numeric: tabular-nums; }
+/* users: the drawer's Users table and the Users tab (a table of users, a row opens their groups) */
+.report .t-tabs { margin-right: var(--s3); }
+.report .t-tabs button { height: calc(var(--ctl-h-sm) - 2px); padding: 0 12px; font-weight: 600; background: transparent; color: var(--ink-2); }
+.report .t-tabs button[aria-selected="true"] { background: var(--blue); color: #fff; }
+body.tab-users #groups, body.tab-users #t-empty, body.tab-users #t-summary, body.tab-users .pager,
+body.tab-users #f-sort, body.tab-users .sel:has(> #f-sort), body.tab-users #f-view { display: none !important; }
+.u-view.loading { opacity: 0.55; transition: opacity 0.15s; }
+.u-sum { padding: var(--s2) 0; color: var(--ink-2); font-size: var(--fs-meta); }
+.u-wrap { overflow-x: auto; }
+.u-tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.u-tbl th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.u-tbl td { padding: 4px 8px; border-bottom: 1px solid var(--border-2, var(--border)); vertical-align: top; }
+.u-tbl .num { text-align: right; white-space: nowrap; }
+.u-tbl .u-name { font-weight: 600; color: var(--ink); white-space: nowrap; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
+.u-tbl .u-rank { color: var(--muted); width: 2ch; }
+.u-tbl .u-t { white-space: nowrap; color: var(--ink-2); }
+.u-tbl .u-n { position: relative; min-width: 9ch; }
+.u-tbl .u-n > span:last-child { position: relative; }
+.u-bar { position: absolute; right: 8px; top: 50%; height: 14px; width: calc(var(--w) * 0.9); max-width: calc(100% - 16px); transform: translateY(-50%); background: color-mix(in srgb, var(--blue) 16%, transparent); border-radius: 2px; }
+.u-tbl .u-g { max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-tbl .u-sort { all: unset; cursor: pointer; }
+.u-tbl .u-sort[aria-pressed="true"] { color: var(--ink); }
+.u-all .u-row { cursor: pointer; }
+.u-all .u-row:hover, .u-all .u-row:focus-visible { background: var(--hover); outline: none; }
+.u-all .u-row.open { background: var(--blue-wash-2, var(--hover)); }
+.u-caret { display: inline-block; width: 1.2em; color: var(--muted); }
+.u-detail td { background: var(--surface-2, var(--surface)); padding: var(--s2) var(--s3) var(--s3); }
+.u-dh { color: var(--ink-2); margin-bottom: var(--s2); }
+.u-dk { font-weight: 600; color: var(--muted); margin-bottom: 4px; }
+.u-glist { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 3px; }
+.u-glist li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.u-glist .u-gn { min-width: 7ch; font-weight: 600; }
+.u-glist .u-gp { min-width: 5ch; text-align: right; }
+.u-glist .u-open { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.u-top { margin: 0 0 var(--s2); }
+.u-top .u-k { color: var(--muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
+.u-note { margin: var(--s1) 0 0; }
+.u-anon { font-weight: 400; font-size: var(--fs-label); margin-left: 4px; }
+.w-err { color: var(--lv-error); }
 /* Undo and the zoom toggle: the chart's main controls, next to its title; on, the toggle is filled */
 :is(.report, .cluster) .tl-zoom { display: inline-flex; gap: 4px; align-items: center; }
 :is(.report, .cluster) .tl-zoom .zbtn { display: inline-flex; align-items: center; gap: 5px; font-weight: 600; }

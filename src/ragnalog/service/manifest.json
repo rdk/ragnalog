@@ -206,6 +206,16 @@
      3
     ]
    },
+   "users": {
+    "summary": "Count the entries of a log set per user",
+    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3]",
+    "output": "users.v1",
+    "exit": [
+     0,
+     1,
+     3
+    ]
+   },
    "matrix": {
     "usage": "REF [--level str] [--min-level str] [--logger str] [--since str] [--until str] [--with-exception] [--exception str] [--contains str] [--window overlap|union=overlap] [--node str] [--spread all|only|skewed] [--sort count|skew|lead=count] [--skew-min float=4.0] [--signature str] [--limit int=50] [--offset int=0]",
     "output": "matrix.v1",
@@ -362,6 +372,7 @@
    "--overwrite": "Rebuild the set if one with the same id",
    "--mine": "Propose group merges with Drain3",
    "--force": "Read a named file over 64 MiB even if",
+   "--node": "Only entries of these nodes",
    "--brief": "Only id, ts, level_name, thread, user",
    "LOGSET": "Log set id, unique id prefix or name",
    "REF": "Capture or log set",
@@ -372,9 +383,9 @@
    "--level": "Only these levels, e.g. ERROR or",
    "--min-level": "Only this level or more severe",
    "--logger": "Logger name or package prefix",
-   "--with-exception": "Only groups with an exception, any level",
-   "--exception": "Only groups whose exception_type",
-   "--contains": "Only groups whose template contains this",
+   "--with-exception": "Only entries with an exception",
+   "--exception": "Only entries whose exception_type",
+   "--contains": "Only entries whose raw text contains",
    "--sort": "count, last_seen, first_seen, signature",
    "--limit": "Maximum number of rows; 0 = all",
    "--offset": "Skip this many rows first",
@@ -450,6 +461,7 @@
     "timeline.v1",
     "triage.v1",
     "upgrade.v1",
+    "users.v1",
     "version.v1"
    ]
   },
@@ -1241,6 +1253,114 @@
      "name": "--by-level",
      "type": "flag",
      "help": "Also count each bucket per level (a set; a capture's buckets are by level already)."
+    }
+   ]
+  },
+  "users": {
+   "schema": "manifest-command.v1",
+   "command": "users",
+   "version": "",
+   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3]",
+   "description": "Count the entries of a log set per user: who logs what, most entries first.\n\nTakes the filters of `entries` (--signature: the users of one group;\n--since/--until: a window; --level, --logger, --exception …), so it counts\nwhat the listing shows. Each user row has the entries, how many are\nERROR/FATAL and WARN, the distinct groups and threads, the first and last\ntimestamp and the user's largest groups (--top, default 3; one user's groups:\n--user NAME --top 50).\n\nOutput (json):\n  {\"schema\": \"users.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"entries\": int, \"without_user\": int,\n   \"items\": [{\"user\", \"entries\", \"errors\", \"warnings\", \"groups\", \"threads\",\n              \"first_ts\", \"last_ts\", \"top\": [{\"signature\", \"count\"}]}]}\n\"total\" counts the users, \"entries\" the matching entries with a user and\n\"without_user\" those without one. Table mode prints one row per user.\n\nExit codes: 0 ok; 1 bad option, level, time or --top (1-1000), or an\nambiguous signature prefix; 3 unknown set or store error.",
+   "output": "users.v1",
+   "exit": [
+    0,
+    1,
+    3
+   ],
+   "params": [
+    {
+     "name": "LOGSET",
+     "type": "str",
+     "help": "Log set id, unique id prefix or name."
+    },
+    {
+     "name": "--signature",
+     "type": "str",
+     "help": "Only entries of this group signature (or unique prefix, 4+ hex chars); a capture also takes several, comma-separated (entries of any of them), and NODE:SIGNATURE for a group on that node only."
+    },
+    {
+     "name": "--coarse-signature",
+     "type": "str",
+     "help": "Only entries of this coarse signature (exact; the signature of groups --coarse)."
+    },
+    {
+     "name": "--level",
+     "type": "str",
+     "help": "Only these levels, e.g. ERROR or WARN,ERROR."
+    },
+    {
+     "name": "--min-level",
+     "type": "str",
+     "help": "Only this level or more severe."
+    },
+    {
+     "name": "--logger",
+     "type": "str",
+     "help": "Logger name or package prefix (c.a.jira matches c.a.jira.Foo; com.atlassian.jira also the forms Jira abbreviates, c.a.jira.index.X and c.a.j.issue.index.X)."
+    },
+    {
+     "name": "--user",
+     "type": "str",
+     "help": "Only this user (exact)."
+    },
+    {
+     "name": "--thread",
+     "type": "str",
+     "help": "Only this thread (exact)."
+    },
+    {
+     "name": "--request-id",
+     "type": "str",
+     "help": "Only this request id (exact; the Jira request context, e.g. 540x101x1)."
+    },
+    {
+     "name": "--since",
+     "type": "str",
+     "help": "Only entries at/after this time: ISO 8601 (naive = UTC), YYYY-MM-DD, or 30m/2h/1d before the set's last entry."
+    },
+    {
+     "name": "--until",
+     "type": "str",
+     "help": "Only entries before this time (same forms as --since)."
+    },
+    {
+     "name": "--contains",
+     "type": "str",
+     "help": "Only entries whose raw text contains this text (case-insensitive)."
+    },
+    {
+     "name": "--with-exception",
+     "type": "flag",
+     "help": "Only entries with an exception (exception_type not null), any level."
+    },
+    {
+     "name": "--exception",
+     "type": "str",
+     "help": "Only entries whose exception_type contains this text (case-insensitive)."
+    },
+    {
+     "name": "--node",
+     "type": "str",
+     "help": "Only entries of these nodes, comma-separated (a capture only)."
+    },
+    {
+     "name": "--limit",
+     "type": "int",
+     "default": "50",
+     "help": "Users per page (0 = all)."
+    },
+    {
+     "name": "--offset",
+     "type": "int",
+     "default": "0",
+     "help": "Users to skip."
+    },
+    {
+     "name": "--top",
+     "type": "int",
+     "default": "3",
+     "help": "Largest groups listed per user (1-1000)."
     }
    ]
   },

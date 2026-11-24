@@ -10,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from ragnalog.report import render_cluster_html, render_html
-from ragnalog.report.render import asset_text
+from ragnalog.report.render import asset_text, asset_version
 
 HARNESS = r"""
 const fs = require("fs");
@@ -76,9 +76,16 @@ def test_inlined_before_the_page_script() -> None:
 
 def test_linked_before_the_page_script() -> None:
     report = render_html(data_url="/api/r", inline_assets=False, asset_base="/a/")
-    assert '<script src="/a/tips.js"></script>\n<script src="/a/report.js"></script>' in report
+    v = asset_version()
+    assert (
+        f'<script src="/a/tips.js?v={v}"></script>\n<script src="/a/report.js?v={v}"></script>'
+        in report
+    )
     cluster = render_cluster_html(None, data_url="/api/c", asset_base="/a/")
-    assert '<script src="/a/tips.js"></script>\n<script src="/a/cluster.js"></script>' in cluster
+    assert (
+        f'<script src="/a/tips.js?v={v}"></script>\n<script src="/a/cluster.js?v={v}"></script>'
+        in cluster
+    )
 
 
 def test_tooltip_styles_are_shared() -> None:

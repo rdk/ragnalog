@@ -466,6 +466,43 @@ class Timeline(Struct, kw_only=True, tag_field="schema", tag="timeline.v1"):
     items: Annotated[list[TimelineBucket], _d("Contiguous buckets.")]
 
 
+class UserGroup(Struct, kw_only=True):
+    """One of a user's largest groups."""
+
+    signature: Annotated[str, _d("Group signature.")]
+    count: Annotated[int, _d("The user's entries in the group.")]
+
+
+class UserRow(Struct, kw_only=True):
+    """One user: how many of the matching entries are theirs, and of what."""
+
+    user: Annotated[str, _d("User name, as logged.")]
+    entries: Annotated[int, _d("Matching entries of the user.")]
+    errors: Annotated[int, _d("Of them ERROR or FATAL.")]
+    warnings: Annotated[int, _d("Of them WARN.")]
+    groups: Annotated[int, _d("Distinct signatures.")]
+    threads: Annotated[int, _d("Distinct threads.")]
+    first_ts: Annotated[str | None, _d("First entry with a timestamp.")]
+    last_ts: Annotated[str | None, _d("Last entry with a timestamp.")]
+    top: Annotated[
+        list[UserGroup], _d("The user's largest groups (--top, default 3), most entries first.")
+    ]
+
+
+class Users(Struct, kw_only=True, tag_field="schema", tag="users.v1"):
+    """Entries per user: `users`, `GET /api/sets/{ref}/users`."""
+
+    logset: Annotated[str, _d("Set id.")]
+    count: Annotated[int, _d("Rows in items.")]
+    total: Annotated[int, _d("Users with matching entries.")]
+    offset: Annotated[int, _d("Index of the first row.")]
+    next_offset: Annotated[int | None, _d("offset of the next page; null on the last.")]
+    truncated: Annotated[bool, _d("Whether more users follow.")]
+    entries: Annotated[int, _d("Matching entries with a user.")]
+    without_user: Annotated[int, _d("Matching entries without one (blank or missing).")]
+    items: Annotated[list[UserRow], _d("Users, most entries first, ties by name.")]
+
+
 class Query(Struct, kw_only=True, tag_field="schema", tag="query.v1"):
     """Rows of a DuckDB query: `query`."""
 
@@ -1296,6 +1333,7 @@ Document = (
     | Entries
     | Frames
     | Timeline
+    | Users
     | Query
     | Diff
     | Triage

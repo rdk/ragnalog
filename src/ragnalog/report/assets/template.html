@@ -101,6 +101,7 @@
   <section class="body" id="body">
     <div class="table-wrap" id="table-wrap" tabindex="-1">
       <div class="table-head-line">
+        <span class="seg t-tabs" id="t-tabs" role="tablist" aria-label="View"><button type="button" role="tab" data-tab="" aria-selected="true" aria-pressed="true" title="The groups of the log set">Groups</button><button type="button" role="tab" data-tab="users" aria-selected="false" aria-pressed="false" title="The users behind the entries the filters list: who logs what, most entries first">Users</button></span>
         <span id="t-summary" class="muted"></span>
         <span class="pager" id="pager-top"></span>
       </div>
@@ -110,6 +111,7 @@
       </table>
       <div class="empty" id="t-empty" hidden></div>
       <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
+      <div class="u-view" id="u-view" hidden></div>
     </div>
     <aside class="drawer" id="drawer" tabindex="-1" hidden aria-label="Group detail">
       <div class="drawer-bar">
@@ -122,7 +124,7 @@
         <button type="button" class="btn small" id="d-close" title="Close (Esc)">Close</button>
       </div>
       <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
-        <button type="button" data-jump="d-s-hourly" title="Entries of this group over time">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries, with their full text and stack traces">Examples</button><button type="button" data-jump="d-s-who" title="The users, threads and source files with the most entries of this group">Who</button><button type="button" data-jump="d-s-rel" title="Groups that rise and fall with this one, hour by hour">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
+        <button type="button" data-jump="d-s-hourly" title="Entries of this group over time">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries, with their full text and stack traces">Examples</button><button type="button" data-jump="d-s-users" title="Every user with entries of this group: how many, their share, first and last seen">Users</button><button type="button" data-jump="d-s-who" title="The threads and source files with the most entries of this group">Who</button><button type="button" data-jump="d-s-rel" title="Groups that rise and fall with this one, hour by hour">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
       </nav>
       <div class="drawer-body" id="drawer-body"></div>
     </aside>
