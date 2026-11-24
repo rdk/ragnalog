@@ -144,6 +144,21 @@ def test_histogram(built: Built) -> None:
             ls.histogram(bad)
 
 
+def test_histogram_by_level(built: Built) -> None:
+    """by_level splits each bucket into the chart series; the buckets stay the same."""
+    ls = built.logset
+    plain, split = ls.histogram("1m"), ls.histogram("1m", by_level=True)
+    assert [(b["bucket"], b["count"]) for b in split] == [(b["bucket"], b["count"]) for b in plain]
+    assert all("levels" not in b for b in plain)
+    for b in split:
+        assert set(b["levels"]) == {"ERROR", "WARN", "INFO", "DEBUG", "OTHER"}
+        assert sum(b["levels"].values()) == b["count"]
+    errors = sum(b["levels"]["ERROR"] for b in split)
+    assert errors == ls.count_entries(min_level="ERROR")
+    warn = ls.histogram("1m", by_level=True, level="WARN")
+    assert all(b["levels"]["WARN"] == b["count"] for b in warn)
+
+
 def test_stats_single_scan_matches(built: Built) -> None:
     s = built.logset.stats()
     assert s["entry_count"] == built.logset.count_entries()

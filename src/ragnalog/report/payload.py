@@ -15,7 +15,7 @@ import polars as pl
 
 from ragnalog import __version__
 from ragnalog.core.formats.base import CTX_PREAMBLE
-from ragnalog.store.filters import GroupFilter, has_time
+from ragnalog.store.filters import LEVEL_BUCKETS, GroupFilter, has_time, level_bucket
 from ragnalog.store.logset import LogSet, to_records
 from ragnalog.store.query import diff
 
@@ -29,8 +29,6 @@ __all__ = [
 ]
 
 REPORT_SCHEMA = "report.v1"
-LEVEL_BUCKETS = ("ERROR", "WARN", "INFO", "DEBUG", "OTHER")
-"""Timeline series: FATAL folds into ERROR, TRACE into DEBUG, UNKNOWN into OTHER."""
 
 HOUR_MS = 3_600_000
 MAX_TIMELINE_HOURS = 400 * 24
@@ -62,19 +60,7 @@ def _hour_expr() -> pl.Expr:
 
 
 def _bucket_expr() -> pl.Expr:
-    lv = pl.col("level")
-    return (
-        pl.when(lv >= 50)
-        .then(pl.lit("ERROR"))
-        .when(lv >= 40)
-        .then(pl.lit("WARN"))
-        .when(lv >= 30)
-        .then(pl.lit("INFO"))
-        .when(lv >= 10)
-        .then(pl.lit("DEBUG"))
-        .otherwise(pl.lit("OTHER"))
-        .alias("bucket")
-    )
+    return level_bucket().alias("bucket")
 
 
 def _hour_iso(hour: int) -> str:

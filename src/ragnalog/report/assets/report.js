@@ -125,6 +125,56 @@
   const srcPath = (i) => (typeof i === "number" ? SRC_PATHS[i] ?? "#" + i : i == null ? "" : String(i));
   const pairs = (list) => (list || []).map((x) => (Array.isArray(x) ? { value: x[0], count: x[1] } : x));
 
+  // ---------------------------------------------------------------- chart bins
+  // @bins: BIN_SIZES … binChoices (tests/report/test_report_bins.py runs this part with node)
+  const HOUR = 3.6e6;
+  const BIN_SIZES = [["1s", 1e3], ["5s", 5e3], ["10s", 1e4], ["30s", 3e4], ["1m", 6e4], ["2m", 12e4],
+    ["5m", 3e5], ["10m", 6e5], ["15m", 9e5], ["30m", 18e5], ["1h", HOUR], ["2h", 2 * HOUR],
+    ["3h", 3 * HOUR], ["4h", 4 * HOUR], ["6h", 6 * HOUR], ["12h", 12 * HOUR], ["1d", 24 * HOUR],
+    ["2d", 48 * HOUR], ["7d", 168 * HOUR]];
+  const BIN_MS = Object.fromEntries(BIN_SIZES);
+  const binKey = (ms) => (BIN_SIZES.find(([, v]) => v === ms) || [""])[0];
+  const UNIT_NAMES = { s: "second", m: "minute", h: "hour", d: "day" };
+  /** What one bin is, for the chart's title: "minute", "5 minutes", "hour", "3 hours", "day". */
+  function binName(ms) {
+    const m = /^(\d+)([smhd])$/.exec(binKey(ms));
+    if (!m) return Math.round(ms / 6e4) + " minutes";
+    return m[1] === "1" ? UNIT_NAMES[m[2]] : m[1] + " " + UNIT_NAMES[m[2]] + "s";
+  }
+  /** A bin size in the bins menu: "5 s", "1 min", "3 h", "1 d". */
+  const binShort = (ms) => binKey(ms).replace(/^(\d+)([smhd])$/, (_, n, u) => n + " " + (u === "m" ? "min" : u));
+  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 5 px (the
+   *  rule the hourly chart always had), and not finer than floor ms. */
+  function autoBin(span, plotW, floor) {
+    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 5 <= plotW) return ms;
+    return BIN_SIZES[BIN_SIZES.length - 1][1];
+  }
+  /** The bins a viewer may pick for span ms over plotW px: 2 bars at least, one per 2 px at most
+   *  (finer than the automatic one), not finer than floor ms. */
+  const binChoices = (span, plotW, floor) => BIN_SIZES.map(([, ms]) => ms).filter((ms) => {
+    const n = Math.ceil(span / ms);
+    return ms >= floor && n >= 2 && n <= Math.floor(plotW / 2);
+  });
+  // @bins-end
+  /** End of the timeline's last hour. */
+  const T1MS = T0MS + NH * HOUR;
+  /** A zoom range [a, b) in ms inside the timeline, or null for the whole timeline (or a range of
+   *  under 10 seconds). */
+  function clampZoom(z) {
+    if (!z || !NH) return null;
+    let [a, b] = z;
+    if (!(a === a && b === b)) return null;
+    if (a > b) [a, b] = [b, a];
+    a = Math.max(T0MS, a);
+    b = Math.min(T1MS, b);
+    if (b - a < 1e4 || (a <= T0MS && b >= T1MS)) return null;
+    return [a, b];
+  }
+  /** The timeline hours [first, last] that cover the times [a, b): the window of a zoom. */
+  const hoursCovering = (a, b) => [
+    Math.max(0, Math.floor((a - T0MS) / HOUR)), Math.min(NH - 1, Math.ceil((b - T0MS) / HOUR) - 1),
+  ];
+
   const CMP = CMPD ? new Map() : null;
   if (CMPD) {
     for (const d of CMPD.new || []) {
@@ -316,6 +366,17 @@
   const windowText = (t, t0, unit) =>
     unit < 6e4 ? t[0] + "-" + t[1] : stamp(t0 + t[0] * unit) + "-" + stamp(t0 + (t[1] + 1) * unit);
   const parseWindow = (s) => windowOf(s, T0MS, 3.6e6, NH);
+  // the chart's zoom (z=20261029T1400-20261029T1530, UTC, seconds when not whole minutes) and
+  // its bin size (bin=5m); both are views of the timeline only, the window stays in whole hours
+  const zstamp = (ms) => new Date(ms).toISOString().slice(0, 19).replace(/[-:]/g, "").replace(/(T\d{4})00$/, "$1");
+  function unzstamp(s) {
+    const m = /^(\d{4})(\d\d)(\d\d)T(\d\d)(\d\d)(\d\d)?$/.exec(s);
+    return m ? Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)) : NaN;
+  }
+  function parseZoom(s) {
+    const m = /^(\d{8}T\d{4}(?:\d\d)?)-(\d{8}T\d{4}(?:\d\d)?)$/.exec(s || "");
+    return m ? clampZoom([unzstamp(m[1]), unzstamp(m[2])]) : null;
+  }
   function parseHash() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
     const v = p.get("view");
@@ -334,6 +395,8 @@
       hasPage: p.has("p"),
       sig: p.get("sig") || "",
       t: parseWindow(p.get("t")),
+      z: parseZoom(p.get("z")),
+      bin: Object.hasOwn(BIN_MS, p.get("bin") || "") ? p.get("bin") : "",
       theme: p.get("theme") || "",
       tz: ["local", "utc"].includes(p.get("tz")) ? p.get("tz") : "",
       mute: new Set((p.get("mute") || "").split(",").filter((x) => BASE_BY.has(x))),
@@ -352,6 +415,8 @@
     if (s.view !== "sig") p.set("view", s.view);
     if (s.cmp !== "all") p.set("cmp", s.cmp);
     if (s.t) p.set("t", windowText(s.t, T0MS, 3.6e6));
+    if (s.z) p.set("z", zstamp(s.z[0]) + "-" + zstamp(s.z[1]));
+    if (s.bin) p.set("bin", s.bin);
     if (s.p > 0) p.set("p", String(s.p + 1));
     if (s.sig) p.set("sig", s.sig);
     if (s.theme) p.set("theme", s.theme);
@@ -549,17 +614,80 @@
     return newDay(i) && hodOf(i) === 0 ? z.slice(5, 10) : z.slice(11, 16);
   }
   /** Bins of k hours start on the shown zone's clock (3-hour bins at 00, 03, ...), not at the
-   *  set's first hour: the bins of hours [0, off) are partial. */
-  const binOff = (k) => (k > 1 && 24 % k === 0 && NH ? hodOf(0) % k : 0);
-  const binHours = (b, k, off) => [Math.max(0, b * k - off), Math.min(NH, (b + 1) * k - off)];
-  function binRange(b, k, off = 0) {
-    const [a, e] = binHours(b, k, off);
+   *  first hour shown (ha): the bins of hours [ha, ha + off) are partial. */
+  const binOff = (k, ha = 0) => (k > 1 && 24 % k === 0 && NH ? hodOf(ha) % k : 0);
+  /** Hours [first, end) of bin b of k hours over the hours [ha, hb) shown. */
+  const binHours = (b, k, off, ha = 0, hb = NH) => [Math.max(ha, ha + b * k - off), Math.min(hb, ha + (b + 1) * k - off)];
+  function binRange(b, k, off = 0, ha = 0, hb = NH) {
+    const [a, e] = binHours(b, k, off, ha, hb);
     const start = zoned(HOURS[a]);
     const end = zoned(new Date(parseTs(HOURS[e - 1]) + 3.6e6).toISOString());
     return start.slice(0, 10) + " " + start.slice(11, 16) + " – " +
       (end.slice(0, 10) === start.slice(0, 10) ? "" : end.slice(5, 10) + " ") + end.slice(11, 16) + " " + TZ;
   }
   // @hours-end
+  // ---- frames: what a chart's x-axis covers, a range [a, b) in ms cut into nb bins. Bins of an
+  // hour and more add up the payload's hourly counts (on the shown zone's clock); finer ones are
+  // counted by the server (GET /api/sets/{id}/timeline?by_level=true), so only the web app has
+  // them: the standalone file makes no requests.
+  // @frames: FINE … fineTicks (tests/report/test_report_bins.py)
+  const FINE = !!(ENTRIES_URL && LS.id);
+  const isoOf = (ms) => new Date(ms).toISOString().replace(".000Z", "Z");
+  /** Bins of k hours over the timeline hours [ha, hb). */
+  function hourFrame(ha, hb, k) {
+    const off = binOff(k, ha);
+    return {
+      kind: "hours", ha, hb, k, off, size: k * HOUR, nb: Math.max(1, Math.ceil((hb - ha + off) / k)),
+      a: T0MS + ha * HOUR, b: T0MS + hb * HOUR,
+      hours: (b) => binHours(b, k, off, ha, hb),
+      binOfHour: (i) => Math.floor((i - ha + off) / k),
+      start: (b) => T0MS + binHours(b, k, off, ha, hb)[0] * HOUR,
+      end: (b) => T0MS + binHours(b, k, off, ha, hb)[1] * HOUR,
+      pos: (ms) => ((ms - T0MS) / HOUR - ha + off) / k,  // the fractional bin of a time
+      range: (b) => binRange(b, k, off, ha, hb),
+    };
+  }
+  /** Bins of size ms (under an hour) over [a, b), aligned to the epoch as the server counts them. */
+  function fineFrame(a, b, size) {
+    const a0 = Math.floor(a / size) * size, b0 = Math.ceil(b / size) * size;
+    const secs = size < 6e4 ? 19 : 16;
+    return {
+      kind: "fine", size, nb: Math.max(1, Math.round((b0 - a0) / size)), a: a0, b: b0,
+      hours: null,
+      start: (i) => a0 + i * size,
+      end: (i) => a0 + (i + 1) * size,
+      pos: (ms) => (ms - a0) / size,
+      range: (i) => {
+        const s = zoned(isoOf(a0 + i * size)), e = zoned(isoOf(a0 + (i + 1) * size));
+        return s.slice(0, 10) + " " + s.slice(11, secs) + " – " +
+          (e.slice(0, 10) === s.slice(0, 10) ? "" : e.slice(5, 10) + " ") + e.slice(11, secs) + " " + TZ;
+      },
+    };
+  }
+  /** A per-hour series added up into the bins of an hour frame. */
+  function binHourly(data, f) {
+    const out = new Float64Array(f.nb);
+    for (let i = f.ha; i < f.hb; i++) if (data[i]) out[f.binOfHour(i)] += data[i];
+    return out;
+  }
+  /** x-axis ticks of a fine frame: [x position in bins, label] on the shown zone's wall clock,
+   *  the smallest step whose labels are >= 56 px apart; 24-hour times, the date at midnight. */
+  function fineTicks(f, slot) {
+    const steps = [1e3, 2e3, 5e3, 1e4, 15e3, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5, HOUR, 2 * HOUR, 3 * HOUR, 6 * HOUR, 12 * HOUR, 24 * HOUR];
+    const pxPerMs = slot / f.size;
+    const step = steps.find((s) => s * pxPerMs >= 56) || 24 * HOUR;
+    const shift = (ms) => (TZL ? -new Date(ms).getTimezoneOffset() * 6e4 : 0);
+    const out = [];
+    for (let w = Math.ceil((f.a + shift(f.a)) / step) * step; out.length < 400; w += step) {
+      const ms = w - shift(w - shift(f.a));
+      if (ms >= f.b) break;
+      const z = zoned(isoOf(ms));
+      const label = w % (24 * HOUR) === 0 ? z.slice(5, 10) : step < 6e4 ? z.slice(11, 19) : z.slice(11, 16);
+      out.push([f.pos(ms), label]);
+    }
+    return out;
+  }
+  // @frames-end
   const rectPath = (x, top, w, bottom) => `M${r1(x)} ${r1(bottom)}V${r1(top)}H${r1(x + w)}V${r1(bottom)}Z`;
   function roundTopPath(x, top, w, bottom) {
     const r = Math.min(4, w / 2, bottom - top);
@@ -568,7 +696,9 @@
       `H${r1(x + w - r)}Q${r1(x + w)} ${r1(top)} ${r1(x + w)} ${r1(top + r)}V${r1(bottom)}Z`;
   }
 
-  /** Columns over the timeline hours (stacked when several series). Returns geometry. */
+  /** Columns over a frame (stacked when several series). Returns geometry. Without opts.frame the
+   *  series are per-hour arrays over the whole timeline, binned here as wide as the chart allows;
+   *  with it they come binned (series[].binned, overlay.binned, births as {n, lv} per bin). */
   function drawColumns(el, series, opts) {
     const W = Math.max(200, Math.floor(el.clientWidth || 600));
     const H = opts.height;
@@ -580,15 +710,9 @@
     const small = H <= 100;  // the drawer's chart: two y steps, a slimmer axis
     const padL = 42, padR = 6, padB = (small ? 20 : 22) + lane;
     const plotW = W - padL - padR;
-    const k = chooseBin(NH, plotW);
-    const off = binOff(k);
-    const nb = Math.ceil((NH + off) / k);
-    const binOf = (i) => Math.floor((i + off) / k);
-    const binned = series.map((s) => {
-      const out = new Float64Array(nb);
-      for (let i = 0; i < NH; i++) if (s.data[i]) out[binOf(i)] += s.data[i];
-      return out;
-    });
+    const frame = opts.frame || hourFrame(0, NH, chooseBin(NH, plotW));
+    const { k = 0, off = 0, nb } = frame;
+    const binned = opts.frame ? series.map((s) => s.binned) : series.map((s) => binHourly(s.data, frame));
     const totals = new Float64Array(nb);
     for (const arr of binned) for (let b = 0; b < nb; b++) totals[b] += arr[b];
     let maxT = 0;
@@ -602,7 +726,8 @@
     const ticks = small ? niceTicks(clip ? p95 : maxT, 2, true) : niceTicks(clip ? p95 : maxT);
     const yMax = ticks[ticks.length - 1];
     const slot = plotW / nb;
-    const bw = Math.min(24, Math.max(3, slot - GAP));
+    // thin bars (a finer bin than the automatic one) keep a hairline gap, then none
+    const bw = slot >= 5 ? Math.min(24, Math.max(3, slot - GAP)) : Math.max(0.8, slot - (slot >= 3 ? 1 : 0.3));
     const bottom0 = padT + plotH;
     const paths = series.map(() => []);
     for (let b = 0; b < nb; b++) {
@@ -636,19 +761,23 @@
       // with the "new" lane under the axis its label takes the place of the 0
       if (t > 0 || !born) parts.push(`<text class="axis" x="${padL - 6}" y="${y + 4}" text-anchor="end">${compact(t)}</text>`);
     }
-    // x ticks: smallest hour step whose labels are >= 56px apart
-    const pxPerHour = slot / k;
-    const step = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720].find((h) => h * pxPerHour >= 56) || 720;
-    for (let i = 0; i < NH; i++) {
-      const hod = hodOf(i);
-      // a repeated hour (DST fall-back) gets no second tick
-      const ok = step < 24 ? hod % step === 0 && (i === 0 || hodOf(i - 1) !== hod) : hod === 0 && newDay(i) && dayOf(i) % (step / 24) === 0;
-      if (!ok) continue;
-      const x = r1(padL + ((i + off) / k) * slot) + 0.5;
-      if (x > W - padR - 16) continue;
+    const tick = (pos, label) => {
+      const x = r1(padL + pos * slot) + 0.5;
+      if (x < padL || x > W - padR - 16) return;
       parts.push(`<line class="base" x1="${x}" x2="${x}" y1="${bottom0 + lane}" y2="${bottom0 + lane + 4}"/>`);
-      parts.push(`<text class="axis" x="${x}" y="${H - 5}" text-anchor="middle">${hourLabel(i)}</text>`);
-    }
+      parts.push(`<text class="axis" x="${x}" y="${H - 5}" text-anchor="middle">${label}</text>`);
+    };
+    if (frame.kind === "hours") {
+      // x ticks: smallest hour step whose labels are >= 56px apart
+      const pxPerHour = slot / k;
+      const step = [1, 2, 3, 6, 12, 24, 48, 72, 168, 336, 720].find((h) => h * pxPerHour >= 56) || 720;
+      for (let i = frame.ha; i < frame.hb; i++) {
+        const hod = hodOf(i);
+        // a repeated hour (DST fall-back) gets no second tick
+        const ok = step < 24 ? hod % step === 0 && (i === 0 || hodOf(i - 1) !== hod) : hod === 0 && newDay(i) && dayOf(i) % (step / 24) === 0;
+        if (ok) tick((i - frame.ha + off) / k, hourLabel(i));
+      }
+    } else for (const [pos, label] of fineTicks(frame, slot)) tick(pos, label);
     parts.push(`<rect class="hover-band" x="0" y="${padT}" width="${r1(slot)}" height="${plotH}" visibility="hidden"/>`);
     for (let s = 0; s < series.length; s++) {
       if (paths[s].length) parts.push(`<path class="${series[s].cls}" d="${paths[s].join("")}"/>`);
@@ -672,13 +801,16 @@
     let bornB = null, bornLv = null;
     if (opts.births) {
       // a dot per bin with new groups: area by count, color by the highest level among them
-      bornB = new Float64Array(nb);
-      bornLv = new Int32Array(nb);
-      for (let i = 0; i < NH; i++) {
-        if (!opts.births.n[i]) continue;
-        const b = binOf(i);
-        bornB[b] += opts.births.n[i];
-        if (opts.births.lv[i] > bornLv[b]) bornLv[b] = opts.births.lv[i];
+      if (opts.frame) ({ n: bornB, lv: bornLv } = opts.births);
+      else {
+        bornB = new Float64Array(nb);
+        bornLv = new Int32Array(nb);
+        for (let i = 0; i < NH; i++) {
+          if (!opts.births.n[i]) continue;
+          const b = frame.binOfHour(i);
+          bornB[b] += opts.births.n[i];
+          if (opts.births.lv[i] > bornLv[b]) bornLv[b] = opts.births.lv[i];
+        }
       }
       let mx = 0;
       for (let b = 0; b < nb; b++) if (bornB[b] > mx) mx = bornB[b];
@@ -693,8 +825,7 @@
     let ovb = null;
     if (opts.overlay) {
       // a stepped line per bin (a run of empty bins sits on the baseline), clamped to a clipped axis
-      ovb = new Float64Array(nb);
-      for (let i = 0; i < NH; i++) if (opts.overlay.data[i]) ovb[binOf(i)] += opts.overlay.data[i];
+      ovb = opts.frame ? opts.overlay.binned : binHourly(opts.overlay.data, frame);
       let ovMax = 0;
       for (let b = 0; b < nb; b++) if (ovb[b] > ovMax) ovMax = ovb[b];
       const cells = [];
@@ -728,7 +859,7 @@
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
-    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, ovName: opts.overlay ? opts.overlay.name : "" };
+    const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, frame, ovName: opts.overlay ? opts.overlay.name : "" };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
     geo.binAt = (clientX) => {
@@ -766,8 +897,9 @@
       }
       if (geo.series.length > 1) rows.push(`<div class="tt-r tt-t"><b>${fmt(geo.totals[b])}</b><i></i><span>total</span></div>`);
       if (geo.ovb) rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.ovb[b])}</b><i class="sw-sel"></i><span>${esc(geo.ovName)}</span></div>`);
-      if (geo.top) {
-        const [ha, he] = binHours(b, geo.k, geo.off);
+      if (geo.top && geo.frame.hours) {
+        // the groups of a bin are known per hour only: not for bins under an hour
+        const [ha, he] = geo.frame.hours(b);
         const top = topIn(ha, he - 1, 3);
         if (top.length) {
           rows.push(`<div class="tt-top"><div class="tt-k">Largest groups</div>` + top.map(([r, c]) =>
@@ -778,9 +910,9 @@
         rows.push(`<div class="tt-r tt-o"><b>${fmt(geo.bornB[b])}</b><i class="sw-${bucketOf(geo.bornLv[b])}"></i><span>new group${geo.bornB[b] === 1 ? "" : "s"} first seen</span></div>` +
           `<div class="tt-note">Click the dot under the axis to list them</div>`);
       } else if (geo.top) {
-        rows.push(`<div class="tt-note">${S.t ? "Drag for another window; click to clear it" : "Drag to select a time window"}</div>`);
+        rows.push(`<div class="tt-note">${S.z ? "Drag to zoom in further; − or Reset zooms out" : S.t ? "Drag for another window; click to clear it; + zooms in" : "Drag to select a time window"}</div>`);
       }
-      tip.innerHTML = `<div class="tt-h">${esc(binRange(b, geo.k, geo.off))}</div>${rows.join("")}`;
+      tip.innerHTML = `<div class="tt-h">${esc(geo.frame.range(b))}</div>${rows.join("")}`;
       if (tip.hidden && window.RagnalogTips) window.RagnalogTips.hide();  // one tooltip at a time
       tip.hidden = false;
       placeTip(e);
@@ -791,13 +923,19 @@
     });
   }
   function showWindow(geo, range) {
-    const w = range || (S.t ? [(S.t[0] + geo.off) / geo.k, (S.t[1] + geo.off) / geo.k] : null);
+    const f = geo.frame;
+    const w = range || (S.t ? [f.pos(T0MS + S.t[0] * HOUR), f.pos(T0MS + (S.t[1] + 1) * HOUR - 1)] : null);
     if (!w) {
       geo.brush.setAttribute("visibility", "hidden");
       return;
     }
-    const x0 = geo.padL + Math.floor(w[0]) * geo.slot;
-    const x1 = geo.padL + (Math.floor(w[1]) + 1) * geo.slot;
+    const x0 = geo.padL + Math.max(0, Math.floor(w[0])) * geo.slot;
+    const x1 = geo.padL + Math.min(geo.nb, Math.floor(w[1]) + 1) * geo.slot;
+    // a zoomed chart inside its window: shading all of it would say nothing
+    if (x1 <= x0 || (!range && S.z && geo.top && x0 <= geo.padL && x1 >= geo.padL + geo.plotW - 0.5)) {
+      geo.brush.setAttribute("visibility", "hidden");
+      return;
+    }
     geo.brush.setAttribute("x", r1(x0));
     geo.brush.setAttribute("width", r1(Math.max(1, x1 - x0)));
     geo.brush.setAttribute("visibility", "visible");
@@ -812,7 +950,7 @@
       : "";
   const TL_TOTALS = {};
   let TLK = "";
-  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",") + "|" + TZ + "|" + overlayKey();
+  const tlKey = () => [...S.mute].sort().join(",") + "|" + [...S.hl].join(",") + "|" + TZ + "|" + overlayKey() + "|" + (S.z ? S.z.join("-") : "") + "|" + S.bin;
   /** Groups first seen per hour (signatures; the set's first hour left out: everything starts
    *  there) and the highest level among them: a deploy or an incident shows as a cluster of
    *  new groups. */
@@ -859,10 +997,103 @@
     const ov = overlaySpec();
     if (ov) {
       const what = ov.rows.length === 1 && S.sig ? "The open group" : "The groups the filters list";
-      html += `<span class="lg-sel" title="${what}: entries per hour as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest hour"><i class="sw-sel"></i>${esc(ov.name.charAt(0).toUpperCase() + ov.name.slice(1))}</span>`;
+      html += `<span class="lg-sel" title="${what}: entries per bin as a line on the same scale (when it rises above the baseline) and as the shaded lane under the axis, darkest at its own busiest bin"><i class="sw-sel"></i>${esc(ov.name.charAt(0).toUpperCase() + ov.name.slice(1))}</span>`;
     }
+    if (TL_NOTE) html += `<span class="tl-muted">${esc(TL_NOTE)}</span>`;
     $("tl-legend").innerHTML = html;
   }
+  // ---- the top chart's frame and its counts
+  /** The range the top chart shows: the zoom, else the whole timeline. */
+  const viewRange = () => S.z || [T0MS, T1MS];
+  /** Bins under an hour need the server; without a zoom a timeline of a day or more keeps
+   *  hourly bins at least (a page opens without waiting for a request). */
+  const autoFloor = (span) => (!FINE ? HOUR : !S.z && span >= 24 * HOUR ? HOUR : 1e3);
+  let BINS = { auto: HOUR, choices: [], size: HOUR, span: 0 };
+  /** The bin size of the top chart over plotW px: the viewer's pick when it fits, else automatic. */
+  function chooseFrameBin(plotW) {
+    const [a, b] = viewRange(), span = b - a;
+    const auto = autoBin(span, plotW, autoFloor(span));
+    const choices = binChoices(span, plotW, FINE ? 1e3 : HOUR);
+    const want = S.bin ? BIN_MS[S.bin] : 0;
+    BINS = { auto, choices, span, size: want && choices.includes(want) ? want : auto };
+    return BINS.size;
+  }
+  /** Groups first seen in each bin of a frame (the set's first hour left out, as BIRTHS). */
+  function birthsIn(f) {
+    if (f.kind === "hours") {
+      if (!BIRTHS) return null;
+      return { n: binHourly(BIRTHS.n, f), lv: (() => {
+        const lv = new Int32Array(f.nb);
+        for (let i = f.ha; i < f.hb; i++) if (BIRTHS.n[i] && BIRTHS.lv[i] > lv[f.binOfHour(i)]) lv[f.binOfHour(i)] = BIRTHS.lv[i];
+        return lv;
+      })() };
+    }
+    const n = new Float64Array(f.nb), lv = new Int32Array(f.nb);
+    let any = false;
+    for (const r of BASE) {
+      if (r.gone || !r.first) continue;
+      const ms = parseTs(r.first);
+      if (!(ms >= f.a && ms < f.b) || ms < T0MS + HOUR) continue;
+      const i = Math.floor((ms - f.a) / f.size);
+      n[i]++;
+      if (r.level > lv[i]) lv[i] = r.level;
+      any = true;
+    }
+    return any ? { n, lv } : null;
+  }
+  /** The API filter of the overlay's group (the open group: a signature or a coarse signature);
+   *  null when the overlay is several groups (filters, a merged row): bins under an hour cannot
+   *  draw it. */
+  function fineOverlayQuery(ov) {
+    if (!ov || !S.sig || !ov.key.startsWith("g:")) return null;
+    const r = ov.rows[0];
+    if (r.kind === "sig") return "signature=" + encodeURIComponent(r.sig);
+    if (r.kind === "coarse") return "coarse_signature=" + encodeURIComponent(r.coarse);
+    return null;
+  }
+  const MAX_FINE_MUTED = 40;
+  const FINE_CACHE = new Map();
+  /** Counts of a fine frame from the server: {levels, ov, mutedLeft} once there, {err} when the
+   *  request failed, undefined while it runs (the chart redraws when it is done). */
+  function fineData(f, ovQuery) {
+    const muted = [...S.mute].filter((s) => BASE_BY.has(s) && !BASE_BY.get(s).gone).sort();
+    const key = [f.a, f.b, f.size, muted.join(","), ovQuery || ""].join("|");
+    const hit = FINE_CACHE.get(key);
+    if (hit) return hit.value;
+    const entry = { value: undefined };
+    FINE_CACHE.set(key, entry);
+    if (FINE_CACHE.size > 40) FINE_CACHE.delete(FINE_CACHE.keys().next().value);
+    const base = `/api/sets/${encodeURIComponent(LS.id)}/timeline?bucket=${binKey(f.size)}` +
+      `&since=${encodeURIComponent(isoOf(f.a))}&until=${encodeURIComponent(isoOf(f.b))}`;
+    const get = (q) => fetch(base + q, { headers: { Accept: "application/json" } }).then((res) =>
+      res.ok ? res.json() : res.json().catch(() => ({})).then((d) => { throw new Error((d.error && d.error.message) || "HTTP " + res.status); }));
+    const sub = muted.slice(0, MAX_FINE_MUTED);
+    Promise.all([get("&by_level=true"), ovQuery ? get("&" + ovQuery) : null, ...sub.map((s) => get("&signature=" + encodeURIComponent(s)))])
+      .then(([all, ov, ...mutes]) => {
+        const at = (it) => Math.round((parseTs(it.bucket) - f.a) / f.size);
+        const levels = {};
+        for (const b of BUCKETS) levels[b] = new Float64Array(f.nb);
+        for (const it of all.items || []) {
+          const i = at(it);
+          if (i >= 0 && i < f.nb) for (const b of BUCKETS) levels[b][i] += (it.levels || {})[b] || 0;
+        }
+        mutes.forEach((d, j) => {
+          const arr = levels[BASE_BY.get(sub[j]).bucket];
+          for (const it of d.items || []) { const i = at(it); if (i >= 0 && i < f.nb) arr[i] = Math.max(0, arr[i] - it.count); }
+        });
+        let ovb = null;
+        if (ov) {
+          ovb = new Float64Array(f.nb);
+          for (const it of ov.items || []) { const i = at(it); if (i >= 0 && i < f.nb) ovb[i] += it.count; }
+        }
+        entry.value = { levels, ov: ovb, mutedLeft: muted.length - sub.length };
+      })
+      .catch((err) => { entry.value = { err: String(err && err.message ? err.message : err) }; })
+      .finally(() => { if (TL_WANT === key) renderTimeline(); });
+    return undefined;
+  }
+  let TL_WANT = "";
+  let TL_NOTE = "";
   function renderTimeline() {
     const el = $("timeline");
     TLK = tlKey();
@@ -877,21 +1108,54 @@
       for (const v of levels[b] || []) t += v;
       TL_TOTALS[b] = t;
     }
-    renderLegend();
-    const series = BUCKETS.filter((b) => TL_TOTALS[b] > 0 && !S.hl.has(b)).map((b) => ({
-      key: b, name: b, cls: "s-" + b, data: levels[b],
-    }));
+    const shown = BUCKETS.filter((b) => TL_TOTALS[b] > 0 && !S.hl.has(b));
     const ov = overlaySpec();
-    let overlay = null;
-    if (ov) {
-      const data = new Float64Array(NH);
-      for (const row of ov.rows) for (const [i, n] of row.hourly) if (i >= 0 && i < NH) data[i] += n;
-      overlay = { data, name: ov.name };
+    const W = Math.max(200, Math.floor(el.clientWidth || 600));
+    const size = chooseFrameBin(W - 48);  // the plot width of drawColumns (padL 42, padR 6)
+    const [za, zb] = viewRange();
+    let frame = null, series, overlay = null, note = "";
+    if (size < HOUR) {
+      frame = fineFrame(za, zb, size);
+      const q = fineOverlayQuery(ov);
+      TL_WANT = [frame.a, frame.b, frame.size, [...S.mute].filter((s) => BASE_BY.has(s) && !BASE_BY.get(s).gone).sort().join(","), q || ""].join("|");
+      const data = fineData(frame, q);
+      if (data === undefined) {
+        // keep the chart drawn so far, faded, until the counts are in
+        el.classList.add("loading");
+        if (!TL || !el.firstElementChild) el.innerHTML = `<div class="empty">Loading entries per ${esc(binName(size))}…</div>`;
+        $("tl-bin").textContent = binName(size);
+        renderBins();
+        return;
+      }
+      if (data.err) {
+        note = `Entries per ${binName(size)} could not be loaded (${data.err}); showing hours`;
+        frame = null;
+      } else {
+        series = shown.map((b) => ({ key: b, name: b, cls: "s-" + b, binned: data.levels[b] }));
+        if (ov && data.ov) overlay = { binned: data.ov, name: ov.name };
+        else if (ov) note = `${ov.name.charAt(0).toUpperCase() + ov.name.slice(1)}: drawn at bins of an hour or more`;
+        if (data.mutedLeft) note = `${fmt(data.mutedLeft)} muted groups are still counted at bins under an hour`;
+      }
     }
-    TL = drawColumns(el, series, { height: 120, label: "Entries per hour by level", overlay, births: BIRTHS, top: true, ovLane: true });
-    const k = TL.k;
-    $("tl-bin").textContent = k === 1 ? "hour" : k === 24 ? "day" : k + " hours";
+    TL_WANT = frame ? TL_WANT : "";
+    if (!frame) {
+      const ha = Math.max(0, Math.floor((za - T0MS) / HOUR)), hb = Math.min(NH, Math.max(Math.ceil((zb - T0MS) / HOUR), Math.floor((za - T0MS) / HOUR) + 1));
+      frame = hourFrame(ha, hb, Math.max(1, Math.round(Math.max(size, HOUR) / HOUR)));
+      series = shown.map((b) => ({ key: b, name: b, cls: "s-" + b, binned: binHourly(levels[b], frame) }));
+      if (ov) {
+        const data = new Float64Array(NH);
+        for (const row of ov.rows) for (const [i, n] of row.hourly) if (i >= 0 && i < NH) data[i] += n;
+        overlay = { binned: binHourly(data, frame), name: ov.name };
+      }
+    }
+    TL_NOTE = note;
+    renderLegend();
+    el.classList.remove("loading");
+    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level`, overlay, births: birthsIn(frame), top: true, ovLane: true });
+    $("tl-bin").textContent = binName(frame.size);
+    el.title = S.z ? "Drag across the chart to zoom in further" : "Drag across the chart to select a time window; click to clear it";
     $("tl-clip").innerHTML = clipBtn(TL);
+    renderBins();
     const hit = TL.svg.querySelector(".hit");
     const geo = TL;
     hit.addEventListener("pointerdown", (e) => {
@@ -913,31 +1177,85 @@
       if (!d) return;
       geo.dragging = null;
       if (e.type === "pointercancel") return showWindow(geo);
+      const f = geo.frame;
       if (!d.moved) {
         const y = e.clientY - geo.svg.getBoundingClientRect().top;
         if (geo.bornB && geo.bornB[d.b0] && y > geo.bottom0 && y <= geo.bottom0 + geo.born + 2) {
-          const [ha, he] = binHours(d.b0, geo.k, geo.off);
-          commit({ t: [ha, he - 1], sort: "first_seen" });
+          commit({ t: hoursCovering(f.start(d.b0), f.end(d.b0)), sort: "first_seen" });
           return;
         }
-        if (S.t) commit({ t: null });
+        if (S.t && !S.z) commit({ t: null });
         return;
       }
-      const a = Math.min(d.b0, d.b1), b = Math.max(d.b0, d.b1);
-      commit({ t: [binHours(a, geo.k, geo.off)[0], binHours(b, geo.k, geo.off)[1] - 1] });
+      const a = f.start(Math.min(d.b0, d.b1)), b = f.end(Math.max(d.b0, d.b1));
+      // zoomed: the selection is the next zoom (the window follows it, in whole hours)
+      if (S.z) zoomTo([a, b]);
+      else commit({ t: hoursCovering(a, b) });
     };
     hit.addEventListener("pointerup", end);
     hit.addEventListener("pointercancel", end);
   }
+  /** Zoom the top chart into [a, b) (null: the whole timeline); the window becomes its hours. */
+  function zoomTo(range) {
+    const z = clampZoom(range);
+    if (!z) return commit({ z: null }, { keepPage: true });
+    commit({ z, t: hoursCovering(z[0], z[1]) });
+  }
+  /** + : into the window, or (zoomed) into the middle third. */
+  function zoomIn() {
+    if (S.z) {
+      const [a, b] = S.z, w = (b - a) / 3;
+      if (w >= 1e4) zoomTo([a + w, b - w]);
+    } else if (S.t) zoomTo([T0MS + S.t[0] * HOUR, T0MS + (S.t[1] + 1) * HOUR]);
+    else toast("Select a time window on the chart first");
+  }
+  /** − : three times as wide around the middle, kept inside the timeline. */
+  function zoomOut() {
+    if (!S.z) return;
+    const [a, b] = S.z, w = (b - a) * 3;
+    let na = (a + b) / 2 - w / 2;
+    na = Math.max(T0MS, Math.min(T1MS - w, na));
+    zoomTo([na, na + w]);
+  }
+  /** The bins menu: automatic, or a finer or coarser bin the chart's width allows. */
+  function renderBins() {
+    const el = $("tl-bins");
+    if (!el) return;
+    if (!NH || BINS.choices.length < 2) {
+      el.innerHTML = "";
+      return;
+    }
+    const cur = S.bin && BINS.choices.includes(BIN_MS[S.bin]) ? S.bin : "";
+    const opts = [`<option value=""${cur ? "" : " selected"}>Auto (${esc(binShort(BINS.auto))})</option>`]
+      .concat(BINS.choices.map((ms) => `<option value="${binKey(ms)}"${binKey(ms) === cur ? " selected" : ""}>${esc(binShort(ms))}</option>`));
+    const finer = FINE ? "" : " Bins under an hour need the web app (ragnalog serve).";
+    el.innerHTML = `<label class="sel" title="Bin size of the chart: Auto fits the shown range; pick a finer one to see more detail.${finer}"><span>Bins</span><select id="tl-binsel" aria-label="Bin size">${opts.join("")}</select></label>`;
+  }
   /** Quick windows ending at the last hour of the set: those shorter than the set. */
   const PRESETS = [[1, "1 h"], [6, "6 h"], [24, "24 h"], [168, "7 d"]].filter(([h]) => h < NH);
   const hoursText = (h) => (h < 48 ? h + " h" : (h / 24).toFixed(1).replace(/\.0$/, "") + " d");
-  /** Move the window by its own width (dir -1 / +1), clamped to the set. */
+  /** Move the window by its own width (dir -1 / +1), clamped to the set; zoomed, move the zoom
+   *  by its width (the window follows). */
   function shiftWindow(dir) {
+    if (S.z) {
+      const [a, b] = S.z, w = b - a;
+      const na = Math.max(T0MS, Math.min(T1MS - w, a + dir * w));
+      if (na !== a) zoomTo([na, na + w]);
+      return;
+    }
     if (!S.t) return;
     const [a, b] = S.t, w = b - a + 1;
     const na = Math.max(0, Math.min(NH - w, a + dir * w));
     if (na !== a) commit({ t: [na, na + w - 1] }, { keepPage: false });
+  }
+  /** "15 min", "40 s", "2.5 h", "3 d": the length of a zoom. */
+  const spanText = (ms) => (ms < 6e4 ? Math.round(ms / 1e3) + " s" : ms < HOUR ? Math.round(ms / 6e4) + " min"
+    : ms < 48 * HOUR ? (ms / HOUR).toFixed(1).replace(/\.0$/, "") + " h" : (ms / 864e5).toFixed(1).replace(/\.0$/, "") + " d");
+  /** "2026-10-29 14:05 → 14:20" in the shown zone; seconds when the ends are not whole minutes. */
+  function zoomText(a, b) {
+    const n = a % 6e4 || b % 6e4 ? 19 : 16;
+    const s = zoned(isoOf(a)), e = zoned(isoOf(b));
+    return s.slice(0, 10) + " " + s.slice(11, n) + " → " + (e.slice(0, 10) === s.slice(0, 10) ? "" : e.slice(5, 10) + " ") + e.slice(11, n);
   }
   function renderWindowLabel() {
     const el = $("tl-window");
@@ -946,7 +1264,7 @@
       return;
     }
     const presets = PRESETS.map(([h, label]) => {
-      const on = S.t && S.t[0] === NH - h && S.t[1] === NH - 1;
+      const on = !S.z && S.t && S.t[0] === NH - h && S.t[1] === NH - 1;
       return `<button type="button" data-win="${h}" aria-pressed="${!!on}" title="The last ${label} of the set">${label}</button>`;
     }).join("");
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
@@ -967,9 +1285,24 @@
           : `<button type="button" class="btn small link" data-sort-first title="Sort by first seen: the groups that started in the window come first">${fmt(born)} first seen here</button>`);
       }
     }
-    el.innerHTML = `<span class="win-what" data-tip-k="rpt-win"><span class="win-k">Window</span> <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> <span class="muted">${TZ} · ${hoursText(b - a + 1)}</span></span>${what.join("")}` +
+    const win = `<span class="win-what" data-tip-k="rpt-win"><span class="win-k">Window</span> <b>${esc(ts16(HOURS[a]))} → ${esc(tsShort(end))}</b> <span class="muted">${TZ} · ${hoursText(b - a + 1)}</span></span>`;
+    if (S.z) {
+      // zoomed: the zoom leads, the window (the table's hours around it) follows it
+      const [za, zb] = S.z;
+      el.innerHTML = `<span class="win-what zoom-what"><span class="win-k">Zoom</span> <b>${esc(zoomText(za, zb))}</b> <span class="muted">${TZ} · ${spanText(zb - za)}</span></span>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= T0MS ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
+        `<button type="button" class="btn small" data-shift="1" ${zb >= T1MS ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
+        `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
+        `<button type="button" class="btn small" data-zoom="reset" title="Show the whole set again; the window stays">Reset zoom</button>` +
+        `<span class="muted win-hours" title="The table counts whole hours: the window around the zoom">table: ${esc(ts16(HOURS[a]).slice(11))} → ${esc(tsShort(end).slice(6))}</span>` +
+        what.join("") + seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
+      return;
+    }
+    el.innerHTML = win + what.join("") +
       `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${a <= 0 ? "disabled" : ""} title="Previous window of the same length ([)" aria-label="Previous window">‹</button>` +
       `<button type="button" class="btn small" data-shift="1" ${b >= NH - 1 ? "disabled" : ""} title="Next window of the same length (])" aria-label="Next window">›</button></span>` +
+      `<button type="button" class="btn small" data-zoom="in" title="Zoom the chart into the window, with finer bins (+)">Zoom in</button>` +
       seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
   }
 
@@ -1176,14 +1509,14 @@
     if (S.t) out.push(["t", `Window: ${tsShort(HOURS[S.t[0]])} (${S.t[1] - S.t[0] + 1} h)`]);
     return out;
   }
-  const CLEAR = { q: { q: "" }, lv: null, lg: { lg: "" }, ex: { ex: "" }, hx: { hx: false }, cmp: { cmp: "all" }, t: { t: null } };
+  const CLEAR = { q: { q: "" }, lv: null, lg: { lg: "" }, ex: { ex: "" }, hx: { hx: false }, cmp: { cmp: "all" }, t: { t: null, z: null } };
   function resetAll() {
     clearTimeout(qTimer);
     $("f-search").value = "";
     $("f-more").open = false;
     closePops();
     $("f-search").focus({ preventScroll: true });
-    commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, sig: "" });
+    commit({ q: "", lv: new Set(DEFAULT_LV), lg: "", ex: "", hx: false, sort: "count", view: "sig", cmp: "all", t: null, z: null, sig: "" });
   }
   function clearFilter(k) {
     if (k === "all") return resetAll();
@@ -2420,10 +2753,13 @@
       const b = e.target.closest("button");
       if (!b || b.disabled) return;
       if (b.dataset.shift) shiftWindow(Number(b.dataset.shift));
+      else if (b.dataset.zoom === "in") zoomIn();
+      else if (b.dataset.zoom === "out") zoomOut();
+      else if (b.dataset.zoom === "reset") commit({ z: null }, { keepPage: true });
       else if (b.dataset.sortFirst != null) commit({ sort: "first_seen" });
       else if (b.dataset.win != null) {
         const h = Number(b.dataset.win);
-        commit({ t: h > 0 ? [NH - h, NH - 1] : null });
+        commit({ t: h > 0 ? [NH - h, NH - 1] : null, z: null });
       }
     });
     $("f-search").addEventListener("input", (e) => {
@@ -2456,7 +2792,7 @@
     $("t-empty").addEventListener("click", (e) => {
       const b = e.target.closest("[data-clear]");
       if (b) clearFilter(b.dataset.clear);
-      else if (e.target.closest("[data-win]")) commit({ t: null });
+      else if (e.target.closest("[data-win]")) commit({ t: null, z: null });
     });
     $("f-logger").onclick = () => togglePop("f-logger-pop", renderLoggerPop);
     $("f-exc").onclick = () => togglePop("f-exc-pop", renderExcPop);
@@ -2554,6 +2890,9 @@
     $("btn-theme").onclick = toggleTheme;
     if ($("btn-tz")) $("btn-tz").onclick = toggleTz;
     $("tl-clip").addEventListener("click", (e) => { if (e.target.closest("[data-clip]")) toggleClip(TL, "tl"); });
+    $("tl-bins").addEventListener("change", (e) => {
+      if (e.target.id === "tl-binsel") commit({ bin: e.target.value }, { keepPage: true, replace: true });
+    });
     $("tl-legend").addEventListener("click", (e) => {
       if (e.target.closest("[data-unmute]")) return commit({ mute: new Set() }, { keepPage: true, replace: true });
       const b = e.target.closest("[data-hl]");
@@ -2668,6 +3007,8 @@
         case "p": if (S.p > 0) commit({ p: S.p - 1 }, { keepPage: true }); break;
         case "[": shiftWindow(-1); break;
         case "]": shiftWindow(1); break;
+        case "+": case "=": zoomIn(); break;
+        case "-": zoomOut(); break;
         case "?": help.showModal(); break;
         default:
       }

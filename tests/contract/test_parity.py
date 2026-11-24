@@ -181,6 +181,11 @@ CASES: list[Case] = [
         "/api/sets/sample/timeline?bucket=1d&with_exception=true&contains=at%20&logger=com",
     ),
     Case(
+        "timeline-by-level",
+        ["timeline", "sample", "--bucket", "15m", "--by-level", "--min-level", "WARN"],
+        "/api/sets/sample/timeline?bucket=15m&by_level=true&min_level=WARN",
+    ),
+    Case(
         "entries-columns",
         ["entries", "sample", "--columns", "id,ts,level_name", "--limit", "5", "--offset", "3"],
         "/api/sets/sample/entries?columns=id,ts,level_name&limit=5&offset=3",

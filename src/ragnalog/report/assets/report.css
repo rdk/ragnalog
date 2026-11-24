@@ -887,7 +887,7 @@ html[data-wide] .d-sec .entry .e-body { max-height: 60vh; }
   .filters { display: block !important; position: static; border: 0; padding: 0; margin: 0 0 8px; }
   .filters > .f-row { display: none; }
   .print-only { display: block; color: #52514e; font-size: 12px; }
-  .tl-clip, .d-nav, .tl-window .seg, .tl-window .btn, .tl-window > .muted { display: none !important; }
+  .tl-clip, .tl-bins, .d-nav, .tl-window .seg, .tl-window .btn, .tl-window > .muted { display: none !important; }
   .drawer, .top-actions, .pager, .tooltip, .toast, .hit, .hover-band, #fatal { display: none !important; }
   body.drawer-open .body { grid-template-columns: minmax(0, 1fr); }
   .card, .tile, table.groups { border-color: #ccc; }
@@ -1006,6 +1006,15 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report .tl-window .win-what b { color: var(--ink); font-weight: 600; }
 .report .win-k { margin-right: var(--s1); }
 .report .tl-clip { margin-left: 0; }
+/* the chart's bins menu: a small boxed select like the filters' (label inside) */
+.report .tl-bins .sel { display: inline-flex; align-items: center; height: var(--ctl-h-sm); padding-left: var(--s2); gap: var(--s1); background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); }
+.report .tl-bins .sel:hover { background: var(--hover); }
+.report .tl-bins .sel:focus-within { outline: 2px solid var(--blue); outline-offset: 1px; }
+.report .tl-bins .sel select { height: calc(var(--ctl-h-sm) - 2px); border: 0; background: transparent; padding: 0 2px 0 0; outline: 0; cursor: pointer; font-size: var(--fs-meta); field-sizing: content; }
+.report .tl-window .zoom-what .win-k { color: var(--blue); }
+.report .tl-window .win-hours { font-variant-numeric: tabular-nums; }
+/* bins under an hour arrive from the server: the chart drawn so far fades until they are in */
+.timeline.loading > svg { opacity: 0.45; transition: opacity 0.15s; }
 .report .card .seg button { height: calc(var(--ctl-h-sm) - 2px); background: transparent; color: var(--ink-2); }
 .report .card .seg button:hover { background: var(--hover); }
 .report .timeline { min-height: 0; }

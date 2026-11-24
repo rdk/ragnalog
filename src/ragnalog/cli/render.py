@@ -43,6 +43,7 @@ __all__ = [
     "matrix",
     "show",
     "stats",
+    "timeline_levels",
     "triage",
 ]
 
@@ -320,6 +321,12 @@ def cluster_timeline(console: Console, doc: Doc) -> None:
         rows.append(row)
     what = f"group {doc['signature']}" if one else "entries"
     console.print(rows_table(rows, title=f"{what} per {doc['bucket']} and node (blank: no logs)"))
+
+
+def timeline_levels(console: Console, doc: Doc) -> None:
+    """``timeline SET --by-level``: one row per bucket, its entries and a column per level."""
+    rows = [{"bucket": b["bucket"], "count": b["count"], **b["levels"]} for b in doc["items"]]
+    console.print(rows_table(rows, title=f"timeline of {doc['logset']} by level"))
 
 
 def matrix(console: Console, doc: Doc, *, color: bool) -> None:

@@ -442,13 +442,28 @@ class Frames(Struct, kw_only=True, tag_field="schema", tag="frames.v1"):
     items: Annotated[list[ChainException], _d("The chain, outermost first.")]
 
 
+class TimelineBucket(BucketCount, kw_only=True):
+    """Entries in one time bucket of `timeline`, by level with --by-level."""
+
+    levels: (
+        Annotated[
+            dict[str, int],
+            _d(
+                "With --by-level (by_level=true): the bucket's entries per chart series, "
+                "ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE) and OTHER (unknown level)."
+            ),
+        ]
+        | UnsetType
+    ) = UNSET
+
+
 class Timeline(Struct, kw_only=True, tag_field="schema", tag="timeline.v1"):
     """Entry counts per time bucket: `GET /api/sets/{ref}/timeline`."""
 
     logset: Annotated[str, _d("Set id.")]
     bucket: Annotated[str, _d("Bucket size, e.g. 1h.")]
     count: Annotated[int, _d("Rows in items.")]
-    items: Annotated[list[BucketCount], _d("Contiguous buckets.")]
+    items: Annotated[list[TimelineBucket], _d("Contiguous buckets.")]
 
 
 class Query(Struct, kw_only=True, tag_field="schema", tag="query.v1"):

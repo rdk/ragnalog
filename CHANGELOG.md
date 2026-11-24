@@ -11,6 +11,17 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+### Added
+
+- Set report: zoom the top chart into the time window (*Zoom in* or `+`; a drag on the
+  zoomed chart zooms further, `−` zooms out, `[`/`]` move it) with finer bins, and pick the
+  bin size (*Bins*: automatic, or from 1 s to 7 d, finer than the automatic one down to
+  2 px a bar). Bins under an hour come from the server, so the web app has them and the
+  standalone HTML file stays at an hour or more. Zoom and bin size are in the URL (`z=`,
+  `bin=`).
+- `ragnalog timeline SET --by-level` and `GET /api/sets/{ref}/timeline?by_level=true`:
+  each bucket's entries per level (`levels`), the series of the report's chart.
+
 ### Changed
 
 - Pages show times in the browser's time zone by default (for example CET) instead of UTC.

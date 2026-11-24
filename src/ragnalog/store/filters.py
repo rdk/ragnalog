@@ -29,6 +29,7 @@ if TYPE_CHECKING:
     import polars as pl
 
 __all__ = [
+    "LEVEL_BUCKETS",
     "EntryFilter",
     "EntryFilterArgs",
     "GroupFilter",
@@ -37,7 +38,11 @@ __all__ = [
     "entry_filter",
     "group_filter",
     "has_time",
+    "level_bucket",
 ]
+
+LEVEL_BUCKETS = ("ERROR", "WARN", "INFO", "DEBUG", "OTHER")
+"""Chart series by level: FATAL folds into ERROR, TRACE into DEBUG, UNKNOWN into OTHER."""
 
 type LevelSpec = LogLevel | str | Iterable[LogLevel | str]
 """A level filter: a :class:`LogLevel`, a name or comma-separated names, or an iterable.
@@ -56,6 +61,24 @@ def has_time() -> pl.Expr:
     import polars as pl
 
     return ~(pl.col("parse_error").is_not_null() & (pl.col("ts").dt.epoch("ms") == 0))
+
+
+def level_bucket() -> pl.Expr:
+    """Return the entry's chart series, one of :data:`LEVEL_BUCKETS` (a string expression)."""
+    import polars as pl
+
+    lv = pl.col("level")
+    return (
+        pl.when(lv >= 50)
+        .then(pl.lit("ERROR"))
+        .when(lv >= 40)
+        .then(pl.lit("WARN"))
+        .when(lv >= 30)
+        .then(pl.lit("INFO"))
+        .when(lv >= 10)
+        .then(pl.lit("DEBUG"))
+        .otherwise(pl.lit("OTHER"))
+    )
 
 
 def _utc(ts: datetime) -> datetime:

@@ -518,15 +518,17 @@ def timeline(
     state: StateDep,
     q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
     bucket: str = "1h",
+    by_level: bool = False,
 ) -> dict[str, Any]:
     """Entry counts per time bucket (``timeline.v1``), of the entries ``entries`` would list.
 
     The filters are those of ``GET /api/sets/{ref}/entries`` (``signature``, ``level``,
     ``min_level``, ``logger``, ``user``, ``thread``, ``request_id``, ``since``, ``until``,
     ``contains``, ``with_exception``, ``exception``, ``coarse_signature``), as
-    ``ragnalog timeline``.
+    ``ragnalog timeline``. ``by_level=true`` adds each bucket's entries per level
+    (``levels``): the report page's chart at bins finer than an hour.
     """
-    return queries.timeline(state, ref, q, bucket=bucket, front="api")
+    return queries.timeline(state, ref, q, bucket=bucket, by_level=by_level, front="api")
 
 
 @router.get("/sets/{ref}/report")

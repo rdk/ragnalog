@@ -384,8 +384,13 @@ def _has_group(ls: LogSet, signature: str) -> bool:
     return groups.height > 0
 
 
-def timeline(sets: Sets, ref: str, q: EntryQuery, *, bucket: str, front: Front) -> Doc:
-    """``timeline.v1``: entry counts per ``bucket`` (``1h``, ``15m``, ``1d`` …)."""
+def timeline(
+    sets: Sets, ref: str, q: EntryQuery, *, bucket: str, by_level: bool = False, front: Front
+) -> Doc:
+    """``timeline.v1``: entry counts per ``bucket`` (``1h``, ``15m``, ``1d`` …).
+
+    With ``by_level`` each bucket also counts its entries per chart series (``levels``).
+    """
     q.check(front=front)
     ls = open_set(sets, ref, front=front)
     where = _where(ls, q, front)
@@ -399,7 +404,7 @@ def timeline(sets: Sets, ref: str, q: EntryQuery, *, bucket: str, front: Front) 
         )
     bucket = bucket.strip()
     try:
-        items = ls.histogram(bucket, where=where)
+        items = ls.histogram(bucket, where=where, by_level=by_level)
     except ValueError as exc:  # filters are valid: the bucket is not
         raise OpError("invalid_value", f"{flag('bucket', front)}: {exc}") from exc
     return {

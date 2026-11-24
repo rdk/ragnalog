@@ -197,7 +197,7 @@
    },
    "timeline": {
     "summary": "Count entries per time bucket",
-    "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node]",
+    "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node] [--by-level]",
     "output": "timeline.v1",
     "exit": [
      0,
@@ -1136,8 +1136,8 @@
    "schema": "manifest-command.v1",
    "command": "timeline",
    "version": "",
-   "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node]",
-   "description": "Count entries per time bucket: of a log set, or per node of a capture.\n\nA log set gives timeline.v1 (as GET /api/sets/{ref}/timeline). A capture\nreference (capture:ID, cluster:NAME[@DAY]), or a set with --by-node, gives\ncluster-timeline.v1 of its capture: per node and bucket the entries by\nlevel, or with --signature the entries of that group; buckets run over the\nwindow (--window overlap|union, --since/--until, as `capture`).\n\nOutput (json):\n  {\"schema\": \"timeline.v1\", \"logset\": id, \"bucket\": str, \"count\": int,\n   \"items\": [{\"bucket\", \"count\"}]}\n  {\"schema\": \"cluster-timeline.v1\", \"bucket\": str, \"buckets\": [iso],\n   \"nodes\": {NODE: {\"levels\": {\"ERROR\"|\"WARN\"|\"INFO\"|\"DEBUG\"|\"OTHER\": [n]},\n                    \"coverage\": [first, last] | null}},\n   \"signature\"?: str}\nBucket times are UTC, aligned to the epoch. \"coverage\" gives the first and\nlast bucket index in which the node has logs; with --signature \"levels\"\nhas only \"count\". Table mode prints one row per bucket (a capture: one\ncolumn per node).\n\nExit codes: 0 ok; 1 bad option, bucket, level or time, --window with\na set, --node with a set, several signatures of a capture, or an ambiguous\nsignature prefix; 2 unknown capture or group; 3 unknown set or store error.\n\nBoth take the filters of `entries` (--level, --min-level, --logger, --user,\n--thread, --request-id, --contains, --with-exception, --exception,\n--coarse-signature, --signature, --since, --until), so the chart of a\nfiltered listing counts what the listing shows. A capture also takes\n--node (keep those nodes), and one --signature only (no NODE:SIGNATURE).",
+   "usage": "REF [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--bucket str=1h] [--window overlap|union] [--by-node] [--by-level]",
+   "description": "Count entries per time bucket: of a log set, or per node of a capture.\n\nA log set gives timeline.v1 (as GET /api/sets/{ref}/timeline). A capture\nreference (capture:ID, cluster:NAME[@DAY]), or a set with --by-node, gives\ncluster-timeline.v1 of its capture: per node and bucket the entries by\nlevel, or with --signature the entries of that group; buckets run over the\nwindow (--window overlap|union, --since/--until, as `capture`).\n\nOutput (json):\n  {\"schema\": \"timeline.v1\", \"logset\": id, \"bucket\": str, \"count\": int,\n   \"items\": [{\"bucket\", \"count\", \"levels\"?}]}\n  {\"schema\": \"cluster-timeline.v1\", \"bucket\": str, \"buckets\": [iso],\n   \"nodes\": {NODE: {\"levels\": {\"ERROR\"|\"WARN\"|\"INFO\"|\"DEBUG\"|\"OTHER\": [n]},\n                    \"coverage\": [first, last] | null}},\n   \"signature\"?: str}\nBucket times are UTC, aligned to the epoch. \"coverage\" gives the first and\nlast bucket index in which the node has logs; with --signature \"levels\"\nhas only \"count\". A set with --by-level adds \"levels\" to each bucket:\n{\"ERROR\" (with FATAL), \"WARN\", \"INFO\", \"DEBUG\" (with TRACE), \"OTHER\"\n(unknown level): n}. Table mode prints one row per bucket (a capture: one\ncolumn per node; --by-level: one column per level).\n\nExit codes: 0 ok; 1 bad option, bucket, level or time, --window with\na set, --node with a set, --by-level with a capture, several signatures of\na capture, or an ambiguous signature prefix; 2 unknown capture or group;\n3 unknown set or store error.\n\nBoth take the filters of `entries` (--level, --min-level, --logger, --user,\n--thread, --request-id, --contains, --with-exception, --exception,\n--coarse-signature, --signature, --since, --until), so the chart of a\nfiltered listing counts what the listing shows. A capture also takes\n--node (keep those nodes), and one --signature only (no NODE:SIGNATURE).",
    "output": "timeline.v1",
    "exit": [
     0,
@@ -1236,6 +1236,11 @@
      "name": "--by-node",
      "type": "flag",
      "help": "Per node of the set's capture (a set in no capture: that one node)."
+    },
+    {
+     "name": "--by-level",
+     "type": "flag",
+     "help": "Also count each bucket per level (a set; a capture's buckets are by level already)."
     }
    ]
   },

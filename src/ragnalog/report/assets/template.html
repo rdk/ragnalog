@@ -58,6 +58,7 @@
     <h2>Entries per <span id="tl-bin">hour</span> by level</h2>
     <div class="legend" id="tl-legend"></div>
     <div class="tl-window" id="tl-window"></div>
+    <div class="tl-bins" id="tl-bins"></div>
     <div class="tl-clip" id="tl-clip"></div>
   </div>
   <div class="timeline" id="timeline" aria-label="Timeline; drag to select a time window" title="Drag across the chart to select a time window; click to clear it"></div>
@@ -147,10 +148,13 @@
     <dt><kbd>m</kbd></dt><dd>Mute / unmute the selected group in the chart</dd>
     <dt><kbd>z</kbd></dt><dd>Times in UTC / in your time zone</dd>
     <dt><kbd>n</kbd> <kbd>p</kbd></dt><dd>Next / previous page</dd>
-    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window</dd>
+    <dt><kbd>[</kbd> <kbd>]</kbd></dt><dd>Previous / next time window (zoomed: earlier / later)</dd>
+    <dt><kbd>+</kbd> <kbd>-</kbd></dt><dd>Zoom the chart into the window / out</dd>
     <dt><kbd>?</kbd></dt><dd>This help</dd>
   </dl>
-  <p class="muted">Timeline: drag to filter groups to a time window, click to clear.
+  <p class="muted">Timeline: drag to filter groups to a time window, click to clear; Zoom in
+  (or <kbd>+</kbd>) shows the window with finer bins, a drag on the zoomed chart zooms further, and
+  Bins picks a finer or coarser bin size.
   The view (filters, sort, page, selection) is kept in the URL — bookmark or paste it.</p>
   <form method="dialog"><button class="btn small">Close</button></form>
 </dialog>

@@ -202,6 +202,27 @@ remove, or "Remove all filters".
     (the examples URL with `since`/`until`). The static file has only the
     stored examples, so it lists the ones inside the window first.
   - The compare column stays whole-set (its tooltip says so).
+- Zoom and bins: *Zoom in* on the window bar (or `+`) shows the window alone on the
+  timeline with finer bins; a drag on the zoomed chart zooms into the selection, `+`
+  into its middle third, `−` (or `-`) out to three times the width, and *Reset zoom*
+  back to the whole set (the window stays). Zoomed, `‹`/`›` and `[`/`]` move the zoom by
+  its own width. The window follows the zoom in whole hours (the table's counts are
+  per hour), and the bar says so ("table: 14:00 → 16:00"). The bin size is automatic,
+  the finest whose bars keep 5 px (as the hourly chart always chose), and *Bins*
+  picks another: finer down to 2 px a bar, or coarser, from 1 s to 7 d. A pick that
+  does not fit the shown range falls back to automatic until it fits again. In the
+  hash: `z=20261029T1400-20261029T1530` (UTC, seconds when needed) and `bin=5m`.
+  Bins of an hour or more add up the payload's hourly counts, on the shown zone's
+  clock. Bins under an hour (also the automatic bins of a set shorter than a day) are
+  counted by the server: `GET /api/sets/{id}/timeline?bucket=…&since=…&until=…&by_level=true`,
+  with a muted group's own timeline subtracted and the open group's drawn as the
+  line; the chart drawn so far fades while they load. The static file makes no
+  requests, so its bins stay an hour or more (the Bins menu's tooltip says so). At
+  bins under an hour the tooltip has the level counts but not the largest groups
+  (the payload knows a group's entries per hour only), the *First* dots come from
+  each group's first entry, and the listed groups' line (a search with no group
+  open) is left out, with a note in the legend. Times on the axis and in the tooltip
+  are 24-hour, as everywhere on the page.
 - Chart controls: each level in the timeline legend is a toggle (Shift-click
   shows only that level; `hl=WARN,INFO` in the hash). **Mute** (drawer button, or
   `m` on the selected row) leaves a group out of the chart and the window totals,

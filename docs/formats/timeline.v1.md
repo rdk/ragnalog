@@ -10,6 +10,7 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `logset` | `string` | yes | Set id. |
 | `bucket` | `string` | yes | Bucket size, e.g. 1h. |
 | `count` | `integer` | yes | Rows in items. |
-| `items` | `list<BucketCount>` | yes | Contiguous buckets. |
+| `items` | `list<TimelineBucket>` | yes | Contiguous buckets. |
 | `items[].bucket` | `string` | yes | Bucket start, ISO 8601 UTC. |
 | `items[].count` | `integer` | yes | Entries in the bucket. |
+| `items[].levels` | `map<string, integer>` | no | With --by-level (by_level=true): the bucket's entries per chart series, ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE) and OTHER (unknown level). |

@@ -82,6 +82,7 @@ def timeline(
     bucket: str = "1h",
     window: Literal["overlap", "union"] | None = None,
     by_node: bool = False,
+    by_level: bool = False,
 ) -> None:
     """Count entries per time bucket: of a log set, or per node of a capture.
 
@@ -93,19 +94,22 @@ def timeline(
 
     Output (json):
       {"schema": "timeline.v1", "logset": id, "bucket": str, "count": int,
-       "items": [{"bucket", "count"}]}
+       "items": [{"bucket", "count", "levels"?}]}
       {"schema": "cluster-timeline.v1", "bucket": str, "buckets": [iso],
        "nodes": {NODE: {"levels": {"ERROR"|"WARN"|"INFO"|"DEBUG"|"OTHER": [n]},
                         "coverage": [first, last] | null}},
        "signature"?: str}
     Bucket times are UTC, aligned to the epoch. "coverage" gives the first and
     last bucket index in which the node has logs; with --signature "levels"
-    has only "count". Table mode prints one row per bucket (a capture: one
-    column per node).
+    has only "count". A set with --by-level adds "levels" to each bucket:
+    {"ERROR" (with FATAL), "WARN", "INFO", "DEBUG" (with TRACE), "OTHER"
+    (unknown level): n}. Table mode prints one row per bucket (a capture: one
+    column per node; --by-level: one column per level).
 
     Exit codes: 0 ok; 1 bad option, bucket, level or time, --window with
-    a set, --node with a set, several signatures of a capture, or an ambiguous
-    signature prefix; 2 unknown capture or group; 3 unknown set or store error.
+    a set, --node with a set, --by-level with a capture, several signatures of
+    a capture, or an ambiguous signature prefix; 2 unknown capture or group;
+    3 unknown set or store error.
 
     Both take the filters of `entries` (--level, --min-level, --logger, --user,
     --thread, --request-id, --contains, --with-exception, --exception,
@@ -119,10 +123,18 @@ def timeline(
         bucket: Bucket size: <n>s, <n>m, <n>h or <n>d (15m, 1h, 1d).
         window: overlap or union (a capture only; default overlap).
         by_node: Per node of the set's capture (a set in no capture: that one node).
+        by_level: Also count each bucket per level (a set; a capture's buckets are by
+            level already).
 
     """
     store, out = ctx.store(), ctx.out()
     if by_node or cq.names_capture(store, ref):
+        if by_level:
+            raise OpError(
+                "usage",
+                "--by-level applies to a log set (a capture's timeline is by level already)",
+                hint="drop --by-level, or pass a log set without --by-node",
+            )
         w = CaptureWindow(window=window or "overlap", since=q.since, until=q.until)
         doc = cq.timeline(store, ref, w, bucket=bucket, q=q, front="cli")
         out.document(doc, items=None, table=lambda console: render.cluster_timeline(console, doc))
@@ -135,7 +147,10 @@ def timeline(
         )
     from ragnalog.service import queries
 
-    doc = queries.timeline(store, ref, q, bucket=bucket, front="cli")
+    doc = queries.timeline(store, ref, q, bucket=bucket, by_level=by_level, front="cli")
+    if by_level:
+        out.document(doc, table=lambda console: render.timeline_levels(console, doc))
+        return
     out.document(doc, columns=("bucket", "count"), title=f"timeline of {doc['logset']}")
 
 

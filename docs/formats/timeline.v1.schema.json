@@ -26,7 +26,7 @@
       "description": "Contiguous buckets.",
       "type": "array",
       "items": {
-        "$ref": "#/$defs/BucketCount"
+        "$ref": "#/$defs/TimelineBucket"
       }
     }
   },
@@ -38,9 +38,9 @@
     "items"
   ],
   "$defs": {
-    "BucketCount": {
-      "title": "BucketCount",
-      "description": "Entries in one time bucket.",
+    "TimelineBucket": {
+      "title": "TimelineBucket",
+      "description": "Entries in one time bucket of `timeline`, by level with --by-level.",
       "type": "object",
       "properties": {
         "bucket": {
@@ -50,6 +50,13 @@
         "count": {
           "description": "Entries in the bucket.",
           "type": "integer"
+        },
+        "levels": {
+          "description": "With --by-level (by_level=true): the bucket's entries per chart series, ERROR (with FATAL), WARN, INFO, DEBUG (with TRACE) and OTHER (unknown level).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
+          }
         }
       },
       "required": [

@@ -697,7 +697,7 @@ busiest hour and a 24-character sparkline (`▁…█`) of the hourly counts.
 
 Exit: 0; 3.
 
-### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--node] [--since] [--until] [--window overlap|union] [--by-node]`
+### `timeline SET|CAPTURE [--bucket 1h] [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--node] [--since] [--until] [--window overlap|union] [--by-node] [--by-level]`
 
 Entries per time bucket (`<n>s|m|h|d`, aligned to the epoch in UTC). A set
 gives `timeline.v1`, the twin of `GET /api/sets/{ref}/timeline` (it takes every filter of
@@ -709,18 +709,22 @@ and bucket the entries by level, or with `--signature` those of one group,
 over the window (`--window`, `--since`, `--until`). It takes the same filters of
 `entries` as a set (the counts are those of the filtered listing), and `--node` keeps
 those nodes only; `--signature` names one group (several, or `NODE:SIGNATURE`, is a
-usage error; `--node` with a set is one too).
+usage error; `--node` with a set is one too). `--by-level` (a set) adds each bucket's
+entries per level, `levels`: `ERROR` (with FATAL), `WARN`, `INFO`, `DEBUG` (with TRACE)
+and `OTHER` (unknown level), the series of the report's chart, which asks for them at bins
+under an hour; a capture's buckets are by level already, so `--by-level` with one is a
+usage error.
 
 ```json
-{"schema": "timeline.v1", "logset": "…", "bucket": "1h", "count": 24, "items": [{"bucket", "count"}]}
+{"schema": "timeline.v1", "logset": "…", "bucket": "1h", "count": 24, "items": [{"bucket", "count", "levels"?}]}
 {"schema": "cluster-timeline.v1", "bucket": "1h", "buckets": ["2026-11-02T09:00:00Z", …],
  "nodes": {"NODE1": {"levels": {"ERROR": [n…], "WARN", "INFO", "DEBUG", "OTHER"},
                      "coverage": [first_bucket, last_bucket] | null}}, "signature"?: "…"}
 ```
 
 The table prints one row per bucket (a capture: a column per node; blank
-where the node has no logs). Exit: 0; 1 bad option, bucket, level or time,
-a set-only filter (`--level`, `--thread` …) with a capture, `--window` with a set, ambiguous signature prefix;
+where the node has no logs; `--by-level`: a column per level). Exit: 0; 1 bad option, bucket, level or time,
+a set-only filter (`--level`, `--thread` …) with a capture, `--window` with a set, `--by-level` with a capture, ambiguous signature prefix;
 2 unknown capture or group; 3.
 
 ### `matrix REF [--level] [--min-level] [--logger] [--since] [--until] [--with-exception] [--exception T] [--contains T] [--window overlap|union] [--node N] [--spread all|only|skewed] [--sort count|skew|lead] [--skew-min 4.0] [--signature SIG] [--limit 50] [--offset 0]`

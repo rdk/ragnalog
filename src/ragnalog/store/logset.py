@@ -21,6 +21,7 @@ from typing import Any, Unpack, overload
 import polars as pl
 
 from ragnalog.store.filters import (
+    LEVEL_BUCKETS,
     EntryFilter,
     EntryFilterArgs,
     GroupFilter,
@@ -29,6 +30,7 @@ from ragnalog.store.filters import (
     entry_filter,
     group_filter,
     has_time,
+    level_bucket,
 )
 from ragnalog.store.manifest import (
     ENTRIES_FILE,
@@ -497,6 +499,7 @@ class LogSet:
         bucket: str = "1h",
         *,
         where: EntryFilter | None = None,
+        by_level: bool = False,
         **filters: Unpack[EntryFilterArgs],
     ) -> list[dict[str, Any]]:
         """Entry counts per time bucket, contiguous from the first to the last non-empty one.
@@ -508,11 +511,14 @@ class LogSet:
         Args:
             bucket: ``<n><unit>`` with unit ``s``, ``m``, ``h`` or ``d`` (``"5m"``, ``"1h"``).
             where: Entry filters (see :meth:`entries`).
+            by_level: Also count each bucket's entries per chart series
+                (:data:`~ragnalog.store.filters.LEVEL_BUCKETS`), as ``"levels"``.
             **filters: The fields of :class:`EntryFilter` instead of ``where``.
 
         Returns:
             ``[{"bucket": "2026-10-29T13:00:00Z", "count": int}, ...]`` (empty buckets
-            have count 0).
+            have count 0); with ``by_level`` each also has ``"levels": {"ERROR": int,
+            "WARN": int, "INFO": int, "DEBUG": int, "OTHER": int}``.
 
         Raises:
             ValueError: Malformed bucket, unknown level, or more than
@@ -525,22 +531,35 @@ class LogSet:
         lf = self.entries_lazy().filter(pl.col("ts").is_not_null() & has_time())
         if cond is not None:
             lf = lf.filter(cond)
-        df = (
-            lf.select((pl.col("ts").dt.epoch("ms") // size).alias("b"))
-            .group_by("b")
-            .agg(pl.len().alias("count"))
-            .collect()
-        )
+        b = (pl.col("ts").dt.epoch("ms") // size).alias("b")
+        if by_level:
+            df = (
+                lf.select(b, level_bucket().alias("lv"))
+                .group_by("b", "lv")
+                .agg(pl.len().alias("count"))
+                .collect()
+            )
+        else:
+            df = lf.select(b).group_by("b").agg(pl.len().alias("count")).collect()
         if df.height == 0:
             return []
-        counts = {int(b): int(n) for b, n in df.iter_rows()}
+        counts: dict[int, int] = {}
+        levels: dict[int, dict[str, int]] = {}
+        for row in df.iter_rows():
+            k, n = int(row[0]), int(row[-1])
+            counts[k] = counts.get(k, 0) + n
+            if by_level:
+                levels.setdefault(k, dict.fromkeys(LEVEL_BUCKETS, 0))[row[1]] += n
         first, last = min(counts), max(counts)
         if last - first + 1 > MAX_HISTOGRAM_BUCKETS:
             raise ValueError(f"bucket {bucket!r} gives too many buckets; use a larger one")
-        return [
-            {"bucket": _bucket_iso(b * size), "count": counts.get(b, 0)}
-            for b in range(first, last + 1)
-        ]
+        out: list[dict[str, Any]] = []
+        for k in range(first, last + 1):
+            item: dict[str, Any] = {"bucket": _bucket_iso(k * size), "count": counts.get(k, 0)}
+            if by_level:
+                item["levels"] = levels.get(k) or dict.fromkeys(LEVEL_BUCKETS, 0)
+            out.append(item)
+        return out
 
     def context(
         self,
