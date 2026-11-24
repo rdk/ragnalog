@@ -92,7 +92,8 @@ printf '%s\n' '["groups","prod-1030","--brief"]' '["stats","prod-1030"]' | ragna
 - Redirects are not followed (they would carry the token to the new address): `--server`
   is the web app's final base URL; a 3xx answer is an `http` error.
 - The server's limits apply: the page caps of the API (`HTTP_CAPS` in the parity test) and,
-  for `query`, at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`),
+  for `query` (of a set: `POST /api/sets/{ref}/query`; of a capture:
+  `POST /api/captures/{ref}/query`), at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`),
   64 MiB of result, 60 s and 1 GB of memory per query, two queries at a time (a third:
   `http`, HTTP 503). `frames` marks application frames by the server's
   `RAGNALOG_APP_PACKAGES`.
@@ -688,10 +689,28 @@ and the chain ends at the first line that is not a frame.
 
 Exit: 0; 1 bad option; 2 no entry or group `REF` (`not_found`, with a hint); 3.
 
-### `query SET SQL`
+### `query SET|CAPTURE SQL [--baseline SET|CAPTURE]`
 
 DuckDB SQL over the views `entries`, `groups` and (when present) `merges`. One
-statement only (a trailing `;` is fine): several are a `usage` error.
+`SELECT` only (also `WITH`, `FROM`, `VALUES`, `DESCRIBE`, `SUMMARIZE`; a trailing
+`;` is fine): several statements, or `COPY`, `EXPLAIN`, `CREATE`, `SET` and the
+like, are a `usage` error.
+A capture (`capture:ID`, `cluster:NAME[@YYYY-MM-DD]` or a bare capture id) gives
+the same views over all its nodes: the rows of every member set, each with
+leading columns `node` and `set` (the member's set id); `merges` holds the
+members that have one, and `"logset"` is `capture:ID`. `--baseline` adds a
+second set's views as `baseline_entries`, `baseline_groups` and
+`baseline_merges` (with a capture: another capture, or a set, which stands for
+its capture, with `node` and `set` too), so one query compares the two; the
+document then has `"baseline"` (its set id or `capture:ID`):
+
+```sh
+ragnalog query cluster:prod "select node, count(*) n from entries where level >= 50 group by 1"
+ragnalog query cluster:prod "select g.node, g.signature, g.count, g.template from groups g
+  anti join baseline_groups b using (node, signature) order by g.count desc limit 20" \
+  --baseline cluster:prod@2026-11-23
+```
+
 `ragnalog query --help` lists the same columns; `ragnalog schema NAME` adds
 types and descriptions. The session time zone is UTC whatever the machine's
 zone: timestamps in the result are UTC, as in `entries`, and
@@ -722,7 +741,7 @@ Errors are `sql_error` (exit 1). For an unknown column the `hint` lists
 DuckDB's candidate columns (or, without candidates, the columns of the views);
 for an unknown table it lists the available views.
 
-Exit: 0 (also empty); 1 SQL error; 3.
+Exit: 0 (also empty); 1 SQL error; 2 unknown capture; 3.
 
 ### `stats SET`
 

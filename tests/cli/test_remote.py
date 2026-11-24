@@ -151,6 +151,76 @@ def test_remote_more_commands_match_local(
     _agree(case, store_dir, client, {}, capsys, monkeypatch)
 
 
+@pytest.mark.parametrize(
+    "argv",
+    [
+        pytest.param(
+            [
+                "query",
+                "cluster:acme",
+                'select node, "set", count(*) n from entries group by all order by all',
+            ],
+            id="query-capture",
+        ),
+        pytest.param(
+            ["query", "cap-acme", "select node, count(*) n from groups group by 1 order by 1"],
+            id="query-capture-bare-id",
+        ),
+        pytest.param(
+            [
+                "query",
+                "acme_node1",
+                "select (select count(*) from baseline_entries) b, count(*) n from entries",
+                "--baseline",
+                "acme_node1_prev",
+            ],
+            id="query-set-baseline",
+        ),
+        pytest.param(
+            [
+                "query",
+                "cap-acme",
+                "select node, count(*) n from baseline_groups group by 1",
+                "--baseline",
+                "acme_node1_prev",
+            ],
+            id="query-capture-baseline",
+        ),
+        pytest.param(["query", "cap-acme", "select * from nope"], id="query-capture-sql-error"),
+        pytest.param(
+            ["query", "cap-acme", "copy (select 1) to 'x.csv'"], id="query-capture-not-select"
+        ),
+        pytest.param(
+            ["query", "cap-acme", "select 1", "--baseline", "capture:nope"],
+            id="query-capture-unknown-baseline",
+        ),
+    ],
+)
+def test_remote_capture_query_matches_local(
+    argv: list[str],
+    cluster_dir: Path,  # noqa: F811
+    cluster_client: TestClient,  # noqa: F811
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _agree(Case("extra", argv, ""), cluster_dir, cluster_client, {}, capsys, monkeypatch)
+
+
+def test_query_body_sends_baseline_only_when_given() -> None:
+    from ragnalog.cli.commands.browse import query
+
+    route = remote.ROUTES["query-capture"]
+    args = {"logset": "cap-acme", "sql": "select 1", "baseline": None}
+    path, pairs, body = remote.build(route, query, args)
+    assert (path, pairs, json.loads(body or b"")) == (
+        "/api/captures/cap-acme/query",
+        [],
+        {"sql": "select 1"},
+    )
+    _, _, body = remote.build(route, query, {**args, "baseline": "capture:old"})
+    assert json.loads(body or b"") == {"sql": "select 1", "baseline": "capture:old"}
+
+
 # --- coverage: every option of a remote command is a parameter of its API route
 
 ROUTE_COMMANDS: dict[str, tuple[str, str]] = {
@@ -164,6 +234,7 @@ ROUTE_COMMANDS: dict[str, tuple[str, str]] = {
     "context": ("browse", "context"),
     "frames": ("browse", "frames"),
     "query": ("browse", "query"),
+    "query-capture": ("browse", "query"),
     "stats": ("browse", "stats"),
     "users": ("browse", "users"),
     "capture": ("cluster", "capture"),
@@ -410,6 +481,50 @@ def test_query_endpoint_reads_only(small: Path, monkeypatch: pytest.MonkeyPatch)
             api.QUERY_SLOTS.release()
         assert (busy.status_code, busy.json()["error"]["code"]) == (503, "http")
         assert busy.headers["retry-after"] == "5"
+
+
+def test_capture_query_endpoint(
+    cluster_dir: Path,  # noqa: F811
+    cluster_client: TestClient,  # noqa: F811
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``POST /api/captures/{ref}/query``: the set route's rules, limits and slots."""
+    from ragnalog.webapp import api
+
+    url = "/api/captures/cap-acme/query"
+    c = cluster_client
+    ok = c.post(url, json={"sql": "select node, count(*) n from entries group by 1"})
+    assert ok.status_code == 200, ok.json()
+    doc = ok.json()
+    assert doc["schema"] == "query.v1" and doc["logset"] == "capture:cap-acme"
+    assert doc["truncated"] is False
+    assert {r["node"] for r in doc["items"]} == {"NODE1", "NODE2"}
+    assert "baseline" not in doc
+    base = c.post(
+        url,
+        json={"sql": "select count(*) n from baseline_entries", "baseline": "acme_node1_prev"},
+    )
+    assert base.status_code == 200 and base.json()["baseline"].startswith("capture:")
+    for sql in ("copy (select 1) to 'x.csv'", "select 1; select 2", "set threads = 1"):
+        r = c.post(url, json={"sql": sql})
+        assert (r.status_code, r.json()["error"]["code"]) == (400, "usage"), sql
+    files = c.post(url, json={"sql": "select * from read_csv('/etc/passwd')"})
+    assert files.status_code == 400
+    missing = c.post(url, json={"sql": "select * from nope"})
+    assert (missing.status_code, missing.json()["error"]["code"]) == (400, "sql_error")
+    assert str(cluster_dir) not in missing.text
+    monkeypatch.setattr(api, "QUERY_MAX_ROWS", 2)
+    cut = c.post(url, json={"sql": "select id from entries"})
+    assert (cut.json()["count"], cut.json()["truncated"]) == (2, True)
+    assert api.QUERY_SLOTS.acquire(blocking=False) and api.QUERY_SLOTS.acquire(blocking=False)
+    try:
+        busy = c.post(url, json={"sql": "select 1"})
+    finally:
+        api.QUERY_SLOTS.release()
+        api.QUERY_SLOTS.release()
+    assert (busy.status_code, busy.json()["error"]["code"]) == (503, "http")
+    unknown = c.post("/api/captures/capture:nope/query", json={"sql": "select 1"})
+    assert unknown.status_code == 404
 
 
 def test_redirects_and_empty_replies_fail(monkeypatch: pytest.MonkeyPatch) -> None:

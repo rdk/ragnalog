@@ -618,8 +618,8 @@ def frames(
     return 0
 
 
-def query(logset: str, sql: str, /) -> None:
-    """Run DuckDB SQL over a log set and print the result rows.
+def query(logset: str, sql: str, /, *, baseline: str | None = None) -> None:
+    """Run DuckDB SQL over a log set (or all nodes of a capture) and print the result rows.
 
     Views: "entries" (entries.v1), "groups" (groups.v1) and "merges" (merges.v1,
     only when present). Their columns (types and descriptions: `ragnalog
@@ -638,33 +638,62 @@ def query(logset: str, sql: str, /) -> None:
     DESCRIBE, SUMMARIZE; several statements, or COPY, EXPLAIN, CREATE, SET and
     the like, are a usage error).
 
+    A capture (capture:ID, cluster:NAME[@YYYY-MM-DD], or a bare capture id)
+    gives views over all its nodes: the rows of every member set, each
+    with leading columns "node" and "set" (the member's set id); merges
+    holds the members that have one; "logset" is capture:ID. Signatures
+    compare across nodes, as the members share their recipe.
+    --baseline adds another set's views (a capture's: another capture, or a
+    set, which stands for its capture) as baseline_entries, baseline_groups
+    and baseline_merges, for comparing in one query; "baseline" is its id.
+
     SQL examples:
-      select level, count(*) n from entries group by 1 order by 2 desc
+      select level_name, count(*) n from entries group by 1 order by 2 desc
       select unnest(variables) v, count(*) n from entries
         where signature = '0123456789abcdef' group by 1 order by 2 desc
       select signature, count, template from groups where exception_type is not null
         order by count desc limit 20
+      select node, count(*) n from entries where level >= 50 group by 1   (a capture)
+      select signature, count, template from groups where signature not in
+        (select signature from baseline_groups) order by count desc   (--baseline)
 
     Output (json):
       {"schema": "query.v1", "logset": id, "columns": [str, ...], "count": int,
        "total": int, "truncated": false, "items": [{<column>: value, ...}, ...]}
+      (with --baseline also "baseline": id)
     The CLI never truncates query results ("total" = "count"); use LIMIT in SQL.
 
     Errors: "sql_error"; for an unknown column its "hint" lists DuckDB's
     candidate columns (or the columns of the views), for an unknown table the
     available views.
 
-    Exit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or
-    store error.
+    Exit codes: 0 ok (also for an empty result); 1 SQL error; 2 unknown capture;
+    3 unknown set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name; or a capture (capture:ID,
+            cluster:NAME[@YYYY-MM-DD]).
         sql: The SQL query (quote it as one argument).
+        baseline: Another set (with a capture: another capture, or a set for its capture)
+            whose views the SQL reads as baseline_entries, baseline_groups, baseline_merges.
 
     """
-    doc = ctx.remote_or(
-        "query", query, locals(), lambda: queries.query(ctx.store(), logset, sql, front="cli")
-    )
+    if ctx.names_capture(logset):
+        from ragnalog.service import capture_queries
+
+        doc = ctx.remote_or(
+            "query-capture",
+            query,
+            locals(),
+            lambda: capture_queries.query(ctx.store(), logset, sql, baseline=baseline, front="cli"),
+        )
+    else:
+        doc = ctx.remote_or(
+            "query",
+            query,
+            locals(),
+            lambda: queries.query(ctx.store(), logset, sql, baseline=baseline, front="cli"),
+        )
     ctx.out().document(doc, title="query result")
 
 

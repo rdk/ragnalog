@@ -68,8 +68,8 @@ class Route:
     """Parameters the API does not have: refused when not at their default."""
     ignore: frozenset[str] = frozenset()
     """Parameters that only choose the route or the rendering: not sent."""
-    body: str | None = None
-    """For a JSON POST: the parameter sent as the body ``{name: value}`` instead of the query."""
+    body: frozenset[str] = frozenset()
+    """For a JSON POST: parameters sent in the body ``{name: value, ...}`` (not ``None``s)."""
     after: Callable[[Doc], Doc] | None = None
     """Turns the API's document into the one the local command prints."""
 
@@ -86,7 +86,10 @@ ROUTES: Mapping[str, Route] = {
     "entries-capture": Route("/api/captures/{logset}/entries", local=frozenset({"raw"})),
     "context": Route("/api/sets/{logset}/entries/{entry_id}/context"),
     "frames": Route("/api/sets/{logset}/frames/{ref}", rename={"all_": "all"}),
-    "query": Route("/api/sets/{logset}/query", method="POST", body="sql"),
+    "query": Route("/api/sets/{logset}/query", method="POST", body=frozenset({"sql", "baseline"})),
+    "query-capture": Route(
+        "/api/captures/{logset}/query", method="POST", body=frozenset({"sql", "baseline"})
+    ),
     "stats": Route("/api/sets/{logset}/stats"),
     "users": Route("/api/sets/{logset}/users"),
     "capture": Route("/api/captures/{ref}"),
@@ -155,7 +158,7 @@ def build(
     path_names = {p for _, p, _, _ in string.Formatter().parse(route.path) if p}
     path_values: dict[str, str] = {}
     pairs: list[tuple[str, str]] = []
-    body: bytes | None = None
+    fields: dict[str, Any] = {}
     for name, param in params.items():
         if name not in args:
             continue
@@ -174,14 +177,16 @@ def build(
                     hint="drop the option, or run the command where the data directory is",
                 )
             continue
-        if name == route.body:
-            body = json.dumps({name: value}).encode("utf-8")
+        if name in route.body:
+            if value is not None:
+                fields[name] = value
             continue
         for key, item in _flatten(route.rename.get(name, name.rstrip("_")), value):
             pairs.extend(_query_pairs(route.rename.get(key, key), item))
     missing = path_names - path_values.keys()
     if missing:  # a programming error in a route
         raise RuntimeError(f"route {route.path}: no value for {sorted(missing)}")
+    body = json.dumps(fields).encode("utf-8") if route.body else None
     return route.path.format(**path_values), pairs, body
 
 

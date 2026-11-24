@@ -50,6 +50,7 @@ API_DOCUMENTS: Final[dict[tuple[str, str], str]] = {
     ("get", "/api/sets/{ref}/timeline"): "timeline.v1",
     ("get", "/api/sets/{ref}/users"): "users.v1",
     ("post", "/api/sets/{ref}/query"): "query.v1",
+    ("post", "/api/captures/{ref}/query"): "query.v1",
     ("get", "/api/sets/{ref}/report"): "report.v1",
     ("get", "/api/diff"): "diff.v1",
     ("get", "/api/sets/{ref}/triage"): "triage.v1",

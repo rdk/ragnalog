@@ -503,10 +503,10 @@ class Users(Struct, kw_only=True, tag_field="schema", tag="users.v1"):
     items: Annotated[list[UserRow], _d("Users, most entries first, ties by name.")]
 
 
-class Query(Struct, kw_only=True, tag_field="schema", tag="query.v1"):
+class Query(Struct, kw_only=True, omit_defaults=True, tag_field="schema", tag="query.v1"):
     """Rows of a DuckDB query: `query`."""
 
-    logset: Annotated[str, _d("Set id.")]
+    logset: Annotated[str, _d("Set id; capture:<id> for a query over all nodes of a capture.")]
     columns: Annotated[list[str], _d("Result columns, in order.")]
     count: Annotated[int, _d("Rows in items.")]
     total: Annotated[int, _d("Equals count.")]
@@ -515,6 +515,13 @@ class Query(Struct, kw_only=True, tag_field="schema", tag="query.v1"):
         _d("True when the API cut the result at its row cap (more rows follow); CLI: never."),
     ]
     items: Annotated[list[dict[str, Any]], _d("One object per result row.")]
+    baseline: Annotated[
+        str | None,
+        _d(
+            "With --baseline: its set id (capture:<id> for a capture), whose views are "
+            "baseline_entries, baseline_groups (and baseline_merges)."
+        ),
+    ] = None
 
 
 # --- comparison

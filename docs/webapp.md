@@ -144,7 +144,8 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary, stale, node, capture`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `ragnalog set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
-| `POST /api/sets/{ref}/query` | JSON body `{"sql": "..."}`: one DuckDB `SELECT` over the set's views `entries`, `groups` (and `merges`), without access to other files (other statements, `COPY` and `EXPLAIN` included: `usage`) | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond) and 64 MiB; a query running longer than 60 s or needing over 1 GB of memory is stopped (`sql_error`); two run at a time (a third: 503 `http`, `Retry-After`); the body takes up to 60,000 characters of SQL |
+| `POST /api/sets/{ref}/query` | JSON body `{"sql": "..."}`, optionally `"baseline": "<set>"`: one DuckDB `SELECT` over the set's views `entries`, `groups` (and `merges`), and with `baseline` that set's as `baseline_entries`, `baseline_groups` (`baseline_merges`), without access to other files (other statements, `COPY` and `EXPLAIN` included: `usage`) | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond) and 64 MiB; a query running longer than 60 s or needing over 1 GB of memory is stopped (`sql_error`); two run at a time (a third: 503 `http`, `Retry-After`); the body takes up to 60,000 characters of SQL |
+| `POST /api/captures/{ref}/query` | As `/sets/{ref}/query` over all nodes of a capture (as `ragnalog query CAPTURE`): the views hold every member's rows with leading columns `node` and `set`; `baseline` is another capture (or a set: its capture). It shares the two query slots | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond) and 64 MiB; a query running longer than 60 s or needing over 1 GB of memory is stopped (`sql_error`); two run at a time (a third: 503 `http`, `Retry-After`); the body takes up to 60,000 characters of SQL |
 | `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `ragnalog label`) | `logset.v1` |
 | `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
 | `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `ragnalog capture`) |
@@ -344,8 +345,9 @@ run next to the server.
   `_` prefix). Set
   references are one plain name (no separators, `..` or drive). Error messages,
   job errors included, do not include server paths (a path is cut to its file name), and
-  the access log prints `token=***` for the first visit's `?token=`. `POST /api/sets/{ref}/query` runs one `SELECT` per request in an in-memory DuckDB whose
-  file access is limited to that set's Parquet files and whose configuration is locked
+  the access log prints `token=***` for the first visit's `?token=`. `POST /api/sets/{ref}/query` (and `/captures/{ref}/query`) runs one `SELECT` per request in an in-memory DuckDB whose
+  file access is limited to the Parquet files of the set (the capture's members; with
+  `baseline`, also the baseline's) and whose configuration is locked
   (statement types other than `SELECT` are refused before it runs: a `COPY` could write over
   those files); it is capped at 1 GB of memory (no spill files), 4 threads, 60 s, 10,000 rows,
   64 MiB of result and two queries at a time, and its error messages are cut to file names

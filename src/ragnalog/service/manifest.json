@@ -178,11 +178,12 @@
     ]
    },
    "query": {
-    "usage": "LOGSET SQL",
+    "usage": "LOGSET SQL [--baseline str]",
     "output": "query.v1",
     "exit": [
      0,
      1,
+     2,
      3
     ]
    },
@@ -403,6 +404,7 @@
    "--all-nodes": "What every node logged around the anchor",
    "--all": "Return every frame and all application",
    "SQL": "The SQL query",
+   "--baseline": "Another set whose views the SQL reads as",
    "--spread": "Only rows with this spread",
    "--skew-min": "Rate ratio from which a group is skewed",
    "--kind": "Only these kinds",
@@ -410,7 +412,6 @@
    "SET_A": "Baseline log set",
    "SET_B": "Log set to compare against the baseline",
    "--rate": "Add hourly rates to \"changed\" and sort",
-   "--baseline": "Baseline set, auto, or none",
    "--grow": "Minimum hourly-rate factor for \"grew\""
   },
   "global_options": {
@@ -1106,24 +1107,30 @@
    "schema": "manifest-command.v1",
    "command": "query",
    "version": "",
-   "usage": "LOGSET SQL",
-   "description": "Run DuckDB SQL over a log set and print the result rows.\n\nViews: \"entries\" (entries.v1), \"groups\" (groups.v1) and \"merges\" (merges.v1,\nonly when present). Their columns (types and descriptions: `ragnalog\nschema entries|groups|merges`):\n  entries:\n    id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n    request_id, session, ip, url, request_url, context, exception_type,\n    exception_message, exception_chain, signature, coarse_signature, template,\n    variables, source_path, source_line, source_offset, raw, parse_error\n  groups:\n    signature, coarse_signature, template, level, level_name, logger,\n    exception_type, count, first_seen, last_seen, user_count, thread_count,\n    source_count, top_users, top_threads, sources, examples\n  merges:\n    cluster_id, drain_template, signatures\nlevel is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),\nts/first_seen/last_seen are UTC timestamps, variables a list of strings.\nThe session time zone is UTC whatever the machine's zone: result\ntimestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets\nat UTC midnight. One SELECT statement only (also WITH, FROM, VALUES,\nDESCRIBE, SUMMARIZE; several statements, or COPY, EXPLAIN, CREATE, SET and\nthe like, are a usage error).\n\nSQL examples:\n  select level, count(*) n from entries group by 1 order by 2 desc\n  select unnest(variables) v, count(*) n from entries\n    where signature = '0123456789abcdef' group by 1 order by 2 desc\n  select signature, count, template from groups where exception_type is not null\n    order by count desc limit 20\n\nOutput (json):\n  {\"schema\": \"query.v1\", \"logset\": id, \"columns\": [str, ...], \"count\": int,\n   \"total\": int, \"truncated\": false, \"items\": [{<column>: value, ...}, ...]}\nThe CLI never truncates query results (\"total\" = \"count\"); use LIMIT in SQL.\n\nErrors: \"sql_error\"; for an unknown column its \"hint\" lists DuckDB's\ncandidate columns (or the columns of the views), for an unknown table the\navailable views.\n\nExit codes: 0 ok (also for an empty result); 1 SQL error; 3 unknown set or\nstore error.",
+   "usage": "LOGSET SQL [--baseline str]",
+   "description": "Run DuckDB SQL over a log set (or all nodes of a capture) and print the result rows.\n\nViews: \"entries\" (entries.v1), \"groups\" (groups.v1) and \"merges\" (merges.v1,\nonly when present). Their columns (types and descriptions: `ragnalog\nschema entries|groups|merges`):\n  entries:\n    id, ts, tz_offset, level, level_name, thread, logger, message, body, user,\n    request_id, session, ip, url, request_url, context, exception_type,\n    exception_message, exception_chain, signature, coarse_signature, template,\n    variables, source_path, source_line, source_offset, raw, parse_error\n  groups:\n    signature, coarse_signature, template, level, level_name, logger,\n    exception_type, count, first_seen, last_seen, user_count, thread_count,\n    source_count, top_users, top_threads, sources, examples\n  merges:\n    cluster_id, drain_template, signatures\nlevel is numeric (TRACE=10 DEBUG=20 INFO=30 WARN=40 ERROR=50 FATAL=60),\nts/first_seen/last_seen are UTC timestamps, variables a list of strings.\nThe session time zone is UTC whatever the machine's zone: result\ntimestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets\nat UTC midnight. One SELECT statement only (also WITH, FROM, VALUES,\nDESCRIBE, SUMMARIZE; several statements, or COPY, EXPLAIN, CREATE, SET and\nthe like, are a usage error).\n\nA capture (capture:ID, cluster:NAME[@YYYY-MM-DD], or a bare capture id)\ngives views over all its nodes: the rows of every member set, each\nwith leading columns \"node\" and \"set\" (the member's set id); merges\nholds the members that have one; \"logset\" is capture:ID. Signatures\ncompare across nodes, as the members share their recipe.\n--baseline adds another set's views (a capture's: another capture, or a\nset, which stands for its capture) as baseline_entries, baseline_groups\nand baseline_merges, for comparing in one query; \"baseline\" is its id.\n\nSQL examples:\n  select level_name, count(*) n from entries group by 1 order by 2 desc\n  select unnest(variables) v, count(*) n from entries\n    where signature = '0123456789abcdef' group by 1 order by 2 desc\n  select signature, count, template from groups where exception_type is not null\n    order by count desc limit 20\n  select node, count(*) n from entries where level >= 50 group by 1   (a capture)\n  select signature, count, template from groups where signature not in\n    (select signature from baseline_groups) order by count desc   (--baseline)\n\nOutput (json):\n  {\"schema\": \"query.v1\", \"logset\": id, \"columns\": [str, ...], \"count\": int,\n   \"total\": int, \"truncated\": false, \"items\": [{<column>: value, ...}, ...]}\n  (with --baseline also \"baseline\": id)\nThe CLI never truncates query results (\"total\" = \"count\"); use LIMIT in SQL.\n\nErrors: \"sql_error\"; for an unknown column its \"hint\" lists DuckDB's\ncandidate columns (or the columns of the views), for an unknown table the\navailable views.\n\nExit codes: 0 ok (also for an empty result); 1 SQL error; 2 unknown capture;\n3 unknown set or store error.",
    "output": "query.v1",
    "exit": [
     0,
     1,
+    2,
     3
    ],
    "params": [
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name; or a capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
     },
     {
      "name": "SQL",
      "type": "str",
      "help": "The SQL query (quote it as one argument)."
+    },
+    {
+     "name": "--baseline",
+     "type": "str",
+     "help": "Another set (with a capture: another capture, or a set for its capture) whose views the SQL reads as baseline_entries, baseline_groups, baseline_merges."
     }
    ]
   },

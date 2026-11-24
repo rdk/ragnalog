@@ -27,6 +27,12 @@ needed).
   memory per query (nothing spills to disk), two queries at a time (503 for a third).
   The remote CLI does not follow redirects (they would carry the token), and an explicit
   `--store` runs locally whatever `RAGNALOG_SERVER` says.
+- `query` over all nodes of a capture (`query CAPTURE SQL`, `POST /api/captures/{ref}/query`):
+  the views `entries`, `groups` and `merges` hold every member's rows, with leading columns
+  `node` and `set`. `query --baseline SET|CAPTURE` (body `"baseline"`) adds another set's or
+  capture's views as `baseline_entries`, `baseline_groups` and `baseline_merges`, to compare
+  two captures in one query (new groups per node, rates before and after). Same sandbox and
+  limits as a set's query; the capture route shares its two query slots.
 - Set report: zoom the top chart into the time window (*Zoom in* or `+`; a drag on the
   zoomed chart zooms further, `−` zooms out, `[`/`]` move it) with finer bins, and pick the
   bin size (*Bins*: automatic, or from 1 s to 7 d, finer than the automatic one down to

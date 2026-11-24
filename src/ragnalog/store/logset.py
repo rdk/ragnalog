@@ -14,7 +14,8 @@ from __future__ import annotations
 import re
 import threading
 from bisect import bisect_right
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Unpack, overload
@@ -44,7 +45,16 @@ from ragnalog.store.manifest import (
 from ragnalog.store.manifest import MANIFEST_FILE as MANIFEST_FILE
 from ragnalog.store.manifest import MANIFEST_SCHEMA as MANIFEST_SCHEMA
 
-__all__ = ["LevelSpec", "LogSet", "LogSetManifest", "SourceInfo", "rows", "to_records"]
+__all__ = [
+    "LevelSpec",
+    "LogSet",
+    "LogSetManifest",
+    "SourceInfo",
+    "SqlSource",
+    "rows",
+    "run_sql",
+    "to_records",
+]
 
 GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
 """Values accepted by ``LogSet.groups(sort=...)``."""
@@ -739,6 +749,13 @@ class LogSet:
             "sources": [s.to_dict() for s in m.sources],
         }
 
+    def sql_views(self) -> dict[str, list[SqlSource]]:
+        """Return the views of :meth:`sql`: ``entries``, ``groups``, ``merges`` (when present)."""
+        views = {"entries": self.entries_path, "groups": self.groups_path}
+        if self.merges_path.exists():
+            views["merges"] = self.merges_path
+        return {name: [SqlSource(path)] for name, path in views.items()}
+
     def sql(
         self,
         query: str,
@@ -750,24 +767,14 @@ class LogSet:
     ) -> pl.DataFrame:
         """Run DuckDB SQL with views ``entries`` and ``groups`` (and ``merges`` when present).
 
-        The connection is an in-memory database meant for reading: after the views
-        are created, file-system access is restricted to this set's Parquet files
-        (``enable_external_access=false``) and the configuration is locked, so a
-        query cannot read or write other files. The session time zone is UTC
-        whatever the machine's zone: timestamps come back in UTC and
-        ``date_trunc('day', ts)`` buckets at UTC midnight. Tables created by the
-        query live only for the duration of the call. ``INTERVAL`` columns come back
-        as text (``4 days 20:15:28.033``), which polars cannot import otherwise.
+        :func:`run_sql` over :meth:`sql_views`: file access is restricted to this set's
+        Parquet files and the session time zone is UTC.
 
         Args:
             query: SQL text; the last statement's result is returned.
             max_rows: Return at most this many rows (``None`` = all).
-            timeout_s: Interrupt the query after this many seconds (``None`` = no limit);
-                an interrupted query raises ``duckdb.InterruptException``.
-            memory_limit: DuckDB's ``memory_limit`` (``"1GB"``; ``None`` = DuckDB's default,
-                most of the RAM). With a limit nothing spills to disk and the result is
-                built inside DuckDB before it is converted, so a larger one raises
-                ``duckdb.OutOfMemoryException`` instead of filling the process.
+            timeout_s: Interrupt the query after this many seconds (``None`` = no limit).
+            memory_limit: DuckDB's ``memory_limit`` (``None`` = DuckDB's default).
             threads: DuckDB's ``threads`` (``None`` = every core).
 
         Raises:
@@ -775,79 +782,144 @@ class LogSet:
                 of ``timeout_s``.
 
         """
-        import duckdb  # only this method needs it; keeps it out of every other command
+        return run_sql(
+            self.sql_views(),
+            query,
+            max_rows=max_rows,
+            timeout_s=timeout_s,
+            memory_limit=memory_limit,
+            threads=threads,
+        )
 
-        con = duckdb.connect(":memory:")
-        timer: threading.Timer | None = None
-        lock, closed = threading.Lock(), [False]
 
-        def interrupt() -> None:
-            with lock:  # never on a closed connection (cancel() does not stop a running callback)
-                if not closed[0]:
-                    con.interrupt()
+@dataclass(frozen=True, slots=True)
+class SqlSource:
+    """One Parquet file of a :func:`run_sql` view, with columns of constant text before its own."""
 
-        if timeout_s is not None:
-            timer = threading.Timer(timeout_s, interrupt)
-            timer.daemon = True
-            timer.start()
+    path: Path
+    columns: tuple[tuple[str, str], ...] = ()
+    """``(name, value)`` pairs: ``(("node", "NODE1"), ("set", "<set id>"))`` for a capture."""
+
+
+def _view_sql(sources: Sequence[SqlSource]) -> str:
+    parts = []
+    for src in sources:
+        consts = "".join(
+            f"'{value.replace(chr(39), chr(39) * 2)}' AS {_ident(name)}, "
+            for name, value in src.columns
+        )
+        parts.append(f"SELECT {consts}* FROM read_parquet('{_sql_path(src.path)}')")
+    return " UNION ALL BY NAME ".join(parts)
+
+
+def run_sql(
+    views: Mapping[str, Sequence[SqlSource]],
+    query: str,
+    *,
+    max_rows: int | None = None,
+    timeout_s: float | None = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+) -> pl.DataFrame:
+    """Run DuckDB SQL over ``views``: each the union (by column name) of its Parquet files.
+
+    The connection is an in-memory database meant for reading: after the views
+    are created, file-system access is restricted to the views' Parquet files
+    (``enable_external_access=false``) and the configuration is locked, so a
+    query cannot read or write other files. The session time zone is UTC
+    whatever the machine's zone: timestamps come back in UTC and
+    ``date_trunc('day', ts)`` buckets at UTC midnight. Tables created by the
+    query live only for the duration of the call. ``INTERVAL`` columns come back
+    as text (``4 days 20:15:28.033``), which polars cannot import otherwise.
+    A view of several files (a capture's nodes) gets the rows of all of them; a
+    column one file lacks is null in its rows.
+
+    Args:
+        views: View name -> its files (at least one each).
+        query: SQL text; the last statement's result is returned.
+        max_rows: Return at most this many rows (``None`` = all).
+        timeout_s: Interrupt the query after this many seconds (``None`` = no limit);
+            an interrupted query raises ``duckdb.InterruptException``.
+        memory_limit: DuckDB's ``memory_limit`` (``"1GB"``; ``None`` = DuckDB's default,
+            most of the RAM). With a limit nothing spills to disk and the result is
+            built inside DuckDB before it is converted, so a larger one raises
+            ``duckdb.OutOfMemoryException`` instead of filling the process.
+        threads: DuckDB's ``threads`` (``None`` = every core).
+
+    Raises:
+        duckdb.Error: The query is invalid, tries to access other files, or ran out
+            of ``timeout_s``.
+
+    """
+    import duckdb  # only this function needs it; keeps it out of every other command
+
+    con = duckdb.connect(":memory:")
+    timer: threading.Timer | None = None
+    lock, closed = threading.Lock(), [False]
+
+    def interrupt() -> None:
+        with lock:  # never on a closed connection (cancel() does not stop a running callback)
+            if not closed[0]:
+                con.interrupt()
+
+    if timeout_s is not None:
+        timer = threading.Timer(timeout_s, interrupt)
+        timer.daemon = True
+        timer.start()
+    try:
+        for view, sources in views.items():
+            con.execute(f"CREATE VIEW {_ident(view)} AS {_view_sql(sources)}")
+        paths = dict.fromkeys(_sql_path(s.path) for sources in views.values() for s in sources)
+        allowed = ", ".join(f"'{p}'" for p in paths)
+        con.execute(f"SET allowed_paths = [{allowed}]")
+        if threads is not None:
+            con.execute(f"SET threads = {int(threads)}")
+        if memory_limit is not None:
+            limit = memory_limit.replace("'", "''")
+            con.execute(f"SET memory_limit = '{limit}'")
+            con.execute("SET temp_directory = ''")  # no spill files (before external access)
+        con.execute("SET enable_external_access = false")
+        con.execute("SET TimeZone = 'UTC'")
+        con.execute("SET lock_configuration = true")
+        rel = con.sql(query)
+        if rel is None:
+            return pl.DataFrame()
+        if any("INTERVAL" in str(t) for t in rel.types):
+            # polars cannot import DuckDB intervals (also inside lists and structs): return
+            # those columns as text ('4 days 20:15:28'); columns are renamed by position
+            # first, as two names may differ only in case (DuckDB names ignore case)
+            names = [f"_c{i}" for i in range(len(rel.columns))]
+            cols = ", ".join(
+                f"CAST({n} AS VARCHAR) AS {_ident(c)}"
+                if "INTERVAL" in str(t)
+                else f"{n} AS {_ident(c)}"
+                for n, c, t in zip(names, rel.columns, rel.types, strict=True)
+            )
+            cast = rel.query("_q", f"SELECT {cols} FROM _q AS _r({', '.join(names)})")
+            if cast is not None:
+                rel = cast
+        if max_rows is not None:
+            rel = rel.limit(max_rows)
+        if memory_limit is not None:
+            # converting a result to polars is not under the memory limit: build it in
+            # DuckDB first (a table, under the limit), then convert that
+            rel.create("_ragnalog_result")
+            rel = con.table("_ragnalog_result")
         try:
-            views = {"entries": self.entries_path, "groups": self.groups_path}
-            if self.merges_path.exists():
-                views["merges"] = self.merges_path
-            for view, path in views.items():
-                con.execute(
-                    f"CREATE VIEW {view} AS SELECT * FROM read_parquet('{_sql_path(path)}')"
-                )
-            allowed = ", ".join(f"'{_sql_path(p)}'" for p in views.values())
-            con.execute(f"SET allowed_paths = [{allowed}]")
-            if threads is not None:
-                con.execute(f"SET threads = {int(threads)}")
-            if memory_limit is not None:
-                limit = memory_limit.replace("'", "''")
-                con.execute(f"SET memory_limit = '{limit}'")
-                con.execute("SET temp_directory = ''")  # no spill files (before external access)
-            con.execute("SET enable_external_access = false")
-            con.execute("SET TimeZone = 'UTC'")
-            con.execute("SET lock_configuration = true")
-            rel = con.sql(query)
-            if rel is None:
-                return pl.DataFrame()
-            if any("INTERVAL" in str(t) for t in rel.types):
-                # polars cannot import DuckDB intervals (also inside lists and structs): return
-                # those columns as text ('4 days 20:15:28'); columns are renamed by position
-                # first, as two names may differ only in case (DuckDB names ignore case)
-                names = [f"_c{i}" for i in range(len(rel.columns))]
-                cols = ", ".join(
-                    f"CAST({n} AS VARCHAR) AS {_ident(c)}"
-                    if "INTERVAL" in str(t)
-                    else f"{n} AS {_ident(c)}"
-                    for n, c, t in zip(names, rel.columns, rel.types, strict=True)
-                )
-                cast = rel.query("_q", f"SELECT {cols} FROM _q AS _r({', '.join(names)})")
-                if cast is not None:
-                    rel = cast
-            if max_rows is not None:
-                rel = rel.limit(max_rows)
-            if memory_limit is not None:
-                # converting a result to polars is not under the memory limit: build it in
-                # DuckDB first (a table, under the limit), then convert that
-                rel.create("_ragnalog_result")
-                rel = con.table("_ragnalog_result")
-            try:
-                result: pl.DataFrame = rel.pl()
-            except Exception:
+            result: pl.DataFrame = rel.pl()
+        except Exception:
+            raise
+        except BaseException as exc:  # polars panics on a type it cannot import
+            if type(exc).__name__ != "PanicException":
                 raise
-            except BaseException as exc:  # polars panics on a type it cannot import
-                if type(exc).__name__ != "PanicException":
-                    raise
-                raise duckdb.ConversionException(f"cannot return this result: {exc}") from exc
-            return result
-        finally:
-            if timer is not None:
-                timer.cancel()
-            with lock:
-                closed[0] = True
-                con.close()
+            raise duckdb.ConversionException(f"cannot return this result: {exc}") from exc
+        return result
+    finally:
+        if timer is not None:
+            timer.cancel()
+        with lock:
+            closed[0] = True
+            con.close()
 
 
 def _coarse_groups(lf: pl.LazyFrame) -> pl.LazyFrame:

@@ -85,7 +85,11 @@ ragnalog parse atlassian-jira.log --limit 100       # JSONL entries, no store
 ```
 
 `query --help` lists the columns of the `entries`, `groups` and `merges`
-views; a misspelt column gets the candidate columns in `error.hint`.
+views; a misspelt column gets the candidate columns in `error.hint`. A capture
+(`query cluster:NAME "..."`) queries all its nodes at once (rows carry `node`
+and `set`), and `--baseline` puts a second set or capture beside it as
+`baseline_entries`/`baseline_groups`, so "new groups per node since the last
+capture" is one query.
 
 ## Cookbook
 

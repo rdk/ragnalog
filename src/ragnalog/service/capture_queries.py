@@ -10,6 +10,7 @@ documents (docs/cluster.md, section 6):
   ``interactions.v1`` (:func:`interactions`);
 - ``entries.v1`` of all nodes (:func:`entries`) and around one entry on all nodes
   (:func:`context`);
+- ``query.v1`` of SQL over all nodes (:func:`query`);
 - ``cluster-report.v1`` (:func:`report_payload`) and the static cluster page
   (:func:`report_file`, ``report-file.v1``).
 
@@ -51,6 +52,7 @@ from ragnalog.service.sets import Sets, open_set
 if TYPE_CHECKING:
     from ragnalog.service.cluster import Capture, Window
     from ragnalog.service.documents import ClusterReport
+    from ragnalog.store.logset import SqlSource
 
 __all__ = [
     "NODE_COLUMNS",
@@ -63,6 +65,7 @@ __all__ = [
     "interactions",
     "matrix",
     "names_capture",
+    "query",
     "raw_entries",
     "report_file",
     "report_filename",
@@ -383,6 +386,76 @@ def entries(
             front=front,
         )
     )
+
+
+def _capture_views(capture_: Capture, prefix: str = "") -> dict[str, list[SqlSource]]:
+    """``query`` views of a capture: each member's file of the view, with ``node`` and ``set``."""
+    from ragnalog.store.logset import SqlSource
+
+    views: dict[str, list[SqlSource]] = {}
+    for member in capture_.nodes:
+        consts = (("node", member.node), ("set", member.logset.id))
+        for view, sources in member.logset.sql_views().items():
+            views.setdefault(prefix + view, []).extend(
+                SqlSource(s.path, consts + s.columns) for s in sources
+            )
+    return views
+
+
+def query(
+    sets: Sets,
+    ref: str,
+    sql: str,
+    *,
+    front: Front,
+    baseline: str | None = None,
+    max_rows: int | None = None,
+    timeout_s: float | None = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    max_bytes: int | None = None,
+) -> Doc:
+    """``query.v1`` of DuckDB ``sql`` over all nodes of a capture; ``logset`` is ``capture:ID``.
+
+    The views are those of a set's ``query`` (``entries``, ``groups``, and ``merges`` of
+    the members that have one), each the rows of every member with leading columns
+    ``node`` and ``set`` (the member's set id). ``baseline`` (a capture reference, a bare
+    capture id, or a set: its capture) adds ``baseline_entries``, ``baseline_groups``
+    (and ``baseline_merges``) of that capture, ``"baseline"`` is its ``capture:ID``. The
+    rules and limits are those of :func:`ragnalog.service.queries.query`.
+
+    Raises:
+        OpError: ``usage`` for anything but one ``SELECT``; ``sql_error``; the errors of
+            :func:`capture_from_ref`.
+
+    """
+    from ragnalog.service.queries import (
+        BASELINE_PREFIX,
+        check_select,
+        query_doc,
+        query_view_columns,
+        run_select,
+    )
+
+    check_select(sql)
+    capture_ = capture_from_ref(sets, ref, front=front)
+    views = _capture_views(capture_)
+    base_ref = None
+    if baseline is not None:
+        base = capture_from_ref(sets, baseline, front=front)
+        base_ref = base.ref
+        views |= _capture_views(base, BASELINE_PREFIX)
+    df, truncated = run_select(
+        views,
+        sql,
+        columns=query_view_columns(list(views), lead=NODE_COLUMNS),
+        max_rows=max_rows,
+        timeout_s=timeout_s,
+        memory_limit=memory_limit,
+        threads=threads,
+        max_bytes=max_bytes,
+    )
+    return query_doc(capture_.ref, df, truncated, baseline=base_ref)
 
 
 def _node_signatures(

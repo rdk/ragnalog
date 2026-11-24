@@ -41,11 +41,13 @@ from ragnalog.service.views import (
 from ragnalog.store.filters import EntryFilter
 
 if TYPE_CHECKING:
-    from ragnalog.store.logset import LogSet
+    from ragnalog.store.logset import LogSet, SqlSource
     from ragnalog.store.manifest import LogSetManifest
 
 __all__ = [
+    "BASELINE_PREFIX",
     "Doc",
+    "check_select",
     "context",
     "entries",
     "entry_raw",
@@ -54,7 +56,10 @@ __all__ = [
     "group_examples",
     "groups",
     "query",
+    "query_doc",
+    "query_view_columns",
     "raw_entries",
+    "run_select",
     "set_doc",
     "sets_doc",
     "show",
@@ -545,7 +550,19 @@ def view_fields() -> dict[str, tuple[str, ...]]:
     return {"entries": ENTRY_FIELDS, "groups": GROUP_FIELDS, "merges": tuple(MERGES_SCHEMA.names)}
 
 
-def sql_hint(message: str, views: list[str]) -> str | None:
+BASELINE_PREFIX = "baseline_"
+"""``query --baseline``: the baseline's views are the query's views with this prefix."""
+
+
+def query_view_columns(
+    views: Sequence[str], *, lead: Sequence[str] = ()
+) -> dict[str, tuple[str, ...]]:
+    """Columns of query views (``baseline_entries`` as ``entries``); ``lead`` comes first."""
+    fields = view_fields()
+    return {v: (*lead, *fields[v.removeprefix(BASELINE_PREFIX)]) for v in views}
+
+
+def sql_hint(message: str, views: dict[str, tuple[str, ...]]) -> str | None:
     """Next step for a failed query: candidate columns, the views' columns, or the views."""
     if any(marker in message for marker in _COLUMN_ERRORS):
         if m := _CANDIDATES_RE.search(message):
@@ -553,37 +570,20 @@ def sql_hint(message: str, views: list[str]) -> str | None:
                 f"candidate columns: {m.group(1).strip()}; all columns: "
                 "`ragnalog query --help` or `ragnalog schema entries|groups`"
             )
-        fields = view_fields()
-        return "; ".join(f"{v} columns: {', '.join(fields[v])}" for v in views)
+        return "; ".join(f"{v} columns: {', '.join(cols)}" for v, cols in views.items())
     if "Catalog Error" in message and "does not exist" in message:
         return f"available views: {', '.join(views)}"
     return None
 
 
-def query(
-    sets: Sets,
-    ref: str,
-    sql: str,
-    *,
-    front: Front,
-    max_rows: int | None = None,
-    timeout_s: float | None = None,
-    memory_limit: str | None = None,
-    threads: int | None = None,
-    max_bytes: int | None = None,
-) -> Doc:
-    """``query.v1``: the rows of DuckDB ``sql`` over the set's views.
+def check_select(sql: str) -> None:
+    """Refuse empty SQL, several statements and any statement but one ``SELECT``.
 
-    ``sql`` is one ``SELECT`` (also ``WITH``, ``FROM``, ``VALUES``, ``DESCRIBE``,
-    ``SUMMARIZE``, ``PIVOT ... IN (...)``): other statements (``COPY``, ``EXPLAIN``,
-    ``CREATE``, ``SET``, ...) are ``usage``. The CLI passes no limits (the result is never
-    cut); the API cuts it at ``max_rows`` (``truncated``), stops a query after
-    ``timeout_s``, caps DuckDB at ``memory_limit`` and ``threads``, and refuses a result
-    over ``max_bytes``. A rejected or stopped query is ``sql_error``; a rejected one's
-    hint lists candidate columns, the views' columns or the available views.
+    Raises:
+        OpError: ``usage``.
+
     """
     import duckdb
-    import polars as pl
 
     if not sql.strip():
         raise OpError("usage", 'give the SQL to run (e.g. "select count(*) from entries")')
@@ -605,9 +605,36 @@ def query(
             if kinds[0] == "MULTI"
             else "SELECT, WITH, FROM, VALUES, DESCRIBE and SUMMARIZE read the views",
         )
-    ls = open_set(sets, ref, front=front)
+
+
+def run_select(
+    views: dict[str, list[SqlSource]],
+    sql: str,
+    *,
+    columns: dict[str, tuple[str, ...]],
+    max_rows: int | None = None,
+    timeout_s: float | None = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    max_bytes: int | None = None,
+) -> tuple[Any, bool]:
+    """Run a checked ``SELECT`` over ``views``: the rows (polars) and whether they were cut.
+
+    ``columns`` names each view's columns for the hint of a rejected query.
+
+    Raises:
+        OpError: ``sql_error`` for a rejected, stopped or too large query; a damaged view
+            file is re-raised as is (``store_error``).
+
+    """
+    import duckdb
+    import polars as pl
+
+    from ragnalog.store.logset import run_sql
+
     try:
-        df = ls.sql(
+        df = run_sql(
+            views,
             sql,
             max_rows=None if max_rows is None else max_rows + 1,
             timeout_s=timeout_s,
@@ -628,12 +655,11 @@ def query(
             "or run it where the data directory is",
         ) from exc
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        own = (ls.entries_path, ls.groups_path, ls.merges_path)
-        if damaged_file(exc) and any(p.name in str(exc) for p in own):
+        own = {s.path.name for sources in views.values() for s in sources}
+        if damaged_file(exc) and any(name in str(exc) for name in own):
             raise  # a damaged set file, not the SQL: store_error
         message = str(exc).strip()
-        views = [v for v in view_fields() if v != "merges" or ls.merges_path.exists()]
-        raise OpError("sql_error", message, hint=sql_hint(message, views)) from exc
+        raise OpError("sql_error", message, hint=sql_hint(message, columns)) from exc
     truncated = False
     if max_rows is not None and df.height > max_rows:
         df, truncated = df.head(max_rows), True
@@ -643,13 +669,67 @@ def query(
             f"the result is over {max_bytes // 2**20} MiB ({df.height:,} rows)",
             hint="select fewer or shorter columns (substr(message, 1, 200)) or fewer rows (LIMIT)",
         )
+    return df, truncated
+
+
+def query_doc(label: str, df: Any, truncated: bool, *, baseline: str | None) -> Doc:
+    """``query.v1`` of the rows ``df``; ``label`` is the set id or ``capture:ID``."""
     items = _records(df)
-    return {
+    doc: Doc = {
         "schema": "query.v1",
-        "logset": ls.manifest.id,
+        "logset": label,
         "columns": list(df.columns),
         "count": len(items),
         "total": len(items),
         "truncated": truncated,
         "items": items,
     }
+    if baseline is not None:
+        doc["baseline"] = baseline
+    return doc
+
+
+def query(
+    sets: Sets,
+    ref: str,
+    sql: str,
+    *,
+    front: Front,
+    baseline: str | None = None,
+    max_rows: int | None = None,
+    timeout_s: float | None = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    max_bytes: int | None = None,
+) -> Doc:
+    """``query.v1``: the rows of DuckDB ``sql`` over the set's views.
+
+    ``sql`` is one ``SELECT`` (also ``WITH``, ``FROM``, ``VALUES``, ``DESCRIBE``,
+    ``SUMMARIZE``, ``PIVOT ... IN (...)``): other statements (``COPY``, ``EXPLAIN``,
+    ``CREATE``, ``SET``, ...) are ``usage``. ``baseline`` (another set) adds its views
+    as ``baseline_entries``, ``baseline_groups`` (and ``baseline_merges``). The CLI
+    passes no limits (the result is never cut); the API cuts it at ``max_rows``
+    (``truncated``), stops a query after ``timeout_s``, caps DuckDB at ``memory_limit``
+    and ``threads``, and refuses a result over ``max_bytes``. A rejected or stopped
+    query is ``sql_error``; a rejected one's hint lists candidate columns, the views'
+    columns or the available views.
+    """
+    check_select(sql)
+    ls = open_set(sets, ref, front=front)
+    views = ls.sql_views()
+    base_id = None
+    if baseline is not None:
+        base = open_set(sets, baseline, front=front)
+        base_id = base.manifest.id
+        views |= {BASELINE_PREFIX + v: src for v, src in base.sql_views().items()}
+    df, truncated = run_select(
+        views,
+        sql,
+        columns=query_view_columns(list(views)),
+        max_rows=max_rows,
+        timeout_s=timeout_s,
+        memory_limit=memory_limit,
+        threads=threads,
+        max_bytes=max_bytes,
+    )
+    return query_doc(ls.manifest.id, df, truncated, baseline=base_id)

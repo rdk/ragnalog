@@ -11,7 +11,7 @@
       ]
     },
     "logset": {
-      "description": "Set id.",
+      "description": "Set id; capture:<id> for a query over all nodes of a capture.",
       "type": "string"
     },
     "columns": {
@@ -39,6 +39,18 @@
       "items": {
         "type": "object"
       }
+    },
+    "baseline": {
+      "description": "With --baseline: its set id (capture:<id> for a capture), whose views are baseline_entries, baseline_groups (and baseline_merges).",
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     }
   },
   "required": [
