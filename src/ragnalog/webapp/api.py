@@ -289,6 +289,27 @@ def capture_entries(
     )
 
 
+@router.get("/captures/{ref}/users")
+def capture_users(
+    ref: str,
+    state: StateDep,
+    q: Annotated[EntryQuery, Depends(query_model(EntryQuery))],
+    window: WindowMode = "overlap",
+    limit: Annotated[int, Query(ge=0, le=BIG)] = 100,
+    offset: Annotated[int, Query(ge=0, le=BIG)] = 0,
+    top: int = 3,
+) -> dict[str, Any]:
+    """Entries per user of all nodes (``users.v1``, rows add ``nodes``), as ``users CAPTURE``.
+
+    The entries are those ``GET /api/captures/{ref}/entries`` lists (``signature``, also
+    ``NODE:SIGNATURE``; ``node``; ``since``/``until``, else ``window``); ``limit=0`` lists
+    every user, ``top`` (1-1000) the largest groups per user.
+    """
+    return capture_queries.users(
+        state, ref, q, Page(limit or None, offset), top=top, window=window, front="api"
+    )
+
+
 @router.post("/captures/{ref}/query", response_model=None)
 def capture_query(
     ref: str, state: StateDep, sql: QuerySql, baseline: QueryBaseline = None

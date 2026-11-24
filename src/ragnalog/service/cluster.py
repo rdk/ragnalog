@@ -1709,6 +1709,58 @@ def merged_entries(
     )
 
 
+def merged_users(
+    capture: Capture,
+    *,
+    window: Window,
+    where: EntryFilter | None = None,
+    signatures: Sequence[str] | None = None,
+    node_signatures: Mapping[str, Sequence[str]] | None = None,
+    top: int = 3,
+) -> tuple[list[dict[str, Any]], int]:
+    """Entries per user of all nodes (:func:`~ragnalog.store.logset.user_rows`, ``nodes`` added).
+
+    The entries are those :func:`merged_entries` lists for the same arguments.
+
+    Raises:
+        OpError: ``invalid_level`` from ``where``.
+
+    """
+    import polars as pl
+
+    from ragnalog.store.levels import InvalidLevel
+    from ragnalog.store.logset import user_rows
+
+    cond = pl.col("ts").is_between(window.since, window.until, closed="both")
+    try:
+        predicate = where.predicate() if where is not None else None
+    except InvalidLevel as exc:
+        raise OpError("invalid_level", str(exc)) from exc
+    if predicate is not None:
+        cond = cond & predicate
+    cols = [
+        "user",
+        "level",
+        "signature",
+        "thread",
+        "ts",
+        "parse_error",
+    ]  # has_time() reads the last
+    frames = []
+    for m in capture.nodes:
+        node_cond = cond
+        if signatures is not None or node_signatures is not None:
+            sigs = [*(signatures or ()), *(node_signatures or {}).get(m.node, ())]
+            node_cond = cond & pl.col("signature").is_in(sigs)
+        frames.append(
+            m.logset.entries_lazy()
+            .filter(node_cond)
+            .select(cols)
+            .with_columns(pl.lit(m.node).alias("node"))
+        )
+    return user_rows(pl.concat(frames, how="vertical_relaxed"), top=top, by_node=True)
+
+
 def context_all_nodes(
     capture: Capture,
     set_id: str,

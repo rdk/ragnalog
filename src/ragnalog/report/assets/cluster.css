@@ -161,6 +161,8 @@ button.nr-name[aria-pressed="true"] { background: var(--blue-wash-2); box-shadow
 .lg-k { color: var(--muted); font-size: 11px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; }
 .lane-line { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
 .row-id { cursor: default; }
+.row-link { cursor: pointer; }
+.row-link:hover .row-lbl, a:focus-visible .row-lbl { text-decoration: underline; }
 .row-id-hit { fill: transparent; }
 .row-lbl { fill: var(--ink); font-size: 12px; font-weight: 600; }
 .row-sub { fill: var(--muted); font-size: 11px; }
@@ -399,6 +401,11 @@ body.drawer-open .c-lead { display: none; }
 
 /* interactions: one wide card of source -> target rows, then mentions and jobs side by side, then events */
 .c-inter { display: flex; flex-direction: column; gap: var(--gap); padding-top: var(--s2); }
+/* Users: every user of the capture, a column per node */
+.c-users { padding-top: var(--s2); }
+.c-users .u-wrap { overflow-x: auto; }
+.u-tbl th.u-node, .u-tbl td.u-node { min-width: 4.5ch; }
+.u-scope { font-size: var(--fs-meta); }
 .c-inter .card { min-width: 0; }
 /* side by side only when each card gets room for its job names and badges (one column at ~1000 px) */
 .ix-grid { display: grid; gap: var(--gap); grid-template-columns: repeat(auto-fit, minmax(min(100%, 540px), 1fr)); align-items: start; }

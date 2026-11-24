@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "users.v1.schema.json",
   "title": "users.v1",
-  "description": "Entries per user: `users`, `GET /api/sets/{ref}/users`.",
+  "description": "Entries per user: `users`, `GET /api/sets/{ref}/users`, `GET /api/captures/{ref}/users`.",
   "type": "object",
   "properties": {
     "schema": {
@@ -11,7 +11,7 @@
       ]
     },
     "logset": {
-      "description": "Set id.",
+      "description": "Set id; capture:<id> for the users of all nodes of a capture.",
       "type": "string"
     },
     "count": {
@@ -145,6 +145,13 @@
           "type": "array",
           "items": {
             "$ref": "#/$defs/UserGroup"
+          }
+        },
+        "nodes": {
+          "description": "A capture's users: the entries on each node (with some).",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer"
           }
         }
       },

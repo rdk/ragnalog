@@ -459,7 +459,7 @@
   const Y_MODES = ["shared", "node", "pct", "err"];
   const MULTI = NODES.length > 1; // a single node has no spread, lead or node filter
   const SPREADS = ["any", "all", "only", "skewed"];
-  const TABS = ["g", "i", "l"];
+  const TABS = ["g", "i", "l", "u"];
   const LOG_LEVELS = ["", "DEBUG", "INFO", "WARN", "ERROR"];
   // sorts read the numbers through V(): the window's when one is set
   const byTotal = (a, b) => V(b).total - V(a).total || cmpStr(a.id, b.id);
@@ -947,7 +947,8 @@
     const [za, zb] = S.z || [TA, TE];
     const span = zb - za;
     const floor = FINE && S.z ? 1e3 : BMS;
-    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 5 <= plotW) || SIZES[SIZES.length - 1];
+    // the finest bin whose bars keep 10 px (thinner ones read as hairlines)
+    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 10 <= plotW) || SIZES[SIZES.length - 1];
     const choices = SIZES.filter((ms) => { const c = Math.ceil(span / ms); return c >= 2 && c <= Math.floor(plotW / 2); });
     const want = keyMs(S.bin);
     const size = want && choices.includes(want) ? want : auto;
@@ -982,11 +983,12 @@
     const k = fr.k;  // base buckets per bin (0 in a fine frame)
     const nb = fr.nb;
     const slot = plotW / nb;
-    // thin bars (a finer bin than the automatic one) keep a hairline gap, then none
-    const bw = slot >= 4 ? Math.min(24, Math.max(2, slot - GAP)) : Math.max(0.8, slot - (slot >= 2.5 ? 1 : 0.3));
+    // bars fill their slot but for a gap of an eighth (1-4 px); thin ones (a finer bin than
+    // the automatic one) keep a hairline gap
+    const bw = slot >= 6 ? slot - Math.min(4, Math.max(1, slot / 8)) : Math.max(0.8, slot - (slot >= 2.5 ? 1 : 0.3));
     const RULER = WIN ? 14 : 4, LANE = 18, ROWGAP = 6, AXIS = 20;
     const XM = MULTI ? 14 : 0; // the cross-node moments lane above the first node
-    const BAND = N <= 2 ? 52 : N <= 4 ? 64 : N <= 8 ? 56 : 44;
+    const BAND = N <= 2 ? 72 : N <= 4 ? 84 : N <= 8 ? 76 : 64;
     const rowTop = (i) => RULER + XM + i * (LANE + BAND + ROWGAP);
     const bottomAll = rowTop(N - 1) + LANE + BAND;
     const H = bottomAll + AXIS;
@@ -1081,12 +1083,15 @@
       r.laneY = laneY;
       r.bTop = bTop;
       r.bBot = bBot;
-      P.push(`<g class="${ncls(n)} row-id"${tipAttr(nodeTip(n))}>`);
+      const rep = URLS && URLS.set_report && setOf(n).id ? urlFill(URLS.set_report, { set: setOf(n).id }) : "";
+      if (rep) P.push(`<a href="${esc(rep)}" aria-label="${esc(`Report of ${n}`)}">`);
+      P.push(`<g class="${ncls(n)} row-id${rep ? " row-link" : ""}"${tipAttr(nodeTip(n, !!rep))}>`);
       P.push(`<rect class="row-id-hit" x="0" y="${r.top}" width="${padL - 40}" height="${LANE}"/>`);
       P.push(`<rect class="nsw" x="4" y="${laneY - 4.5}" width="9" height="9" rx="2"/>`);
       P.push(`<text class="row-lbl" x="19" y="${laneY + 4}">${esc(NLABEL(n))}</text>`);
       P.push(`<text class="row-sub" x="${19 + 8 * NLABEL(n).length + 6}" y="${laneY + 4}">${esc(trunc(n, 9))}</text>`);
       P.push(`</g>`);
+      if (rep) P.push(`</a>`);
       P.push(`<line class="lane-line" x1="${padL}" x2="${r1(xEnd)}" y1="${laneY + 0.5}" y2="${laneY + 0.5}"/>`);
       // no logs: outside the node's coverage, and its gaps
       const hatch = (xa, xb, label) => {
@@ -1263,12 +1268,39 @@
   });
 
   /** A node at a glance: name, set, entries, errors, coverage (the timeline's row labels). */
-  function nodeTip(n) {
-    const c = obj(CN.get(n)), set = setOf(n), cov = COVT[n];
-    return { h: trusted(`${nodeBadge(n)} ${esc(n)}`), sub: set.name || set.id || null,
-      rows: [["Entries", fmt(num(c.entries) || NSUM[n])], ["Errors", isNum(c.errors) ? fmt(c.errors) : "", c.errors > 0 ? "e" : ""],
-        ["Warnings", isNum(c.warnings) ? fmt(c.warnings) : ""], ["Coverage", cov ? rangeText(cov[0], cov[1]) : "no entries"],
-        ["Gaps", GAPS[n].length ? plural(GAPS[n].length, "gap") : ""]] };
+  /** A node's figures, in the time window when one is set: entries, errors, warnings, errors
+      per hour of its logs, events (by kind). */
+  function nodeFigures(n) {
+    const c = obj(CN.get(n)), rg = tRange();
+    let entries = num(c.entries) || NSUM[n], errors = c.errors, warnings = c.warnings, eph = c.errors_per_hour;
+    if (rg && NB) {
+      entries = 0; errors = 0; warnings = 0;
+      for (let i = S.t[0]; i <= S.t[1]; i++) {
+        entries += NTOT[n][i];
+        errors += LEV[n].ERROR[i];
+        warnings += LEV[n].WARN[i];
+      }
+      const cov = COVT[n];
+      const hrs = cov ? Math.max(0, Math.min(rg[1], cov[1]) - Math.max(rg[0], cov[0])) / 3.6e6 : 0;
+      eph = hrs > 0 ? errors / hrs : null;
+    }
+    const own = rg ? (EVN[n] || []).filter((e) => inRange(e.ms, rg)) : null;
+    const ev = evCounts({ ...c, node: n });
+    return { rg, entries, errors, warnings, eph, events: own ? own.length : ev.total };
+  }
+  /** The band label's card: the node's set, figures (in the window), coverage, top error, triage. */
+  function nodeTip(n, linked) {
+    const c = obj(CN.get(n)), set = setOf(n), cov = COVT[n], f = nodeFigures(n);
+    const top = c.top_error && typeof c.top_error === "object" ? c.top_error : null;
+    const baseline = c.baseline && typeof c.baseline === "object" ? c.baseline.name || c.baseline.id : c.baseline;
+    return { h: trusted(`${nodeBadge(n)} ${esc(n)}`), sub: (set.name || set.id || "") + (f.rg ? " · in the window" : "") || null,
+      rows: [["Entries", isNum(f.entries) ? fmt(f.entries) : ""], ["Errors", isNum(f.errors) ? fmt(f.errors) : "", f.errors > 0 ? "e" : ""],
+        ["Warnings", isNum(f.warnings) ? fmt(f.warnings) : ""], ["Errors / h", isNum(f.eph) ? String(r1(f.eph)) : ""],
+        ["Events", fmt(f.events)], ["Coverage", cov ? rangeText(cov[0], cov[1]) : "no entries"],
+        ["Gaps", GAPS[n].length ? plural(GAPS[n].length, "gap") : ""],
+        ["Top error", top ? trusted(tplHtml(trunc(top.template, 110))) : ""],
+        ["Triage", c.verdict != null ? `${VERDICT[str(c.verdict)] || str(c.verdict).replace(/_/g, " ")}${baseline ? ` vs ${baseline}` : ""}` : ""]],
+      note: linked ? "Click: the node's report" : null };
   }
   function renderTlLegend() {
     $("tl-legend").innerHTML = BUCKETS.filter((b) => (S.y !== "err" || b === "ERROR") && NODES.some((n) => LEV[n][b].some((v) => v > 0))).map((b) =>
@@ -1742,6 +1774,7 @@
   let cardsKey = null;
   /** One slim row per node: the numbers to compare across nodes; the rest is in the name's tooltip. */
   const renderCards = guard(function renderCards() {
+    if (!$("c-cards")) return;  // the node rows were folded into the bands' labels
     // the node filter too: it presses a row's name button
     const key = WKEY + "|" + S.nd;
     if (cardsKey === key) return;
@@ -2202,6 +2235,7 @@
         (have.length ? have.map((id) => entryHtml(id, ENTRIES[id])).join("") : `<div class="muted">The examples of ${esc(cur)} are not in this report.</div>`);
     }
     out.push(secId("d-s-examples", exTitle, exBody));
+    out.push(secId("d-s-users", "Users", groupUsersHtml(r)));
     out.push(secId("d-s-links", "Co-bursts, mentions and events", relatedHtml(r)));
     out.push(`<details class="d-sec d-idcli" id="d-s-cli"><summary>Identifiers &amp; CLI</summary>` +
       `<div class="cli"><div><span class="k">Signature</span><code class="ident">${esc(r.sig)}</code>${copyBtn(r.sig)}</div></div>` +
@@ -2668,6 +2702,158 @@
     const rg = logRange();
     return [rg ? rg[0] : "", rg ? rg[1] : "", S.ml, S.ms.join(","), S.mn ? [...S.mn].join(",") : "", logSearch()].join("|");
   }
+  // ---------------------------------------------------------------- users (web app)
+  const USERS_URL = URLS ? str(URLS.users || "") : "";
+  const LV_PARAM = { ERROR: "ERROR,FATAL", WARN: "WARN", INFO: "INFO", DEBUG: "DEBUG,TRACE", OTHER: "UNKNOWN" };
+  const USERS_CACHE = new Map();
+  let USEARCH = "", USORT = "entries", USHOW = 200, UOPEN = "";
+  const UGROUP_ALL = new Set();  // groups whose drawer lists every user
+  /** The query of the users API: the window (else the capture's), and extra (a group, a user). */
+  function usersQs(extra, levels) {
+    const p = new URLSearchParams({ limit: "0", ...extra });
+    const rg = tRange() || WIN;
+    if (rg) {
+      p.set("since", isoOf(rg[0]));
+      p.set("until", isoOf(rg[1]));
+    } else if (WMODE === "union") p.set("window", "union");
+    if (levels && !BUCKETS.every((b) => S.lv.has(b))) p.set("level", [...S.lv].map((b) => LV_PARAM[b]).join(","));
+    return p.toString();
+  }
+  /** The users document of a query once in; {err} when it failed (asked again on the next
+      draw); undefined while it runs (redraw is called when it is done). */
+  function usersDoc(qs, redraw) {
+    const hit = USERS_CACHE.get(qs);
+    if (hit) return hit.value;
+    const entry = { value: undefined };
+    USERS_CACHE.set(qs, entry);
+    if (USERS_CACHE.size > 60) USERS_CACHE.delete(USERS_CACHE.keys().next().value);
+    fetchJson(USERS_URL + (USERS_URL.includes("?") ? "&" : "?") + qs)
+      .then((d) => { entry.value = d; }, (err) => { entry.value = { err: str((err && err.message) || err) }; })
+      .finally(() => {
+        redraw();
+        if (entry.value && entry.value.err) USERS_CACHE.delete(qs);
+      });
+    return undefined;
+  }
+  const userHtml = (u) => esc(u) + (u === "anonymous" ? ` <span class="muted u-anon" title="Jira logs requests of no signed-in user as anonymous">not signed in</span>` : "");
+  const barN = (n, max) => `<span class="u-cell"><span class="u-track"><i style="width:${Math.max(2, (100 * n) / max).toFixed(1)}%"></i></span><span class="u-v">${fmt(n)}</span></span>`;
+  /** The merged entries page with one user's entries (of a group), in the window. */
+  function userEntriesUrl(user, sig) {
+    if (!WEB_LOG) return "";
+    const p = new URLSearchParams();
+    if (sig) p.set("signature", sig);
+    p.set("user", user);
+    const rg = tRange();
+    if (rg) {
+      p.set("since", isoOf(rg[0]));
+      p.set("until", isoOf(rg[1]));
+    }
+    return URLS.entries.replace(/^\/api\//, "/") + "?" + p.toString();
+  }
+  const nodeCells = (u, max) => NODES.map((n) => {
+    const c = num(obj(u.nodes)[n]);
+    return `<td class="num u-node${c ? "" : " muted"}" title="${esc(`${n}: ${fmt(c)} entries`)}">${c ? fmt(c) : "·"}</td>`;
+  }).join("");
+  const UCOLS = [
+    ["user", "User", (a, b) => cmpStr(a.user, b.user)],
+    ["entries", "Entries", (a, b) => b.entries - a.entries],
+    ["errors", "Errors", (a, b) => b.errors - a.errors],
+    ["warnings", "Warnings", (a, b) => b.warnings - a.warnings],
+    ["groups", "Groups", (a, b) => b.groups - a.groups],
+    ["last", "Last seen", (a, b) => cmpStr(b.last_ts || "", a.last_ts || "")],
+  ];
+  const redrawUsers = () => { if (S.tab === "u") renderUsers(); };
+  /** The Users tab: every user of the capture's entries in the window (the group filters' levels),
+      with their entries on each node; a row opens the user's groups. */
+  const renderUsers = guard(function renderUsers() {
+    const tab = $("tab-u");
+    tab.hidden = !USERS_URL;
+    if (S.tab !== "u") return;
+    const el = $("u-body");
+    if (!USERS_URL) {
+      el.innerHTML = `<div class="empty">The Users tab counts every entry per user, so it needs the web app (<code>ragnalog serve</code>).</div>`;
+      return;
+    }
+    if (!S.lv.size) { el.innerHTML = `<div class="empty">No level is selected: pick one under Groups by node.</div>`; return; }
+    const d = usersDoc(usersQs({ top: "3" }, true), redrawUsers);
+    if (d === undefined) {
+      if (!el.querySelector("table")) el.innerHTML = `<div class="empty">Counting the entries per user on all nodes…</div>`;
+      el.classList.add("loading");
+      return;
+    }
+    el.classList.remove("loading");
+    if (d.err) { el.innerHTML = `<div class="ex-err">Could not load the users (${esc(d.err)}).</div>`; return; }
+    $("tab-u-n").textContent = fmt(num(d.total));
+    const q = USEARCH.trim().toLowerCase();
+    const sorter = (UCOLS.find((c) => c[0] === USORT) || UCOLS[1])[2];
+    const items = arr(d.items).filter((u) => !q || str(u.user).toLowerCase().includes(q))
+      .sort((a, b) => sorter(a, b) || b.entries - a.entries || cmpStr(a.user, b.user));
+    const max = Math.max(1, ...arr(d.items).map((u) => u.entries));
+    const lvText = BUCKETS.every((b) => S.lv.has(b)) ? "all levels" : BUCKETS.filter((b) => S.lv.has(b)).join(", ") + " entries";
+    $("u-scope").textContent = `${lvText} (the levels of Groups by node) · ${tRange() ? "in the window" : "the whole capture"}`;
+    $("u-summary").innerHTML = `<b>${fmt(items.length)}</b> ${items.length === 1 ? "user" : "users"}${q ? ` of ${fmt(d.total)}` : ""}` +
+      ` · ${fmt(d.entries)} entries with a user` + (d.without_user ? `, ${fmt(d.without_user)} without` : "");
+    if (!items.length) { el.innerHTML = `<div class="empty">No user ${q ? "matches the search" : "in these entries"}.</div>`; return; }
+    const th = UCOLS.slice(0, 2).map(([k, label]) => `<th class="uc-${k}${k === "user" ? "" : " num"}"><button type="button" class="u-sort" data-usort="${k}" aria-pressed="${USORT === k}">${label}${USORT === k ? " ↓" : ""}</button></th>`).join("") +
+      NODES.map((n) => `<th class="num u-node">${nodeBadge(n)}</th>`).join("") +
+      UCOLS.slice(2).map(([k, label]) => `<th class="uc-${k} num"><button type="button" class="u-sort" data-usort="${k}" aria-pressed="${USORT === k}">${label}${USORT === k ? " ↓" : ""}</button></th>`).join("");
+    const cols = UCOLS.length + NODES.length;
+    const rows = items.slice(0, USHOW).map((u) => {
+      const open = UOPEN === u.user;
+      return `<tr class="u-row${open ? " open" : ""}" data-user="${esc(u.user)}" tabindex="0" aria-expanded="${open}">` +
+        `<td class="u-name uc-user"><span class="u-caret" aria-hidden="true">${open ? "▾" : "▸"}</span>${userHtml(u.user)}</td>` +
+        `<td class="num u-n uc-entries">${barN(u.entries, max)}</td>${nodeCells(u, max)}` +
+        `<td class="num uc-errors${u.errors ? " w-err" : " muted"}">${fmt(u.errors)}</td><td class="num uc-warnings${u.warnings ? "" : " muted"}">${fmt(u.warnings)}</td>` +
+        `<td class="num uc-groups">${fmt(u.groups)}</td><td class="num u-t uc-last">${esc(tsShort(u.last_ts))}</td></tr>` +
+        (open ? `<tr class="u-detail"><td colspan="${cols}">${userDetail(u)}</td></tr>` : "");
+    }).join("");
+    const more = items.length > USHOW ? `<button type="button" class="btn small" data-umore>Show ${fmt(Math.min(200, items.length - USHOW))} more of ${fmt(items.length - USHOW)}</button>` : "";
+    el.innerHTML = `<div class="u-wrap"><table class="u-tbl u-all"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>` + more;
+  });
+  /** An opened user: their facts and largest groups (each opens in the drawer), their entries. */
+  function userDetail(u) {
+    const d = usersDoc(usersQs({ user: u.user, top: "50" }, true), redrawUsers);
+    const one = d && !d.err ? arr(d.items)[0] : null;
+    const tops = arr(one ? one.top : u.top);
+    const list = tops.map((x) => {
+      const g = GBY.get(str(x.signature));
+      return `<li><span class="num u-gn">${fmt(x.count)}</span><span class="muted u-gp">${pctText(u.entries ? x.count / u.entries : 0)}</span>` +
+        (g ? `${badge(g.lvl, g.level)} <button type="button" class="u-link u-open" data-open-group="${esc(x.signature)}" title="Open this group in the drawer">${tplHtml(g.tpl)}</button>`
+          : `<span class="mono">${esc(x.signature)}</span> <span class="muted">(not in this report)</span>`) + `</li>`;
+    }).join("");
+    const href = userEntriesUrl(u.user, "");
+    const nodes = NODES.filter((n) => num(obj(u.nodes)[n])).map((n) => `${nodeBadge(n)} ${fmt(num(obj(u.nodes)[n]))}`).join(" ");
+    const facts = `${plural(u.entries, "entry", "entries")} (${nodes}) · <span class="${u.errors ? "w-err" : ""}">${plural(u.errors, "error")}</span> · ${plural(u.warnings, "warning")} · ` +
+      `${plural(u.groups, "group")} · ${plural(u.threads, "thread")} · ${esc(tsShort(u.first_ts))} → ${esc(tsShort(u.last_ts))} ${TZ}`;
+    return `<div class="u-dh">${facts}${href ? ` · <a href="${esc(href)}" target="_blank" rel="noopener">All their entries${tRange() ? " in the window" : ""} ↗</a>` : ""}</div>` +
+      (d === undefined && !tops.length ? `<div class="muted">Loading their groups…</div>` : `<ol class="u-glist">${list}</ol>`) +
+      (one && one.groups > tops.length ? `<div class="muted">${fmt(one.groups - tops.length)} smaller groups not listed.</div>` : "");
+  }
+  /** The drawer's Users section: the group's users on all nodes (in the window), most first. */
+  function groupUsersHtml(r) {
+    if (!USERS_URL) return `<div class="muted">The users of a group need the web app (<code>ragnalog serve</code>).</div>`;
+    const d = usersDoc(usersQs({ signature: r.sig, top: "1" }, false), () => { drawerStale = true; renderDrawer(); });
+    if (d === undefined) return `<div class="muted">Counting its entries per user…</div>`;
+    if (d.err) return `<div class="ex-err">Could not load the users (${esc(d.err)}).</div>`;
+    const items = arr(d.items);
+    if (!items.length) return `<div class="muted">No entry of this group names a user${d.without_user ? ` (${fmt(d.without_user)} without one)` : ""}.</div>`;
+    const all = UGROUP_ALL.has(r.sig);
+    const shown = all ? items : items.slice(0, 12);
+    const max = Math.max(1, ...items.map((u) => u.entries));
+    const total = items.reduce((s, u) => s + u.entries, 0);
+    const lead = items[0];
+    const rows = shown.map((u) => {
+      const href = userEntriesUrl(u.user, r.sig);
+      return `<tr><td class="u-name">${userHtml(u.user)}</td><td class="num u-n">${barN(u.entries, max)}</td>` +
+        `<td class="num muted">${pctText(total ? u.entries / total : 0)}</td>${nodeCells(u, max)}` +
+        `<td class="num u-t">${esc(tsShort(u.last_ts))}</td><td>${href ? `<a href="${esc(href)}" target="_blank" rel="noopener" title="This user's entries of the group">↗</a>` : ""}</td></tr>`;
+    }).join("");
+    return `<div class="u-dh"><b>${esc(lead.user)}</b> logs most of it: ${fmt(lead.entries)} of ${fmt(total)} entries with a user` +
+      (d.without_user ? ` (${fmt(d.without_user)} without one)` : "") + `${tRange() ? ", in the window" : ""}.</div>` +
+      `<div class="u-wrap"><table class="u-tbl"><thead><tr><th>User</th><th class="num">Entries</th><th class="num">Share</th>` +
+      NODES.map((n) => `<th class="num u-node">${nodeBadge(n)}</th>`).join("") + `<th class="num">Last seen</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` +
+      (items.length > 12 ? `<button type="button" class="btn small" data-uall="${esc(r.sig)}">${all ? "Show the top 12" : `Show all ${fmt(items.length)} users`}</button>` : "");
+  }
   function fetchJson(url) {
     return fetch(url, { headers: { Accept: "application/json" } })
       .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`GET ${url}: HTTP ${res.status}`))));
@@ -2959,8 +3145,10 @@
     $("p-groups").hidden = S.tab !== "g";
     $("p-inter").hidden = S.tab !== "i";
     $("p-log").hidden = S.tab !== "l";
+    $("p-users").hidden = S.tab !== "u";
     $("fg-row").hidden = S.tab !== "g";
     $("fl-row").hidden = S.tab !== "l";
+    $("fu-row").hidden = S.tab !== "u";
     renderScope();
     const af = activeFilters();
     $("f-print").textContent = af.length ? "Filters: " + af.map((x) => x[1]).join(" · ") : "";
@@ -3004,6 +3192,7 @@
     renderDrawer();
     renderCards();
     renderInteractions();
+    renderUsers();
     guard(renderLogControls)();
     renderLog();
     updateSticky();
@@ -3369,6 +3558,56 @@
       const value = e.target.value;
       qTimer = setTimeout(() => commit({ q: value }, { replace: true }), 90);
     });
+    let uTimer = 0;
+    $("u-search").addEventListener("input", (e) => {
+      clearTimeout(uTimer);
+      const value = e.target.value;
+      uTimer = setTimeout(() => { USEARCH = value; USHOW = 200; renderUsers(); }, 90);
+    });
+    const uv = $("u-body");
+    const toggleUser = (row) => { UOPEN = UOPEN === row.dataset.user ? "" : row.dataset.user; renderUsers(); };
+    uv.addEventListener("click", (e) => {
+      const s = e.target.closest("[data-usort]");
+      if (s) {
+        USORT = s.dataset.usort;
+        renderUsers();
+        const b = uv.querySelector(`[data-usort="${USORT}"]`);
+        if (b) b.focus({ preventScroll: true });
+        return;
+      }
+      if (e.target.closest("[data-umore]")) {
+        const shown = USHOW;
+        USHOW += 200;
+        renderUsers();
+        const rows = uv.querySelectorAll("tr.u-row");
+        const next = uv.querySelector("[data-umore]") || rows[shown] || rows[rows.length - 1];
+        if (next) next.focus({ preventScroll: true });
+        return;
+      }
+      const g = e.target.closest("[data-open-group]");
+      if (g) { open(g.dataset.openGroup); return; }
+      if (e.target.closest("a, button")) return;
+      const row = e.target.closest("tr.u-row");
+      if (row) toggleUser(row);
+    });
+    uv.addEventListener("keydown", (e) => {
+      const row = e.target.closest && e.target.closest("tr.u-row");
+      if (!row || e.target !== row || (e.key !== "Enter" && e.key !== " ")) return;
+      e.preventDefault();
+      e.stopPropagation();
+      toggleUser(row);
+      const again = [...uv.querySelectorAll("tr.u-row")].find((r) => r.dataset.user === row.dataset.user);
+      if (again) again.focus({ preventScroll: true });
+    });
+    $("drawer-body").addEventListener("click", (e) => {
+      const b = e.target.closest("[data-uall]");
+      if (!b) return;
+      const sig = b.dataset.uall;
+      if (UGROUP_ALL.has(sig)) UGROUP_ALL.delete(sig);
+      else UGROUP_ALL.add(sig);
+      drawerStale = true;
+      renderDrawer();
+    });
     $("l-search").addEventListener("input", (e) => {
       clearTimeout(mqTimer);
       const value = e.target.value;
@@ -3485,7 +3724,7 @@
       const g = GRAVE[0];
       zoomTo([g.ms - 15 * 6e4, g.last + 15 * 6e4]);
     });
-    for (const id of ["drawer-body", "c-cards", "p-inter", "p-log", "tl-sel", "tl-window", "c-timeline"]) {
+    for (const id of ["drawer-body", "p-inter", "p-log", "tl-sel", "tl-window", "c-timeline"]) {
       $(id).addEventListener("click", (e) => {
         if (id === "tl-sel") {
           if (e.target.closest("[data-fit]")) return commit({ fit: !S.fit }, { keepPage: true, replace: true });
@@ -3655,6 +3894,7 @@
         case "1": commit({ tab: "g" }, { keepPage: true }); break;
         case "2": commit({ tab: "i" }, { keepPage: true }); break;
         case "3": commit({ tab: "l" }, { keepPage: true }); break;
+        case "4": commit({ tab: "u" }, { keepPage: true }); break;
         case "?": help.showModal(); break;
         default:
       }

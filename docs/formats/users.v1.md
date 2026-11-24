@@ -1,13 +1,13 @@
 # users.v1
 
-Entries per user: `users`, `GET /api/sets/{ref}/users`.
+Entries per user: `users`, `GET /api/sets/{ref}/users`, `GET /api/captures/{ref}/users`.
 
 Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON Schema: [`users.v1.schema.json`](users.v1.schema.json), also `ragnalog schema users.v1`. A key with Required = no appears only in some modes (see its description); readers ignore keys they do not know.
 
 | Key | Type | Required | Description |
 |---|---|---|---|
 | `schema` | `"users.v1"` | yes |  |
-| `logset` | `string` | yes | Set id. |
+| `logset` | `string` | yes | Set id; capture:<id> for the users of all nodes of a capture. |
 | `count` | `integer` | yes | Rows in items. |
 | `total` | `integer` | yes | Users with matching entries. |
 | `offset` | `integer` | yes | Index of the first row. |
@@ -27,3 +27,4 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `items[].top` | `list<UserGroup>` | yes | The user's largest groups (--top, default 3), most entries first. |
 | `items[].top[].signature` | `string` | yes | Group signature. |
 | `items[].top[].count` | `integer` | yes | The user's entries in the group. |
+| `items[].nodes` | `map<string, integer>` | no | A capture's users: the entries on each node (with some). |

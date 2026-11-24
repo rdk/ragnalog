@@ -71,6 +71,7 @@ __all__ = [
     "report_filename",
     "report_payload",
     "timeline",
+    "users",
 ]
 
 type Doc = dict[str, Any]
@@ -386,6 +387,70 @@ def entries(
             front=front,
         )
     )
+
+
+def users(
+    sets: Sets,
+    ref: str,
+    q: EntryQuery,
+    page: Page,
+    *,
+    top: int = 3,
+    window: WindowMode = "overlap",
+    front: Front,
+) -> Doc:
+    """``users.v1`` of all nodes of a capture; each row adds ``nodes`` (entries per node).
+
+    The entries are those :func:`entries` lists for ``q`` and ``window`` (a group:
+    ``signature``, also ``NODE:SIGNATURE``; ``node``; ``since``/``until``); ``logset``
+    is ``capture:ID``. As ``users`` of a set otherwise.
+
+    Raises:
+        OpError: ``invalid_value`` for ``top`` outside 1-1000 or a node not in the
+            capture; the errors of :func:`~ragnalog.service.cluster.resolve_signatures`.
+
+    """
+    from ragnalog.service.cluster import merged_users, resolve_signatures
+
+    q.check(front=front)
+    if not 1 <= top <= 1000:
+        raise OpError("invalid_value", f"{flag('top', front)} must be between 1 and 1000")
+    capture_ = capture_from_ref(sets, ref, front=front)
+    win = CaptureWindow(window=window, since=q.since, until=q.until).resolve(capture_, front=front)
+    plain = dataclasses.replace(q, since=None, until=None, signature=None, node=None)
+    where = plain.resolve(capture_.nodes[0].logset.manifest, front=front)
+    sigs = resolve_signatures(capture_, [s for s in q.signatures if ":" not in s], front=front)
+    by_node = _node_signatures(capture_, q.signatures, front=front)
+    if len(sigs) == 1 and not by_node:
+        where = dataclasses.replace(where, signature=sigs[0])
+    if q.nodes:
+        capture_ = _only_nodes(capture_, q.nodes, front=front)
+    rows, anonymous = merged_users(
+        capture_,
+        window=win,
+        where=where,
+        signatures=sigs if len(sigs) > 1 or by_node else None,
+        node_signatures=by_node or None,
+        top=top,
+    )
+    end = None if page.limit is None else page.offset + page.limit
+    items = rows[page.offset : end]
+    for r in items:
+        for k in ("first_ts", "last_ts"):
+            r[k] = None if r[k] is None else r[k].isoformat(timespec="milliseconds")
+    nxt = page.offset + len(items)
+    return {
+        "schema": "users.v1",
+        "logset": capture_.ref,
+        "count": len(items),
+        "total": len(rows),
+        "offset": page.offset,
+        "next_offset": nxt if nxt < len(rows) else None,
+        "truncated": nxt < len(rows),
+        "entries": sum(r["entries"] for r in rows),
+        "without_user": anonymous,
+        "items": items,
+    }
 
 
 def _capture_views(capture_: Capture, prefix: str = "") -> dict[str, list[SqlSource]]:

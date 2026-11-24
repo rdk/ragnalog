@@ -17,6 +17,11 @@ files needed).
 
 ### Added
 
+- Cluster view: a *Users* tab (who logs what on all nodes in the window: entries with one
+  column per node, errors, warnings, groups, last seen; a row opens the user's groups and
+  entries) and a *Users* section in the group drawer (the group's users on each node).
+  `ragnalog users CAPTURE` and `GET /api/captures/{ref}/users` (`users.v1`, rows add
+  `nodes`) count them.
 - The build is recorded and shown: the pages' footers say "build N" next to the version
   (the build time and git hash on hover), and `ragnalog version` / `GET /api/version` have
   a `build` object (`number`, `git`, `time`, `source`). The build number is the commit
@@ -70,6 +75,10 @@ files needed).
 
 ### Changed
 
+- Charts: the automatic bin keeps bars at least 10 px wide (5 before), and bars fill their
+  slot but for a small gap (they stopped at 24 px, leaving wide gaps between hourly bars).
+  The cluster view's bands are 20 px higher, and the node rows above its chart are gone:
+  their figures, triage and report link are on each band's label.
 - Pages show times in the browser's time zone by default (for example CET) instead of UTC.
   The zone button or `z` still switches to UTC, and a viewer who chose UTC keeps it. Links,
   windows in the URL and `/api` parameters stay UTC.

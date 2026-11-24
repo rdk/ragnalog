@@ -739,6 +739,7 @@ def users(
     limit: int = 50,
     offset: int = 0,
     top: int = 3,
+    window: Literal["overlap", "union"] | None = None,
 ) -> None:
     """Count the entries of a log set per user: who logs what, most entries first.
 
@@ -747,14 +748,17 @@ def users(
     what the listing shows. Each user row has the entries, how many are
     ERROR/FATAL and WARN, the distinct groups and threads, the first and last
     timestamp and the user's largest groups (--top, default 3; one user's groups:
-    --user NAME --top 50).
+    --user NAME --top 50). A capture (capture:ID, cluster:NAME) counts the entries of
+    all its nodes, as `entries CAPTURE` lists them (--window, --node, NODE:SIGNATURE),
+    and each row adds "nodes": the user's entries on each node.
 
     Output (json):
       {"schema": "users.v1", "logset": id, "count": int, "total": int,
        "offset": int, "next_offset": int | null, "truncated": bool,
        "entries": int, "without_user": int,
        "items": [{"user", "entries", "errors", "warnings", "groups", "threads",
-                  "first_ts", "last_ts", "top": [{"signature", "count"}]}]}
+                  "first_ts", "last_ts", "top": [{"signature", "count"}],
+                  "nodes": {node: int} (a capture only)}]}
     "total" counts the users, "entries" the matching entries with a user and
     "without_user" those without one. Table mode prints one row per user.
 
@@ -762,14 +766,31 @@ def users(
     ambiguous signature prefix; 3 unknown set or store error.
 
     Args:
-        logset: Log set id, unique id prefix or name.
+        logset: Log set id, unique id prefix or name; or a capture (capture:ID,
+            cluster:NAME[@YYYY-MM-DD]).
         q: Entry filters (the options --signature to --until, see EntryQuery).
         limit: Users per page (0 = all).
         offset: Users to skip.
         top: Largest groups listed per user (1-1000).
+        window: overlap or union (a capture only; default overlap, unless --since/--until).
 
     """
     page = Page.parse(limit, offset, front="cli")
+    if ctx.names_capture(logset):
+        from ragnalog.service import capture_queries
+
+        doc = ctx.remote_or(
+            "users-capture",
+            users,
+            locals(),
+            lambda: capture_queries.users(
+                ctx.store(), logset, q, page, top=top, window=window or "overlap", front="cli"
+            ),
+        )
+        ctx.out().document(doc, table=lambda console: render.users(console, doc))
+        return
+    if window is not None:
+        raise OpError("usage", "--window applies to a capture only (capture:ID or cluster:NAME)")
     doc = ctx.remote_or(
         "users",
         users,

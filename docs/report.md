@@ -474,12 +474,11 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
   and, when a group is open, its signature and commands, each with Copy. In the drawer
   they are a collapsed *Identifiers & CLI* part (its section link opens it); `c` still
   copies the open group's signature.
-- Node rows (one slim row per node, in the overview card above the timeline): colour
-  swatch and `N1 NODE1`, entries, errors, warnings, errors/h (totals, or within the
-  brushed window from the timeline), events with how many are job runs on wide pages,
-  triage verdict chip and the set report link (`urls.set_report`). The node name toggles
-  "groups on this node" (not with one node); its tooltip has coverage with gap count and
-  length, top error and the baseline.
+- Nodes: each band's label (colour swatch and `N1 NODE1`, left of its event lane) has a
+  card with the node's set, entries, errors, warnings, errors/h and events (totals, or
+  within the window), coverage and gaps, top error and the triage verdict with its
+  baseline; with `urls.set_report` the label links to the node's report. (They had a row
+  each above the chart.) "Groups on this node" is the Node filter of *Groups by node*.
 - Timeline: one SVG, one row per node on a shared time axis (ticks on the shown zone's
   hours and midnights). Each row is an event lane
   (a glyph per kind in ink colour; legend under the chart) above a band of columns
@@ -573,8 +572,18 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
     when what they show changes (range, filters, zone, the moment); new pages are
     appended. "±30 s" fetches `urls.context` with `{set}` and `{id}` filled in; without it
     the page uses the entries it has.
+  - *Users* (web app, `urls.users`; key `4`): every user of the capture's entries in the
+    window (else the capture's), of the levels chosen under *Groups by node*: entries
+    (with a bar), one column per node, errors, warnings, groups and last seen; sortable,
+    searchable ("Search users"), 200 rows at a time. A row opens the user's facts, their
+    entries on each node, their 50 largest groups (each opens in the drawer) and a link to
+    all their entries. `GET urls.users` with `limit=0`, `since`/`until` and `level`;
+    `user` and `top=50` for an opened user. The group drawer's *Users* section lists the
+    group's users on all nodes (in the window): entries, share, one column per node, last
+    seen and a link to their entries of the group; the top 12, "Show all" for the rest.
+    The standalone file has no Users tab (it needs every entry).
 
-**State** in `location.hash`: `tab` (`g`, `i`, `l`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
+**State** in `location.hash`: `tab` (`g`, `i`, `l`, `u`), `q`, `lv`, `sp`, `nd`, `sort`, `p`,
 `sig`, `ex` (example tab), `t` (the time window, as on the set report), `y` (`node`, `pct`,
 `err`), `fit=0`, `arrows=0`, `jobs=1`, `ml`, `mn`, `mq`, `ms` (signatures), `ctx`/`cts`
 (context anchor), `at` (log moment) and `ae` (its entry id), `ek` (event kinds hidden

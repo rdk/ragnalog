@@ -58,7 +58,6 @@
 
 <main id="app">
   <section class="card c-ov c-tl-card" id="c-ov" aria-label="Overview: nodes and timeline">
-    <div class="c-nodebar" id="c-cards" aria-label="Nodes"></div>
     <div class="card-head c-tl-head">
       <h2 id="tl-title">Entries per hour</h2>
       <div class="tl-zoom" id="tl-zoom"></div>
@@ -89,6 +88,7 @@
         <button type="button" role="tab" id="tab-g" data-tab="g" aria-controls="p-groups" title="Every group of the capture with its count on each node: whether all nodes log it, which one first, and how far their rates differ (1)">Groups by node <span class="n" id="tab-g-n"></span></button>
         <button type="button" role="tab" id="tab-i" data-tab="i" aria-controls="p-inter" title="How the nodes affect each other: groups that burst on several nodes together, events that follow each other across nodes, and nodes naming other nodes (2)">Interactions <span class="n" id="tab-i-n"></span></button>
         <button type="button" role="tab" id="tab-l" data-tab="l" aria-controls="p-log" title="The entries of all nodes interleaved in one timeline, to read what happened around a moment (3)">Merged log <span class="n" id="tab-l-n"></span></button>
+        <button type="button" role="tab" id="tab-u" data-tab="u" aria-controls="p-users" title="Who logs what: each user's entries on all nodes, with their groups (4)">Users <span class="n" id="tab-u-n"></span></button>
       </div>
       <div class="c-scope" id="c-scope" aria-label="Scope of the views"></div>
       <button type="button" class="btn link" id="f-reset" title="Reset all filters, the window and the selection">Reset</button>
@@ -104,6 +104,10 @@
       <input type="search" id="l-search" placeholder="Search message, logger, thread" aria-label="Search the merged log" autocomplete="off" spellcheck="false">
       <div class="seg" id="l-level" role="group" aria-label="Minimum level"></div>
       <div class="chips" id="l-nodes" role="group" aria-label="Nodes"></div>
+    </div>
+    <div class="f-row c-frow" id="fu-row" hidden>
+      <input type="search" id="u-search" placeholder="Search users" aria-label="Search users" autocomplete="off" spellcheck="false">
+      <span class="muted u-scope" id="u-scope"></span>
     </div>
     <div class="print-only" id="f-print"></div>
   </section>
@@ -131,7 +135,7 @@
       </div>
       <div class="d-navrow">
         <nav class="d-nav" id="d-nav" aria-label="Drawer sections">
-          <button type="button" data-jump="d-s-nodes" title="Count, rate and first and last entry on each node">Nodes</button><button type="button" data-jump="d-s-hourly" title="Entries over time, one line per node">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries of each node">Examples</button><button type="button" data-jump="d-s-links" title="Co-bursts, mentions and cluster events that involve this group">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
+          <button type="button" data-jump="d-s-nodes" title="Count, rate and first and last entry on each node">Nodes</button><button type="button" data-jump="d-s-hourly" title="Entries over time, one line per node">Hourly</button><button type="button" data-jump="d-s-examples" title="Example entries of each node">Examples</button><button type="button" data-jump="d-s-users" title="Who logs this group, on which node">Users</button><button type="button" data-jump="d-s-links" title="Co-bursts, mentions and cluster events that involve this group">Related</button><button type="button" data-jump="d-s-cli" title="The group&#39;s signature and the CLI commands that show it, for scripts and agents">IDs &amp; CLI</button>
         </nav>
       </div>
       <div class="drawer-body" id="drawer-body"></div>
@@ -139,6 +143,11 @@
   </section>
 
   <section class="c-inter" id="p-inter" role="tabpanel" aria-labelledby="tab-i" hidden></section>
+
+  <section class="c-users" id="p-users" role="tabpanel" aria-labelledby="tab-u" hidden>
+    <div class="table-head-line"><span id="u-summary" class="muted"></span></div>
+    <div id="u-body"></div>
+  </section>
 
   <section class="c-log" id="p-log" role="tabpanel" aria-labelledby="tab-l" hidden>
     <div class="table-head-line">

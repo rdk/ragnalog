@@ -55,6 +55,7 @@ __all__ = [
     "run_sql",
     "sql_file",
     "to_records",
+    "user_rows",
 ]
 
 GROUP_SORTS = ("count", "last_seen", "first_seen", "signature", "template")
@@ -599,47 +600,7 @@ class LogSet:
         lf = self.entries_lazy()
         if cond is not None:
             lf = lf.filter(cond)
-        has_user = pl.col("user").is_not_null() & (pl.col("user") != "")
-        timed = pl.col("ts").filter(has_time())
-        named = lf.filter(has_user)
-        per_user, per_group, anonymous = pl.collect_all(
-            [
-                named.group_by("user").agg(
-                    pl.len().alias("entries"),
-                    (pl.col("level") >= 50).sum().alias("errors"),
-                    (pl.col("level") == 40).sum().alias("warnings"),
-                    pl.col("signature").n_unique().alias("groups"),
-                    pl.col("thread").drop_nulls().n_unique().alias("threads"),
-                    timed.min().alias("first_ts"),
-                    timed.max().alias("last_ts"),
-                ),
-                named.group_by("user", "signature").agg(pl.len().alias("count")),
-                lf.filter(~has_user).select(pl.len()),
-            ]
-        )
-        tops: dict[str, list[dict[str, Any]]] = {}
-        for user, sig, count in per_group.sort(
-            ["user", "count", "signature"], descending=[False, True, False]
-        ).iter_rows():
-            mine = tops.setdefault(user, [])
-            if len(mine) < top:
-                mine.append({"signature": sig, "count": int(count)})
-        rows = []
-        for r in per_user.sort(["entries", "user"], descending=[True, False]).iter_rows(named=True):
-            rows.append(
-                {
-                    "user": r["user"],
-                    "entries": int(r["entries"]),
-                    "errors": int(r["errors"]),
-                    "warnings": int(r["warnings"]),
-                    "groups": int(r["groups"]),
-                    "threads": int(r["threads"]),
-                    "first_ts": r["first_ts"],
-                    "last_ts": r["last_ts"],
-                    "top": tops.get(r["user"], []),
-                }
-            )
-        return rows, int(anonymous.item())
+        return user_rows(lf, top=top)
 
     def context(
         self,
@@ -925,6 +886,66 @@ def run_sql(
         with lock:
             closed[0] = True
             con.close()
+
+
+def user_rows(
+    lf: pl.LazyFrame, *, top: int = 3, by_node: bool = False
+) -> tuple[list[dict[str, Any]], int]:
+    """Entries per user of the entries ``lf``, most first (ties by name): :meth:`LogSet.users`.
+
+    ``by_node`` (``lf`` has a ``node`` column: a capture's entries) adds ``nodes``, each
+    row's entries per node (``{node: count}``, nodes with entries only).
+
+    Returns:
+        The rows and the number of entries without a user (blank or missing).
+
+    """
+    has_user = pl.col("user").is_not_null() & (pl.col("user") != "")
+    timed = pl.col("ts").filter(has_time())
+    named = lf.filter(has_user)
+    queries = [
+        named.group_by("user").agg(
+            pl.len().alias("entries"),
+            (pl.col("level") >= 50).sum().alias("errors"),
+            (pl.col("level") == 40).sum().alias("warnings"),
+            pl.col("signature").n_unique().alias("groups"),
+            pl.col("thread").drop_nulls().n_unique().alias("threads"),
+            timed.min().alias("first_ts"),
+            timed.max().alias("last_ts"),
+        ),
+        named.group_by("user", "signature").agg(pl.len().alias("count")),
+        lf.filter(~has_user).select(pl.len()),
+    ]
+    if by_node:
+        queries.append(named.group_by("user", "node").agg(pl.len().alias("count")))
+    per_user, per_group, anonymous, *more = pl.collect_all(queries)
+    tops: dict[str, list[dict[str, Any]]] = {}
+    for user, sig, count in per_group.sort(
+        ["user", "count", "signature"], descending=[False, True, False]
+    ).iter_rows():
+        mine = tops.setdefault(user, [])
+        if len(mine) < top:
+            mine.append({"signature": sig, "count": int(count)})
+    nodes: dict[str, dict[str, int]] = {}
+    for user, node, count in more[0].sort(["user", "node"]).iter_rows() if more else ():
+        nodes.setdefault(user, {})[node] = int(count)
+    rows = []
+    for r in per_user.sort(["entries", "user"], descending=[True, False]).iter_rows(named=True):
+        row = {
+            "user": r["user"],
+            "entries": int(r["entries"]),
+            "errors": int(r["errors"]),
+            "warnings": int(r["warnings"]),
+            "groups": int(r["groups"]),
+            "threads": int(r["threads"]),
+            "first_ts": r["first_ts"],
+            "last_ts": r["last_ts"],
+            "top": tops.get(r["user"], []),
+        }
+        if by_node:
+            row["nodes"] = nodes.get(r["user"], {})
+        rows.append(row)
+    return rows, int(anonymous.item())
 
 
 def _coarse_groups(lf: pl.LazyFrame) -> pl.LazyFrame:

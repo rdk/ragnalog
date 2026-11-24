@@ -817,6 +817,18 @@
             }
           ],
           "default": null
+        },
+        "users": {
+          "description": "The capture's users API: the Users tab and drawer.",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "required": [

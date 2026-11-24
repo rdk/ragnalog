@@ -156,3 +156,4 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `urls.examples` | `string \| null` | no | A group's example entries on one node's set, in full (template). |
 | `urls.raw` | `string \| null` | no | One entry's exact text as text/plain (template). |
 | `urls.timeline` | `string \| null` | no | The capture's timeline API: the page's bins under the payload's bucket. |
+| `urls.users` | `string \| null` | no | The capture's users API: the Users tab and drawer. |

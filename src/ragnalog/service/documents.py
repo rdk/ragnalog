@@ -487,12 +487,16 @@ class UserRow(Struct, kw_only=True):
     top: Annotated[
         list[UserGroup], _d("The user's largest groups (--top, default 3), most entries first.")
     ]
+    nodes: (
+        Annotated[dict[str, int], _d("A capture's users: the entries on each node (with some).")]
+        | UnsetType
+    ) = UNSET
 
 
 class Users(Struct, kw_only=True, tag_field="schema", tag="users.v1"):
-    """Entries per user: `users`, `GET /api/sets/{ref}/users`."""
+    """Entries per user: `users`, `GET /api/sets/{ref}/users`, `GET /api/captures/{ref}/users`."""
 
-    logset: Annotated[str, _d("Set id.")]
+    logset: Annotated[str, _d("Set id; capture:<id> for the users of all nodes of a capture.")]
     count: Annotated[int, _d("Rows in items.")]
     total: Annotated[int, _d("Users with matching entries.")]
     offset: Annotated[int, _d("Index of the first row.")]
@@ -1328,6 +1332,7 @@ class ClusterReportUrls(Struct, kw_only=True):
     timeline: Annotated[
         str | None, _d("The capture's timeline API: the page's bins under the payload's bucket.")
     ] = None
+    users: Annotated[str | None, _d("The capture's users API: the Users tab and drawer.")] = None
 
 
 class ClusterReport(Struct, kw_only=True, tag_field="schema", tag="cluster-report.v1"):

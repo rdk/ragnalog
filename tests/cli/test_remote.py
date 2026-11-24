@@ -237,6 +237,7 @@ ROUTE_COMMANDS: dict[str, tuple[str, str]] = {
     "query-capture": ("browse", "query"),
     "stats": ("browse", "stats"),
     "users": ("browse", "users"),
+    "users-capture": ("browse", "users"),
     "capture": ("cluster", "capture"),
     "timeline": ("cluster", "timeline"),
     "timeline-capture": ("cluster", "timeline"),

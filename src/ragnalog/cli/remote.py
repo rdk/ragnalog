@@ -92,7 +92,8 @@ ROUTES: Mapping[str, Route] = {
         "/api/captures/{logset}/query", method="POST", body=frozenset({"sql", "baseline"})
     ),
     "stats": Route("/api/sets/{logset}/stats"),
-    "users": Route("/api/sets/{logset}/users"),
+    "users": Route("/api/sets/{logset}/users", ignore=frozenset({"window"})),
+    "users-capture": Route("/api/captures/{logset}/users"),
     "capture": Route("/api/captures/{ref}"),
     "timeline": Route("/api/sets/{ref}/timeline", ignore=frozenset({"window", "by_node"})),
     "timeline-capture": Route(

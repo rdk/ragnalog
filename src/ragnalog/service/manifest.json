@@ -209,7 +209,7 @@
    },
    "users": {
     "summary": "Count the entries of a log set per user",
-    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3]",
+    "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3] [--window overlap|union]",
     "output": "users.v1",
     "exit": [
      0,
@@ -1270,8 +1270,8 @@
    "schema": "manifest-command.v1",
    "command": "users",
    "version": "",
-   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3]",
-   "description": "Count the entries of a log set per user: who logs what, most entries first.\n\nTakes the filters of `entries` (--signature: the users of one group;\n--since/--until: a window; --level, --logger, --exception …), so it counts\nwhat the listing shows. Each user row has the entries, how many are\nERROR/FATAL and WARN, the distinct groups and threads, the first and last\ntimestamp and the user's largest groups (--top, default 3; one user's groups:\n--user NAME --top 50).\n\nOutput (json):\n  {\"schema\": \"users.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"entries\": int, \"without_user\": int,\n   \"items\": [{\"user\", \"entries\", \"errors\", \"warnings\", \"groups\", \"threads\",\n              \"first_ts\", \"last_ts\", \"top\": [{\"signature\", \"count\"}]}]}\n\"total\" counts the users, \"entries\" the matching entries with a user and\n\"without_user\" those without one. Table mode prints one row per user.\n\nExit codes: 0 ok; 1 bad option, level, time or --top (1-1000), or an\nambiguous signature prefix; 3 unknown set or store error.",
+   "usage": "LOGSET [--signature str] [--coarse-signature str] [--level str] [--min-level str] [--logger str] [--user str] [--thread str] [--request-id str] [--since str] [--until str] [--contains str] [--with-exception] [--exception str] [--node str] [--limit int=50] [--offset int=0] [--top int=3] [--window overlap|union]",
+   "description": "Count the entries of a log set per user: who logs what, most entries first.\n\nTakes the filters of `entries` (--signature: the users of one group;\n--since/--until: a window; --level, --logger, --exception …), so it counts\nwhat the listing shows. Each user row has the entries, how many are\nERROR/FATAL and WARN, the distinct groups and threads, the first and last\ntimestamp and the user's largest groups (--top, default 3; one user's groups:\n--user NAME --top 50). A capture (capture:ID, cluster:NAME) counts the entries of\nall its nodes, as `entries CAPTURE` lists them (--window, --node, NODE:SIGNATURE),\nand each row adds \"nodes\": the user's entries on each node.\n\nOutput (json):\n  {\"schema\": \"users.v1\", \"logset\": id, \"count\": int, \"total\": int,\n   \"offset\": int, \"next_offset\": int | null, \"truncated\": bool,\n   \"entries\": int, \"without_user\": int,\n   \"items\": [{\"user\", \"entries\", \"errors\", \"warnings\", \"groups\", \"threads\",\n              \"first_ts\", \"last_ts\", \"top\": [{\"signature\", \"count\"}],\n              \"nodes\": {node: int} (a capture only)}]}\n\"total\" counts the users, \"entries\" the matching entries with a user and\n\"without_user\" those without one. Table mode prints one row per user.\n\nExit codes: 0 ok; 1 bad option, level, time or --top (1-1000), or an\nambiguous signature prefix; 3 unknown set or store error.",
    "output": "users.v1",
    "exit": [
     0,
@@ -1282,7 +1282,7 @@
     {
      "name": "LOGSET",
      "type": "str",
-     "help": "Log set id, unique id prefix or name."
+     "help": "Log set id, unique id prefix or name; or a capture (capture:ID, cluster:NAME[@YYYY-MM-DD])."
     },
     {
      "name": "--signature",
@@ -1371,6 +1371,11 @@
      "type": "int",
      "default": "3",
      "help": "Largest groups listed per user (1-1000)."
+    },
+    {
+     "name": "--window",
+     "type": "overlap|union",
+     "help": "overlap or union (a capture only; default overlap, unless --since/--until)."
     }
    ]
   },

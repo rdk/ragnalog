@@ -39,6 +39,7 @@ API_DOCUMENTS: Final[dict[tuple[str, str], str]] = {
     ("get", "/api/captures/{ref}/events"): "events.v1",
     ("get", "/api/captures/{ref}/interactions"): "interactions.v1",
     ("get", "/api/captures/{ref}/entries"): "entries.v1",
+    ("get", "/api/captures/{ref}/users"): "users.v1",
     ("get", "/api/captures/{ref}/report"): "cluster-report.v1",
     ("get", "/api/sets/{ref}/stats"): "stats.v1",
     ("get", "/api/sets/{ref}/groups"): "groups.v1",

@@ -403,6 +403,16 @@ CLUSTER_CASES: list[Case] = [
         "/api/captures/cap-acme/entries?brief=true&limit=5",
     ),
     Case("capture-of-one-set", ["capture", "acme_node1_prev"], "/api/captures/acme_node1_prev"),
+    Case(
+        "capture-users",
+        ["users", "cluster:acme", "--top", "2", "--limit", "0"],
+        "/api/captures/cluster:acme/users?top=2&limit=0",
+    ),
+    Case(
+        "capture-users-node-window",
+        ["users", "cap-acme", "--node", "NODE1", "--window", "union"],
+        "/api/captures/cap-acme/users?node=NODE1&window=union&limit=50",
+    ),
     Case("cluster-timeline", ["timeline", "cluster:acme"], "/api/captures/cluster:acme/timeline"),
     Case(
         "cluster-timeline-group",

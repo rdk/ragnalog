@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import zipfile
 from pathlib import Path
 
 from fastapi.testclient import TestClient
@@ -113,6 +114,7 @@ def test_cluster_payload_urls_and_cache(client: TestClient, tmp_path: Path) -> N
         "examples": "/api/sets/{set}/groups/{sig}/examples?max_raw=0",
         "raw": "/sets/{set}/entries/{id}/raw",
         "timeline": f"/api/captures/capture:{JOB_ID}/timeline",
+        "users": f"/api/captures/capture:{JOB_ID}/users",
     }
     assert client.get(url).content == first.content  # cached
     member = payload["capture"]["nodes"][0]["set"]["id"]
@@ -174,6 +176,58 @@ def test_capture_entries_filter_by_groups_and_nodes(client: TestClient, tmp_path
     assert on_set.status_code == 400 and on_set.json()["error"]["code"] == "usage"
     several = client.get(f"/api/sets/{member}/entries", params={"signature": f"{a},{b}"})
     assert several.status_code == 400 and "capture" in several.json()["error"]["message"]
+
+
+def _with_users(tmp_path: Path) -> Path:
+    """The export ZIP with requests of named users on both nodes (alice on both, bob on one)."""
+    archive = export_zip(tmp_path / "export.zip")
+    folder = archive.with_suffix(".d")
+    for node, users in (("NODE1", ("alice", "alice", "bob")), ("NODE2", ("alice",))):
+        log = folder / f"{node}_atlassian-jira.log"
+        lines = [
+            f"2026-11-05 10:3{i}:00,000+0000 http-nio-8080-exec-{i} url: /browse/ABC-{i}; user: {u}"
+            f" ERROR {u} 630x{i}x1 sess{i} 10.0.0.{i + 1} /browse/ABC-{i}"
+            f" [org.acme.web.Action] Request failed for ABC-{i}"
+            for i, u in enumerate(users, start=1)
+        ]
+        with log.open("a", encoding="utf-8", newline="\n") as f:
+            f.write("\n".join(lines) + "\n")
+    archive.unlink()
+    with zipfile.ZipFile(archive, "w", zipfile.ZIP_DEFLATED) as zf:
+        for file in sorted(folder.iterdir()):
+            zf.write(file, file.name)
+    return archive
+
+
+def test_capture_users_count_every_node(client: TestClient, tmp_path: Path) -> None:
+    """The Users tab's API: users.v1 over all nodes, each row with its entries per node."""
+    _upload(client, _with_users(tmp_path), cluster="jira-test")
+    url = f"/api/captures/capture:{JOB_ID}/users"
+    doc = client.get(url, params={"window": "union", "limit": 0}).json()
+    assert doc["schema"] == "users.v1" and doc["logset"] == f"capture:{JOB_ID}"
+    assert doc["total"] == len(doc["items"]) > 0
+    for row in doc["items"]:
+        assert sum(row["nodes"].values()) == row["entries"] > 0
+        assert set(row["nodes"]) <= {"NODE1", "NODE2"}
+    by = {r["user"]: r["nodes"] for r in doc["items"]}
+    assert by["alice"] == {"NODE1": 2, "NODE2": 1} and by["bob"] == {"NODE1": 1}
+    entries = client.get(
+        f"/api/captures/capture:{JOB_ID}/entries", params={"window": "union", "limit": 1}
+    ).json()
+    assert doc["entries"] + doc["without_user"] == entries["total"]
+    # a group, on one node; a user's groups
+    payload = client.get(f"/api/captures/capture:{JOB_ID}/report?window=union").json()
+    sig = next(g["signature"] for g in payload["groups"] if len(g["per_node"]) == 2)
+    group = client.get(url, params={"window": "union", "signature": sig}).json()
+    on_one = client.get(url, params={"window": "union", "signature": f"NODE1:{sig}"}).json()
+    assert {n for r in on_one["items"] for n in r["nodes"]} <= {"NODE1"}
+    assert sum(r["entries"] for r in on_one["items"]) <= sum(r["entries"] for r in group["items"])
+    user = doc["items"][0]["user"]
+    mine = client.get(url, params={"window": "union", "user": user, "top": 50}).json()
+    assert [r["user"] for r in mine["items"]] == [user]
+    assert len(mine["items"][0]["top"]) == min(50, mine["items"][0]["groups"])
+    bad = client.get(url, params={"node": "NODE7"})
+    assert bad.status_code == 400
 
 
 def test_stale_spool_is_removed_at_start(store_dir: Path) -> None:

@@ -789,7 +789,7 @@ where the node has no logs; `--by-level`: a column per level). Exit: 0; 1 bad op
 a set-only filter (`--level`, `--thread` …) with a capture, `--window` with a set, `--by-level` with a capture, ambiguous signature prefix;
 2 unknown capture or group; 3.
 
-### `users SET [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--since] [--until] [--limit 50] [--offset 0] [--top 3]`
+### `users SET|CAPTURE [--signature SIG] [--level] [--min-level] [--logger] [--user] [--thread] [--request-id] [--contains T] [--with-exception] [--exception T] [--coarse-signature] [--since] [--until] [--node N] [--window overlap|union] [--limit 50] [--offset 0] [--top 3]`
 
 Who logs what: the matching entries per user, most entries first (ties by name); the twin of
 `GET /api/sets/{ref}/users`. It takes the filters of `entries`: `--signature` gives the users
@@ -799,11 +799,16 @@ first and last timestamp and the user's `--top` largest groups (default 3, at mo
 `total` counts the users, `entries` the matching entries with a user and `without_user` those
 without one (a blank or missing user); `--limit 0` lists every user.
 
+A capture (`capture:ID`, `cluster:NAME[@YYYY-MM-DD]`, a bare capture id) counts the entries of
+all its nodes, those `entries CAPTURE` lists (`--window`, `--node`, `--signature NODE:SIG`),
+and each row adds `nodes`, the user's entries per node (`GET /api/captures/{ref}/users`, the
+cluster page's Users tab). `--window` and `--node` apply to a capture only.
+
 ```json
 {"schema": "users.v1", "logset": "…", "count": 50, "total": 812, "offset": 0, "next_offset": 50,
  "truncated": true, "entries": 41922, "without_user": 1203,
  "items": [{"user", "entries", "errors", "warnings", "groups", "threads", "first_ts", "last_ts",
-            "top": [{"signature", "count"}]}]}
+            "top": [{"signature", "count"}], "nodes": {"NODE1": 812} (a capture)}]}
 ```
 
 The table prints one row per user with the largest group. Exit: 0; 1 bad option, level, time or

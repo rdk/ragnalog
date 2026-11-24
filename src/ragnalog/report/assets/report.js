@@ -143,10 +143,10 @@
   }
   /** A bin size in the bins menu: "5 s", "1 min", "3 h", "1 d". */
   const binShort = (ms) => binKey(ms).replace(/^(\d+)([smhd])$/, (_, n, u) => n + " " + (u === "m" ? "min" : u));
-  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 5 px (the
-   *  rule the hourly chart always had), and not finer than floor ms. */
+  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 10 px
+   *  (thinner ones read as hairlines), and not finer than floor ms. */
   function autoBin(span, plotW, floor) {
-    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 5 <= plotW) return ms;
+    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 10 <= plotW) return ms;
     return BIN_SIZES[BIN_SIZES.length - 1][1];
   }
   /** The bins a viewer may pick for span ms over plotW px: 2 bars at least, one per 2 px at most
@@ -666,7 +666,7 @@
   const GAP = 2;
   const r1 = (x) => Math.round(x * 10) / 10;
   function chooseBin(nh, plotW) {
-    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 5 <= plotW) return k;
+    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 10 <= plotW) return k;
     return 168;
   }
   function niceTicks(max, parts = 3, int = false) {
@@ -804,8 +804,9 @@
     const ticks = small ? niceTicks(clip ? p95 : maxT, 2, true) : niceTicks(clip ? p95 : maxT);
     const yMax = ticks[ticks.length - 1];
     const slot = plotW / nb;
-    // thin bars (a finer bin than the automatic one) keep a hairline gap, then none
-    const bw = slot >= 5 ? Math.min(24, Math.max(3, slot - GAP)) : Math.max(0.8, slot - (slot >= 3 ? 1 : 0.3));
+    // bars fill their slot but for a gap of an eighth (1-4 px); thin ones (a finer bin than
+    // the automatic one) keep a hairline gap
+    const bw = slot >= 6 ? slot - Math.min(4, Math.max(1, slot / 8)) : Math.max(0.8, slot - (slot >= 3 ? 1 : 0.3));
     const bottom0 = padT + plotH;
     const paths = series.map(() => []);
     for (let b = 0; b < nb; b++) {
