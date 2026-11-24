@@ -345,11 +345,11 @@ run next to the server.
   `_` prefix). Set
   references are one plain name (no separators, `..` or drive). Error messages,
   job errors included, do not include server paths (a path is cut to its file name), and
-  the access log prints `token=***` for the first visit's `?token=`. `POST /api/sets/{ref}/query` (and `/captures/{ref}/query`) runs one `SELECT` per request in an in-memory DuckDB whose
-  file access is limited to the Parquet files of the set (the capture's members; with
-  `baseline`, also the baseline's) and whose configuration is locked
-  (statement types other than `SELECT` are refused before it runs: a `COPY` could write over
-  those files); it is capped at 1 GB of memory (no spill files), 4 threads, 60 s, 10,000 rows,
+  the access log prints `token=***` for the first visit's `?token=`. `POST /api/sets/{ref}/query` (and `/captures/{ref}/query`) runs one `SELECT` per request in an in-memory DuckDB that
+  reads the set's Parquet files (the capture's members; with `baseline`, also the
+  baseline's) as Arrow datasets, has its own file access off and its configuration
+  locked: a query can read or write no file and no setting or catalog function shows a
+  path (statement types other than `SELECT` are refused before it runs); it is capped at 1 GB of memory (no spill files), 4 threads, 60 s, 10,000 rows,
   64 MiB of result and two queries at a time, and its error messages are cut to file names
   like the others.
 

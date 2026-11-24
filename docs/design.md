@@ -204,7 +204,8 @@ kept per entry (`variables` column) for later queries ("which issues failed?").
 `<TS>` stands for an ISO timestamp (`2026-11-24 00:00:00,000+0100`) and, since
 masking rules version 4, for the form Java's `Date.toString()` writes
 (`EEE MMM dd HH:mm:ss zzz yyyy`: `Tue Nov 24 00:00:00 CET 2026`; also with a zone
-such as `GMT+01:00`, or none as C's `ctime` writes it). Masked word by word, its
+such as `GMT+01:00`, or none as C's `ctime` writes it), and since version 5 for an
+RFC 1123 / RFC 2822 date (`Tue, 24 Nov 2026 10:00:00 GMT`). Masked word by word, their
 weekday and month names would give the message a new signature every day.
 
 `SignatureSpec` says what goes into the hash:
@@ -225,7 +226,7 @@ rule set is unchanged.
 
 Everything that decides a signature is one `Recipe(fmt, spec, extra_rules)`
 (`core/pipeline.py`), which builds the masker, signer and grouper and names
-them in a key such as `jira@4|L+G+E+F0|sig2|mask4`: format name and version
+them in a key such as `jira@4|L+G+E+F0|sig2|mask5`: format name and version
 (a format's optional integer `version`, default 1, read with `getattr` so the
 registry's `isinstance` check still accepts formats without it), spec,
 `SIGNATURE_VERSION`, `MASK_RULES_VERSION`, plus `|rules:<xxh3>` of extra

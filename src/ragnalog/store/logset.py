@@ -53,6 +53,7 @@ __all__ = [
     "SqlSource",
     "rows",
     "run_sql",
+    "sql_file",
     "to_records",
 ]
 
@@ -86,10 +87,6 @@ def _bucket_iso(start_ms: int) -> str:
     # not fromtimestamp: it raises OSError on Windows before 1970 (a log stamped year 1)
     start = datetime(1970, 1, 1, tzinfo=UTC) + timedelta(milliseconds=start_ms)
     return start.isoformat(timespec="seconds").removesuffix("+00:00") + "Z"  # year 1: 0001
-
-
-def _sql_path(path: Path) -> str:
-    return path.resolve().as_posix().replace("'", "''")
 
 
 def _ident(name: str) -> str:
@@ -801,14 +798,24 @@ class SqlSource:
     """``(name, value)`` pairs: ``(("node", "NODE1"), ("set", "<set id>"))`` for a capture."""
 
 
-def _view_sql(sources: Sequence[SqlSource]) -> str:
+def sql_file(path: Path) -> str:
+    """Return how :func:`run_sql` names a view file to its reader (resolved, POSIX)."""
+    return path.resolve().as_posix()
+
+
+def _view_sql(con: Any, view: int, sources: Sequence[SqlSource]) -> str:
+    """Register each file of a view as an Arrow dataset; return the view's ``SELECT``."""
+    import pyarrow.dataset as pads
+
     parts = []
-    for src in sources:
+    for i, src in enumerate(sources):
+        name = f"_ragnalog_v{view}_{i}"
+        con.register(name, pads.dataset(sql_file(src.path), format="parquet"))
         consts = "".join(
-            f"'{value.replace(chr(39), chr(39) * 2)}' AS {_ident(name)}, "
-            for name, value in src.columns
+            f"'{value.replace(chr(39), chr(39) * 2)}' AS {_ident(name_)}, "
+            for name_, value in src.columns
         )
-        parts.append(f"SELECT {consts}* FROM read_parquet('{_sql_path(src.path)}')")
+        parts.append(f"SELECT {consts}* FROM {name}")
     return " UNION ALL BY NAME ".join(parts)
 
 
@@ -823,10 +830,11 @@ def run_sql(
 ) -> pl.DataFrame:
     """Run DuckDB SQL over ``views``: each the union (by column name) of its Parquet files.
 
-    The connection is an in-memory database meant for reading: after the views
-    are created, file-system access is restricted to the views' Parquet files
-    (``enable_external_access=false``) and the configuration is locked, so a
-    query cannot read or write other files. The session time zone is UTC
+    The connection is an in-memory database meant for reading. The views scan the
+    Parquet files as Arrow datasets (pyarrow reads them, not DuckDB), DuckDB's own
+    file access is off (``enable_external_access=false``, no allowed paths) and the
+    configuration is locked: a query can read or write no file, and no setting or
+    catalog function shows where the files are. The session time zone is UTC
     whatever the machine's zone: timestamps come back in UTC and
     ``date_trunc('day', ts)`` buckets at UTC midnight. Tables created by the
     query live only for the duration of the call. ``INTERVAL`` columns come back
@@ -867,11 +875,8 @@ def run_sql(
         timer.daemon = True
         timer.start()
     try:
-        for view, sources in views.items():
-            con.execute(f"CREATE VIEW {_ident(view)} AS {_view_sql(sources)}")
-        paths = dict.fromkeys(_sql_path(s.path) for sources in views.values() for s in sources)
-        allowed = ", ".join(f"'{p}'" for p in paths)
-        con.execute(f"SET allowed_paths = [{allowed}]")
+        for i, (view, sources) in enumerate(views.items()):
+            con.execute(f"CREATE VIEW {_ident(view)} AS {_view_sql(con, i, sources)}")
         if threads is not None:
             con.execute(f"SET threads = {int(threads)}")
         if memory_limit is not None:

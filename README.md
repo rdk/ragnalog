@@ -95,6 +95,30 @@ PowerShell, Compose, upgrades, a source checkout and demo logs:
 </tr>
 </table>
 
+### Example: a failure that spreads across nodes
+
+<a href="docs/img/incident-light.png"><img src="docs/img/incident-light.png" alt="Cluster view of a four-node incident: node3 runs out of memory and restarts, the other nodes show replication and lock errors at the same time, node2 runs out of memory an hour later" width="100%"></a>
+
+A four-node cluster on a bad morning, from the synthetic demo logs
+(`scripts/demo_logs.py`), seen in the cluster view with the window around the trouble
+zoomed in (drag across the bands; `+`/`−`, `[`/`]`), 5 min bins (*Bins*), each band on its
+own scale (*Chart options › Per node*) and the job lanes on. Read it top to bottom:
+
+1. **node3** logs more and more warnings from 07:05 (slow REST searches, long GC pauses),
+   then the red **OOM** badge at 08:02: `OutOfMemoryError: Java heap space`. Its stop (▼)
+   and start (▲) markers follow within a quarter of an hour.
+2. While node3 hangs, **node1, node2 and node4** spike together: cache replication to node3
+   backs up and is abandoned, cluster lock waits time out, and the health check fails (✕) on
+   each of them. Unzoomed, the *together* lane marks that hour as a cross-node moment: every
+   node logged 20 to 40 times its usual errors.
+3. An hour later **node2** follows the same path: GC pauses, an OOM (`GC overhead limit
+   exceeded`) at 09:21, a restart, and a smaller echo on its neighbours.
+
+A click on a badge or marker opens the merged log of all nodes at that moment; *Groups by
+node* below the chart lists what each node logged in the window and which node logged it
+first. The same view of your own capture: `ragnalog serve` and open the capture, or
+`ragnalog report cluster:NAME` for a file.
+
 ## Scope
 
 - **Reads** Jira Data Center's `atlassian-jira.log`: rotated and gzipped files, support

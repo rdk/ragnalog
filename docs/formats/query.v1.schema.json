@@ -26,8 +26,15 @@
       "type": "integer"
     },
     "total": {
-      "description": "Equals count.",
-      "type": "integer"
+      "description": "Rows of the result: equals count; null when the API cut it (truncated).",
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ]
     },
     "truncated": {
       "description": "True when the API cut the result at its row cap (more rows follow); CLI: never.",

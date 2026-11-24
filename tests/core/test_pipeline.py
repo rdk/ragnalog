@@ -57,8 +57,8 @@ class Versionless:
 
 
 def test_key_of_the_default_recipe() -> None:
-    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@4|L+G+E+F0|sig2|mask4"
-    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@4|L+G+E+F2|sig2|mask4"
+    assert Recipe(JiraFormat(), DEFAULT_SPEC).key == "jira@4|L+G+E+F0|sig2|mask5"
+    assert Recipe(JiraFormat(), SignatureSpec(frames=2)).key == "jira@4|L+G+E+F2|sig2|mask5"
 
 
 def test_extra_rules_add_a_digest() -> None:

@@ -659,9 +659,11 @@ def query(logset: str, sql: str, /, *, baseline: str | None = None) -> None:
 
     Output (json):
       {"schema": "query.v1", "logset": id, "columns": [str, ...], "count": int,
-       "total": int, "truncated": false, "items": [{<column>: value, ...}, ...]}
+       "total": int | null, "truncated": false, "items": [{<column>: value, ...}, ...]}
       (with --baseline also "baseline": id)
-    The CLI never truncates query results ("total" = "count"); use LIMIT in SQL.
+    A local run never truncates the result ("total" = "count"); with --server the
+    server cuts it at 10,000 rows ("truncated": true, "total": null, and a warning on
+    stderr in every output mode): page with LIMIT/OFFSET.
 
     Errors: "sql_error"; for an unknown column its "hint" lists DuckDB's
     candidate columns (or the columns of the views), for an unknown table the
@@ -693,6 +695,10 @@ def query(logset: str, sql: str, /, *, baseline: str | None = None) -> None:
             query,
             locals(),
             lambda: queries.query(ctx.store(), logset, sql, baseline=baseline, front="cli"),
+        )
+    if doc.get("truncated"):  # the server's row cap (also visible in jsonl and table modes)
+        ctx.out().warn(
+            f"the server cut the result at {doc.get('count', 0):,} rows: page with LIMIT/OFFSET"
         )
     ctx.out().document(doc, title="query result")
 

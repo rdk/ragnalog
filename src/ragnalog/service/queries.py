@@ -655,9 +655,11 @@ def run_select(
             "or run it where the data directory is",
         ) from exc
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        # the reader names a file by the path read_parquet got (run_sql: resolved, POSIX);
+        # the reader names a file by the path it got (run_sql: sql_file, resolved POSIX);
         # a bare file name ("entries.parquet") can come from the user's own SQL
-        own = {s.path.resolve().as_posix() for sources in views.values() for s in sources}
+        from ragnalog.store.logset import sql_file
+
+        own = {sql_file(s.path) for sources in views.values() for s in sources}
         if damaged_file(exc) and any(path in str(exc) for path in own):
             raise  # a damaged set file, not the SQL: store_error
         message = str(exc).strip()
@@ -682,7 +684,7 @@ def query_doc(label: str, df: Any, truncated: bool, *, baseline: str | None) -> 
         "logset": label,
         "columns": list(df.columns),
         "count": len(items),
-        "total": len(items),
+        "total": None if truncated else len(items),
         "truncated": truncated,
         "items": items,
     }

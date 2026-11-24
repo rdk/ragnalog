@@ -119,11 +119,11 @@ def _rewrite_manifest(ls: LogSet, **changes: object) -> None:
 
 def test_manifest_recipe_key_written_and_derived(fixture_set: tuple[Store, LogSet]) -> None:
     _, ls = fixture_set
-    assert ls.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask4"
+    assert ls.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask5"
     assert ls.manifest.to_dict()["recipe_key"] == ls.manifest.recipe_key
     _rewrite_manifest(ls, recipe_key=None, signature_spec="L+G+E+F3")
     old = LogSetManifest.read(ls.path)
-    assert old.recipe_key == "jira@1|L+G+E+F3|sig2|mask4"  # derived, format version 1
+    assert old.recipe_key == "jira@1|L+G+E+F3|sig2|mask5"  # derived, format version 1
 
 
 def test_diff_compares_recipe_keys(fixture_set: tuple[Store, LogSet], tmp_path: Path) -> None:
@@ -149,8 +149,8 @@ def test_upgrade_rebuilds_stale_sets(fixture_set: tuple[Store, LogSet]) -> None:
     result = store.upgrade("fx")
     assert result.upgraded and result.reason is None
     assert result.previous_recipe_key == "jira@1|L+G+E+F0|sig1|mask0"
-    assert result.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask4"
-    assert result.manifest.mask_rules_version == 4
+    assert result.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask5"
+    assert result.manifest.mask_rules_version == 5
     assert pq.read_table(store.open("fx").groups_path).equals(groups_before)
     again = store.upgrade("fx")
     assert not again.upgraded and again.reason == "current"
@@ -164,7 +164,7 @@ def test_upgrade_keeps_the_spec_and_skips_unknown_formats(
     _rewrite_manifest(store.open("fx"), recipe_key="jira@0|L+G+E+F2|sig1|mask1")
     result = store.upgrade("fx")
     assert result.upgraded and result.manifest.signature_spec == "L+G+E+F2"
-    assert result.manifest.recipe_key == "jira@4|L+G+E+F2|sig2|mask4"
+    assert result.manifest.recipe_key == "jira@4|L+G+E+F2|sig2|mask5"
     _rewrite_manifest(store.open("fx"), format="nope", recipe_key=None)
     skipped = store.upgrade("fx")
     assert not skipped.upgraded and skipped.reason is not None and "unknown" in skipped.reason

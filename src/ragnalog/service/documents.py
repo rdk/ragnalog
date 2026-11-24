@@ -509,7 +509,9 @@ class Query(Struct, kw_only=True, omit_defaults=True, tag_field="schema", tag="q
     logset: Annotated[str, _d("Set id; capture:<id> for a query over all nodes of a capture.")]
     columns: Annotated[list[str], _d("Result columns, in order.")]
     count: Annotated[int, _d("Rows in items.")]
-    total: Annotated[int, _d("Equals count.")]
+    total: Annotated[
+        int | None, _d("Rows of the result: equals count; null when the API cut it (truncated).")
+    ]
     truncated: Annotated[
         bool,
         _d("True when the API cut the result at its row cap (more rows follow); CLI: never."),

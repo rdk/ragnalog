@@ -186,6 +186,12 @@
   // selects a time window. A viewer preference like the theme, shared with the cluster page.
   const ZS_KEY = "ragnalog-dragzoom";
   let ZOOMSEL = (() => { try { return localStorage.getItem(ZS_KEY) !== "0"; } catch { return true; } })();
+  /** A zoomed link (or history entry) shows the zoom: the toggle is on with it. */
+  function zoomSelFor(s) {
+    if (!s.z || ZOOMSEL) return;
+    ZOOMSEL = true;
+    try { localStorage.setItem(ZS_KEY, "1"); } catch { /* storage unavailable */ }
+  }
   /** Earlier chart views (window, zoom, bin) for Undo, the newest last; Clear is undone too. */
   const UNDO = [];
   const viewKey = (s) => JSON.stringify([s.t || null, s.z || null, s.bin || ""]);
@@ -484,6 +490,7 @@
     return p.toString();
   }
   let S = parseHash();
+  zoomSelFor(S);
   let CUR = "";
 
   function commit(patch, opts = {}) {
@@ -513,6 +520,7 @@
   function onNav() {
     clearTimeout(qTimer);
     S = parseHash();
+    zoomSelFor(S);
     if (S.theme === "dark" || S.theme === "light") {
       // back/forward to a link that names a theme shows it, as opening that link does
       document.documentElement.setAttribute("data-theme", S.theme);
@@ -2007,6 +2015,7 @@
     for (const b of $("t-tabs").querySelectorAll("[data-tab]")) {
       const on = (b.dataset.tab || "") === S.tab;
       b.setAttribute("aria-selected", String(on));
+      b.tabIndex = on ? 0 : -1;
     }
     $("f-search").placeholder = S.tab === "users" ? "Search users" : "Search groups";
     if (S.tab !== "users") { el.hidden = true; return; }
@@ -3178,18 +3187,40 @@
       const th = e.target.closest("[data-sort]");
       if (th) commit({ sort: th.dataset.sort });
     });
-    $("t-tabs").addEventListener("click", (e) => {
-      const b = e.target.closest("[data-tab]");
+    const showTab = (b) => {
       if (!b || (b.dataset.tab || "") === S.tab) return;
       $("f-search").value = "";
       commit({ tab: b.dataset.tab || "", q: "" }, { keepPage: true });
+    };
+    $("t-tabs").addEventListener("click", (e) => showTab(e.target.closest("[data-tab]")));
+    $("t-tabs").addEventListener("keydown", (e) => {
+      // a tab list: arrows (and Home/End) move to the other tab and show it
+      const tabs = [...$("t-tabs").querySelectorAll("[data-tab]")];
+      const i = tabs.indexOf(e.target.closest("[data-tab]"));
+      if (i < 0) return;
+      const j = { ArrowLeft: i - 1, ArrowRight: i + 1, Home: 0, End: tabs.length - 1 }[e.key];
+      if (j === undefined) return;
+      e.preventDefault();
+      e.stopPropagation();
+      const b = tabs[(j + tabs.length) % tabs.length];
+      showTab(b);
+      b.focus({ preventScroll: true });
     });
     const uv = $("u-view");
     const toggleUser = (row) => commit({ user: S.user === row.dataset.user ? "" : row.dataset.user }, { keepPage: true, replace: true });
     uv.addEventListener("click", (e) => {
       const s = e.target.closest("[data-usort]");
       if (s) { USORT = s.dataset.usort; renderUsers(); refocus(uv, `[data-usort="${USORT}"]`); return; }
-      if (e.target.closest("[data-umore]")) { USHOW += 200; renderUsers(); return; }
+      if (e.target.closest("[data-umore]")) {
+        const shown = USHOW;
+        USHOW += 200;
+        renderUsers();
+        // keep the keyboard where it was: on Show more, else on the first row it added
+        const rows = uv.querySelectorAll("tbody tr[data-user]");
+        const next = uv.querySelector("[data-umore]") || rows[shown] || rows[rows.length - 1];
+        if (next) next.focus({ preventScroll: true });
+        return;
+      }
       const g = e.target.closest("[data-open-group]");
       if (g) { open(g.dataset.openGroup); return; }
       if (e.target.closest("a, button")) return;

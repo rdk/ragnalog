@@ -75,8 +75,8 @@ def test_upgrade_equals_ingest_and_needs_no_log_files(tmp_path: Path, logs: list
     new = ingest_paths(Store(tmp_path / "new"), logs, name="fx").logset
     old_store = Store(tmp_path / "old")
     old = ingest_paths(old_store, logs, name="fx", fmt=JiraV1()).logset
-    assert old.manifest.recipe_key == "jira@1|L+G+E+F0|sig2|mask4"
-    assert new.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask4"
+    assert old.manifest.recipe_key == "jira@1|L+G+E+F0|sig2|mask5"
+    assert new.manifest.recipe_key == "jira@4|L+G+E+F0|sig2|mask5"
     assert old.manifest.entry_count == new.manifest.entry_count + 10
     shutil.rmtree(logs[0].parent)  # upgrade reads the stored entries only
 

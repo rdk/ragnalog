@@ -101,7 +101,7 @@
   <section class="body" id="body">
     <div class="table-wrap" id="table-wrap" tabindex="-1">
       <div class="table-head-line">
-        <span class="seg t-tabs" id="t-tabs" role="tablist" aria-label="View"><button type="button" role="tab" data-tab="" aria-selected="true" title="The groups of the log set">Groups</button><button type="button" role="tab" data-tab="users" aria-selected="false" title="The users behind the entries the filters list: who logs what, most entries first">Users</button></span>
+        <span class="seg t-tabs" id="t-tabs" role="tablist" aria-label="View"><button type="button" role="tab" data-tab="" aria-selected="true" aria-controls="groups" title="The groups of the log set">Groups</button><button type="button" role="tab" data-tab="users" aria-selected="false" aria-controls="u-view" tabindex="-1" title="The users behind the entries the filters list: who logs what, most entries first">Users</button></span>
         <span id="t-summary" class="muted"></span>
         <span class="u-sum" id="u-sum"></span>
         <span class="pager" id="pager-top"></span>
@@ -112,7 +112,7 @@
       </table>
       <div class="empty" id="t-empty" hidden></div>
       <div class="table-foot-line"><span class="pager" id="pager-bottom"></span></div>
-      <div class="u-view" id="u-view" hidden></div>
+      <div class="u-view" id="u-view" role="tabpanel" aria-label="Users" hidden></div>
     </div>
     <aside class="drawer" id="drawer" tabindex="-1" hidden aria-label="Group detail">
       <div class="drawer-bar">

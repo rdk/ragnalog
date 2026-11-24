@@ -11,12 +11,16 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
-Masking changes (`mask4`): sets built before are `stale` and not comparable with new ones
-until `ragnalog upgrade --all` re-signs them from their stored entries (no log files
-needed).
+Masking changes (`mask4`, then `mask5`): sets built before are `stale` and not comparable
+with new ones until `ragnalog upgrade --all` re-signs them from their stored entries (no log
+files needed).
 
 ### Added
 
+- README: an example of a failure that spreads across nodes, in the cluster view (zoomed,
+  5 min bins, per-node scale, job lanes). `scripts/demo_logs.py` writes the four-node
+  `incident` capture it shows, and `scripts/screenshots.mjs` takes it (and takes only the
+  shots it is given by name).
 - Remote mode: `--server URL` (or `RAGNALOG_SERVER`) runs the commands that read or label
   sets against a ragnalog web app's `/api` instead of a data directory, with the token in
   `RAGNALOG_TOKEN`: the same documents, output modes and exit codes as a local run (every
@@ -69,6 +73,14 @@ needed).
 
 ### Fixed
 
+- Masking: an RFC 1123 or RFC 2822 date (`Tue, 24 Nov 2026 10:00:00 GMT`, as HTTP and mail
+  headers write it) is one `<TS>` (`mask5`); its weekday and month names gave a message a
+  new signature every day.
+- `query` (and the query endpoints) read the Parquet files as Arrow datasets: DuckDB has
+  no file access at all, so no setting, catalog function or error shows the data
+  directory's paths. A result the server cut has `"total": null` (the number of rows is
+  not known) and the CLI warns about it on stderr in every output mode; a token sent over
+  plain `http://` to another host gets a warning.
 - Triage's automatic baseline (also `capture`'s per-node triage) no longer takes an older
   set without a node label, possibly another Jira's, over the node's own previous
   capture: the same node now ranks before "ends before this set starts". A set of

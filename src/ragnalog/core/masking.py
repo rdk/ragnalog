@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 __all__ = ["GENERIC_RULES", "MASK_RULES_VERSION", "MaskRule", "Masker"]
 
-MASK_RULES_VERSION = 4
+MASK_RULES_VERSION = 5
 """Bump whenever a change to built-in rules alters templates; recorded in manifests.
 
 2: an IP address that ends a sentence (``from 10.0.0.1.``) is masked whole.
@@ -30,6 +30,8 @@ up to 255; JSON Web Tokens (``eyJ…``) are ``<TOKEN>``; an email's local part m
 4: a date written by Java's ``Date.toString()`` (``Tue Nov 24 00:00:00 CET 2026``) is one
 ``<TS>``; its weekday and month names stayed in the template, so a message holding one
 got a new signature every day.
+5: an RFC 1123 / RFC 2822 date (``Tue, 24 Nov 2026 10:00:00 GMT``, HTTP and mail headers)
+is one ``<TS>``, for the same reason.
 """
 _CACHE_TEXT_MAX = 4096
 """Longest text the masker caches (65,536 texts of this size stay under 300 MB)."""
@@ -59,6 +61,13 @@ GENERIC_RULES: Sequence[MaskRule] = (
         r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
         r" [ \d]?\d \d{2}:\d{2}:\d{2}(?: [A-Z][A-Za-z]{0,5}(?:[+-]\d{1,2}(?::?\d{2})?)?)?"
         r" \d{4}(?!\d)",
+        "<TS>",
+    ),
+    MaskRule.make(  # EEE, dd MMM yyyy HH:mm[:ss] [zone]: RFC 1123 (HTTP), RFC 2822 (mail)
+        "httpdate",
+        r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun), [ \d]?\d"
+        r" (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec) \d{4} \d{2}:\d{2}(?::\d{2})?"
+        r"(?: (?:[A-Z]{1,5}|[+-]\d{4}))?\b",
         "<TS>",
     ),
     MaskRule.make(
@@ -110,7 +119,8 @@ GENERIC_RULES: Sequence[MaskRule] = (
 ``ts`` masks ISO timestamps (``2026-11-24 00:00:00,000+0100``); ``javadate`` masks the form
 Java's ``Date.toString()`` writes (``Tue Nov 24 00:00:00 CET 2026``, also without the zone,
 as C's ``ctime`` writes it) as ``<TS>`` too, since the weekday and month names would
-otherwise give a message a new template every day.
+otherwise give a message a new template every day; ``httpdate`` does the same for RFC 1123
+and RFC 2822 dates (``Tue, 24 Nov 2026 10:00:00 GMT``, ``Mon, 2 Nov 2026 09:05 +0100``).
 
 ``user`` masks the identifier that follows a user-naming key (``uid:``, ``user=``,
 ``userName:``, ``sAMAccountName:``, ``login:``; case-insensitive), since account names

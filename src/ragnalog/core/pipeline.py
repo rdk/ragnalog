@@ -5,7 +5,7 @@ A :class:`Recipe` names everything that decides an entry's signature: the format
 comparable exactly when their :attr:`Recipe.key` is equal::
 
     recipe = Recipe(JiraFormat(), DEFAULT_SPEC)
-    recipe.key                 # "jira@4|L+G+E+F0|sig2|mask4"
+    recipe.key                 # "jira@4|L+G+E+F0|sig2|mask5"
     grouper = recipe.grouper()
     signed = grouper.sign(unique_entries(parse_sources(sources, recipe.fmt)))
 """
@@ -49,7 +49,7 @@ def format_version(fmt: LogFormat) -> int:
 
 
 def key_format_version(key: str) -> int | None:
-    """Format version a recipe key names (``4`` for ``"jira@4|L+G+E+F0|sig2|mask4"``).
+    """Format version a recipe key names (``4`` for ``"jira@4|L+G+E+F0|sig2|mask5"``).
 
     ``None`` when the key's first part has no ``@<int>``.
     """
@@ -74,7 +74,7 @@ def recipe_key(
     mask_rules_version: int = MASK_RULES_VERSION,
     rules: str | None = None,
 ) -> str:
-    """Build a recipe key such as ``"jira@4|L+G+E+F0|sig2|mask4"``.
+    """Build a recipe key such as ``"jira@4|L+G+E+F0|sig2|mask5"``.
 
     Args:
         format_name: Format registry key.
@@ -135,7 +135,7 @@ class Recipe:
 
     @property
     def key(self) -> str:
-        """Comparability key, e.g. ``"jira@4|L+G+E+F0|sig2|mask4"`` (see :func:`recipe_key`)."""
+        """Comparability key, e.g. ``"jira@4|L+G+E+F0|sig2|mask5"`` (see :func:`recipe_key`)."""
         return recipe_key(
             self.fmt.name,
             format_version(self.fmt),

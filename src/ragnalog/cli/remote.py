@@ -19,6 +19,7 @@ import functools
 import inspect
 import json
 import string
+import sys
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -218,6 +219,11 @@ transport: Transport = _urllib
 """How requests are sent; tests replace it with a FastAPI ``TestClient``."""
 
 
+_LOOPBACK = frozenset({"localhost", "127.0.0.1", "::1"})
+_WARNED: set[str] = set()
+"""Servers already warned about a token over plain http (once per process)."""
+
+
 def _server(settings: Settings) -> str:
     server = (settings.server or "").strip().rstrip("/")
     if not server.startswith(("http://", "https://")):
@@ -226,6 +232,15 @@ def _server(settings: Settings) -> str:
             f"--server {settings.server!r} is not an http(s) URL",
             hint="give the web app's base URL, e.g. --server https://logs.example.org",
         )
+    host = (urllib.parse.urlsplit(server).hostname or "").lower()
+    plain = server.startswith("http://") and host not in _LOOPBACK
+    if plain and settings.token and not host.endswith(".localhost") and server not in _WARNED:
+        _WARNED.add(server)
+        sys.stderr.write(
+            f"warning: the token goes to {host} over plain http, readable on the way: "
+            "use https (a reverse proxy, or tailscale serve)\n"
+        )
+        sys.stderr.flush()
     return server
 
 

@@ -3,9 +3,13 @@
 //   uv run python scripts/demo_logs.py DEMO
 //   uv run ragnalog --store DEMO-DATA ingest DEMO/prev --cluster demo-jira --name prev
 //   uv run ragnalog --store DEMO-DATA ingest DEMO/week --cluster demo-jira --name week
+//   uv run ragnalog --store DEMO-DATA ingest DEMO/incident --cluster demo-dc --name incident
 //   uv run ragnalog --store DEMO-DATA serve --port 8341        (in another terminal)
-//   node scripts/screenshots.mjs http://127.0.0.1:8341 docs/img
+//   node scripts/screenshots.mjs http://127.0.0.1:8341 docs/img [SHOT,...]
 //
+// SHOT names limit the run to those shots (hero, drawer, cluster, triage, entries, incident);
+// default: all. incident-light is the four-node incident capture zoomed into the failure,
+// 5 min bins, each band on its own scale, job lanes on (the README's walk-through).
 // Needs Node 22+ (global WebSocket) and Edge or Chrome; RAGNALOG_BROWSER names the browser
 // when it is not found. Captures 1440×900 CSS pixels at native DPR 2 (2880×1800 before the
 // shadow). Writes hero-light and hero-dark (the README picks one by the reader's theme) and
@@ -19,7 +23,9 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const [base = "http://127.0.0.1:8341", out = "docs/img"] = process.argv.slice(2);
+const [base = "http://127.0.0.1:8341", out = "docs/img", names = ""] = process.argv.slice(2);
+const only = names.split(",").filter(Boolean);
+const want = (name) => !only.length || only.includes(name);
 const W = 1440, H = 900, DPR = 2, PORT = 9455;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -90,11 +96,12 @@ const withShadow = async (png, h, dark) => {
 };
 const shots = [];
 // cropBelow: cut the shot below the last element it matches, leaving the margin that element
-// has on its left side.
-const shot = async (name, { cropBelow = null } = {}) => {
+// has on its left side (or margin CSS pixels).
+const shot = async (name, { cropBelow = null, margin = null } = {}) => {
   const loaded = {
     hero: '#t-body tr', drawer: '#drawer .entry',
     cluster: '#c-timeline svg', triage: '.triage-sec', entries: '#e-body .entry',
+    incident: '#c-timeline:not(.loading) svg',
   }[name.replace(/-(light|dark)$/, "")];
   const deadline = Date.now() + 15000;
   while (!(await evaluate(`!!document.querySelector(${JSON.stringify(loaded)})`))) {
@@ -112,7 +119,7 @@ const shot = async (name, { cropBelow = null } = {}) => {
   if (await evaluate("devicePixelRatio") !== DPR) throw new Error(`Unexpected DPR for ${name}`);
   const h = cropBelow ? await evaluate(`(() => {
     const r = [...document.querySelectorAll(${JSON.stringify(cropBelow)})].at(-1).getBoundingClientRect();
-    return Math.min(${H}, Math.ceil(r.bottom + r.left)); })()`) : H;
+    return Math.min(${H}, Math.ceil(r.bottom + (${margin} ?? r.left))); })()`) : H;
   const res = await send("Page.captureScreenshot", { format: "png", clip: { x: 0, y: 0, width: W, height: h, scale: 1 } });
   const png = Buffer.from(res.result.data, "base64");
   if (png.readUInt32BE(16) !== W * DPR || png.readUInt32BE(20) !== h * DPR) {
@@ -138,34 +145,56 @@ try {
   await send("Emulation.setDeviceMetricsOverride", { width: W, height: H, deviceScaleFactor: DPR, mobile: false });
   const sets = (await (await fetch(`${base}/api/sets`)).json()).items;
   const node1 = sets.find((s) => s.name === "week_node1"), node2 = sets.find((s) => s.name === "week_node2");
-  if (!node1 || !node2) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");
+  const gallery = ["hero", "drawer", "cluster", "triage", "entries"].some(want);
+  if (gallery && (!node1 || !node2)) throw new Error("not the demo data: no week_node1 / week_node2 sets (see the header)");
   await go(`${base}/`);
   // times in UTC, not the browser's zone (the default), so the shots do not depend on the machine
   await evaluate('localStorage.clear(); localStorage.setItem("ragnalog-skin", "aurora"); localStorage.setItem("ragnalog-tz", "utc")');
-  for (const t of ["light", "dark"]) {
-    await theme(t);
-    await go(`${base}/sets/${node2.id}`);
-    await shot(`hero-${t}`, { cropBelow: "#groups" });
+  if (want("hero")) {
+    for (const t of ["light", "dark"]) {
+      await theme(t);
+      await go(`${base}/sets/${node2.id}`);
+      await shot(`hero-${t}`, { cropBelow: "#groups" });
+    }
   }
   // the gallery: two shots in each theme, alternating across the README's 2x2 grid
-  await theme("dark");
-  await go(`${base}/sets/${node2.id}`);
-  if (!(await clickRow("Sync of directory"))) throw new Error("the outage group was not found");
-  await sleep(2500);
-  await shot("drawer-dark");
-  const href = await evaluate(`(() => { const a = [...document.querySelectorAll("#drawer a")]
-    .find((x) => /\\/entries\\?/.test(x.getAttribute("href") || "")); return a ? a.href : null; })()`);
-  await theme("light");
-  await go(`${base}/captures/capture:${node2.capture}`, 6000);
-  await shot("cluster-light");
-  await go(`${base}/sets/${node1.id}/triage`);
-  await shot("triage-light", { cropBelow: ".triage-sec" });
-  if (!href) throw new Error("the drawer has no link to the group's entries");
-  await theme("dark");
-  await go(href, 5000);
-  await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);
-  await sleep(2000);
-  await shot("entries-dark");
+  let href = null;
+  if (want("drawer") || want("entries")) {
+    await theme("dark");
+    await go(`${base}/sets/${node2.id}`);
+    if (!(await clickRow("Sync of directory"))) throw new Error("the outage group was not found");
+    await sleep(2500);
+    if (want("drawer")) await shot("drawer-dark");
+    href = await evaluate(`(() => { const a = [...document.querySelectorAll("#drawer a")]
+      .find((x) => /\\/entries\\?/.test(x.getAttribute("href") || "")); return a ? a.href : null; })()`);
+  }
+  if (want("cluster")) {
+    await theme("light");
+    await go(`${base}/captures/capture:${node2.capture}`, 6000);
+    await shot("cluster-light");
+  }
+  if (want("triage")) {
+    await theme("light");
+    await go(`${base}/sets/${node1.id}/triage`);
+    await shot("triage-light", { cropBelow: ".triage-sec" });
+  }
+  if (want("entries")) {
+    if (!href) throw new Error("the drawer has no link to the group's entries");
+    await theme("dark");
+    await go(href, 5000);
+    await evaluate(`(() => { const r = document.querySelector("tbody tr"); if (r) r.click(); })()`);
+    await sleep(2000);
+    await shot("entries-dark");
+  }
+  if (want("incident")) {
+    // the README's walk-through: the failure window, zoomed, 5 min bins, per-node scale, jobs
+    const sick = sets.find((s) => s.name === "incident_node3");
+    if (!sick) throw new Error("no incident sets: ingest DEMO/incident (see the header)");
+    await theme("light");
+    await go(`${base}/captures/capture:${sick.capture}#t=20261104T0600-20261104T1200`
+      + "&z=20261104T0640-20261104T1125&bin=5m&y=node&jobs=1", 8000);
+    await shot("incident-light", { cropBelow: "#c-ov", margin: 8 });  // the chart card
+  }
   await writeShots();
   if (errors.length) console.error("page errors:", errors);
 } finally {

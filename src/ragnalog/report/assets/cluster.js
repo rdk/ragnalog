@@ -284,6 +284,12 @@
   // selects the time window. A viewer preference shared with the set report.
   const ZS_KEY = "ragnalog-dragzoom";
   let ZOOMSEL = (() => { try { return localStorage.getItem(ZS_KEY) !== "0"; } catch { return true; } })();
+  /** A zoomed link (or history entry) shows the zoom: the toggle is on with it. */
+  function zoomSelFor(s) {
+    if (!s.z || ZOOMSEL) return;
+    ZOOMSEL = true;
+    try { localStorage.setItem(ZS_KEY, "1"); } catch { /* storage unavailable */ }
+  }
   /** Earlier timeline views (window, zoom, bin) for Undo, the newest last; Clear is undone too. */
   const UNDO = [];
   const viewKey = (s) => JSON.stringify([s.t || null, s.z || null, s.bin || ""]);
@@ -583,6 +589,7 @@
     return p.toString();
   }
   let S = parseHash();
+  zoomSelFor(S);
   let CUR = "";
 
   function commit(patch, opts = {}) {
@@ -615,6 +622,7 @@
     clearTimeout(mqTimer);
     const prevY = S.y + S.fit + S.arrows + S.jobs + S.sig + S.t + S.z + S.bin;
     S = parseHash();
+    zoomSelFor(S);
     if (S.theme === "dark" || S.theme === "light") {
       // back/forward to a link that names a theme shows it, as opening that link does
       document.documentElement.setAttribute("data-theme", S.theme);
@@ -854,15 +862,36 @@
   let BINS = { auto: BMS, choices: [], size: BMS };
   let TL_WANT = "", TL_NOTE = "";
   const FINE_CACHE = new Map();
-  /** Counts of a fine frame from the capture's timeline API, per node {lev, tot, g}, once they are
-      in; {err} when the request failed; undefined while it runs (the chart redraws when done). */
+  /** Timeline API answers by URL: {value} (a document, or {err}); undefined value while it runs. */
+  const FINE_DOCS = new Map();
+  let TL_WAITING = false;
+  function fineDoc(url) {
+    const hit = FINE_DOCS.get(url);
+    if (hit) return hit.value;
+    const entry = { value: undefined };
+    FINE_DOCS.set(url, entry);
+    if (FINE_DOCS.size > 60) FINE_DOCS.delete(FINE_DOCS.keys().next().value);
+    fetchJson(url)
+      .then((d) => { entry.value = d; }, (err) => { entry.value = { err: str(err && err.message ? err.message : err) }; })
+      .finally(() => {
+        if (TL_WAITING) {
+          // the redraw replaces the bins menu: keep its focus (arrowing through sizes)
+          TL_WAITING = false;
+          const fk = focusKey(document.activeElement);
+          renderTimeline();
+          restoreFocus(fk);
+        }
+        if (entry.value && entry.value.err) FINE_DOCS.delete(url);  // shown once; the next draw asks again
+      });
+    return undefined;
+  }
+  /** Counts of a fine frame from the capture's timeline API, per node {lev, tot, g}, under
+      {nodes} once they are in; {err} when a request failed; undefined while one runs (the
+      chart redraws when it is done). */
   function fineData(fr, sig) {
     const key = [fr.a, fr.b, fr.size, sig || ""].join("|");
     const hit = FINE_CACHE.get(key);
-    if (hit) return hit.value;
-    const entry = { value: undefined };
-    FINE_CACHE.set(key, entry);
-    if (FINE_CACHE.size > 30) FINE_CACHE.delete(FINE_CACHE.keys().next().value);
+    if (hit) return hit;
     const u = new URL(TL_URL, location.href);
     u.searchParams.set("bucket", sizeKey(fr.size));
     // inside the capture's window: with since/until the server's window is those (inclusive)
@@ -872,39 +901,33 @@
     const g = new URL(u.toString());
     if (sig) g.searchParams.set("signature", sig);
     const at = (doc) => arr(obj(doc).buckets).map((b) => Math.round((parseTs(b) - fr.a) / fr.size));
-    Promise.all([fetchJson(u.toString()), sig ? fetchJson(g.toString()) : null]).then(([all, one]) => {
-      const idx = at(all), gi = one ? at(one) : [];
-      const out = {};
-      for (const n of NODES) {
-        const tl = obj(obj(obj(all).nodes)[n]);
-        const lev = {};
-        for (const b of BUCKETS) lev[b] = new Float64Array(fr.nb);
-        const tot = new Float64Array(fr.nb);
-        for (const [name, values] of Object.entries(obj(tl.levels))) {
-          const b = BUCKETS.includes(name) ? name : bucketOf(levelNum(name));
-          arr(values).forEach((v, j) => { const i = idx[j]; if (i >= 0 && i < fr.nb) { lev[b][i] += num(v); tot[i] += num(v); } });
-        }
-        let gl = null;
-        if (one) {
-          gl = new Float64Array(fr.nb);
-          for (const values of Object.values(obj(obj(obj(obj(one).nodes)[n]).levels))) {
-            arr(values).forEach((v, j) => { const i = gi[j]; if (i >= 0 && i < fr.nb) gl[i] += num(v); });
-          }
-        }
-        out[n] = { lev, tot, g: gl };
+    const all = fineDoc(u.toString()), one = sig ? fineDoc(g.toString()) : null;
+    if (all === undefined || one === undefined) return undefined;
+    for (const d of [all, one]) if (d && d.err) return { err: d.err };
+    const idx = at(all), gi = one ? at(one) : [];
+    const out = {};
+    for (const n of NODES) {
+      const tl = obj(obj(obj(all).nodes)[n]);
+      const lev = {};
+      for (const b of BUCKETS) lev[b] = new Float64Array(fr.nb);
+      const tot = new Float64Array(fr.nb);
+      for (const [name, values] of Object.entries(obj(tl.levels))) {
+        const b = BUCKETS.includes(name) ? name : bucketOf(levelNum(name));
+        arr(values).forEach((v, j) => { const i = idx[j]; if (i >= 0 && i < fr.nb) { lev[b][i] += num(v); tot[i] += num(v); } });
       }
-      entry.value = { nodes: out };
-    }).catch((err) => { entry.value = { err: str(err && err.message ? err.message : err) }; })
-      .finally(() => {
-        if (TL_WANT === key) {
-          // the redraw replaces the bins menu: keep its focus (arrowing through sizes)
-          const fk = focusKey(document.activeElement);
-          renderTimeline();
-          restoreFocus(fk);
+      let gl = null;
+      if (one) {
+        gl = new Float64Array(fr.nb);
+        for (const values of Object.values(obj(obj(obj(obj(one).nodes)[n]).levels))) {
+          arr(values).forEach((v, j) => { const i = gi[j]; if (i >= 0 && i < fr.nb) gl[i] += num(v); });
         }
-        if (entry.value && entry.value.err) FINE_CACHE.delete(key);  // shown once; the next draw asks again
-      });
-    return undefined;
+      }
+      out[n] = { lev, tot, g: gl };
+    }
+    const done = { nodes: out };
+    FINE_CACHE.set(key, done);
+    if (FINE_CACHE.size > 30) FINE_CACHE.delete(FINE_CACHE.keys().next().value);
+    return done;
   }
   const renderTimeline = guard(function renderTimeline() {
     const el = $("c-timeline");
@@ -936,6 +959,7 @@
       fr = fineFrame(za, zb, size);
       TL_WANT = [fr.a, fr.b, fr.size, selSig].join("|");
       fine = fineData(fr, selSig);
+      TL_WAITING = fine === undefined;
       if (fine === undefined) {
         // keep the chart drawn so far, faded, until the counts are in
         el.classList.add("loading");

@@ -90,10 +90,13 @@ printf '%s\n' '["groups","prod-1030","--brief"]' '["stats","prod-1030"]' | ragna
   locally as always; unset `RAGNALOG_SERVER`, or name a data directory with `--store`, to
   run the others locally.
 - Redirects are not followed (they would carry the token to the new address): `--server`
-  is the web app's final base URL; a 3xx answer is an `http` error.
+  is the web app's final base URL; a 3xx answer is an `http` error. A token sent over plain
+  `http://` to a host other than loopback gets a warning on stderr (once per server): use
+  `https://`.
 - The server's limits apply: the page caps of the API (`HTTP_CAPS` in the parity test) and,
   for `query` (of a set: `POST /api/sets/{ref}/query`; of a capture:
-  `POST /api/captures/{ref}/query`), at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`),
+  `POST /api/captures/{ref}/query`), at most 10,000 rows (`"truncated": true` and `"total": null` beyond, with a warning on
+  stderr in every output mode; page with `LIMIT`/`OFFSET`),
   64 MiB of result, 60 s and 1 GB of memory per query, two queries at a time (a third:
   `http`, HTTP 503). `frames` marks application frames by the server's
   `RAGNALOG_APP_PACKAGES`.
@@ -331,7 +334,7 @@ next ingest, so a set holds exactly the bytes its `sources` digests name.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@4|L+G+E+F0|sig2|mask4", "node": "NODE1", "cluster": "jira-test",
+ "recipe_key": "jira@4|L+G+E+F0|sig2|mask5", "node": "NODE1", "cluster": "jira-test",
  "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
@@ -1102,6 +1105,8 @@ Masking rules version 4 (`…|mask4`) masks a date written by Java's
 `Date.toString()` (`Tue Nov 24 00:00:00 CET 2026`) as one `<TS>`. Before, its
 weekday and month names stayed in the template, so a message holding one got a
 new signature every day and `triage` and `diff` reported it as a new group.
+Masking rules version 5 (`…|mask5`) does the same for an RFC 1123 or RFC 2822 date
+(`Tue, 24 Nov 2026 10:00:00 GMT`, HTTP and mail headers).
 Sets built before are stale until `upgrade` re-signs them.
 
 A set ingested from a ZIP before 0.2.0 named its files by the spool directory they
@@ -1209,7 +1214,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 4, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 5, "python": "3.14.2"}
 ```
 
 ### `batch`

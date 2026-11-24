@@ -2,17 +2,22 @@
 
 Usage::
 
-    uv run python scripts/demo_logs.py OUT          # OUT/week and OUT/prev, two nodes each
+    uv run python scripts/demo_logs.py OUT          # OUT/week, OUT/prev, OUT/incident
     ragnalog --store DEMO ingest OUT/prev --cluster demo-jira --name prev
     ragnalog --store DEMO ingest OUT/week --cluster demo-jira --name week
+    ragnalog --store DEMO ingest OUT/incident --cluster demo-dc --name incident
     ragnalog --store DEMO serve
 
 Everything is invented: users ``user1``…, issue keys ``ABC-n``, ``jira.example.com``,
 ``10.0.x.x`` addresses, ``org.example`` plugins. ``week`` holds three days of two nodes
 with everyday noise, scheduled jobs, a directory-sync outage on node2 (with cache
 replication warnings on node1 at the same time) and two error types that ``prev`` (the
-week before) does not have; ``prev`` has one that ``week`` lost. Seeded: the same output
-every run.
+week before) does not have; ``prev`` has one that ``week`` lost. ``incident`` is one day
+of a four-node cluster (``demo-dc``) with a failure that spreads: heavy REST searches fill
+node3's heap until it fails with OutOfMemoryError; while it hangs the other nodes' cache
+replication to it backs up and is abandoned, their lock waits time out and health checks
+fail; node3 is restarted, then node2 runs out of memory too (GC overhead) and is
+restarted. Seeded: the same output every run.
 """
 
 from __future__ import annotations
@@ -20,7 +25,7 @@ from __future__ import annotations
 import argparse
 import math
 import random
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -263,6 +268,155 @@ def patterns() -> list[Pattern]:
     ]
 
 
+INCIDENT = datetime(2026, 11, 4)
+"""The day of the incident capture (local time, +0100)."""
+INCIDENT_NODES = ("node1", "node2", "node3", "node4")
+
+
+def at(hhmm: str) -> datetime:
+    """Return a local time of the incident day (``"09:02"``)."""
+    h, m = hhmm.split(":")
+    return INCIDENT.replace(hour=int(h), minute=int(m))
+
+
+def ramp(t: datetime, start: str, peak: str, end: str, top: float) -> float:
+    """Return a rate rising linearly from ``start`` to ``top`` at ``peak``, zero after ``end``."""
+    a, p, e = at(start), at(peak), at(end)
+    if not a <= t < e:
+        return 0.0
+    return top * min(1.0, (t - a) / (p - a)) if t < p else top
+
+
+def oom_trace(r: random.Random, cause: str) -> list[str]:
+    """Return the trace of an OutOfMemoryError in a REST search."""
+    return [
+        f"java.lang.OutOfMemoryError: {cause}",
+        "\tat java.base/java.util.Arrays.copyOf(Arrays.java:3537)",
+        "\tat com.atlassian.jira.issue.search.providers.LuceneSearchProvider.search"
+        "(LuceneSearchProvider.java:432)",
+        "\tat com.atlassian.jira.rest.v2.search.SearchResource.search(SearchResource.java:157)",
+        f"\t... {r.randint(60, 70)} more",
+    ]
+
+
+def incident_patterns() -> list[Pattern]:
+    """Return the entries of the incident day on top of the everyday ones."""
+    u = lambda r: f"user{r.randint(1, 48)}"  # noqa: E731
+    others = lambda n, sick: n != sick  # noqa: E731
+    return [
+        *patterns(),
+        Pattern(
+            "WARN",
+            "c.a.j.rest.v2.search.SearchResource",
+            http_thread,
+            lambda r, n: (
+                f"Search for {u(r)} returned {r.randint(40000, 90000)} issues"
+                f" in {r.randint(8000, 41000)} ms (maxResults=1000, expand=changelog)"
+            ),
+            lambda n, t: ramp(t, "08:05", "08:55", "09:06", 220.0) if n == "node3" else 0.0,
+            http=True,
+        ),
+        Pattern(
+            "WARN",
+            "c.a.j.instrumentation.GcMonitor",
+            lambda r: "GC-monitor",
+            lambda r, n: (
+                f"GC pause of {r.randint(900, 9000)} ms; heap {r.randint(91, 99)}% used after"
+                " the collection"
+            ),
+            lambda n, t: (
+                ramp(t, "08:30", "09:00", "09:06", 160.0)
+                if n == "node3"
+                else ramp(t, "09:55", "10:20", "10:26", 160.0)
+                if n == "node2"
+                else 0.0
+            ),
+        ),
+        Pattern(
+            "ERROR",
+            "c.a.j.web.dispatcher.JiraWebworkActionDispatcher",
+            http_thread,
+            lambda r, n: "Exception thrown while processing request for /rest/api/2/search",
+            lambda n, t: 700.0 if n == "node3" and at("09:02") <= t < at("09:07") else 0.0,
+            trace=lambda r: oom_trace(r, "Java heap space"),
+            http=True,
+        ),
+        Pattern(
+            "ERROR",
+            "c.a.j.issue.index.DefaultIndexManager",
+            caesium,
+            lambda r, n: "Indexing failed for a batch of issues",
+            lambda n, t: 500.0 if n == "node2" and at("10:21") <= t < at("10:25") else 0.0,
+            trace=lambda r: oom_trace(r, "GC overhead limit exceeded"),
+        ),
+        Pattern(
+            "WARN",
+            "c.a.j.cluster.distribution.localq.LocalQCacheManager",
+            lambda r: f"localq-reader-{r.randint(0, 3)}",
+            lambda r, n: (
+                f"Cache replication queue for node {'node3' if r.random() < 0.8 else 'node2'}"
+                f" is {r.randint(70, 99)}% full"
+            ),
+            lambda n, t: (
+                ramp(t, "09:04", "09:12", "09:26", 260.0) * others(n, "node3")
+                + ramp(t, "10:22", "10:26", "10:38", 140.0) * others(n, "node2")
+            ),
+        ),
+        Pattern(
+            "ERROR",
+            "c.a.j.cluster.distribution.localq.LocalQCacheOpSender",
+            lambda r: f"localq-reader-{r.randint(0, 3)}",
+            lambda r, n: (
+                "Abandoning sending: LocalQCacheOp{cacheName='com.atlassian.jira.issue."
+                f"{r.choice(('IssueCache', 'ProjectCache', 'WorklogCache'))}', action=PUT}}"
+                f" to node node3 after {r.randint(3, 9)} attempts"
+            ),
+            lambda n, t: 180.0 if n != "node3" and at("09:10") <= t < at("09:24") else 0.0,
+        ),
+        Pattern(
+            "ERROR",
+            "c.a.j.cluster.lock.WaitingClusterLock",
+            http_thread,
+            lambda r, n: f"Wait attempt timed out - waited {r.randint(29900, 30100)} milliseconds",
+            lambda n, t: (
+                (120.0 if n != "node3" and at("09:08") <= t < at("09:23") else 0.0)
+                + (60.0 if n in ("node1", "node4") and at("10:23") <= t < at("10:33") else 0.0)
+            ),
+            http=True,
+        ),
+        Pattern(
+            "WARN",
+            "c.a.troubleshooting.healthcheck.concurrent.SupportHealthCheckProcess",
+            lambda r: "HealthCheck:thread-1",
+            lambda r, n: (
+                "Health check 'Cluster Cache Replication' failed with severity 'critical':"
+                f" node {'node3' if n != 'node3' else 'node2'} does not replicate"
+            ),
+            lambda n, t: 12.0 if n != "node3" and at("09:10") <= t < at("09:30") else 0.0,
+        ),
+    ]
+
+
+def restarts(node: str) -> list[tuple[datetime, str]]:
+    """Return the stop and start entries of a restarted node (node3, then node2)."""
+    when = {"node3": ("09:14", "09:19"), "node2": ("10:28", "10:33")}.get(node)
+    if when is None:
+        return []
+    stop, start = (at(x) + timedelta(seconds=17) for x in when)
+
+    def line(t: datetime, logger: str, msg: str) -> str:
+        ts = t.strftime("%Y-%m-%d %H:%M:%S,") + f"{t.microsecond // 1000:03d}{TZ}"
+        return f"{ts} localhost-startStop-1 INFO      [{logger}] {msg}"
+
+    return [
+        (
+            stop,
+            line(stop, "c.a.j.startup.DefaultJiraLauncher", "Stopping Jira: shutdown requested"),
+        ),
+        (start, line(start, "c.a.j.startup.JiraStartupLogger", "Jira started in 268 seconds")),
+    ]
+
+
 def poisson(r: random.Random, lam: float) -> int:
     """Draw a Poisson-distributed count with mean ``lam`` (normal approximation above 50)."""
     if lam <= 0:
@@ -295,15 +449,29 @@ def entry(r: random.Random, p: Pattern, node: str, t: datetime) -> str:
     return "\n".join([head, *(p.trace(r) if p.trace else [])])
 
 
-def write_node(out: Path, node: str, start: datetime, days: int, seed: int) -> int:
-    """Write ``days`` days of one node's log into ``out``; return the number of entries."""
+def write_node(
+    out: Path,
+    node: str,
+    start: datetime,
+    days: int,
+    seed: int,
+    kinds: Callable[[], list[Pattern]] = patterns,
+    step: timedelta = timedelta(hours=1),
+    extra: Sequence[tuple[datetime, str]] = (),
+) -> int:
+    """Write ``days`` days of one node's log into ``out``; return the number of entries.
+
+    ``kinds`` gives the patterns, whose rates are per hour and read at the start of each
+    ``step``; ``extra`` adds entries at fixed times.
+    """
     r = random.Random(seed)
-    rows: list[tuple[datetime, str]] = []
-    for hour in range(days * 24):
-        t0 = start + timedelta(hours=hour)
-        for p in patterns():
-            for _ in range(poisson(r, p.rate(node, t0))):
-                t = t0 + timedelta(milliseconds=r.randint(0, 3_599_999))
+    rows: list[tuple[datetime, str]] = list(extra)
+    span = step // timedelta(milliseconds=1)
+    for i in range(int(timedelta(days=days) / step)):
+        t0 = start + i * step
+        for p in kinds():
+            for _ in range(poisson(r, p.rate(node, t0) * step / timedelta(hours=1))):
+                t = t0 + timedelta(milliseconds=r.randint(0, span - 1))
                 rows.append((t, entry(r, p, node, t)))
     rows.sort(key=lambda x: x[0])
     out.mkdir(parents=True, exist_ok=True)
@@ -325,6 +493,18 @@ def main() -> None:
         for i, node in enumerate(NODES):
             n = write_node(args.out / name, node, start, 3, seed * 10 + i)
             print(f"{name}/{node}: {n} entries")
+    for i, node in enumerate(INCIDENT_NODES):
+        n = write_node(
+            args.out / "incident",
+            node,
+            INCIDENT,
+            1,
+            30 + i,
+            kinds=incident_patterns,
+            step=timedelta(minutes=1),
+            extra=restarts(node),
+        )
+        print(f"incident/{node}: {n} entries")
 
 
 if __name__ == "__main__":

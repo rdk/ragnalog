@@ -438,6 +438,7 @@ def test_query_endpoint(small: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(api, "QUERY_MAX_ROWS", 2)
         cut = c.post("/api/sets/sample/query", json={"sql": "select id from entries"})
         assert (cut.json()["count"], cut.json()["truncated"]) == (2, True)
+        assert cut.json()["total"] is None  # the number of rows is not known
         monkeypatch.setattr(api, "QUERY_TIMEOUT_S", 0.2)
         slow = c.post(
             "/api/sets/sample/query",
@@ -577,3 +578,50 @@ def test_explicit_store_is_a_local_run() -> None:
     assert Settings.load({}, env).server == SERVER
     assert Settings.load({"store": "local"}, env).server is None
     assert Settings.load({"store": "local", "server": SERVER}, env).server == SERVER
+
+
+def test_sql_sees_no_paths(small: Path) -> None:
+    """The views scan Arrow datasets: no setting, catalog or error shows where the files are."""
+    url = "/api/sets/sample/query"
+    with TestClient(create_app(Settings(store=small))) as c:
+        allowed = c.post(url, json={"sql": "select current_setting('allowed_paths') p"})
+        assert allowed.status_code == 200 and allowed.json()["items"] == [{"p": []}]
+        views = c.post(url, json={"sql": "select string_agg(sql, ' ') s from duckdb_views()"})
+        assert views.status_code == 200
+        text = views.json()["items"][0]["s"] or ""
+        assert "parquet" not in text.lower() and str(small) not in text
+        read = c.post(url, json={"sql": "select * from read_parquet('entries.parquet')"})
+        assert (read.status_code, read.json()["error"]["code"]) == (400, "sql_error")
+
+
+def test_cut_result_is_warned_in_every_mode(
+    small: Path, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from ragnalog.webapp import api
+
+    monkeypatch.setattr(api, "QUERY_MAX_ROWS", 2)
+    with TestClient(create_app(Settings(store=small))) as c:
+        monkeypatch.setattr(remote, "transport", _over(c))
+        for mode in ("json", "jsonl", "table"):
+            capsys.readouterr()
+            run(["--output", mode, "--server", SERVER, "query", "sample", "select id from entries"])
+            err = capsys.readouterr().err
+            assert "the server cut the result at 2 rows" in err, mode
+
+
+def test_token_over_plain_http_is_warned_once(
+    capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(remote, "_WARNED", set())
+    monkeypatch.setattr(remote, "transport", lambda *a: (200, b'{"schema": "x"}'))
+    plain = Settings(server="http://logs.example.org:8321", token="t")
+    remote.request(plain, "GET", "/api/version", [])
+    remote.request(plain, "GET", "/api/version", [])
+    assert capsys.readouterr().err.count("over plain http") == 1
+    for server, token in (
+        ("https://logs.example.org", "t"),
+        ("http://127.0.0.1:8321", "t"),
+        ("http://logs.example.org", None),
+    ):
+        remote.request(Settings(server=server, token=token), "GET", "/api/version", [])
+    assert "over plain http" not in capsys.readouterr().err
