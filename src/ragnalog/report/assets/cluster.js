@@ -314,6 +314,26 @@
   })).filter((g) => isNum(g.ms) && NIDX.has(g.node)).sort((a, b) => a.ms - b.ms);
   const GRAVE_N = Object.fromEntries(NODES.map((n) => [n, GRAVE.filter((g) => g.node === n)]));
   const graveTop = (items) => items.reduce((k, g) => (GRAVE_KINDS.indexOf(g.kind) < GRAVE_KINDS.indexOf(k) ? g.kind : k), items[0].kind);
+  /** A grave badge's text ("OOM", "OOM ×3") and a safe first guess of its width (the font decides:
+   *  fitBadges sets the real one once drawn). */
+  const badgeText = (items, kind) => GRAVE_TAG[kind] + (items.length > 1 ? " ×" + items.length : "");
+  const badgeW = (items, kind) => 12 + badgeText(items, kind).length * 7.4;
+  /** Size each drawn grave badge to its text, kept inside [left, right]; a flag hangs from its line
+   *  (data-x) to the right, or to the left (data-side="l"). */
+  function fitBadges(svg, left, right) {
+    for (const g of svg.querySelectorAll(".grave-badge")) {
+      const t = g.querySelector("text"), r = g.querySelector("rect");
+      let len = 0;
+      try { len = t.getComputedTextLength(); } catch { len = 0; }
+      if (!(len > 0)) continue;  // not laid out (a hidden tab): the guess stays
+      const w = Math.ceil(len) + 12, at = +g.dataset.x;
+      let x = g.dataset.side === "l" ? at - w + 0.5 : at - 0.5;
+      x = Math.max(left, Math.min(right - w, x));
+      r.setAttribute("x", r1(x));
+      r.setAttribute("width", w);
+      t.setAttribute("x", r1(x + 6));
+    }
+  }
 
   // groups
   function denseOf(pairs) {
@@ -1096,15 +1116,17 @@
         if (x < padL - 2 || x > xEnd + 2) continue;
         P.push(glyph(e.kind, x, laneY, rg && !inRange(e.ms, rg) ? " dim" : ""));
       }
-      // grave errors: a red line through the node's lane and band (a band for a run of them), a
-      // badge in its lane (drawn last, over the hit areas)
+      // grave errors: a red line from the badge in the node's lane down through its band (a band
+      // for a run of them); markers whose badges would touch share one badge ("OOM ×3")
+      const glyphXs = EVN[n].filter((e) => e.kind !== "job_run" || S.jobs).map((e) => xOfMs(e.ms));
       for (const g of GRAVE_N[n]) {
         if (g.last < fr.a || g.ms >= fr.b) continue;
         const x0 = clampX(xOfMs(g.ms)), x1 = clampX(xOfMs(g.last + 1));
         if (x1 - x0 > 2) P.push(`<rect class="grave-band g-${g.kind}" x="${r1(x0)}" y="${bTop}" width="${r1(x1 - x0)}" height="${BAND}"/>`);
-        P.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="${r.top + 1}" y2="${bBot}"/>`);
+        P.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="${r1(laneY + 7)}" y2="${bBot}"/>`);
         const lastB = GB.length && GB[GB.length - 1];
-        if (lastB && lastB.n === n && x0 - lastB.x1 < 44) { lastB.items.push(g); lastB.x1 = x0; } else GB.push({ n, y: laneY, x0, x1: x0, items: [g] });
+        if (lastB && lastB.n === n && x0 <= lastB.x0 + badgeW([...lastB.items, g], graveTop([...lastB.items, g])) + 4) lastB.items.push(g);
+        else GB.push({ n, y: laneY, x0, items: [g], glyphXs });
       }
     }
     // mention arrows: from the reporting node's lane to the subject's lane
@@ -1157,17 +1179,23 @@
       P.push(`<rect class="lane-hit" data-row="${r.i}" x="${padL}" y="${r.top}" width="${r1(xEnd - padL)}" height="${LANE}"/>`);
       P.push(`<rect class="hit" data-row="${r.i}" x="${padL}" y="${r.bTop}" width="${r1(xEnd - padL)}" height="${BAND}"/>`);
     }
+    const rightOf = {};  // node -> right edge of its last badge
     GB.forEach((c, i) => {
-      const kind = graveTop(c.items);
-      const label = GRAVE_TAG[kind] + (c.items.length > 1 ? " ×" + c.items.length : "");
-      const w = 10 + label.length * 6.6;
-      const x = Math.min(xEnd - w, Math.max(padL - 4, (c.x0 + c.x1) / 2 - w / 2));
-      P.push(`<g class="grave-badge g-${kind}" data-grave="${i}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.n, c.items))}">` +
-        `<rect x="${r1(x)}" y="${r1(c.y - 7.5)}" width="${r1(w)}" height="15" rx="3"/><text x="${r1(x + w / 2)}" y="${r1(c.y + 4)}" text-anchor="middle">⚠ ${esc(label)}</text></g>`);
+      const kind = graveTop(c.items), w = badgeW(c.items, kind);
+      // a flag on its line: to the right, unless that hides more event glyphs than the left side
+      // and the left side is clear of the node's previous badge
+      const under = (a, b) => c.glyphXs.filter((x) => x > a - 6 && x < b + 6).length;
+      const leftOk = c.x0 - w >= (rightOf[c.n] ?? -Infinity) + 4;
+      const side = leftOk && under(c.x0, c.x0 + w) > under(c.x0 - w, c.x0) ? "l" : "r";
+      const x = Math.max(padL - 4, Math.min(xEnd - w, side === "l" ? c.x0 - w : c.x0));
+      rightOf[c.n] = x + w;
+      P.push(`<g class="grave-badge g-${kind}" data-grave="${i}" data-x="${r1(c.x0)}" data-side="${side}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.n, c.items))}">` +
+        `<rect x="${r1(x)}" y="${r1(c.y - 7.5)}" width="${r1(w)}" height="15" rx="3"/><text x="${r1(x + 6)}" y="${r1(c.y + 4)}">${esc(badgeText(c.items, kind))}</text></g>`);
     });
     P.push(`</svg>`);
     el.innerHTML = P.join("");
     const svg = el.firstElementChild;
+    fitBadges(svg, padL - 4, xEnd);
     TLG = {
       svg, padL, slot, k, nb, rows, xOfMs, pxPerMs, marks: MARKS, sel, xms: XMS, frame: fr, graves: GB, plotW, xEnd,
       band: svg.querySelector(".hover-band"), brush: svg.querySelector(".brush"),
@@ -1581,14 +1609,14 @@
     } else if (S.z) {
       // zoomed: the zoom leads, the window (the table's buckets around it) follows it
       const rg = tRange(), [za, zb] = S.z;
-      w.innerHTML = `<span class="win-what zoom-what"><span class="win-k">Zoom</span> <b>${esc(rangeText(za, zb, (s) => zoomStamp(s, za, zb, true), (s) => zoomStamp(s, za, zb, false)))}</b> (${esc(spanText(zb - za))})</span>` +
+      const tableNote = rg ? `The groups table counts whole buckets: the window around the zoom, ${rangeText(rg[0], rg[1])}` : "";
+      w.innerHTML = `<span class="win-what zoom-what" title="${esc(tableNote)}"><span class="win-k">Zoom</span> <b>${esc(rangeText(za, zb, (s) => zoomStamp(s, za, zb, true), (s) => zoomStamp(s, za, zb, false)))}</b> (${esc(spanText(zb - za))})</span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= TA ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
         `<button type="button" class="btn small" data-shift="1" ${zb >= TE ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
         `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
         `<button type="button" class="btn small" data-zoom="reset" title="Show the whole capture again; the window stays">Reset zoom</button>` +
-        (rg ? `<span class="muted win-hours" title="The groups table counts whole buckets: the window around the zoom">table: ${esc(rangeText(rg[0], rg[1]))}</span>` : "") +
-        seg + `<button type="button" class="btn small" data-clear-t title="Show the whole capture">Clear</button>`;
+        `<button type="button" class="btn small" data-clear-t title="Show the whole capture">Clear</button>`;
     } else {
       const rg = tRange();
       let entries = 0, errors = 0;

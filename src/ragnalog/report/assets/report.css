@@ -1017,40 +1017,72 @@ table.groups tbody tr.is-muted:hover td, table.groups tbody tr.is-muted.is-sel t
 .report .t-tabs { margin-right: var(--s3); }
 .report .t-tabs button { height: calc(var(--ctl-h-sm) - 2px); padding: 0 12px; font-weight: 600; background: transparent; color: var(--ink-2); }
 .report .t-tabs button[aria-selected="true"] { background: var(--blue); color: #fff; }
-body.tab-users #groups, body.tab-users #t-empty, body.tab-users #t-summary, body.tab-users .pager,
+body.tab-users #groups, body.tab-users #t-empty, body.tab-users #t-summary, body.tab-users .pager, body.tab-users .table-foot-line,
 body.tab-users #f-sort, body.tab-users .sel:has(> #f-sort), body.tab-users #f-view { display: none !important; }
+body:not(.tab-users) #u-sum { display: none; }
+.u-sum { color: var(--ink-2); font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
+.u-sum b { color: var(--ink); }
 .u-view.loading { opacity: 0.55; transition: opacity 0.15s; }
-.u-sum { padding: var(--s2) 0; color: var(--ink-2); font-size: var(--fs-meta); }
 .u-wrap { overflow-x: auto; }
 .u-tbl { width: 100%; border-collapse: collapse; font-size: var(--fs-meta); font-variant-numeric: tabular-nums; }
-.u-tbl th { text-align: left; font-weight: 600; color: var(--muted); padding: 4px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
-.u-tbl td { padding: 4px 8px; border-bottom: 1px solid var(--border-2, var(--border)); vertical-align: top; }
-.u-tbl .num { text-align: right; white-space: nowrap; }
-.u-tbl .u-name { font-weight: 600; color: var(--ink); white-space: nowrap; max-width: 22ch; overflow: hidden; text-overflow: ellipsis; }
-.u-tbl .u-rank { color: var(--muted); width: 2ch; }
-.u-tbl .u-t { white-space: nowrap; color: var(--ink-2); }
-.u-tbl .u-n { position: relative; min-width: 9ch; }
-.u-tbl .u-n > span:last-child { position: relative; }
-.u-bar { position: absolute; right: 8px; top: 50%; height: 14px; width: calc(var(--w) * 0.9); max-width: calc(100% - 16px); transform: translateY(-50%); background: color-mix(in srgb, var(--blue) 16%, transparent); border-radius: 2px; }
-.u-tbl .u-g { max-width: 52ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.u-tbl th { text-align: left; font-weight: 600; color: var(--muted); padding: 5px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+.u-tbl td { padding: 5px 8px; border-bottom: 1px solid var(--border-2, var(--border)); vertical-align: middle; }
+.u-tbl th.num, .u-tbl td.num { text-align: right; white-space: nowrap; }
+.u-tbl td.muted { color: var(--muted); opacity: 0.7; }
+.u-tbl .u-name { font-weight: 600; color: var(--ink); white-space: nowrap; }
+.u-tbl .u-t { color: var(--ink-2); }
+/* a count with its bar beside it: the bar never runs behind the digits */
+.u-cell { display: inline-flex; align-items: center; gap: 8px; }
+.u-track { width: 52px; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--blue) 10%, transparent); overflow: hidden; }
+.u-track i { display: block; height: 100%; border-radius: 3px; background: color-mix(in srgb, var(--blue) 60%, transparent); }
+.u-v { min-width: 6ch; }
+/* the largest group takes the rest of the row and ends in an ellipsis */
+.u-all .u-g { width: 100%; max-width: 0; }
+.u-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .u-tbl .u-sort { all: unset; cursor: pointer; }
-.u-tbl .u-sort[aria-pressed="true"] { color: var(--ink); }
+.u-tbl .u-sort:hover, .u-tbl .u-sort[aria-pressed="true"] { color: var(--ink); }
 .u-all .u-row { cursor: pointer; }
 .u-all .u-row:hover, .u-all .u-row:focus-visible { background: var(--hover); outline: none; }
-.u-all .u-row.open { background: var(--blue-wash-2, var(--hover)); }
-.u-caret { display: inline-block; width: 1.2em; color: var(--muted); }
-.u-detail td { background: var(--surface-2, var(--surface)); padding: var(--s2) var(--s3) var(--s3); }
-.u-dh { color: var(--ink-2); margin-bottom: var(--s2); }
-.u-dk { font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-.u-glist { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 3px; }
-.u-glist li { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
-.u-glist .u-gn { min-width: 7ch; font-weight: 600; }
+.u-all .u-row.open, .u-all .u-row.open:hover { background: var(--blue-wash-2, var(--hover)); }
+.u-caret { display: inline-block; width: 1.1em; color: var(--muted); font-size: 10px; }
+.u-detail td { background: var(--surface-2, var(--surface)); padding: var(--s2) var(--s3) var(--s3) calc(1.1em + 8px); }
+.u-dh { color: var(--ink-2); margin-bottom: var(--s2); white-space: normal; line-height: 1.5; }
+.u-dk { font-weight: 600; color: var(--muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+.u-glist { margin: 0; padding-left: 0; list-style: none; display: grid; gap: 2px; }
+.u-glist li { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.u-glist .u-gn { min-width: 6ch; text-align: right; font-weight: 600; }
 .u-glist .u-gp { min-width: 5ch; text-align: right; }
-.u-glist .u-open { text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-.u-top { margin: 0 0 var(--s2); }
+.u-glist .u-open { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: left; }
+/* a quiet link: names and group templates, underlined on hover only */
+.u-link { all: unset; cursor: pointer; color: var(--ink); }
+.u-link:hover, .u-link:focus-visible { color: var(--blue); text-decoration: underline; }
+.u-name .u-link { font-weight: 600; }
+.u-grp .u-link { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* the drawer's table: four columns that fit the drawer */
+.u-grp { table-layout: fixed; }
+.u-grp th:nth-child(1), .u-grp td:nth-child(1) { width: auto; overflow: hidden; text-overflow: ellipsis; }
+.u-grp th:nth-child(2) { width: 9.5em; }
+.u-grp th:nth-child(3) { width: 4.2em; }
+.u-grp th:nth-child(4) { width: 6.8em; }
+.u-grp th:nth-child(5) { width: 1.8em; }
+.u-grp .u-track { width: 36px; }
+.u-grp .u-sh { color: var(--muted); }
+.u-grp .u-ext a { color: var(--muted); text-decoration: none; }
+.u-grp .u-ext a:hover { color: var(--blue); }
+.u-top { margin: 0 0 var(--s2); line-height: 1.5; }
 .u-top .u-k { color: var(--muted); font-size: var(--fs-label); text-transform: uppercase; letter-spacing: 0.04em; margin-right: 4px; }
 .u-note { margin: var(--s1) 0 0; }
-.u-anon { font-weight: 400; font-size: var(--fs-label); margin-left: 4px; }
+.u-anon { display: inline-block; margin-left: 6px; padding: 0 5px; border-radius: 3px; background: var(--hover); color: var(--muted); font-size: 10.5px; font-weight: 500; line-height: 16px; vertical-align: 1px; }
+[data-users-all] { margin-top: var(--s2); }
+/* a narrow table area (the drawer open): fewer columns, so nothing runs off the edge */
+.u-view { container-type: inline-size; }
+@container (max-width: 680px) {
+  .u-all .uc-threads, .u-all .uc-warnings { display: none; }
+  .u-all .u-track { width: 36px; }
+}
+@container (max-width: 560px) {
+  .u-all .uc-last { display: none; }
+}
 .w-err { color: var(--lv-error); }
 /* Undo and the zoom toggle: the chart's main controls, next to its title; on, the toggle is filled */
 :is(.report, .cluster) .tl-zoom { display: inline-flex; gap: 4px; align-items: center; }
@@ -1061,11 +1093,11 @@ body.tab-users #f-sort, body.tab-users .sel:has(> #f-sort), body.tab-users #f-vi
 :is(.report, .cluster) .tl-zoom .z-undo:disabled { opacity: 0.45; cursor: default; }
 /* grave errors: loud on purpose, in both themes (a red that reads on light and dark) */
 :root { --grave: #e5383b; --grave-ink: #fff; --grave-wash: color-mix(in srgb, #e5383b 16%, transparent); }
-:is(.timeline, .c-timeline) .grave-line { stroke: var(--grave); stroke-width: 2; pointer-events: none; }
+:is(.timeline, .c-timeline) .grave-line { stroke: var(--grave); stroke-width: 1.5; opacity: 0.85; pointer-events: none; }
 :is(.timeline, .c-timeline) .grave-band { fill: var(--grave-wash); pointer-events: none; }
 :is(.timeline, .c-timeline) .grave-badge { cursor: pointer; }
 :is(.timeline, .c-timeline) .grave-badge rect { fill: var(--grave); stroke: color-mix(in srgb, var(--grave) 70%, #000); stroke-width: 1; }
-:is(.timeline, .c-timeline) .grave-badge text { fill: var(--grave-ink); font-size: 10.5px; font-weight: 700; letter-spacing: 0.02em; pointer-events: none; }
+:is(.timeline, .c-timeline) .grave-badge text { fill: var(--grave-ink); font-size: 10.5px; font-weight: 700; letter-spacing: 0.03em; pointer-events: none; }
 :is(.timeline, .c-timeline) .grave-badge:hover rect, :is(.timeline, .c-timeline) .grave-badge:focus-visible rect { fill: color-mix(in srgb, var(--grave) 82%, #000); }
 :is(.timeline, .c-timeline) .grave-badge:focus-visible { outline: none; }
 :is(.timeline, .c-timeline) .grave-badge:focus-visible rect { stroke: var(--ink); stroke-width: 2; }

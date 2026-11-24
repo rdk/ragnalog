@@ -282,7 +282,7 @@ vanilla JS, no build, state in `location.hash`, light and dark.
     brush does now.
   - **Zoom** (a toggle at the head of the timeline, on by default, prominent when
     on): a drag zooms into the selection with finer bins, and the window of every
-    view follows it in whole buckets ("table: …" on the window bar); off, a drag sets
+    view follows it in whole buckets (the zoom's tooltip says which); off, a drag sets
     the window. Zoomed, `‹`/`›` and `[`/`]` move the zoom by its width, `+`/`-` zoom
     in and out, *Reset zoom* shows the whole capture. **Undo** (left of Zoom, `u`)
     steps back through window, zoom and bin changes, Clear included. **Bins** picks
@@ -297,7 +297,8 @@ vanilla JS, no build, state in `location.hash`, light and dark.
   - **Grave errors** (`grave`): a red line through the node's lane and band at each
     out of memory, stack overflow, other JVM error, exhausted resource (open files,
     disk) or FATAL entry, a band over a run of them, and a red ⚠ badge in the node's
-    lane (OOM, STACK, JVM, LIMIT, FATAL; "×N" when markers are close). Hover: the
+    lane, hung from its line like a flag on the side that hides fewer event glyphs (OOM,
+    STACK, JVM, LIMIT, FATAL; "×N" when their badges would touch). Hover: the
     times, counts and the exception; click or Enter: the merged log at its first
     entry. The legend's red button counts them and zooms to the first.
 - **Groups by node.** The report's table, filters and keyboard model, with

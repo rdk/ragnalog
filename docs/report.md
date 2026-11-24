@@ -204,14 +204,14 @@ remove, or "Remove all filters".
   - The compare column stays whole-set (its tooltip says so).
 - Zoom and bins: **Zoom** at the head of the chart is a toggle, on by default and
   filled when on: a drag on the chart zooms into the selection with finer bins (the
-  quick windows zoom too); off, a drag selects a window as before, and turning it on
+  quick windows zoom too; zoomed, they make way for the zoom controls); off, a drag selects a window as before, and turning it on
   zooms into the window. Zoomed, `+` zooms into the middle third, `−` (or `-`) out to
   three times the width, *Reset zoom* back to the whole set (the window stays), and
   `‹`/`›` and `[`/`]` move the zoom by its own width. **Undo** (left of Zoom, or `u`)
   returns to the previous window, zoom and bins, one step at a time, also after
   Clear (the viewer's toggle choice is kept in `localStorage`, shared with the
   cluster page). The window follows the zoom in whole hours (the table's counts are
-  per hour), and the bar says so ("table: 14:00 → 16:00"). The bin size is automatic,
+  per hour), and the zoom's tooltip says which. The bin size is automatic,
   the finest whose bars keep 5 px (as the hourly chart always chose), and *Bins*
   picks another: finer down to 2 px a bar, or coarser, from 1 s to 7 d. A pick that
   does not fit the shown range falls back to automatic until it fits again. In the
@@ -248,8 +248,8 @@ remove, or "Remove all filters".
   options (`-XX:+HeapDumpOnOutOfMemoryError`) do not count. Entries of a kind within
   60 s fold into one marker (first and last time, count; 500 a set at most, those with
   the most entries). The chart draws each as a red line through the plot (a red band
-  over a run) with a red ⚠ badge above it (OOM, STACK, JVM, LIMIT, FATAL; "×N" for
-  markers less than 44 px apart); hover shows the times, counts and the exception,
+  over a run) with a red badge above it, hung from the line like a flag (OOM, STACK, JVM, LIMIT,
+  FATAL; "×N" when their badges would touch); hover shows the times, counts and the exception,
   click or Enter opens its group. The legend's red button counts them by kind and
   zooms to the first; the group's row has a red pill.
 - Chart controls: each level in the timeline legend is a toggle (Shift-click

@@ -192,6 +192,27 @@
     kind: Object.hasOwn(GRAVE_TAG, g.kind) ? g.kind : "fatal", ts: g.ts, last_ts: g.last_ts || g.ts,
     ms: parseTs(g.ts), last: parseTs(g.last_ts || g.ts), count: g.count || 1, sig: g.signature || "", text: g.text || "",
   })).filter((g) => g.ms === g.ms).sort((a, b) => a.ms - b.ms);
+  const graveTop = (items) => items.reduce((k, g) => (GRAVE_KINDS.indexOf(g.kind) < GRAVE_KINDS.indexOf(k) ? g.kind : k), items[0].kind);
+  /** A grave badge's text ("OOM", "OOM ×3") and a safe first guess of its width (the font decides:
+   *  fitBadges sets the real one once drawn). */
+  const badgeText = (items, kind) => GRAVE_TAG[kind] + (items.length > 1 ? " ×" + items.length : "");
+  const badgeW = (items, kind) => 12 + badgeText(items, kind).length * 7.4;
+  /** Size each drawn grave badge to its text, kept inside [left, right]; a flag hangs from its line
+   *  (data-x) to the right, or to the left (data-side="l"). */
+  function fitBadges(svg, left, right) {
+    for (const g of svg.querySelectorAll(".grave-badge")) {
+      const t = g.querySelector("text"), r = g.querySelector("rect");
+      let len = 0;
+      try { len = t.getComputedTextLength(); } catch { len = 0; }
+      if (!(len > 0)) continue;  // not laid out (a hidden tab): the guess stays
+      const w = Math.ceil(len) + 12, at = +g.dataset.x;
+      let x = g.dataset.side === "l" ? at - w + 0.5 : at - 0.5;
+      x = Math.max(left, Math.min(right - w, x));
+      r.setAttribute("x", r1(x));
+      r.setAttribute("width", w);
+      t.setAttribute("x", r1(x + 6));
+    }
+  }
   const GRAVE_SIGS = new Map();
   for (const g of GRAVE) if (!GRAVE_SIGS.has(g.sig)) GRAVE_SIGS.set(g.sig, g.kind);
 
@@ -894,26 +915,26 @@
       for (const g of gv) {
         const x0 = xs(g.ms), x1 = xs(g.last + 1);
         if (x1 - x0 > 2) marks.push(`<rect class="grave-band g-${g.kind}" x="${r1(x0)}" y="${padT}" width="${r1(x1 - x0)}" height="${r1(plotH)}"/>`);
-        marks.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="${padT - 3}" y2="${r1(bottom0)}"/>`);
-        // one badge for markers less than 44 px apart
+        marks.push(`<line class="grave-line g-${g.kind}" x1="${r1(x0) + 0.5}" x2="${r1(x0) + 0.5}" y1="16" y2="${r1(bottom0)}"/>`);
+        // markers whose badges would touch share one badge ("OOM ×3")
         const last = badges[badges.length - 1];
-        if (last && x0 - last.x1 < 44) { last.items.push(g); last.x1 = x0; } else badges.push({ x0, x1: x0, items: [g] });
+        if (last && x0 <= last.x0 + badgeW([...last.items, g], graveTop([...last.items, g])) + 4) last.items.push(g);
+        else badges.push({ x0, items: [g] });
       }
       parts.push(`<g class="grave" aria-hidden="true">${marks.join("")}</g>`);
     }
     parts.push(`<rect class="brush" x="0" y="${padT}" width="0" height="${plotH}" visibility="hidden"/>`);
     parts.push(`<rect class="hit" x="${padL}" y="0" width="${plotW}" height="${H}"/>`);
     badges.forEach((c, i) => {
-      const kind = c.items.reduce((k, g) => (GRAVE_KINDS.indexOf(g.kind) < GRAVE_KINDS.indexOf(k) ? g.kind : k), c.items[0].kind);
-      const label = GRAVE_TAG[kind] + (c.items.length > 1 ? " ×" + c.items.length : "");
-      const bwid = 10 + label.length * 6.6;
-      const bx = Math.min(W - padR - bwid, Math.max(padL - 6, (c.x0 + c.x1) / 2 - bwid / 2));
-      parts.push(`<g class="grave-badge g-${kind}" data-grave="${i}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.items))}">` +
-        `<rect x="${r1(bx)}" y="1" width="${r1(bwid)}" height="15" rx="3"/><text x="${r1(bx + bwid / 2)}" y="12" text-anchor="middle">⚠ ${esc(label)}</text></g>`);
+      const kind = graveTop(c.items), bwid = badgeW(c.items, kind);
+      const bx = Math.max(padL - 6, Math.min(W - padR - bwid, c.x0));
+      parts.push(`<g class="grave-badge g-${kind}" data-grave="${i}" data-x="${r1(c.x0)}" tabindex="0" role="button" aria-label="${esc(graveLabel(c.items))}">` +
+        `<rect x="${r1(bx)}" y="1" width="${r1(bwid)}" height="15" rx="3"/><text x="${r1(bx + 6)}" y="12">${esc(badgeText(c.items, kind))}</text></g>`);
     });
     parts.push(`</svg>`);
     el.innerHTML = parts.join("");
     const svg = el.firstElementChild;
+    if (badges.length) fitBadges(svg, padL - 6, W - padR);
     const geo = { svg, W, H, padL, padT, plotW, plotH, k, nb, slot, binned, totals, series, spiky, clip, ovb, bornB, bornLv, bottom0, born, top: !!opts.top, off, frame, graves: badges, ovName: opts.overlay ? opts.overlay.name : "" };
     geo.band = svg.querySelector(".hover-band");
     geo.brush = svg.querySelector(".brush");
@@ -1399,14 +1420,14 @@
     if (S.z) {
       // zoomed: the zoom leads, the window (the table's hours around it) follows it
       const [za, zb] = S.z;
-      el.innerHTML = `<span class="win-what zoom-what"><span class="win-k">Zoom</span> <b>${esc(zoomText(za, zb))}</b> <span class="muted">${TZ} · ${spanText(zb - za)}</span></span>` +
+      const tableNote = `The table counts whole hours: the window around the zoom, ${ts16(HOURS[a])} → ${tsShort(end)} ${TZ}`;
+      el.innerHTML = `<span class="win-what zoom-what" title="${esc(tableNote)}"><span class="win-k">Zoom</span> <b>${esc(zoomText(za, zb))}</b> <span class="muted">${TZ} · ${spanText(zb - za)}</span></span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= T0MS ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
         `<button type="button" class="btn small" data-shift="1" ${zb >= T1MS ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
         `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
         `<button type="button" class="btn small" data-zoom="reset" title="Show the whole set again; the window stays">Reset zoom</button>` +
-        `<span class="muted win-hours" title="The table counts whole hours: the window around the zoom">table: ${esc(ts16(HOURS[a]).slice(11))} → ${esc(tsShort(end).slice(6))}</span>` +
-        what.join("") + seg + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
+        what.join("") + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
       return;
     }
     el.innerHTML = win + what.join("") +
@@ -1867,6 +1888,8 @@
     return n > 0 && v < 0.1 ? "<0.1%" : (v < 10 ? v.toFixed(1) : Math.round(v)) + "%";
   };
   const nounN = (n, one, many = one + "s") => `${fmt(n)} ${n === 1 ? one : many}`;
+  /** A count with a small bar beside it, its length against max. */
+  const barN = (n, max) => `<span class="u-cell"><span class="u-track"><i style="width:${Math.max(2, (100 * n) / max).toFixed(1)}%"></i></span><span class="u-v">${fmt(n)}</span></span>`;
   /** A user's name, Jira's "anonymous" (no one signed in) marked as such. */
   const userHtml = (u) => esc(u) + (u === "anonymous" ? ` <span class="muted u-anon" title="Jira logs requests of no signed-in user as anonymous">not signed in</span>` : "");
   /** The entries page with one user's entries (of a group, when r is given), in the window. */
@@ -1902,20 +1925,22 @@
     const lead = `<p class="u-top"><span class="u-k">Top user</span> <b>${userHtml(top.user)}</b> <span class="muted">${fmt(top.n)} of ${fmt(of2)} entries${full ? whereText : ""} (${share(top.n, of2)})` +
       (rows.length > 1 ? ` · next ${esc(rows[1].user)} (${share(rows[1].n, of2)})` : "") + `</span></p>`;
     const all = USERS_ALL.has(r.id), list = all ? rows : rows.slice(0, USERS_SHOWN);
-    const line = (u, i) => {
+    const line = (u) => {
       const href = userEntriesUrl(u.user, r);
-      const name = href ? `<a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(u.user)}'s entries of this group${whereText}, in a new tab">${userHtml(u.user)}</a>` : userHtml(u.user);
-      return `<tr><td class="u-rank">${i + 1}</td><td class="u-name">${name}</td>` +
-        `<td class="num u-n"><span class="u-bar" style="--w:${((100 * u.n) / top.n).toFixed(1)}%"></span><span>${fmt(u.n)}</span></td><td class="num muted">${share(u.n, of2)}</td>` +
-        (full ? `<td class="u-t">${esc(tsShort(u.first))}</td><td class="u-t">${esc(tsShort(u.last))}</td><td class="num">${fmt(u.threads)}</td>` : "") +
-        (FINE ? `<td><button type="button" class="btn small link" data-user-tab="${esc(u.user)}" title="${esc(u.user)} across the set: all their groups, in the Users tab">all groups</button></td>` : "") + `</tr>`;
+      const tip = full ? `${u.user}: first ${tsShort(u.first)}, last ${tsShort(u.last)} ${TZ}, ${nounN(u.threads, "thread")}` : u.user;
+      const name = FINE
+        ? `<button type="button" class="u-link" data-user-tab="${esc(u.user)}" title="${esc(u.user)} across the set: all their groups, in the Users tab">${userHtml(u.user)}</button>`
+        : userHtml(u.user);
+      return `<tr title="${esc(tip)}"><td class="u-name">${name}</td><td class="num u-n">${barN(u.n, top.n)}</td><td class="num u-sh">${share(u.n, of2)}</td>` +
+        (full ? `<td class="num u-t">${esc(tsShort(u.last))}</td>` : "") +
+        (href ? `<td class="u-ext"><a href="${esc(href)}" target="_blank" rel="noopener" title="${esc(u.user)}'s entries of this group${whereText}, in a new tab" aria-label="${esc(u.user)}'s entries">↗</a></td>` : "") + `</tr>`;
     };
-    const head = `<tr><th>#</th><th>User</th><th class="num">Entries</th><th class="num">Share</th>` +
-      (full ? `<th>First</th><th>Last</th><th class="num" title="Distinct threads">Threads</th>` : "") + (FINE ? "<th></th>" : "") + `</tr>`;
+    const head = `<tr><th>User</th><th class="num">Entries</th><th class="num">Share</th>` +
+      (full ? `<th class="num">Last seen</th>` : "") + (ENTRIES_URL ? `<th></th>` : "") + `</tr>`;
     const more = rows.length > USERS_SHOWN
       ? `<button type="button" class="btn small" data-users-all>${all ? "Fewer users" : `All ${fmt(rows.length)} users`}</button>` : "";
     return secId("d-s-users", `Users (${fmt(full ? rows.length : r.users || rows.length)})`,
-      lead + `<div class="u-wrap"><table class="u-tbl"><thead>${head}</thead><tbody>${list.map(line).join("")}</tbody></table></div>` + more +
+      lead + `<table class="u-tbl u-grp"><thead>${head}</thead><tbody>${list.map(line).join("")}</tbody></table>` + more +
       (note ? `<p class="muted small u-note">${esc(note)}</p>` : ""));
   }
   // the Users tab: every user of what the filters list (levels, logger, exception, window),
@@ -1950,6 +1975,7 @@
     }
     $("f-search").placeholder = S.tab === "users" ? "Search users" : "Search groups";
     if (S.tab !== "users") { el.hidden = true; return; }
+    $("u-sum").innerHTML = "";
     el.hidden = false;
     if (!FINE) {
       el.innerHTML = `<div class="empty">The Users tab counts every entry per user, so it needs the web app (<code>ragnalog serve</code>). Each group's drawer lists its 10 most frequent users.</div>`;
@@ -1968,24 +1994,24 @@
     // what is counted: the levels of the level chips (always said), the other filters, the window
     const lvText = [...PRESENT].every((b) => S.lv.has(b)) ? "all levels" : BUCKETS.filter((b) => S.lv.has(b)).join(", ") + " entries";
     const scope = [lvText, S.t ? "in the window" : "", activeFilters().filter(([k]) => !["q", "t", "cmp", "lv"].includes(k)).map(([, l]) => l).join(", ")].filter(Boolean).join(" · ");
-    const head = `<div class="u-sum"><b>${fmt(items.length)}</b> ${items.length === 1 ? "user" : "users"}${q ? ` matching “${esc(S.q.trim())}” (of ${fmt(d.total)})` : ""} · ${fmt(d.entries)} entries with a user` +
-      (d.without_user ? ` · ${fmt(d.without_user)} without one` : "") + (scope ? ` <span class="muted">· ${esc(scope)}</span>` : "") +
-      (d.items.length ? ` · top: <b>${userHtml(d.items[0].user)}</b> <span class="muted">${share(d.items[0].entries, d.entries)} of the entries</span>` : "") + `</div>`;
-    if (!items.length) { el.innerHTML = head + `<div class="empty">No user ${q ? "matches the search" : "in these entries"}.</div>`; return; }
-    const th = UCOLS.map(([k, label]) => `<th class="${k === "user" ? "" : "num"}"><button type="button" class="u-sort" data-usort="${k}" aria-pressed="${USORT === k}">${label}${USORT === k ? " ↓" : ""}</button></th>`).join("") + `<th>Largest group</th>`;
+    $("u-sum").innerHTML = `<b>${fmt(items.length)}</b> ${items.length === 1 ? "user" : "users"}${q ? ` of ${fmt(d.total)}` : ""}` +
+      ` · ${fmt(d.entries)} entries with a user` + (d.without_user ? `, ${fmt(d.without_user)} without` : "") +
+      (scope ? ` <span class="muted">· ${esc(scope)}</span>` : "");
+    if (!items.length) { el.innerHTML = `<div class="empty">No user ${q ? "matches the search" : "in these entries"}.</div>`; return; }
+    const th = UCOLS.map(([k, label]) => `<th class="uc-${k}${k === "user" ? "" : " num"}"><button type="button" class="u-sort" data-usort="${k}" aria-pressed="${USORT === k}">${label}${USORT === k ? " ↓" : ""}</button></th>`).join("") + `<th class="uc-g">Largest group</th>`;
     const rows = items.slice(0, USHOW).map((u) => {
       const open = S.user === u.user;
       const g = u.top[0] && BASE_BY.get(u.top[0].signature);
       const main = `<tr class="u-row${open ? " open" : ""}" data-user="${esc(u.user)}" tabindex="0" aria-expanded="${open}">` +
-        `<td class="u-name"><span class="u-caret" aria-hidden="true">${open ? "▾" : "▸"}</span>${userHtml(u.user)}</td>` +
-        `<td class="num u-n"><span class="u-bar" style="--w:${((100 * u.entries) / max).toFixed(1)}%"></span><span>${fmt(u.entries)}</span></td>` +
-        `<td class="num${u.errors ? " w-err" : " muted"}">${fmt(u.errors)}</td><td class="num${u.warnings ? "" : " muted"}">${fmt(u.warnings)}</td>` +
-        `<td class="num">${fmt(u.groups)}</td><td class="num">${fmt(u.threads)}</td><td class="num u-t">${esc(tsShort(u.last_ts))}</td>` +
-        `<td class="u-g">${g ? `${badge(g.lvl, g.level)} <span class="tpl">${tplHtml(g.tpl)}</span>` : u.top[0] ? `<span class="mono">${esc(u.top[0].signature)}</span>` : ""}</td></tr>`;
+        `<td class="u-name uc-user"><span class="u-caret" aria-hidden="true">${open ? "▾" : "▸"}</span>${userHtml(u.user)}</td>` +
+        `<td class="num u-n uc-entries">${barN(u.entries, max)}</td>` +
+        `<td class="num uc-errors${u.errors ? " w-err" : " muted"}">${fmt(u.errors)}</td><td class="num uc-warnings${u.warnings ? "" : " muted"}">${fmt(u.warnings)}</td>` +
+        `<td class="num uc-groups">${fmt(u.groups)}</td><td class="num uc-threads">${fmt(u.threads)}</td><td class="num u-t uc-last">${esc(tsShort(u.last_ts))}</td>` +
+        `<td class="u-g uc-g"><div class="u-clip">${g ? `${badge(g.lvl, g.level)} <span class="tpl">${tplHtml(g.tpl)}</span>` : u.top[0] ? `<span class="mono">${esc(u.top[0].signature)}</span>` : ""}</div></td></tr>`;
       return main + (open ? `<tr class="u-detail"><td colspan="${UCOLS.length + 1}">${userDetail(u)}</td></tr>` : "");
     }).join("");
     const more = items.length > USHOW ? `<button type="button" class="btn small" data-umore>Show ${fmt(Math.min(200, items.length - USHOW))} more of ${fmt(items.length - USHOW)}</button>` : "";
-    el.innerHTML = head + `<div class="u-wrap"><table class="u-tbl u-all"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>` + more;
+    el.innerHTML = `<div class="u-wrap"><table class="u-tbl u-all"><thead><tr>${th}</tr></thead><tbody>${rows}</tbody></table></div>` + more;
   }
   /** An opened user: their groups (up to 50) with their share of the user's entries, and links. */
   function userDetail(u) {
@@ -1995,7 +2021,7 @@
     const list = tops.map((x) => {
       const g = BASE_BY.get(x.signature);
       return `<li><span class="num u-gn">${fmt(x.count)}</span><span class="muted u-gp">${share(x.count, u.entries)}</span>` +
-        (g ? `${badge(g.lvl, g.level)} <button type="button" class="btn link u-open" data-open-group="${esc(x.signature)}" title="Open this group in the drawer">${tplHtml(g.tpl)}</button>`
+        (g ? `${badge(g.lvl, g.level)} <button type="button" class="u-link u-open" data-open-group="${esc(x.signature)}" title="Open this group in the drawer">${tplHtml(g.tpl)}</button>`
           : `<span class="mono">${esc(x.signature)}</span> <span class="muted">(not in this report)</span>`) + `</li>`;
     }).join("");
     const href = userEntriesUrl(u.user, null);
