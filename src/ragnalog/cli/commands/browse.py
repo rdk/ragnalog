@@ -634,7 +634,9 @@ def query(logset: str, sql: str, /) -> None:
     ts/first_seen/last_seen are UTC timestamps, variables a list of strings.
     The session time zone is UTC whatever the machine's zone: result
     timestamps are UTC (as in `entries`) and date_trunc('day', ts) buckets
-    at UTC midnight. One statement only (several are a usage error).
+    at UTC midnight. One SELECT statement only (also WITH, FROM, VALUES,
+    DESCRIBE, SUMMARIZE; several statements, or COPY, EXPLAIN, CREATE, SET and
+    the like, are a usage error).
 
     SQL examples:
       select level, count(*) n from entries group by 1 order by 2 desc

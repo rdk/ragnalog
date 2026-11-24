@@ -568,13 +568,19 @@ def query(
     front: Front,
     max_rows: int | None = None,
     timeout_s: float | None = None,
+    memory_limit: str | None = None,
+    threads: int | None = None,
+    max_bytes: int | None = None,
 ) -> Doc:
     """``query.v1``: the rows of DuckDB ``sql`` over the set's views.
 
-    The CLI passes no limits (the result is never cut); the API cuts it at ``max_rows``
-    (``truncated``) and stops a query after ``timeout_s``. A rejected or stopped query is
-    ``sql_error``; a rejected one's hint lists candidate columns, the views' columns or
-    the available views.
+    ``sql`` is one ``SELECT`` (also ``WITH``, ``FROM``, ``VALUES``, ``DESCRIBE``,
+    ``SUMMARIZE``, ``PIVOT ... IN (...)``): other statements (``COPY``, ``EXPLAIN``,
+    ``CREATE``, ``SET``, ...) are ``usage``. The CLI passes no limits (the result is never
+    cut); the API cuts it at ``max_rows`` (``truncated``), stops a query after
+    ``timeout_s``, caps DuckDB at ``memory_limit`` and ``threads``, and refuses a result
+    over ``max_bytes``. A rejected or stopped query is ``sql_error``; a rejected one's
+    hint lists candidate columns, the views' columns or the available views.
     """
     import duckdb
     import polars as pl
@@ -582,31 +588,61 @@ def query(
     if not sql.strip():
         raise OpError("usage", 'give the SQL to run (e.g. "select count(*) from entries")')
     try:
-        statements = len(duckdb.extract_statements(sql))
+        kinds = [s.type.name for s in duckdb.extract_statements(sql)]
     except duckdb.Error:
-        statements = 1  # let the run report the syntax error
-    if statements > 1:
+        kinds = ["SELECT"]  # let the run report the syntax error
+    if len(kinds) > 1:
         raise OpError(
-            "usage", f"give one SQL statement, not {statements} (separate queries run one by one)"
+            "usage", f"give one SQL statement, not {len(kinds)} (separate queries run one by one)"
+        )
+    if kinds and kinds[0] != "SELECT":
+        # reading only: COPY could write over the set's own files (they are allowed paths)
+        raise OpError(
+            "usage",
+            f"query runs SELECT statements only, not {kinds[0]}",
+            hint="SELECT, WITH, FROM, VALUES, DESCRIBE and SUMMARIZE read the views; "
+            "PIVOT needs its values listed (ON col IN (...))"
+            if kinds[0] == "MULTI"
+            else "SELECT, WITH, FROM, VALUES, DESCRIBE and SUMMARIZE read the views",
         )
     ls = open_set(sets, ref, front=front)
     try:
-        df = ls.sql(sql, max_rows=None if max_rows is None else max_rows + 1, timeout_s=timeout_s)
+        df = ls.sql(
+            sql,
+            max_rows=None if max_rows is None else max_rows + 1,
+            timeout_s=timeout_s,
+            memory_limit=memory_limit,
+            threads=threads,
+        )
     except duckdb.InterruptException as exc:
         raise OpError(
             "sql_error",
             f"the query ran longer than {timeout_s:g} s and was stopped",
             hint="narrow it (WHERE, LIMIT, fewer columns), or run it where the data directory is",
         ) from exc
+    except duckdb.OutOfMemoryException as exc:
+        raise OpError(
+            "sql_error",
+            f"the query needs more than the server's {memory_limit} of memory and was stopped",
+            hint="narrow it (WHERE, LIMIT, fewer or shorter columns), "
+            "or run it where the data directory is",
+        ) from exc
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
-        if damaged_file(exc):  # a damaged set file, not the SQL: store_error
-            raise
+        own = (ls.entries_path, ls.groups_path, ls.merges_path)
+        if damaged_file(exc) and any(p.name in str(exc) for p in own):
+            raise  # a damaged set file, not the SQL: store_error
         message = str(exc).strip()
         views = [v for v in view_fields() if v != "merges" or ls.merges_path.exists()]
         raise OpError("sql_error", message, hint=sql_hint(message, views)) from exc
     truncated = False
     if max_rows is not None and df.height > max_rows:
         df, truncated = df.head(max_rows), True
+    if max_bytes is not None and df.estimated_size() > max_bytes:
+        raise OpError(
+            "sql_error",
+            f"the result is over {max_bytes // 2**20} MiB ({df.height:,} rows)",
+            hint="select fewer or shorter columns (substr(message, 1, 200)) or fewer rows (LIMIT)",
+        )
     items = _records(df)
     return {
         "schema": "query.v1",

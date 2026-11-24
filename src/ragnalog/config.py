@@ -47,7 +47,7 @@ ENV_VARS: Final[tuple[EnvVar, ...]] = (
         "none",
         "Base URL of a ragnalog web app (`https://logs.example.org`): commands that read or "
         "label sets ask its `/api` instead of a data directory, with `RAGNALOG_TOKEN` "
-        "(`--server` wins).",
+        "(`--server` wins; an explicit `--store` runs locally).",
         "default of --server (remote mode)",
     ),
     EnvVar(
@@ -171,6 +171,8 @@ class Settings:
             text = (env or {}).get(var.name, "").strip()
             if var.field in given or not text:
                 continue
+            if var.field == "server" and "store" in given:
+                continue  # --store names a local data directory: a local run
             match var.field:
                 case "store":
                     values["store"] = Path(text)

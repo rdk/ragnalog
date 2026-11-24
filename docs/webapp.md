@@ -144,7 +144,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary, stale, node, capture`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `ragnalog set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
-| `POST /api/sets/{ref}/query` | JSON body `{"sql": "..."}`: DuckDB SQL over the set's views `entries`, `groups` (and `merges`), read only and without access to other files | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond), a query running longer than 60 s is stopped (`sql_error`) |
+| `POST /api/sets/{ref}/query` | JSON body `{"sql": "..."}`: one DuckDB `SELECT` over the set's views `entries`, `groups` (and `merges`), without access to other files (other statements, `COPY` and `EXPLAIN` included: `usage`) | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond) and 64 MiB; a query running longer than 60 s or needing over 1 GB of memory is stopped (`sql_error`); two run at a time (a third: 503 `http`, `Retry-After`); the body takes up to 60,000 characters of SQL |
 | `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `ragnalog label`) | `logset.v1` |
 | `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
 | `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `ragnalog capture`) |
@@ -153,7 +153,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/captures/{ref}/events` | window parameters, `kind` (comma-separated and/or repeat) | `events.v1` (as `ragnalog events`) |
 | `GET /api/captures/{ref}/interactions` | window parameters, `delta` (300 s) | `interactions.v1` (as `ragnalog interactions`) |
 | `GET /api/captures/{ref}/entries` | the filters of `/sets/{ref}/entries` (`since`/`until` set the window; `signature` may name several groups, comma-separated, each also `NODE:SIGNATURE`: that group on that node only), `node` (comma-separated: only those nodes, the window stays all nodes'; an unknown node is 400 `invalid_value`), `window`, `columns`, `brief`, `limit` (100, max 10000), `offset`, `max_raw` | `entries.v1` of all nodes by time; rows add `node`, `set` (as `entries CAPTURE`) |
-| `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`); cached per member set versions and options, dropped when any set changes |
+| `GET /api/captures/{ref}/report` | window parameters, `examples` (3), `max_raw` (4000), `max_groups` (500; 0 = all), `triage` (true) | `cluster-report.v1` with `urls` (`entries`, `context`, `set_report`, `examples`, `raw`, `timeline`); cached per member set versions and options, dropped when any set changes |
 | `GET /api/sets/{ref}/stats` | | `stats.v1` |
 | `GET /api/sets/{ref}/users` | `limit` (100, 0 = all), `offset`, `top` (3: each user's largest groups) and the filters of `entries` (`signature` for one group's users, `since`/`until`, `level`, `logger`, `user` …) | `users.v1` (as `users`): entries, errors, warnings, groups, threads, first and last seen per user |
 | `GET /api/sets/{ref}/groups` | `level`, `min_level`, `logger`, `since`, `until`, `with_exception`, `exception`, `contains`, `sort`, `limit` (50; 0 = all), `offset`, `coarse`, `columns` (comma-separated and/or repeat), `brief` | `groups.v1` with `total`, `offset`, `truncated` |
@@ -344,7 +344,12 @@ run next to the server.
   `_` prefix). Set
   references are one plain name (no separators, `..` or drive). Error messages,
   job errors included, do not include server paths (a path is cut to its file name), and
-  the access log prints `token=***` for the first visit's `?token=`. Arbitrary SQL (`ragnalog query`) is not exposed over HTTP.
+  the access log prints `token=***` for the first visit's `?token=`. `POST /api/sets/{ref}/query` runs one `SELECT` per request in an in-memory DuckDB whose
+  file access is limited to that set's Parquet files and whose configuration is locked
+  (statement types other than `SELECT` are refused before it runs: a `COPY` could write over
+  those files); it is capped at 1 GB of memory (no spill files), 4 threads, 60 s, 10,000 rows,
+  64 MiB of result and two queries at a time, and its error messages are cut to file names
+  like the others.
 
 ## Not built yet
 

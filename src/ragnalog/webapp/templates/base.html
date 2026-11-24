@@ -19,12 +19,12 @@
   try { if (localStorage.getItem("ragnalog-wide") === "1") { document.documentElement.setAttribute("data-wide", ""); } } catch (e) { /* storage unavailable */ }
 })();
 </script>
-<link rel="stylesheet" href="/assets/report/report.css?v={{ asset_v }}">
-<link rel="stylesheet" href="/static/webapp.css?v={{ asset_v }}">
-<link rel="stylesheet" href="/assets/report/skins.css?v={{ asset_v }}">
-<script defer src="/assets/report/skins.js?v={{ asset_v }}"></script>
-<script defer src="/assets/report/tips.js?v={{ asset_v }}"></script>
-<script defer src="/static/webapp.js?v={{ asset_v }}"></script>
+<link rel="stylesheet" href="/assets/report/report.css?v={{ asset_v() }}">
+<link rel="stylesheet" href="/static/webapp.css?v={{ asset_v() }}">
+<link rel="stylesheet" href="/assets/report/skins.css?v={{ asset_v() }}">
+<script defer src="/assets/report/skins.js?v={{ asset_v() }}"></script>
+<script defer src="/assets/report/tips.js?v={{ asset_v() }}"></script>
+<script defer src="/static/webapp.js?v={{ asset_v() }}"></script>
 </head>
 <body class="app">
 <nav class="crumbs" aria-label="Breadcrumb"><div class="crumb-trail">{{ crumb_root }}{% block nav %}{% endblock %}</div><div class="crumb-end">{% block views %}{% endblock %}</div></nav>

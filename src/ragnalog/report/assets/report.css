@@ -1041,6 +1041,7 @@ body:not(.tab-users) #u-sum { display: none; }
 .u-clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .u-tbl .u-sort { all: unset; cursor: pointer; }
 .u-tbl .u-sort:hover, .u-tbl .u-sort[aria-pressed="true"] { color: var(--ink); }
+.u-tbl .u-sort:focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; border-radius: 2px; }
 .u-all .u-row { cursor: pointer; }
 .u-all .u-row:hover, .u-all .u-row:focus-visible { background: var(--hover); outline: none; }
 .u-all .u-row.open, .u-all .u-row.open:hover { background: var(--blue-wash-2, var(--hover)); }

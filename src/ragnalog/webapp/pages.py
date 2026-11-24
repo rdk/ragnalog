@@ -5,8 +5,10 @@ from __future__ import annotations
 import hashlib
 import html
 import math
+import os
 import re
 from datetime import UTC, datetime, timedelta
+from functools import cache
 from importlib import resources
 from typing import TYPE_CHECKING, Annotated, Any
 from urllib.parse import quote, urlencode
@@ -49,19 +51,38 @@ templates = Jinja2Templates(directory=str(resources.files("ragnalog.webapp") / "
 templates.env.globals["tool_version"] = __version__
 
 
-def _asset_v() -> str:
-    """Return a short hash of the report assets and ``webapp/static``, their links' ``?v=``."""
-    digest = hashlib.sha256(asset_version().encode())
+def _static_stamp() -> tuple[tuple[str, int], ...]:
+    """Return the names and modification times of ``webapp/static``'s files."""
     static = resources.files("ragnalog.webapp") / "static"
+    out = []
     for item in sorted(static.iterdir(), key=lambda p: p.name):
         if item.is_file():
-            digest.update(item.name.encode() + item.read_bytes())
+            try:
+                out.append((item.name, os.stat(str(item)).st_mtime_ns))
+            except OSError:
+                out.append((item.name, 0))
+    return tuple(out)
+
+
+@cache
+def _asset_v_for(report_v: str, stamp: tuple[tuple[str, int], ...]) -> str:
+    digest = hashlib.sha256(report_v.encode())
+    static = resources.files("ragnalog.webapp") / "static"
+    for name, _ in stamp:
+        digest.update(name.encode() + static.joinpath(name).read_bytes())
     return digest.hexdigest()[:10]
 
 
-ASSET_V = _asset_v()
-"""Changes with any asset, so a browser never runs a cached script against a newer server."""
-templates.env.globals["asset_v"] = ASSET_V
+def asset_v() -> str:
+    """Return a short hash of the report assets and ``webapp/static``, their links' ``?v=``.
+
+    It changes with any asset, so a browser never runs a cached script against a newer
+    server; recomputed when a file changes (``serve --reload``).
+    """
+    return _asset_v_for(asset_version(), _static_stamp())
+
+
+templates.env.globals["asset_v"] = asset_v
 
 REPORT_ASSETS = (
     "report.css",
@@ -353,13 +374,15 @@ def favicon() -> Response:
 def report_asset(name: str, v: str = "") -> Response:
     """Serve the report's own CSS/JS so the web app and the static file share one code base.
 
-    A versioned URL (``?v=``, the pages' links) is cached for good: a new version has
-    another URL. Without one, five minutes.
+    A URL with the current version (``?v=``, the pages' links) is cached for good: a new
+    version has another URL. Without one, or with an older one, five minutes.
     """
     if name not in REPORT_ASSETS:
         return Response(f"no report asset {name!r}\n", 404, media_type="text/plain")
     media = "text/css" if name.endswith(".css") else "text/javascript"
-    cache = "public, max-age=31536000, immutable" if v else "public, max-age=300"
+    # for good only when ?v= is a current version (an old link gets five minutes)
+    current = v in (asset_version(), asset_v())
+    cache = "public, max-age=31536000, immutable" if current else "public, max-age=300"
     return Response(
         asset_text(name), media_type=f"{media}; charset=utf-8", headers={"Cache-Control": cache}
     )
@@ -533,17 +556,22 @@ def _capture_shell(capture: Capture) -> str:
     return _crumbs(crumb, views=views)
 
 
-_HEAD = (
-    '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
-    f'<link rel="stylesheet" href="/static/webapp.css?v={ASSET_V}">'
-    f'<script defer src="/static/webapp.js?v={ASSET_V}"></script>'
-)
+def _head() -> str:
+    """Return the web app's own head tags on the report and cluster pages."""
+    v = asset_v()
+    return (
+        '<link rel="icon" href="/favicon.ico" type="image/svg+xml">'
+        f'<link rel="stylesheet" href="/static/webapp.css?v={v}">'
+        f'<script defer src="/static/webapp.js?v={v}"></script>'
+    )
+
+
 _BODY = re.compile(r"<body[^>]*>")
 
 
 def _with_shell(page: str, crumbs: str) -> str:
     """Add the web app's CSS/JS and the navigation row (crumbs, view tabs) to a report page."""
-    page = page.replace("</head>", _HEAD + "</head>", 1)
+    page = page.replace("</head>", _head() + "</head>", 1)
     return _BODY.sub(lambda m: m.group(0) + crumbs, page, count=1)
 
 

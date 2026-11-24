@@ -141,7 +141,7 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `grave[].count` | `integer` | yes | Entries folded into the marker: same kind, each within 60 s of the previous. |
 | `grave[].signature` | `string` | yes | Group signature of the first entry. |
 | `grave[].entry_id` | `string` | yes | Id of the first entry. |
-| `grave[].text` | `string` | yes | The grave exception's type and the outermost message, else the template, at most 200 characters. |
+| `grave[].text` | `string` | yes | The exception that made it grave (its type naming the kind, else its message matching, else the outermost): type and its own message; without a chain, the template. At most 200 characters. |
 | `grave[].node` | `string` | no | Node id (cluster-report.v1 only). |
 | `options` | `ClusterReportOptions` | yes | Build options. |
 | `options.window` | `"explicit" \| "overlap" \| "union"` | yes | Window mode. |

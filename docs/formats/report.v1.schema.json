@@ -123,7 +123,7 @@
           "type": "string"
         },
         "text": {
-          "description": "The grave exception's type and the outermost message, else the template, at most 200 characters.",
+          "description": "The exception that made it grave (its type naming the kind, else its message matching, else the outermost): type and its own message; without a chain, the template. At most 200 characters.",
           "type": "string"
         },
         "node": {

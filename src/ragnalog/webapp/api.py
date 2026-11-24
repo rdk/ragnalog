@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import shutil
+import threading
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
@@ -27,7 +28,7 @@ from ragnalog.service.params import (
 )
 from ragnalog.service.sets import open_set
 from ragnalog.store.logset import LogSet, LogSetManifest
-from ragnalog.webapp.errors import error_response
+from ragnalog.webapp.errors import error_response, scrub_paths
 from ragnalog.webapp.jobs import MAX_ACTIVE_JOBS, QueueFull, safe_filename
 from ragnalog.webapp.params import query_model
 from ragnalog.webapp.responses import JSON, payload_response
@@ -554,24 +555,53 @@ QUERY_MAX_ROWS = 10_000
 """Rows ``POST /api/sets/{ref}/query`` returns at most (``truncated`` beyond)."""
 QUERY_TIMEOUT_S = 60.0
 """Seconds after which ``POST /api/sets/{ref}/query`` stops a query (``sql_error``)."""
+QUERY_MEMORY = "1GB"
+"""DuckDB memory of one query (``sql_error`` beyond; nothing spills to disk)."""
+QUERY_THREADS = 4
+"""DuckDB threads of one query."""
+QUERY_MAX_BYTES = 64 * 2**20
+"""Largest result (polars' estimate) the route encodes (``sql_error`` beyond)."""
+QUERY_SLOTS = threading.BoundedSemaphore(2)
+"""Queries running at once; one more is refused with 503 (the server stays responsive)."""
 
 
-@router.post("/sets/{ref}/query")
+@router.post("/sets/{ref}/query", response_model=None)
 def query(
     ref: str,
     state: StateDep,
-    sql: Annotated[str, Body(embed=True, max_length=100_000)],
-) -> dict[str, Any]:
+    sql: Annotated[str, Body(embed=True, max_length=60_000)],
+) -> dict[str, Any] | Response:
     """Run DuckDB SQL over a set (``query.v1``), as ``ragnalog query``; body ``{"sql": "..."}``.
 
-    Read only: the views ``entries``, ``groups`` (and ``merges``) of the set, with no access
-    to other files and a locked configuration. At most 10,000 rows (``truncated`` when
-    cut: use ``LIMIT``/``OFFSET``); a query running longer than 60 s is stopped
-    (``sql_error``).
+    One ``SELECT`` over the views ``entries``, ``groups`` (and ``merges``) of the set,
+    with no access to other files and a locked configuration. At most 10,000 rows
+    (``truncated`` when cut: use ``LIMIT``/``OFFSET``) and 64 MiB; a query running longer
+    than 60 s or needing more than 1 GB of memory is stopped (``sql_error``); two run at
+    a time (503 ``http`` for a third).
     """
-    return queries.query(
-        state, ref, sql, max_rows=QUERY_MAX_ROWS, timeout_s=QUERY_TIMEOUT_S, front="api"
-    )
+    if not QUERY_SLOTS.acquire(blocking=False):
+        busy = error_response(
+            OpError("http", "the server is running other queries; try again in a moment"), 503
+        )
+        busy.headers["Retry-After"] = "5"
+        return busy
+    try:
+        return queries.query(
+            state,
+            ref,
+            sql,
+            max_rows=QUERY_MAX_ROWS,
+            timeout_s=QUERY_TIMEOUT_S,
+            memory_limit=QUERY_MEMORY,
+            threads=QUERY_THREADS,
+            max_bytes=QUERY_MAX_BYTES,
+            front="api",
+        )
+    except OpError as exc:
+        exc.message = scrub_paths(exc.message)  # a DuckDB message may name the set's files
+        raise
+    finally:
+        QUERY_SLOTS.release()
 
 
 @router.get("/sets/{ref}/report")

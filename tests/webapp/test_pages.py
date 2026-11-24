@@ -318,13 +318,19 @@ def test_drawers_link_to_the_entries_page_only_when_served() -> None:
 
 def test_asset_links_carry_a_version(client: TestClient) -> None:
     """Pages link assets with ?v=, cached for good; a new release has another URL."""
-    from ragnalog.webapp.pages import ASSET_V
+    from ragnalog.webapp.pages import asset_v
+
+    ASSET_V = asset_v()
 
     page = client.get("/").text
     assert f'/assets/report/report.css?v={ASSET_V}"' in page
     assert f'/static/webapp.js?v={ASSET_V}"' in page
     report = client.get("/sets/mini").text
     assert "/assets/report/report.js?v=" in report and f"/static/webapp.js?v={ASSET_V}" in report
-    versioned = client.get(f"/assets/report/report.js?v={ASSET_V}")
+    from ragnalog.report.render import asset_version
+
+    versioned = client.get(f"/assets/report/report.js?v={asset_version()}")
     assert "immutable" in versioned.headers["cache-control"]
+    old = client.get("/assets/report/report.js?v=0000000000")  # an old link: not for good
+    assert old.headers["cache-control"] == "public, max-age=300"
     assert client.get("/assets/report/report.js").headers["cache-control"] == "public, max-age=300"

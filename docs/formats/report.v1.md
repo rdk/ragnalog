@@ -29,6 +29,7 @@ also `ragnalog schema report.v1`.
 | `entries` | object | Example entries keyed by entry id, see below: exactly the ids referenced by `groups[*].examples`. |
 | `merges` | list | Drain3 merge proposals (`merges.parquet`, `{cluster_id, drain_template, signatures}`) restricted to the signatures in `groups`; clusters left with fewer than two members are dropped. `[]` when the set has none. |
 | `compare` | object or null | Comparison with a baseline set, see below; `null` without `--compare`. |
+| `grave` | list | Grave errors by time (`report/grave.py`): `{kind, ts, last_ts, count, signature, entry_id, text}`, `kind` one of `oom`, `stack_overflow`, `jvm_error`, `resource`, `fatal`; entries of a kind within 60 s fold into one marker; at most 500, those with the most entries. `[]` when the set has none. |
 | `entries_url` | string, optional | URL template for fetching more entries of a group (`{sig}` = signature). Present only when passed to `build_payload` (web app). |
 
 ## `timeline`

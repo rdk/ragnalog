@@ -54,7 +54,7 @@ blank variable counts as unset. A number that does not parse is error
 | Variable | Default | Meaning |
 |---|---|---|
 | `RAGNALOG_STORE` | `./.ragnalog` | Data directory holding the log sets (`--store` wins). |
-| `RAGNALOG_SERVER` | none | Base URL of a ragnalog web app (`https://logs.example.org`): commands that read or label sets ask its `/api` instead of a data directory, with `RAGNALOG_TOKEN` (`--server` wins). |
+| `RAGNALOG_SERVER` | none | Base URL of a ragnalog web app (`https://logs.example.org`): commands that read or label sets ask its `/api` instead of a data directory, with `RAGNALOG_TOKEN` (`--server` wins; an explicit `--store` runs locally). |
 | `RAGNALOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
 | `RAGNALOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
 | `RAGNALOG_TOKEN` | none | `serve`: API token (`--token` wins); with `--server`, the token the CLI sends. |
@@ -87,10 +87,14 @@ printf '%s\n' '["groups","prod-1030","--brief"]' '["stats","prod-1030"]' | ragna
   data directory: upload files on the web app's start page, open its report page, or run
   them where the data directory is), and the options the API does not have (`--raw` of
   `show` and `entries`, `formats --sample`). `parse`, `schema`, `manifest` and `serve` run
-  locally as always; unset `RAGNALOG_SERVER` to run the others locally.
+  locally as always; unset `RAGNALOG_SERVER`, or name a data directory with `--store`, to
+  run the others locally.
+- Redirects are not followed (they would carry the token to the new address): `--server`
+  is the web app's final base URL; a 3xx answer is an `http` error.
 - The server's limits apply: the page caps of the API (`HTTP_CAPS` in the parity test) and,
-  for `query`, at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`)
-  and 60 s per query. `frames` marks application frames by the server's
+  for `query`, at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`),
+  64 MiB of result, 60 s and 1 GB of memory per query, two queries at a time (a third:
+  `http`, HTTP 503). `frames` marks application frames by the server's
   `RAGNALOG_APP_PACKAGES`.
 - A server error keeps its `reason`, mapped to the CLI's code (`set_not_found` is
   `store_error`, exit 3) and carries `"server"` instead of `"store"`. An unreachable server

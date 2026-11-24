@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import html
 import json
+import os
 import re
 from functools import cache
 from importlib.resources import files
@@ -130,17 +131,33 @@ def _sub_once(text: str, pattern: re.Pattern[str], value: str) -> str:
     return out
 
 
-@cache
-def asset_version() -> str:
-    """Return a short hash of the report assets, the ``?v=`` of their links.
+def _asset_stamp() -> tuple[int, ...]:
+    """Return the assets' modification times (empty when they are not plain files)."""
+    stamps = []
+    for name in ASSETS:
+        try:
+            stamps.append(os.stat(str(files(PACKAGE).joinpath("assets", name))).st_mtime_ns)
+        except OSError:
+            return ()
+    return tuple(stamps)
 
-    A linked asset's URL changes with its content, so a browser fetches a new version at
-    once instead of running a cached script against a newer server.
-    """
+
+@cache
+def _asset_hash(stamp: tuple[int, ...]) -> str:
     digest = hashlib.sha256()
     for name in ASSETS:
         digest.update(asset_text(name).encode("utf-8"))
     return digest.hexdigest()[:10]
+
+
+def asset_version() -> str:
+    """Return a short hash of the report assets, the ``?v=`` of their links.
+
+    A linked asset's URL changes with its content, so a browser fetches a new version at
+    once instead of running a cached script against a newer server. The hash is recomputed
+    when an asset file changes (``serve --reload`` while editing ``report.js``).
+    """
+    return _asset_hash(_asset_stamp())
 
 
 def _href(base: str, name: str) -> str:

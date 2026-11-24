@@ -23,7 +23,10 @@ needed).
   parity case is tested both ways). `ingest`, `regroup`, `upgrade` and `report` need a data
   directory and refuse it.
 - `POST /api/sets/{ref}/query` (body `{"sql": "..."}`): `ragnalog query` over HTTP, in the
-  same read-only sandbox, at most 10,000 rows and 60 s per query.
+  same sandbox: one `SELECT`, at most 10,000 rows and 64 MiB of result, 60 s and 1 GB of
+  memory per query (nothing spills to disk), two queries at a time (503 for a third).
+  The remote CLI does not follow redirects (they would carry the token), and an explicit
+  `--store` runs locally whatever `RAGNALOG_SERVER` says.
 - Set report: zoom the top chart into the time window (*Zoom in* or `+`; a drag on the
   zoomed chart zooms further, `−` zooms out, `[`/`]` move it) with finer bins, and pick the
   bin size (*Bins*: automatic, or from 1 s to 7 d, finer than the automatic one down to
@@ -55,6 +58,8 @@ needed).
   The zone button or `z` still switches to UTC, and a viewer who chose UTC keeps it. Links,
   windows in the URL and `/api` parameters stay UTC.
 - New logo and tab icon: the serpent Jörmungandr around three log lines.
+- `query` runs one `SELECT` statement (also `WITH`, `FROM`, `VALUES`, `DESCRIBE`,
+  `SUMMARIZE`); `COPY`, `EXPLAIN`, `CREATE`, `SET` and other statements are `usage`.
 
 ### Fixed
 

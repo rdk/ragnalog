@@ -188,14 +188,22 @@ def build(
 # --- the transport
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """Refuse redirects: urllib would send the ``Authorization`` header to the new host."""
+
+    def redirect_request(self, *args: Any, **kwargs: Any) -> None:
+        return None  # the 3xx comes back as an HTTPError, reported by request()
+
+
+_OPENER = urllib.request.build_opener(_NoRedirect)
+
+
 def _urllib(
     method: str, url: str, headers: Mapping[str, str], body: bytes | None, timeout: float
 ) -> tuple[int, bytes]:
     request = urllib.request.Request(url, data=body, method=method, headers=dict(headers))
     try:
-        with urllib.request.urlopen(
-            request, timeout=timeout
-        ) as response:  # http(s) only: _server checks it
+        with _OPENER.open(request, timeout=timeout) as response:  # http(s) only: _server checks
             return int(response.status), response.read()
     except urllib.error.HTTPError as exc:
         return int(exc.code), exc.read()
@@ -256,8 +264,21 @@ def request(
         ) from None
     if status >= 400:
         raise _error(doc, status, server, path)
+    if not 200 <= status < 300:
+        raise OpError(
+            "http",
+            f"{server} answered HTTP {status} for {path}"
+            + (
+                " (a redirect: not followed, it would carry the token)"
+                if 300 <= status < 400
+                else ""
+            ),
+            hint="give the web app's final base URL as --server (https:// and the right host)",
+        )
     if not isinstance(doc, dict):
         raise OpError("http", f"{server} answered with a JSON {type(doc).__name__}, not a document")
+    if not doc:
+        raise OpError("http", f"{server} answered HTTP {status} with an empty body for {path}")
     return doc
 
 

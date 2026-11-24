@@ -1876,7 +1876,7 @@ def cluster_payload(
         (
             GraveMarker(**g, node=m.node)
             for m in capture.nodes
-            for g in grave_markers(m.logset, since=_dt(since), until=_dt(until))
+            for g in grave_markers(m.logset, since=_dt(since), until=_dt(until))  # inclusive
         ),
         key=lambda g: (g.ts, g.node),
     )

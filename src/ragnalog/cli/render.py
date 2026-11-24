@@ -341,13 +341,15 @@ def users(console: Console, doc: Doc) -> None:
     ]
     rest = f"; {doc['without_user']} entries without a user" if doc["without_user"] else ""
     title = f"users of {doc['logset']}: {doc['count']} of {doc['total']}{rest}"
-    console.print(rows_table(rows, title=title))
+    columns = ("user", "entries", "errors", "warnings", "groups", "threads", "last_ts", "top")
+    console.print(rows_table(rows, columns, title=title))
 
 
 def timeline_levels(console: Console, doc: Doc) -> None:
     """``timeline SET --by-level``: one row per bucket, its entries and a column per level."""
     rows = [{"bucket": b["bucket"], "count": b["count"], **b["levels"]} for b in doc["items"]]
-    console.print(rows_table(rows, title=f"timeline of {doc['logset']} by level"))
+    columns = ("bucket", "count", "ERROR", "WARN", "INFO", "DEBUG", "OTHER")
+    console.print(rows_table(rows, columns, title=f"timeline of {doc['logset']} by level"))
 
 
 def matrix(console: Console, doc: Doc, *, color: bool) -> None:

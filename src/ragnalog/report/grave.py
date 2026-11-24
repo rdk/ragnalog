@@ -70,9 +70,15 @@ def _chain(field: str) -> pl.Expr:
     )
 
 
+TEXT_MIN_LEVEL: Final = 40
+"""A match in the text only (not an exception type) counts from WARN up: an INFO line that
+names OutOfMemoryError ("heap dump on OutOfMemoryError: enabled") is not one."""
+
+
 def _kind() -> pl.Expr:
     types = _chain("type")
     text = pl.concat_str([pl.col("template").fill_null(""), _chain("message")], separator="\n")
+    loud = pl.col("level") >= TEXT_MIN_LEVEL
     # built from the least grave up, so the most grave match wins
     expr: pl.Expr = pl.when(pl.col("level") >= 60).then(pl.lit("fatal")).otherwise(pl.lit(None))
     for kind in reversed(GRAVE_KINDS[:-1]):
@@ -80,24 +86,37 @@ def _kind() -> pl.Expr:
         if kind in _TYPES:  # a whole type of the chain: ends with the name
             cond = cond | types.str.contains(_TYPES[kind] + f"(?:{_SEP}|$)")
         if kind in _TEXT:
-            cond = cond | text.str.contains(_TEXT[kind])
+            cond = cond | (loud & text.str.contains(_TEXT[kind]))
         expr = pl.when(cond).then(pl.lit(kind)).otherwise(expr)
     return expr.alias("kind")
 
 
 def _iso(ts: datetime) -> str:
-    return ts.astimezone(UTC).isoformat().replace("+00:00", "Z")
+    """UTC with milliseconds, so the strings sort by time."""
+    return ts.astimezone(UTC).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+
+def _utc(value: datetime | None) -> datetime | None:
+    """Return ``value`` with UTC as its zone when it has none (naive times are UTC)."""
+    return value.replace(tzinfo=UTC) if value is not None and value.tzinfo is None else value
 
 
 def _text(kind: str, types: str, messages: str, template: str | None) -> str:
-    """Return the grave exception's type and its own message, else the template's text."""
+    """Return the exception that made the entry grave: its type and its own message.
+
+    That is the chain's exception whose type names the kind (an ``OutOfMemoryError`` inside a
+    wrapper), else the one whose message matches the kind's text ("GC overhead limit
+    exceeded", "Too many open files"), else the outermost; without a chain, the template.
+    """
     ts, ms = types.split(_SEP), messages.split(_SEP)
-    pattern = _TYPES.get(kind)
-    for i, name in enumerate(ts):
-        if name and (pattern is None or re.search(pattern + "$", name)):
-            msg = ms[i] if i < len(ms) else ""
-            return f"{name}: {msg}" if msg else name
-    return template or ""
+    chain = [(name, ms[i] if i < len(ms) else "") for i, name in enumerate(ts) if name]
+    by_type, by_text = _TYPES.get(kind), _TEXT.get(kind)
+    pick = next((c for c in chain if by_type and re.search(by_type + "$", c[0])), None)
+    pick = pick or next((c for c in chain if by_text and re.search(by_text, c[1])), None)
+    pick = pick or (chain[0] if chain else None)
+    if pick is None:
+        return template or ""
+    return f"{pick[0]}: {pick[1]}" if pick[1] else pick[0]
 
 
 def grave_markers(
@@ -107,19 +126,26 @@ def grave_markers(
     until: datetime | None = None,
     limit: int = MAX_MARKERS,
 ) -> list[dict[str, Any]]:
-    """Return the grave-error markers of ``logset`` in [since, until), by time.
+    """Return the grave-error markers of ``logset`` in [since, until], by time.
+
+    Both ends are inclusive, as a capture's window; naive times are UTC.
 
     Each is ``{"kind", "ts", "last_ts", "count", "signature", "entry_id", "text"}``: the
-    first entry's time, signature, id and text (the grave exception's type and its message,
-    else the first exception's, else the template; at most 200 characters), the last entry's
-    time and how many entries folded into it (:data:`FOLD_MS`). At most ``limit``, those
-    with the most entries.
+    first entry's time, signature, id and text (see :func:`_text`; at most 200 characters),
+    the last entry's time and how many entries folded into it (:data:`FOLD_MS`). At most
+    ``limit``, those with the most entries.
     """
-    lf = logset.entries_lazy().filter(pl.col("ts").is_not_null() & has_time())
+    since, until = _utc(since), _utc(until)
+    # a cheap first cut: only an exception chain or a WARN-and-up entry can be grave
+    lf = logset.entries_lazy().filter(
+        pl.col("ts").is_not_null()
+        & has_time()
+        & ((pl.col("level") >= TEXT_MIN_LEVEL) | (pl.col("exception_chain").list.len() > 0))
+    )
     if since is not None:
         lf = lf.filter(pl.col("ts") >= since)
     if until is not None:
-        lf = lf.filter(pl.col("ts") < until)
+        lf = lf.filter(pl.col("ts") <= until)
     df = (
         lf.select(
             "ts",

@@ -160,15 +160,23 @@
   const T1MS = T0MS + NH * HOUR;
   /** A zoom range [a, b) in ms inside the timeline, or null for the whole timeline (or a range of
    *  under 10 seconds). */
+  /** The shortest zoom: 10 s, an hour in the standalone file (no finer bins there). */
+  const MIN_ZOOM = ENTRIES_URL && LS.id ? 1e4 : HOUR;
   function clampZoom(z) {
     if (!z || !NH) return null;
     let [a, b] = z;
     if (!(a === a && b === b)) return null;
     if (a > b) [a, b] = [b, a];
+    if (b - a < MIN_ZOOM) {
+      // too short to show: widen around its middle, rather than drop the zoom
+      const c = (a + b) / 2;
+      [a, b] = [c - MIN_ZOOM / 2, c + MIN_ZOOM / 2];
+    }
+    if (a < T0MS) [a, b] = [T0MS, b + T0MS - a];
+    if (b > T1MS) [a, b] = [a - (b - T1MS), T1MS];
     a = Math.max(T0MS, a);
     b = Math.min(T1MS, b);
-    if (b - a < 1e4 || (a <= T0MS && b >= T1MS)) return null;
-    return [a, b];
+    return a <= T0MS && b >= T1MS ? null : [a, b];
   }
   /** The timeline hours [first, last] that cover the times [a, b): the window of a zoom. */
   const hoursCovering = (a, b) => [
@@ -419,6 +427,11 @@
     return m ? clampZoom([unzstamp(m[1]), unzstamp(m[2])]) : null;
   }
   function parseHash() {
+    const s = parseHashRaw();
+    if (s.z && !s.t) s.t = hoursCovering(s.z[0], s.z[1]);  // a zoom always has its window
+    return s;
+  }
+  function parseHashRaw() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
     const v = p.get("view");
     const c = p.get("cmp");
@@ -480,6 +493,10 @@
       if (UNDO.length > 100) UNDO.shift();
     }
     Object.assign(S, patch);
+    if (S.z && !ZOOMSEL) {
+      ZOOMSEL = true;
+      try { localStorage.setItem(ZS_KEY, "1"); } catch { /* storage unavailable */ }
+    }
     if (opts.keepPage !== true && !("p" in patch)) S.p = 0;
     const h = hashOf(S);
     if (h !== location.hash.replace(/^#/, "")) {
@@ -804,7 +821,7 @@
     }
     const parts = [];
     const svgAt = parts.length;
-    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(opts.label)}">`);
+    parts.push(`<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="${opts.top ? "group" : "img"}" aria-label="${esc(opts.label)}">`);
     if (series.some((s) => s.key === "OTHER")) {
       parts.push(`<defs><pattern id="hatch-other" width="4" height="4" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line class="hatch-line" x1="0" y1="0" x2="0" y2="4"/></pattern></defs>`);
     }
@@ -1171,7 +1188,10 @@
         entry.value = { levels, ov: ovb, mutedLeft: muted.length - sub.length };
       })
       .catch((err) => { entry.value = { err: String(err && err.message ? err.message : err) }; })
-      .finally(() => { if (TL_WANT === key) renderTimeline(); });
+      .finally(() => {
+        if (TL_WANT === key) renderTimeline();
+        if (entry.value && entry.value.err) FINE_CACHE.delete(key);  // shown once; the next draw asks again
+      });
     return undefined;
   }
   let TL_WANT = "";
@@ -1240,7 +1260,7 @@
       b.addEventListener("pointerleave", () => { tip.hidden = true; });
       const go = () => openGrave(items[0]);
       b.addEventListener("click", go);
-      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(); } });
+      b.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); e.stopPropagation(); go(); } });
     }
     $("tl-bin").textContent = binName(frame.size);
     el.title = ZOOMSEL ? (S.z ? "Drag across the chart to zoom in further" : "Drag across the chart to zoom into a time range") : "Drag across the chart to select a time window; click to clear it";
@@ -1288,14 +1308,15 @@
   /** Zoom the top chart into [a, b) (null: the whole timeline); the window becomes its hours. */
   function zoomTo(range) {
     const z = clampZoom(range);
-    if (!z) return commit({ z: null }, { keepPage: true });
+    if (!z) return commit(range ? { z: null, t: null } : { z: null }, { keepPage: true });
     commit({ z, t: hoursCovering(z[0], z[1]) });
   }
   /** + : into the window, or (zoomed) into the middle third. */
   function zoomIn() {
     if (S.z) {
       const [a, b] = S.z, w = (b - a) / 3;
-      if (w >= 1e4) zoomTo([a + w, b - w]);
+      if (b - a <= MIN_ZOOM) toast(FINE ? "This is the shortest zoom" : "Bins under an hour need the web app (ragnalog serve)");
+      else zoomTo([a + w, b - w]);
     } else if (S.t) zoomTo([T0MS + S.t[0] * HOUR, T0MS + (S.t[1] + 1) * HOUR]);
     else toast("Select a time window on the chart first");
   }
@@ -1326,10 +1347,18 @@
   const MAG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.6"/><path d="M10.4 10.4 14 14M5 7h4M7 5v4"/></svg>`;
   const UNDO_SVG = `<svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5.5 3 2.5 6l3 3"/><path d="M2.5 6H10a3.5 3.5 0 0 1 0 7H7"/></svg>`;
   /** Undo and the zoom toggle, at the head of the chart. */
+  /** Focus sel inside el again (a re-render replaced the focused control). */
+  function refocus(el, sel) {
+    const b = el && el.querySelector(sel);
+    if (b) b.focus({ preventScroll: true });
+  }
   function renderZoomCtl() {
     const el = $("tl-zoom");
     if (!el) return;
     if (!NH) { el.innerHTML = ""; return; }
+    const had = el.contains(document.activeElement) && document.activeElement.matches("[data-undo]") ? "[data-undo]"
+      : el.contains(document.activeElement) ? "[data-zoomsel]" : "";
+    if (had) queueMicrotask(() => refocus(el, had));
     el.innerHTML = `<button type="button" class="btn small zbtn z-undo" data-undo ${UNDO.length ? "" : "disabled"} title="Undo: back to the previous zoom, window and bins, also after Clear (u)">${UNDO_SVG}<span>Undo</span></button>` +
       `<button type="button" class="btn small zbtn z-toggle" data-zoomsel aria-pressed="${ZOOMSEL}" title="${ZOOMSEL ? "Zoom is on: a drag on the chart zooms into the selection, with finer bins. Click: the whole set again, and drags select a time window" : "Zoom is off: a drag selects a time window. Click: zoom into the window, and drags zoom"}">${MAG}<span>Zoom</span></button>`;
   }
@@ -1357,9 +1386,13 @@
       return;
     }
     const cur = S.bin && BINS.choices.includes(BIN_MS[S.bin]) ? S.bin : "";
-    const opts = [`<option value=""${cur ? "" : " selected"}>Auto (${esc(binShort(BINS.auto))})</option>`]
+    const stale = S.bin && !cur;  // picked for another range: shown, so Auto is a change
+    const opts = [`<option value=""${cur || stale ? "" : " selected"}>Auto (${esc(binShort(BINS.auto))})</option>`]
+      .concat(stale ? [`<option value="${esc(S.bin)}" selected disabled>${esc(binShort(BIN_MS[S.bin]))} (not here)</option>`] : [])
       .concat(BINS.choices.map((ms) => `<option value="${binKey(ms)}"${binKey(ms) === cur ? " selected" : ""}>${esc(binShort(ms))}</option>`));
     const finer = FINE ? "" : " Bins under an hour need the web app (ragnalog serve).";
+    const focused = document.activeElement && document.activeElement.id === "tl-binsel";
+    if (focused) queueMicrotask(() => { const s = $("tl-binsel"); if (s) s.focus({ preventScroll: true }); });
     el.innerHTML = `<label class="sel" title="Bin size of the chart: Auto fits the shown range; pick a finer one to see more detail.${finer}"><span>Bins</span><select id="tl-binsel" aria-label="Bin size">${opts.join("")}</select></label>`;
   }
   /** Quick windows ending at the last hour of the set: those shorter than the set. */
@@ -1424,7 +1457,7 @@
       el.innerHTML = `<span class="win-what zoom-what" title="${esc(tableNote)}"><span class="win-k">Zoom</span> <b>${esc(zoomText(za, zb))}</b> <span class="muted">${TZ} · ${spanText(zb - za)}</span></span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= T0MS ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
         `<button type="button" class="btn small" data-shift="1" ${zb >= T1MS ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
-        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za <= MIN_ZOOM ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
         `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
         `<button type="button" class="btn small" data-zoom="reset" title="Show the whole set again; the window stays">Reset zoom</button>` +
         what.join("") + `<button type="button" class="btn small" data-win="0" title="Show the whole set">Clear</button>`;
@@ -1866,7 +1899,10 @@
     fetch(USERS_URL + "?" + qs, { headers: { Accept: "application/json" } })
       .then((res) => (res.ok ? res.json() : res.json().catch(() => ({})).then((d) => { throw new Error((d.error && d.error.message) || "HTTP " + res.status); })))
       .then((d) => { entry.value = d; }, (err) => { entry.value = { err: String((err && err.message) || err) }; })
-      .finally(redraw);
+      .finally(() => {
+        redraw();
+        if (entry.value && entry.value.err) USERS_CACHE.delete(qs);  // shown once; the next draw asks again
+      });
     return undefined;
   }
   /** The window as since/until (UTC, whole hours), added to p. */
@@ -1894,7 +1930,7 @@
   const userHtml = (u) => esc(u) + (u === "anonymous" ? ` <span class="muted u-anon" title="Jira logs requests of no signed-in user as anonymous">not signed in</span>` : "");
   /** The entries page with one user's entries (of a group, when r is given), in the window. */
   function userEntriesUrl(user, r) {
-    if (!ENTRIES_URL || !LS.id) return "";
+    if (!ENTRIES_URL || !LS.id || (r && r.kind === "merged")) return "";
     const p = new URLSearchParams();
     if (r) groupParam(r, p);
     p.set("user", user);
@@ -1948,7 +1984,7 @@
   const LV_PARAM = { ERROR: "ERROR,FATAL", WARN: "WARN", INFO: "INFO", DEBUG: "DEBUG,TRACE", OTHER: "UNKNOWN" };
   function usersQs(extra) {
     const p = new URLSearchParams({ limit: "0", ...extra });
-    if (![...PRESENT].every((b) => S.lv.has(b))) p.set("level", [...S.lv].map((b) => LV_PARAM[b]).join(","));
+    if (!BUCKETS.every((b) => S.lv.has(b))) p.set("level", [...S.lv].map((b) => LV_PARAM[b]).join(","));
     if (S.lg) p.set("logger", S.lg);
     if (S.ex) p.set("exception", S.ex);
     if (S.hx) p.set("with_exception", "true");
@@ -1971,7 +2007,6 @@
     for (const b of $("t-tabs").querySelectorAll("[data-tab]")) {
       const on = (b.dataset.tab || "") === S.tab;
       b.setAttribute("aria-selected", String(on));
-      b.setAttribute("aria-pressed", String(on));
     }
     $("f-search").placeholder = S.tab === "users" ? "Search users" : "Search groups";
     if (S.tab !== "users") { el.hidden = true; return; }
@@ -2774,7 +2809,7 @@
     renderControls(v);
     renderTable(v);
     renderUsers();
-    if (TL && tlKey() !== TLK) renderTimeline();
+    if (tlKey() !== TLK) renderTimeline();
     renderWindowLabel();
     renderZoomCtl();
     if (TL) showWindow(TL);
@@ -3145,13 +3180,15 @@
     });
     $("t-tabs").addEventListener("click", (e) => {
       const b = e.target.closest("[data-tab]");
-      if (b) commit({ tab: b.dataset.tab || "" }, { keepPage: true });
+      if (!b || (b.dataset.tab || "") === S.tab) return;
+      $("f-search").value = "";
+      commit({ tab: b.dataset.tab || "", q: "" }, { keepPage: true });
     });
     const uv = $("u-view");
     const toggleUser = (row) => commit({ user: S.user === row.dataset.user ? "" : row.dataset.user }, { keepPage: true, replace: true });
     uv.addEventListener("click", (e) => {
       const s = e.target.closest("[data-usort]");
-      if (s) { USORT = s.dataset.usort; renderUsers(); return; }
+      if (s) { USORT = s.dataset.usort; renderUsers(); refocus(uv, `[data-usort="${USORT}"]`); return; }
       if (e.target.closest("[data-umore]")) { USHOW += 200; renderUsers(); return; }
       const g = e.target.closest("[data-open-group]");
       if (g) { open(g.dataset.openGroup); return; }
@@ -3205,7 +3242,8 @@
       const ub = e.target.closest("[data-users-all],[data-user-tab]");
       if (ub) {
         if (ub.dataset.userTab != null) {
-          commit({ tab: "users", user: ub.dataset.userTab }, { keepPage: true });
+          $("f-search").value = "";
+          commit({ tab: "users", user: ub.dataset.userTab, q: "" }, { keepPage: true });
           $("table-wrap").scrollIntoView({ block: "start" });
         } else {
           const id = S.sig;

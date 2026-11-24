@@ -740,7 +740,13 @@ class LogSet:
         }
 
     def sql(
-        self, query: str, *, max_rows: int | None = None, timeout_s: float | None = None
+        self,
+        query: str,
+        *,
+        max_rows: int | None = None,
+        timeout_s: float | None = None,
+        memory_limit: str | None = None,
+        threads: int | None = None,
     ) -> pl.DataFrame:
         """Run DuckDB SQL with views ``entries`` and ``groups`` (and ``merges`` when present).
 
@@ -758,6 +764,11 @@ class LogSet:
             max_rows: Return at most this many rows (``None`` = all).
             timeout_s: Interrupt the query after this many seconds (``None`` = no limit);
                 an interrupted query raises ``duckdb.InterruptException``.
+            memory_limit: DuckDB's ``memory_limit`` (``"1GB"``; ``None`` = DuckDB's default,
+                most of the RAM). With a limit nothing spills to disk and the result is
+                built inside DuckDB before it is converted, so a larger one raises
+                ``duckdb.OutOfMemoryException`` instead of filling the process.
+            threads: DuckDB's ``threads`` (``None`` = every core).
 
         Raises:
             duckdb.Error: The query is invalid, tries to access other files, or ran out
@@ -768,8 +779,15 @@ class LogSet:
 
         con = duckdb.connect(":memory:")
         timer: threading.Timer | None = None
+        lock, closed = threading.Lock(), [False]
+
+        def interrupt() -> None:
+            with lock:  # never on a closed connection (cancel() does not stop a running callback)
+                if not closed[0]:
+                    con.interrupt()
+
         if timeout_s is not None:
-            timer = threading.Timer(timeout_s, con.interrupt)
+            timer = threading.Timer(timeout_s, interrupt)
             timer.daemon = True
             timer.start()
         try:
@@ -782,6 +800,12 @@ class LogSet:
                 )
             allowed = ", ".join(f"'{_sql_path(p)}'" for p in views.values())
             con.execute(f"SET allowed_paths = [{allowed}]")
+            if threads is not None:
+                con.execute(f"SET threads = {int(threads)}")
+            if memory_limit is not None:
+                limit = memory_limit.replace("'", "''")
+                con.execute(f"SET memory_limit = '{limit}'")
+                con.execute("SET temp_directory = ''")  # no spill files (before external access)
             con.execute("SET enable_external_access = false")
             con.execute("SET TimeZone = 'UTC'")
             con.execute("SET lock_configuration = true")
@@ -804,6 +828,11 @@ class LogSet:
                     rel = cast
             if max_rows is not None:
                 rel = rel.limit(max_rows)
+            if memory_limit is not None:
+                # converting a result to polars is not under the memory limit: build it in
+                # DuckDB first (a table, under the limit), then convert that
+                rel.create("_ragnalog_result")
+                rel = con.table("_ragnalog_result")
             try:
                 result: pl.DataFrame = rel.pl()
             except Exception:
@@ -816,7 +845,9 @@ class LogSet:
         finally:
             if timer is not None:
                 timer.cancel()
-            con.close()
+            with lock:
+                closed[0] = True
+                con.close()
 
 
 def _coarse_groups(lf: pl.LazyFrame) -> pl.LazyFrame:

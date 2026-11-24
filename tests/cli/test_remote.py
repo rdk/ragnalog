@@ -374,3 +374,91 @@ def test_query_endpoint(small: Path, monkeypatch: pytest.MonkeyPatch) -> None:
         )
         assert (slow.status_code, slow.json()["error"]["code"]) == (400, "sql_error")
         assert "longer than 0.2 s" in slow.json()["error"]["message"]
+
+
+def test_query_endpoint_reads_only(small: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """One SELECT only: COPY could write over the set's files (they are allowed paths)."""
+    from ragnalog.webapp import api
+
+    url = "/api/sets/sample/query"
+    with TestClient(create_app(Settings(store=small))) as c:
+        for sql in (
+            "copy (select 1 forged) to 'entries.parquet' (format csv, use_tmp_file false)",
+            "explain analyze copy (select 1) to 'x.csv'",
+            "create table t as select 1",
+            "set threads = 1",
+            "pivot (select 1 a, 2 b) on a using sum(b)",
+        ):
+            r = c.post(url, json={"sql": sql})
+            assert (r.status_code, r.json()["error"]["code"]) == (400, "usage"), sql
+        assert c.post(url, json={"sql": "summarize entries"}).status_code == 200
+        n = c.post(url, json={"sql": "select count(*) n from entries"})
+        assert n.status_code == 200 and n.json()["items"][0]["n"] > 0
+        monkeypatch.setattr(api, "QUERY_MAX_BYTES", 1000)
+        big = c.post(url, json={"sql": "select repeat('x', 5000) s"})
+        assert (big.status_code, big.json()["error"]["code"]) == (400, "sql_error")
+        assert "over" in big.json()["error"]["message"]
+        monkeypatch.setattr(api, "QUERY_MEMORY", "32MB")
+        oom = c.post(url, json={"sql": "select repeat('x', 1000000) a from range(200)"})
+        assert (oom.status_code, oom.json()["error"]["code"]) == (400, "sql_error")
+        assert "memory" in oom.json()["error"]["message"]
+        assert api.QUERY_SLOTS.acquire(blocking=False) and api.QUERY_SLOTS.acquire(blocking=False)
+        try:
+            busy = c.post(url, json={"sql": "select 1"})
+        finally:
+            api.QUERY_SLOTS.release()
+            api.QUERY_SLOTS.release()
+        assert (busy.status_code, busy.json()["error"]["code"]) == (503, "http")
+        assert busy.headers["retry-after"] == "5"
+
+
+def test_redirects_and_empty_replies_fail(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A 3xx is not followed (it would carry the token); a 2xx with no document fails."""
+    from ragnalog.service.errors import OpError
+
+    settings = Settings(server=SERVER, token="t")
+    monkeypatch.setattr(remote, "transport", lambda *a: (308, b""))
+    with pytest.raises(OpError) as redirect:
+        remote.request(settings, "POST", "/api/sets/x/label", [])
+    assert redirect.value.code == "http" and "redirect" in redirect.value.message
+    monkeypatch.setattr(remote, "transport", lambda *a: (200, b""))
+    with pytest.raises(OpError) as empty:
+        remote.request(settings, "DELETE", "/api/sets/x", [])
+    assert empty.value.code == "http" and "empty" in empty.value.message
+
+
+def test_urllib_transport_keeps_the_token_home() -> None:
+    """The real transport returns a redirect instead of sending the token to its target."""
+    import http.server
+    import threading
+
+    seen: list[str] = []
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            seen.append(self.path)
+            self.send_response(302)
+            self.send_header("Location", "/elsewhere")
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def log_message(self, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+        url = f"http://127.0.0.1:{server.server_address[1]}/api/version"
+        status, _ = remote._urllib("GET", url, {"Authorization": "Bearer t"}, None, 5)
+    finally:
+        server.shutdown()
+        server.server_close()
+    assert status == 302 and seen == ["/api/version"]
+
+
+def test_explicit_store_is_a_local_run() -> None:
+    """--store beats RAGNALOG_SERVER (a remove meant for a local set never goes remote)."""
+    env = {"RAGNALOG_SERVER": SERVER}
+    assert Settings.load({}, env).server == SERVER
+    assert Settings.load({"store": "local"}, env).server is None
+    assert Settings.load({"store": "local", "server": SERVER}, env).server == SERVER

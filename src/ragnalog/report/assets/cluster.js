@@ -251,7 +251,7 @@
   const TL_URL = URLS ? str(URLS.timeline || str(URLS.entries).replace(/\/entries(?=$|\?)/, "/timeline")) : "";
   const FINE = !!(TL_URL && NB);
   const BASE_KS = [1, 2, 3, 4, 6, 8, 12, 24, 48, 96, 168, 336];
-  const SIZES = [...(FINE ? [1e3, 5e3, 1e4, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5].filter((ms) => ms < BMS) : []), ...BASE_KS.map((k) => k * BMS)];
+  const SIZES = [...(FINE ? [1e3, 5e3, 1e4, 3e4, 6e4, 12e4, 3e5, 6e5, 9e5, 18e5].filter((ms) => ms < BMS && BMS % ms === 0) : []), ...BASE_KS.map((k) => k * BMS)];
   const sizeKey = (ms) => (ms % 864e5 === 0 ? ms / 864e5 + "d" : ms % 3.6e6 === 0 ? ms / 3.6e6 + "h" : ms % 6e4 === 0 ? ms / 6e4 + "m" : Math.round(ms / 1e3) + "s");
   const keyMs = (k) => { const m = /^(\d+)([smhd])$/.exec(k || ""); return m ? +m[1] * { s: 1e3, m: 6e4, h: 3.6e6, d: 864e5 }[m[2]] : 0; };
   /** A bin size in the bins menu: "5 s", "15 min", "3 h", "1 d". */
@@ -259,15 +259,24 @@
   /** What one bin is, for the chart's title: "hour", "15 min", "5 s", "2 hours", "day". */
   const sizeLabel = (ms) => (ms === 3.6e6 ? "hour" : ms === 864e5 ? "day" : ms < 6e4 ? Math.round(ms / 1e3) + " s"
     : ms < 3.6e6 ? Math.round(ms / 6e4) + " min" : ms % 864e5 === 0 ? ms / 864e5 + " days" : Math.round((ms / 3.6e6) * 10) / 10 + " hours");
-  /** A zoom range inside the capture's timeline, or null (the whole timeline, or under 10 s). */
+  /** The shortest zoom: 10 s, a base bucket in the static file (no finer bins there). */
+  const MIN_ZOOM = FINE ? 1e4 : BMS;
+  /** A zoom range inside the capture's timeline (a shorter one widened to MIN_ZOOM around its
+      middle), or null (the whole timeline). */
   function clampZoom(z) {
     if (!z || !NB || !isNum(TA)) return null;
     let [a, b] = z;
     if (!(isNum(a) && isNum(b))) return null;
     if (a > b) [a, b] = [b, a];
+    if (b - a < MIN_ZOOM) {
+      const c = (a + b) / 2;
+      [a, b] = [c - MIN_ZOOM / 2, c + MIN_ZOOM / 2];
+    }
+    if (a < TA) [a, b] = [TA, b + TA - a];
+    if (b > TE) [a, b] = [a - (b - TE), TE];
     a = Math.max(TA, a);
     b = Math.min(TE, b);
-    return b - a < 1e4 || (a <= TA && b >= TE) ? null : [a, b];
+    return a <= TA && b >= TE ? null : [a, b];
   }
   /** The base buckets [first, last] covering the times [a, b): the window of a zoom. */
   const bucketsCovering = (a, b) => [Math.max(0, Math.floor((a - TA) / BMS)), Math.min(NB - 1, Math.ceil((b - TA) / BMS) - 1)];
@@ -500,6 +509,11 @@
   }
   const nodeList = (s) => (s ? s.split(",").filter((n) => NIDX.has(n)) : []);
   function parseHash() {
+    const s = parseHashRaw();
+    if (s.z && !s.t) s.t = bucketsCovering(s.z[0], s.z[1]);
+    return s;
+  }
+  function parseHashRaw() {
     const p = new URLSearchParams(location.hash.replace(/^#/, ""));
     const get = (k) => p.get(k) || "";
     const tab = get("tab");
@@ -577,6 +591,10 @@
       if (UNDO.length > 100) UNDO.shift();
     }
     Object.assign(S, patch);
+    if (S.z && !ZOOMSEL) {
+      ZOOMSEL = true;
+      try { localStorage.setItem(ZS_KEY, "1"); } catch { /* storage unavailable */ }
+    }
     if (opts.keepPage !== true && !("p" in patch)) S.p = 0;
     // a moment outside a newly set window is dropped (the log shows the window)
     if ("t" in patch && S.at && !inRange(parseTs(S.at), tRange())) { S.at = ""; S.ae = ""; }
@@ -847,8 +865,9 @@
     if (FINE_CACHE.size > 30) FINE_CACHE.delete(FINE_CACHE.keys().next().value);
     const u = new URL(TL_URL, location.href);
     u.searchParams.set("bucket", sizeKey(fr.size));
-    u.searchParams.set("since", isoOf(fr.a));
-    u.searchParams.set("until", isoOf(fr.b));
+    // inside the capture's window: with since/until the server's window is those (inclusive)
+    u.searchParams.set("since", isoOf(WIN ? Math.max(fr.a, WIN[0]) : fr.a));
+    u.searchParams.set("until", isoOf(WIN ? Math.min(fr.b, WIN[1]) : fr.b));
     if (WMODE === "overlap" || WMODE === "union") u.searchParams.set("window", WMODE);
     const g = new URL(u.toString());
     if (sig) g.searchParams.set("signature", sig);
@@ -874,9 +893,17 @@
         }
         out[n] = { lev, tot, g: gl };
       }
-      entry.value = out;
+      entry.value = { nodes: out };
     }).catch((err) => { entry.value = { err: str(err && err.message ? err.message : err) }; })
-      .finally(() => { if (TL_WANT === key) renderTimeline(); });
+      .finally(() => {
+        if (TL_WANT === key) {
+          // the redraw replaces the bins menu: keep its focus (arrowing through sizes)
+          const fk = focusKey(document.activeElement);
+          renderTimeline();
+          restoreFocus(fk);
+        }
+        if (entry.value && entry.value.err) FINE_CACHE.delete(key);  // shown once; the next draw asks again
+      });
     return undefined;
   }
   const renderTimeline = guard(function renderTimeline() {
@@ -896,7 +923,7 @@
     // (the finest whose bars keep 5 px, as before); bins under the base bucket from the server
     const [za, zb] = S.z || [TA, TE];
     const span = zb - za;
-    const floor = !FINE ? BMS : !S.z && span >= 864e5 ? BMS : 1e3;
+    const floor = FINE && S.z ? 1e3 : BMS;
     const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 5 <= plotW) || SIZES[SIZES.length - 1];
     const choices = SIZES.filter((ms) => { const c = Math.ceil(span / ms); return c >= 2 && c <= Math.floor(plotW / 2); });
     const want = keyMs(S.bin);
@@ -955,7 +982,7 @@
     const inCover = (n, a, b) => !!COVT[n] && b > COVT[n][0] && a < COVT[n][1] && !GAPS[n].some(([x, y]) => a >= x && b <= y);
     const rows = NODES.map((n, i) => {
       const f = S.y === "pct" ? 100 / Math.max(1, NSUM[n]) : 1;
-      const fd = fine && fine[n];
+      const fd = fine && fine.nodes[n];
       const levAll = BUCKETS.map((b) => (fd ? fd.lev[b] : binB(LEV[n][b])));
       const all = fd ? fd.tot : binB(NTOT[n]);
       const has = new Uint8Array(nb);
@@ -994,7 +1021,7 @@
     }
     const tickText = (t) => (S.y === "pct" ? compact(t) + "%" : compact(t));
     const P = [];
-    P.push(`<svg class="${S.arrows ? "" : "arrows-off"}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${ERR ? "Errors" : "Entries"} per ${esc(binLabel(k))}${ERR ? "" : " by level"}, one band per node, with event lanes">`);
+    P.push(`<svg class="${S.arrows ? "" : "arrows-off"}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="group" aria-label="${ERR ? "Errors" : "Entries"} per ${esc(sizeLabel(fr.size))}${ERR ? "" : " by level"}, one band per node, with event lanes">`);
     P.push(`<rect class="hover-band" x="0" y="${RULER}" width="${r1(slot)}" height="${bottomAll - RULER}" visibility="hidden"/>`);
     // window ruler
     if (WIN) {
@@ -1341,7 +1368,7 @@
   let xmReq = 0;
   function openMoment(geo, b) {
     const fr = geo.frame;
-    const t = [fr.ia + b * fr.k, Math.min(NB - 1, fr.ia + (b + 1) * fr.k - 1)];
+    const t = [fr.ia + b * fr.k, Math.min(fr.ib - 1, fr.ia + (b + 1) * fr.k - 1)];
     const m = arr(geo.xms).find((x) => x.b === b);
     const fallback = () => {
       commit({ t, tab: "l", ml: "ERROR", at: "", ae: "", ctx: "", cts: "", ms: [], mn: m ? new Set(m.nodes.map((o) => o.n)) : null, mq: "" }, { keepPage: true });
@@ -1517,14 +1544,15 @@
   /** Zoom the timeline into [a, b) (null: the whole timeline); the window becomes its buckets. */
   function zoomTo(range) {
     const z = clampZoom(range);
-    if (!z) return commit({ z: null }, { keepPage: true });
+    if (!z) return commit(range ? { z: null, t: null } : { z: null }, { keepPage: true });
     commit({ z, t: bucketsCovering(z[0], z[1]) });
   }
   /** + : into the window, or (zoomed) into the middle third. */
   function zoomIn() {
     if (S.z) {
       const [a, b] = S.z, w = (b - a) / 3;
-      if (w >= 1e4) zoomTo([a + w, b - w]);
+      if (b - a <= MIN_ZOOM) toast(FINE ? "This is the shortest zoom" : `Bins under ${binLabel(1) === "hour" ? "an hour" : binLabel(1)} need the web app (ragnalog serve)`);
+      else zoomTo([a + w, b - w]);
     } else if (S.t) zoomTo([TA + S.t[0] * BMS, TA + (S.t[1] + 1) * BMS]);
     else toast("Select a time window on the timeline first");
   }
@@ -1542,7 +1570,7 @@
     try { localStorage.setItem(ZS_KEY, ZOOMSEL ? "1" : "0"); } catch { /* storage unavailable */ }
     if (!ZOOMSEL && S.z) commit({ z: null }, { keepPage: true });
     else if (ZOOMSEL && S.t && !S.z) zoomTo([TA + S.t[0] * BMS, TA + (S.t[1] + 1) * BMS]);
-    else renderTimeline();
+    else update(true);
     toast(ZOOMSEL ? "Zoom on: a drag zooms into the selection" : "Zoom off: a drag selects the time window");
   }
   /** Undo: the timeline's previous window, zoom and bin (Clear included). */
@@ -1604,7 +1632,7 @@
     const seg = presets ? `<span class="seg win-seg" role="group" aria-label="Quick windows"><span class="lbl">Last</span>${presets}</span>` : "";
     if (!NB) {
       w.innerHTML = "";
-    } else if (!S.t) {
+    } else if (!S.t && !S.z) {
       w.innerHTML = seg;
     } else if (S.z) {
       // zoomed: the zoom leads, the window (the table's buckets around it) follows it
@@ -1613,7 +1641,7 @@
       w.innerHTML = `<span class="win-what zoom-what" title="${esc(tableNote)}"><span class="win-k">Zoom</span> <b>${esc(rangeText(za, zb, (s) => zoomStamp(s, za, zb, true), (s) => zoomStamp(s, za, zb, false)))}</b> (${esc(spanText(zb - za))})</span>` +
         `<span class="win-nav"><button type="button" class="btn small" data-shift="-1" ${za <= TA ? "disabled" : ""} title="Earlier, by the zoom's width ([)" aria-label="Earlier">‹</button>` +
         `<button type="button" class="btn small" data-shift="1" ${zb >= TE ? "disabled" : ""} title="Later, by the zoom's width (])" aria-label="Later">›</button></span>` +
-        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za < 3e4 ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
+        `<span class="win-nav"><button type="button" class="btn small" data-zoom="in" ${zb - za <= MIN_ZOOM ? "disabled" : ""} title="Zoom into the middle third (+)" aria-label="Zoom in">+</button>` +
         `<button type="button" class="btn small" data-zoom="out" title="Zoom out to three times the width (−)" aria-label="Zoom out">−</button></span>` +
         `<button type="button" class="btn small" data-zoom="reset" title="Show the whole capture again; the window stays">Reset zoom</button>` +
         `<button type="button" class="btn small" data-clear-t title="Show the whole capture">Clear</button>`;
@@ -2873,7 +2901,7 @@
     const at = parseTs(str(ts)), tr = tRange();
     const out = tr && isNum(at) && (at < tr[0] || at >= tr[1]);
     LOG.atDone = ""; // the same event again scrolls to it again
-    commit({ tab: "l", at: str(ts), ae: str(entry || ""), ctx: "", cts: "", ms: [], mn: null, mq: "", ...(out ? { t: null } : {}) }, { keepPage: true });
+    commit({ tab: "l", at: str(ts), ae: str(entry || ""), ctx: "", cts: "", ms: [], mn: null, mq: "", ...(out ? { t: null, z: null } : {}) }, { keepPage: true });
     scrollToTabs();
   }
   function scrollToTabs() {

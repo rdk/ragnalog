@@ -61,6 +61,6 @@
 </dialog>
 </div>
 <script type="application/json" id="e-first">{{ first }}</script>
-<script defer src="/assets/report/entry-card.js?v={{ asset_v }}"></script>
-<script defer src="/static/entries.js?v={{ asset_v }}"></script>
+<script defer src="/assets/report/entry-card.js?v={{ asset_v() }}"></script>
+<script defer src="/static/entries.js?v={{ asset_v() }}"></script>
 {% endblock %}

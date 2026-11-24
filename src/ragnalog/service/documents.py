@@ -801,8 +801,9 @@ class GraveMarker(Struct, kw_only=True):
     text: Annotated[
         str,
         _d(
-            "The grave exception's type and the outermost message, else the template, "
-            "at most 200 characters."
+            "The exception that made it grave (its type naming the kind, else its message "
+            "matching, else the outermost): type and its own message; without a chain, the "
+            "template. At most 200 characters."
         ),
     ]
     node: Annotated[str, _d("Node id (cluster-report.v1 only).")] | UnsetType = UNSET
