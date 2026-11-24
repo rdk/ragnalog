@@ -11,6 +11,10 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
 
 ## [Unreleased]
 
+Masking changes (`mask4`): sets built before are `stale` and not comparable with new ones
+until `ragnalog upgrade --all` re-signs them from their stored entries (no log files
+needed).
+
 ### Added
 
 - Set report: zoom the top chart into the time window (*Zoom in* or `+`; a drag on the
@@ -38,6 +42,13 @@ and `ragnalog upgrade --all` rebuilds those from the stored entries.
   The zone button or `z` still switches to UTC, and a viewer who chose UTC keeps it. Links,
   windows in the URL and `/api` parameters stay UTC.
 - New logo and tab icon: the serpent Jörmungandr around three log lines.
+
+### Fixed
+
+- Masking: a date written by Java's `Date.toString()` (`Tue Nov 24 00:00:00 CET 2026`, also
+  with a zone such as `GMT+01:00` or none) is one `<TS>`. Its weekday and month names
+  stayed in the template, so a message holding one got a new signature every day and
+  `triage` and `diff` reported it as a new group each morning.
 
 ## [0.6.1] - 2026-11-21
 

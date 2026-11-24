@@ -13,7 +13,7 @@ from ragnalog.store.triage import (
 )
 
 T0 = datetime(2026, 11, 1, tzinfo=UTC)
-CURRENT = "jira@4|L+G+E+F0|sig2|mask3"
+CURRENT = "jira@4|L+G+E+F0|sig2|mask4"
 
 
 def m(
@@ -60,7 +60,7 @@ def test_rules_in_order() -> None:
     sets = [
         ME,
         m("stale", 80, 8, key="jira@1|L+G+E+F0|sig1|mask0"),
-        m("frames", 80, 8, key="jira@4|L+G+E+F2|sig2|mask3", spec="L+G+E+F2"),
+        m("frames", 80, 8, key="jira@4|L+G+E+F2|sig2|mask4", spec="L+G+E+F2"),
         m("super", 60, 48, files=("a", "b", "c", "d")),
         m("sub", 104, 4, files=("c",)),
         m("later", 104, 8),

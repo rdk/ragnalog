@@ -290,7 +290,7 @@ next ingest, so a set holds exactly the bytes its `sources` digests name.
  "sources": [{"path", "size", "xxh3", "first_ts", "last_ts", "entries"}],
  "first_ts", "last_ts", "entry_count", "group_count", "created_at", "tool_version",
  "schema_version", "signature_version", "mask_rules_version", "signature_spec",
- "recipe_key": "jira@4|L+G+E+F0|sig2|mask3", "node": "NODE1", "cluster": "jira-test",
+ "recipe_key": "jira@4|L+G+E+F0|sig2|mask4", "node": "NODE1", "cluster": "jira-test",
  "capture": null,
  "ingest": {"parsed_entries", "parse_errors", "elapsed_s", "existing", "skipped": [path],
             "warnings": [str]},
@@ -1014,6 +1014,11 @@ builds those entries again from their stored `raw` text (only rows with a
 `Suppressed:` body or a user with a space and no request id are looked at).
 Masking rules version 2 (`…|mask2`) masks an IP address that ends a sentence
 (`from 10.0.0.1.`) whole; `upgrade` re-signs for it.
+Masking rules version 4 (`…|mask4`) masks a date written by Java's
+`Date.toString()` (`Tue Nov 24 00:00:00 CET 2026`) as one `<TS>`. Before, its
+weekday and month names stayed in the template, so a message holding one got a
+new signature every day and `triage` and `diff` reported it as a new group.
+Sets built before are stale until `upgrade` re-signs them.
 
 A set ingested from a ZIP before 0.2.0 named its files by the spool directory they
 were extracted to (`<data dir>/.spool/<id>/<zip stem>/<member>`, removed after the
@@ -1120,7 +1125,7 @@ Exit: 0 stopped; 1 the `web` extra is missing (`missing_dependency`) or bad opti
 ### `version`
 
 ```json
-{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 3, "python": "3.14.2"}
+{"schema": "version.v1", "version": "0.6.1", "schema_version": "1.1", "signature_version": 2, "mask_rules_version": 4, "python": "3.14.2"}
 ```
 
 ### `batch`

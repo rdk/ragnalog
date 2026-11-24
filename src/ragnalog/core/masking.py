@@ -19,7 +19,7 @@ from dataclasses import dataclass
 
 __all__ = ["GENERIC_RULES", "MASK_RULES_VERSION", "MaskRule", "Masker"]
 
-MASK_RULES_VERSION = 3
+MASK_RULES_VERSION = 4
 """Bump whenever a change to built-in rules alters templates; recorded in manifests.
 
 2: an IP address that ends a sentence (``from 10.0.0.1.``) is masked whole.
@@ -27,6 +27,9 @@ MASK_RULES_VERSION = 3
 up to 255; JSON Web Tokens (``eyJ…``) are ``<TOKEN>``; an email's local part may hold
 ``'`` (``o'neil@…``) and ``user@localhost`` is an email; the user name in a home path
 (``C:\\Users\\NAME``, ``/home/NAME``, ``/Users/NAME``) is ``<USER>``.
+4: a date written by Java's ``Date.toString()`` (``Tue Nov 24 00:00:00 CET 2026``) is one
+``<TS>``; its weekday and month names stayed in the template, so a message holding one
+got a new signature every day.
 """
 _CACHE_TEXT_MAX = 4096
 """Longest text the masker caches (65,536 texts of this size stay under 300 MB)."""
@@ -50,6 +53,13 @@ GENERIC_RULES: Sequence[MaskRule] = (
     MaskRule.make(
         "ts",
         r"\b\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}(?::\d{2}(?:[.,]\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?(?!\d)",
+    ),
+    MaskRule.make(  # EEE MMM dd HH:mm:ss zzz yyyy; zzz: CET, GMT+01:00, ChST or none
+        "javadate",
+        r"\b(?:Mon|Tue|Wed|Thu|Fri|Sat|Sun) (?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)"
+        r" [ \d]?\d \d{2}:\d{2}:\d{2}(?: [A-Z][A-Za-z]{0,5}(?:[+-]\d{1,2}(?::?\d{2})?)?)?"
+        r" \d{4}(?!\d)",
+        "<TS>",
     ),
     MaskRule.make(
         "uuid",
@@ -96,6 +106,11 @@ GENERIC_RULES: Sequence[MaskRule] = (
     ),
 )
 """Built-in, format-independent rules (timestamps, UUIDs, IPs, hex ids, numbers …), in order.
+
+``ts`` masks ISO timestamps (``2026-11-24 00:00:00,000+0100``); ``javadate`` masks the form
+Java's ``Date.toString()`` writes (``Tue Nov 24 00:00:00 CET 2026``, also without the zone,
+as C's ``ctime`` writes it) as ``<TS>`` too, since the weekday and month names would
+otherwise give a message a new template every day.
 
 ``user`` masks the identifier that follows a user-naming key (``uid:``, ``user=``,
 ``userName:``, ``sAMAccountName:``, ``login:``; case-insensitive), since account names

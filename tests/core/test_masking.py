@@ -116,7 +116,44 @@ def test_empty_rules_and_cache() -> None:
 
 
 def test_version() -> None:
-    assert MASK_RULES_VERSION == 3
+    assert MASK_RULES_VERSION == 4
+
+
+@pytest.mark.parametrize(
+    ("text", "variable"),
+    [
+        ("Tue Nov 24 00:00:00 CET 2026", "Tue Nov 24 00:00:00 CET 2026"),
+        ("Wed Jul 01 09:30:00 CEST 2026", "Wed Jul 01 09:30:00 CEST 2026"),
+        ("Thu Jan 01 00:00:00 UTC 1970", "Thu Jan 01 00:00:00 UTC 1970"),
+        ("Fri Dec 04 23:59:59 GMT+01:00 2026", "Fri Dec 04 23:59:59 GMT+01:00 2026"),
+        ("Sat Mar 07 08:00:00 ChST 2026", "Sat Mar 07 08:00:00 ChST 2026"),
+        ("Sun Feb  1 10:20:30 2026", "Sun Feb  1 10:20:30 2026"),  # C's ctime: no zone
+    ],
+)
+def test_java_date_to_string_is_one_timestamp(masker: Masker, text: str, variable: str) -> None:
+    assert masker.apply(f"args=[jdoe, {text}])] done.") == (
+        "args=[jdoe, <TS>])] done.",
+        (variable,),
+    )
+    assert masker.apply(f"expires {text}.") == ("expires <TS>.", (variable,))
+
+
+def test_java_dates_of_other_days_share_a_template(masker: Masker) -> None:
+    days = ("Sat Nov 21 13:05:09", "Sun Nov 22 00:00:00", "Mon Nov 23 07:45:12")
+    templates = {masker.template(f"Duplicate entities [X] found args=[{d} CET 2026]") for d in days}
+    assert templates == {"Duplicate entities [X] found args=[<TS>]"}
+
+
+@pytest.mark.parametrize(
+    ("text", "template"),
+    [
+        ("on Tue Nov 24 only", "on Tue Nov <NUM> only"),
+        ("Mon Nov 23 12:00 CET 2026", "Mon Nov <NUM> <NUM>:<NUM> CET <NUM>"),
+        ("Tue Nov 24 00:00:00 CET 20261", "Tue Nov <NUM> <NUM>:<NUM>:<NUM> CET <NUM>"),
+    ],
+)
+def test_partial_java_dates_keep_their_words(masker: Masker, text: str, template: str) -> None:
+    assert masker.template(text) == template
 
 
 @pytest.mark.parametrize(
