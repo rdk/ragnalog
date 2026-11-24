@@ -143,10 +143,10 @@
   }
   /** A bin size in the bins menu: "5 s", "1 min", "3 h", "1 d". */
   const binShort = (ms) => binKey(ms).replace(/^(\d+)([smhd])$/, (_, n, u) => n + " " + (u === "m" ? "min" : u));
-  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 6 px
+  /** The automatic bin for span ms over plotW px: the finest whose bars get at least 8 px
    *  (they fill their slot, so the chart reads as a histogram), not finer than floor ms. */
   function autoBin(span, plotW, floor) {
-    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 6 <= plotW) return ms;
+    for (const [, ms] of BIN_SIZES) if (ms >= floor && Math.ceil(span / ms) * 8 <= plotW) return ms;
     return BIN_SIZES[BIN_SIZES.length - 1][1];
   }
   /** The bins a viewer may pick for span ms over plotW px: 2 bars at least, one per 2 px at most
@@ -668,7 +668,7 @@
   const GAP = 2;
   const r1 = (x) => Math.round(x * 10) / 10;
   function chooseBin(nh, plotW) {
-    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 6 <= plotW) return k;
+    for (const k of [1, 2, 3, 4, 6, 12, 24, 48, 168]) if (Math.ceil(nh / k) * 8 <= plotW) return k;
     return 168;
   }
   /** Log bar heights (the top chart's option): log(1 + v), so 1 entry still shows next to 10,000. */
@@ -812,13 +812,13 @@
     const clip = !log && spiky && CLIP[opts.clipKey || "tl"] !== false;
     // grave errors in the frame get a badge row above the plot
     const gv = opts.grave ? opts.grave.filter((g) => g.last >= frame.a && g.ms < frame.b) : [];
-    const padT = (clip ? 18 : 8) + (gv.length ? 16 : 0);
+    const padT = (clip ? 18 : 4) + (gv.length ? 16 : 0);
     const plotH = H - padT - padB;
     // the range ends just above the tallest column (a nice tick would leave up to twice the
     // room), the ticks at nice values below it
     const topV = clip ? p95 : maxT;
     const nice = small ? niceTicks(topV, 2, true) : niceTicks(topV);
-    const yMax = log ? Math.max(2, maxT * 1.02) : topV > 0 ? topV * 1.04 : nice[nice.length - 1];
+    const yMax = log ? Math.max(2, maxT * 1.02) : topV > 0 ? topV * 1.02 : nice[nice.length - 1];
     const ticks = log ? logTicks(yMax) : nice.filter((t) => t <= yMax);
     const hOf = (v) => (log ? (plotH * lg(v)) / lg(yMax) : (plotH * v) / yMax);
     const slot = plotW / nb;
@@ -1281,7 +1281,7 @@
     TL_NOTE = note;
     renderLegend();
     el.classList.remove("loading");
-    TL = drawColumns(el, series, { frame, height: 120, label: `Entries per ${binName(frame.size)} by level${S.log ? ", log scale" : ""}`, overlay, births: birthsIn(frame), top: true, ovLane: true, grave: GRAVE, log: S.log });
+    TL = drawColumns(el, series, { frame, height: 150, label: `Entries per ${binName(frame.size)} by level${S.log ? ", log scale" : ""}`, overlay, births: birthsIn(frame), top: true, ovLane: true, grave: GRAVE, log: S.log });
     for (const b of TL.svg.querySelectorAll("[data-grave]")) {
       const items = TL.graves[+b.dataset.grave].items;
       b.addEventListener("pointermove", (e) => { tip.innerHTML = graveTip(items); tip.hidden = false; placeTip(e); });

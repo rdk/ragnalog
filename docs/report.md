@@ -212,7 +212,7 @@ remove, or "Remove all filters".
   Clear (the viewer's toggle choice is kept in `localStorage`, shared with the
   cluster page). The window follows the zoom in whole hours (the table's counts are
   per hour), and the zoom's tooltip says which. The bin size is automatic,
-  the finest whose bars keep 6 px (bars fill their slot but for a gap of an eighth, 1-4 px;
+  the finest whose bars keep 8 px (bars fill their slot but for a gap of an eighth, 1-4 px;
   in the web app also finer than an hour when not zoomed), and *Bins*
   picks another: finer down to 2 px a bar, or coarser, from 1 s to 7 d. A pick that
   does not fit the shown range falls back to automatic until it fits again. In the
@@ -498,7 +498,7 @@ on `<html>`, `<link>`s to `report.css` and `cluster.css` and `<script src>` to
   ends just above its tallest column. *Log scale* (Chart options, `log=1`) draws each column
   log(1 + n) high (log(1 + n / 0.1) on the % scale), its levels keeping their share, with
   ticks at powers of ten; in *Errors* mode spikes are then not clipped. The bins are
-  automatic as on the set report (bars of at least 6 px; in the web app finer than the base
+  automatic as on the set report (bars of at least 8 px; in the web app finer than the base
   bucket also unzoomed). The y-scale and the toggles wrap as one group on a narrow page. With two or more nodes a thin
   *together* lane above the first node marks cross-node moments: the drawn buckets
   holding a timeline bucket (an hour, or 15 min) in which two or more nodes log more

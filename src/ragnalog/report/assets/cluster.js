@@ -768,7 +768,7 @@
       return { yMax, ticks: logTicks(yMax, k) };
     }
     const ticks = niceTicks(top, parts, int);
-    const yMax = top > 0 ? top * 1.04 : ticks[ticks.length - 1] || 1;
+    const yMax = top > 0 ? top * 1.02 : ticks[ticks.length - 1] || 1;
     return { yMax, ticks: ticks.filter((t) => t <= yMax) };
   }
   function binArr(src, k, nb) {
@@ -971,8 +971,8 @@
     const [za, zb] = S.z || [TA, TE];
     const span = zb - za;
     const floor = FINE ? 1e3 : BMS;  // bins under the base bucket come from the server
-    // the finest bin whose bars keep 6 px (they fill their slot, so the chart reads as a histogram)
-    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 6 <= plotW) || SIZES[SIZES.length - 1];
+    // the finest bin whose bars keep 8 px (they fill their slot, so the chart reads as a histogram)
+    const auto = SIZES.find((ms) => ms >= floor && Math.ceil(span / ms) * 8 <= plotW) || SIZES[SIZES.length - 1];
     const choices = SIZES.filter((ms) => { const c = Math.ceil(span / ms); return c >= 2 && c <= Math.floor(plotW / 2); });
     const want = keyMs(S.bin);
     const size = want && choices.includes(want) ? want : auto;
@@ -1012,7 +1012,7 @@
     const bw = slot >= 6 ? slot - Math.min(4, Math.max(1, slot / 8)) : Math.max(0.8, slot - (slot >= 2.5 ? 1 : 0.3));
     const RULER = WIN ? 14 : 4, LANE = 18, ROWGAP = 6, AXIS = 20;
     const XM = MULTI ? 14 : 0; // the cross-node moments lane above the first node
-    const BAND = N <= 2 ? 72 : N <= 4 ? 84 : N <= 8 ? 76 : 64;
+    const BAND = N <= 2 ? 96 : N <= 4 ? 108 : N <= 8 ? 96 : 80;
     const rowTop = (i) => RULER + XM + i * (LANE + BAND + ROWGAP);
     const bottomAll = rowTop(N - 1) + LANE + BAND;
     const H = bottomAll + AXIS;
@@ -1112,7 +1112,7 @@
       const n = r.n;
       const laneY = r.top + LANE / 2;
       const bTop = r.top + LANE, bBot = bTop + BAND;
-      const plotT = bTop + 4, plotH = bBot - plotT;
+      const plotT = bTop + 2, plotH = bBot - plotT;
       r.laneY = laneY;
       r.bTop = bTop;
       r.bBot = bBot;

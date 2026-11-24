@@ -76,12 +76,12 @@ files needed).
 ### Changed
 
 - Charts: bars fill their slot but for a small gap (they stopped at 24 px, leaving wide gaps
-  between hourly bars), and the automatic bin is finer: bars of at least 6 px, and in the
+  between hourly bars), and the automatic bin is finer: bars of at least 8 px, and in the
   web app bins under an hour also when not zoomed (cross-node moments and mention arrows
   stay on their hour). The y-axis ends just above the tallest column instead of the next
   round tick, so columns use the band's height. *Log scale* (`log=1`; cluster: Chart
-  options, set report: next to Bins) draws columns log(1 + n) high. The cluster view's
-  bands are 20 px higher, and the node rows above its chart are gone: their figures,
+  options, set report: next to Bins) draws columns log(1 + n) high. The set report's top
+  chart is 150 px high (120), the cluster view's bands 44 px higher, and the node rows above its chart are gone: their figures,
   triage and report link are on each band's label.
 - Pages show times in the browser's time zone by default (for example CET) instead of UTC.
   The zone button or `z` still switches to UTC, and a viewer who chose UTC keeps it. Links,
