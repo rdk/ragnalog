@@ -137,9 +137,10 @@
           ]
         },
         "reason": {
-          "description": "stale/recipe: another recipe_key; other_node: both sets have a node and it differs; superset/subset: its sources contain or are part of the set's; later: ends after the set; tiny: under 1% of the entries; span: span more than 16x off.",
+          "description": "stale/recipe: another recipe_key; other_node: both sets have a node and it differs; other_cluster: both have a cluster and it differs; superset/subset: its sources contain or are part of the set's; later: ends after the set; tiny: under 1% of the entries; span: span more than 16x off.",
           "enum": [
             "later",
+            "other_cluster",
             "other_node",
             "recipe",
             "span",

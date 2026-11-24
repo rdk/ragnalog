@@ -565,11 +565,22 @@ class BaselineCandidate(Struct, kw_only=True):
     id: Annotated[str, _d("Set id.")]
     name: Annotated[str | None, _d("Set name.")]
     reason: Annotated[
-        Literal["stale", "recipe", "other_node", "superset", "subset", "later", "tiny", "span"],
+        Literal[
+            "stale",
+            "recipe",
+            "other_node",
+            "other_cluster",
+            "superset",
+            "subset",
+            "later",
+            "tiny",
+            "span",
+        ],
         _d(
             "stale/recipe: another recipe_key; other_node: both sets have a node and it "
-            "differs; superset/subset: its sources contain or are part of the set's; later: "
-            "ends after the set; tiny: under 1% of the entries; span: span more than 16x off."
+            "differs; other_cluster: both have a cluster and it differs; superset/subset: "
+            "its sources contain or are part of the set's; later: ends after the set; tiny: "
+            "under 1% of the entries; span: span more than 16x off."
         ),
     ]
     detail: Annotated[str, _d("The reason in one sentence.")]

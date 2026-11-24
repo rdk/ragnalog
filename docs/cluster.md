@@ -130,7 +130,10 @@ ragnalog label SET --node NODE1 --cluster jira-test [--capture ID]    # existing
   with reason `other_node`. An explicit `--baseline` still wins. This stops a
   node being compared with its neighbour's logs, which is what happens today.
   When the set has a node, a candidate of the same node is preferred to one
-  without a node (after "ends before", before the span rule).
+  without a node (first, before "ends before" and the span rule: an older
+  unlabelled set may be another Jira's, and the node's previous capture
+  usually overlaps). A candidate of another `cluster` (both labelled) is
+  rejected as `other_cluster`, and the same cluster is preferred next.
 - Per-node triage: each node is triaged against that node's previous set.
   As built, this is part of `capture.v1` (`verdict` and `baseline` per node;
   `ragnalog capture REF`, on by default, `--no-triage` to skip;

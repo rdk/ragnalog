@@ -124,13 +124,16 @@ def triage(
     groups of a lower level that carry an exception, groups whose hourly rate
     grew, vanished groups. --baseline auto (default) ranks the other sets of
     the same format (the web app's rule): it rejects a set signed with
-    another recipe_key (reason "stale", hint `upgrade`; or "recipe"), whose
-    sources are a superset or subset of SET's ("superset"/"subset"; partial
-    overlap is fine), that ends after SET ("later"), that has under 1% of
-    SET's entries ("tiny") or a span more than 16x longer or shorter
-    ("span"); of the rest it prefers a set that ends before SET starts, then
-    the span closest to SET's, then the newest. With none left the verdict
-    is no_baseline and "warnings" lists the rejected sets. An explicit
+    another recipe_key (reason "stale", hint `upgrade`; or "recipe"), of
+    another node or cluster when both sets have one ("other_node",
+    "other_cluster"), whose sources are a superset or subset of SET's
+    ("superset"/"subset"; partial overlap is fine), that ends after SET
+    ("later"), that has under 1% of SET's entries ("tiny") or a span more than
+    16x longer or shorter ("span"); of the rest it prefers the same node, then
+    the same cluster (over sets without one; a chosen set without them gets a
+    warning), then a set that ends before SET starts, then the span closest to
+    SET's, then the newest. With none left the verdict is no_baseline and
+    "warnings" lists the rejected sets. An explicit
     --baseline is used as given, with a warning when it is stale, contained
     or tiny.
 

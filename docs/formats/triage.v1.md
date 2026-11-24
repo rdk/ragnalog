@@ -25,7 +25,7 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `baseline.candidates` | `list<BaselineCandidate>` | no | Up to 5 sets rejected as the automatic baseline, newest first; [] when given. |
 | `baseline.candidates[].id` | `string` | yes | Set id. |
 | `baseline.candidates[].name` | `string \| null` | yes | Set name. |
-| `baseline.candidates[].reason` | `"later" \| "other_node" \| "recipe" \| "span" \| "stale" \| "subset" \| "superset" \| "tiny"` | yes | stale/recipe: another recipe_key; other_node: both sets have a node and it differs; superset/subset: its sources contain or are part of the set's; later: ends after the set; tiny: under 1% of the entries; span: span more than 16x off. |
+| `baseline.candidates[].reason` | `"later" \| "other_cluster" \| "other_node" \| "recipe" \| "span" \| "stale" \| "subset" \| "superset" \| "tiny"` | yes | stale/recipe: another recipe_key; other_node: both sets have a node and it differs; other_cluster: both have a cluster and it differs; superset/subset: its sources contain or are part of the set's; later: ends after the set; tiny: under 1% of the entries; span: span more than 16x off. |
 | `baseline.candidates[].detail` | `string` | yes | The reason in one sentence. |
 | `baseline.candidates[].hint` | `string` | no | A command that would make it usable. |
 | `min_level` | `string \| null` | yes | Echo of --min-level. |

@@ -202,7 +202,8 @@ def label(
     An option that is not given keeps its value; an empty value (--node "")
     clears it. Values are letters, digits, "_", "." and "-" (at most 128).
     Sets that share a capture id are listed together by `captures`; triage
-    compares a set that has a node only with earlier sets of the same node.
+    never takes a set of another node or cluster as the baseline of a set that
+    has one, and prefers the same node and cluster to sets without labels.
 
     Output (json): the manifest, {"schema": "logset.v1", ...} (see `ingest`).
 

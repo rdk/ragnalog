@@ -51,6 +51,7 @@ REJECTION_REASONS = (
     "stale",
     "recipe",
     "other_node",
+    "other_cluster",
     "superset",
     "subset",
     "later",
@@ -150,6 +151,16 @@ def _node_rejection(me: LogSetManifest, other: LogSetManifest) -> Rejection | No
     )
 
 
+def _cluster_rejection(me: LogSetManifest, other: LogSetManifest) -> Rejection | None:
+    if me.cluster is None or other.cluster is None or me.cluster == other.cluster:
+        return None
+    return Rejection(
+        other,
+        "other_cluster",
+        f"logs of cluster {other.cluster}, while this set is cluster {me.cluster}",
+    )
+
+
 def _containment(me: LogSetManifest, other: LogSetManifest) -> Rejection | None:
     mine, theirs = _digests(me), _digests(other)
     if not mine or not theirs:
@@ -197,6 +208,7 @@ def _rejection(
     found = (
         _recipe_rejection(me, other, current)
         or _node_rejection(me, other)
+        or _cluster_rejection(me, other)
         or _containment(me, other)
     )
     if found is not None:
@@ -232,7 +244,8 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
        ``stale`` (one of the two was built with an older recipe; the hint names
        ``ragnalog upgrade``) or ``recipe`` (another spec or extra rules).
     3. When both sets have a ``node``, a candidate of another node is rejected
-       (``other_node``): each node is compared with its own past.
+       (``other_node``): each node is compared with its own past. Likewise a
+       candidate of another ``cluster`` when both have one (``other_cluster``).
     4. Containment: a candidate whose source digests are a superset or subset of
        this set's is rejected (``superset``/``subset``): an overlapping snapshot of
        the same files is no baseline. Partial overlap (rolling snapshots share most
@@ -241,14 +254,18 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
     6. A candidate with fewer than :data:`MIN_ENTRY_SHARE` of this set's entries is
        rejected (``tiny``), as is one whose span differs by more than
        :data:`MAX_SPAN_RATIO` either way (``span``).
-    7. Of the rest, prefer a set that ends before this one starts, then (when this set
-       has a node) one of the same node over one without, then the span ratio closest
-       to 1 (``|log(h_a / h_b)|``, rounded to 0.1 so spans within about 10% count as
-       equal), then the newest (``last_ts``, then ``created_at``).
+    7. Of the rest, prefer (when this set has a node) one of the same node over one
+       without a node, then (when it has a cluster) one of the same cluster over one
+       without, then a set that ends before this one starts, then the span ratio
+       closest to 1 (``|log(h_a / h_b)|``, rounded to 0.1 so spans within about 10%
+       count as equal), then the newest (``last_ts``, then ``created_at``). The node
+       comes before "ends before": the same node's previous capture often overlaps
+       this one (rolling log files), and an older unlabelled set may be another Jira's.
 
     Returns:
         The choice; its ``manifest`` is ``None`` when nothing qualifies, and then
-        ``warnings`` says which sets were rejected and why.
+        ``warnings`` says which sets were rejected and why. A chosen set that lacks the
+        node or cluster this set has gets a warning (it may be another Jira's logs).
 
     """
     start = me.first_ts
@@ -276,28 +293,63 @@ def rank_baselines(manifests: Iterable[LogSetManifest], me: LogSetManifest) -> B
     def same_node(m: LogSetManifest) -> bool:
         return me.node is not None and m.node == me.node
 
-    def preference(m: LogSetManifest) -> tuple[int, int, float, float, float]:
+    def same_cluster(m: LogSetManifest) -> bool:
+        return me.cluster is not None and m.cluster == me.cluster
+
+    def preference(m: LogSetManifest) -> tuple[int, int, int, float, float, float]:
         last = m.last_ts.timestamp() if m.last_ts is not None else float("-inf")
         ratio = round(_log_ratio(me, m), 1)
+        # the rejections left only matching or missing labels: a missing one ranks lower
         node_rank = 0 if me.node is None or same_node(m) else 1
-        return (0 if ends_before(m) else 1, node_rank, ratio, -last, -m.created_at.timestamp())
+        cluster_rank = 0 if me.cluster is None or same_cluster(m) else 1
+        before = 0 if ends_before(m) else 1
+        return (node_rank, cluster_rank, before, ratio, -last, -m.created_at.timestamp())
 
     best = min(eligible, key=preference)
     shared = len(_digests(me) & _digests(best))
+    earlier = any(ends_before(m) for m in eligible)
     parts = [
         "same recipe",
+        *([f"same node {me.node}"] if same_node(best) else []),
+        *([f"same cluster {me.cluster}"] if same_cluster(best) else []),
         "ends before this set starts"
         if ends_before(best)
-        else "overlaps this set (no earlier set qualifies)",
-        *([f"same node {me.node}"] if same_node(best) else []),
+        else "overlaps this set"
+        + (
+            " (an earlier set lacks the node or cluster)"
+            if earlier
+            else " (no earlier set qualifies)"
+        ),
         f"span {_span_text(manifest_span_hours(best))} vs {_span_text(manifest_span_hours(me))}",
     ]
     if shared:
         parts.append(f"shares {shared} of this set's {len(_digests(me))} source files")
     if len(eligible) > 1:
         parts.append(f"best of {len(eligible)} eligible sets")
+    missing = [
+        f"{label} {mine}"
+        for label, mine, theirs in (
+            ("node", me.node, best.node),
+            ("cluster", me.cluster, best.cluster),
+        )
+        if mine is not None and theirs is None
+    ]
+    warnings = (
+        (
+            f"Baseline {_ref(best)} has no {' or '.join(m.split()[0] for m in missing)} label "
+            f"(this set is {' and '.join(missing)}): if it holds another Jira's logs, label it "
+            f"(`ragnalog label {_ref(best)} --node NODE --cluster CLUSTER`) or pass --baseline",
+        )
+        if missing
+        else ()
+    )
     return BaselineChoice(
-        best, "auto", reason="; ".join(parts), shared_sources=shared, rejected=tuple(rejected)
+        best,
+        "auto",
+        reason="; ".join(parts),
+        shared_sources=shared,
+        rejected=tuple(rejected),
+        warnings=warnings,
     )
 
 

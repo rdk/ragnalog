@@ -185,12 +185,57 @@ def test_same_node_is_preferred_before_the_span_rule() -> None:
     mine = on("NODE1", m("mine", 70, 2))  # same node, worse span
     choice = rank_baselines([me, plain, mine], me)
     assert choice.manifest is mine and choice.reason is not None
-    assert "same node NODE1" in choice.reason
-    # "ends before" still comes first: an overlapping same-node set loses to an earlier one
-    overlap = on("NODE1", m("overlap", 99, 8.5))
-    assert rank_baselines([me, plain, overlap], me).manifest is plain
+    assert "same node NODE1" in choice.reason and choice.warnings == ()
     # without a node on this set, nothing changes
     assert rank_baselines([ME, plain, on("NODE1", m("mine", 70, 2))], ME).manifest is plain
+
+
+def test_same_node_beats_an_earlier_set_without_a_node() -> None:
+    """The node's previous capture overlaps (rolling files): it still beats an older set
+    with no node, which may be another Jira's (prod1x_2 picked a develop set)."""
+    me = on("NODE1", ME)
+    plain = m("plain", 80, 8)  # node-less, ends before this set starts
+    overlap = on("NODE1", m("overlap", 99, 8.5))
+    choice = rank_baselines([me, plain, overlap], me)
+    assert choice.manifest is overlap and choice.reason is not None
+    assert "same node NODE1; overlaps this set (an earlier set lacks the node or cluster)" in (
+        choice.reason
+    )
+    assert choice.warnings == ()
+    # only a node-less set left: used, with a warning naming the missing label
+    alone = rank_baselines([me, plain], me)
+    assert alone.manifest is plain
+    assert alone.warnings == (
+        "Baseline plain has no node label (this set is node NODE1): if it holds another "
+        "Jira's logs, label it (`ragnalog label plain --node NODE --cluster CLUSTER`) or "
+        "pass --baseline",
+    )
+
+
+def on_cluster(cluster: str | None, x: LogSetManifest) -> LogSetManifest:
+    return dataclasses.replace(x, cluster=cluster)
+
+
+def test_another_cluster_is_rejected_and_the_same_cluster_preferred() -> None:
+    me = on_cluster("prod", on("NODE1", ME))
+    develop = on_cluster("develop", on("NODE1", m("develop", 80, 8)))  # same node name
+    plain = on("NODE1", m("plain", 80, 8))  # same node, no cluster
+    mine = on_cluster("prod", on("NODE1", m("mine", 70, 2)))  # worse span, same cluster
+    choice = rank_baselines([me, develop, plain, mine], me)
+    assert choice.manifest is mine and choice.reason is not None
+    assert "same node NODE1; same cluster prod" in choice.reason
+    found = {r.manifest.name: (r.reason, r.detail) for r in choice.rejected}
+    assert found["develop"] == (
+        "other_cluster",
+        "logs of cluster develop, while this set is cluster prod",
+    )
+    lone = rank_baselines([me, develop, plain], me)
+    assert (
+        lone.manifest is plain
+        and "no cluster label (this set is cluster prod)" in (lone.warnings[0])
+    )
+    # the rule needs a cluster on both sides
+    assert rank_baselines([on("NODE1", ME), develop], on("NODE1", ME)).manifest is develop
 
 
 def test_explicit_baseline_of_another_node_is_used_as_given() -> None:

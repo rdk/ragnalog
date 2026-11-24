@@ -69,6 +69,11 @@ needed).
 
 ### Fixed
 
+- Triage's automatic baseline (also `capture`'s per-node triage) no longer takes an older
+  set without a node label, possibly another Jira's, over the node's own previous
+  capture: the same node now ranks before "ends before this set starts". A set of
+  another cluster (both labelled) is rejected (`other_cluster`), the same cluster is
+  preferred next, and a chosen set that lacks the node or cluster gets a warning.
 - Masking: a date written by Java's `Date.toString()` (`Tue Nov 24 00:00:00 CET 2026`, also
   with a zone such as `GMT+01:00` or none) is one `<TS>`. Its weekday and month names
   stayed in the template, so a message holding one got a new signature every day and

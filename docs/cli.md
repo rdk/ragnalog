@@ -926,6 +926,7 @@ rejected, with `reason`:
    `ragnalog upgrade SET`), `recipe` for another signature spec or extra rules.
 2. `other_node`: both sets have a `node` and they differ. Each node is
    compared with its own past, never with its neighbour's logs.
+   `other_cluster`: both sets have a `cluster` and they differ.
 3. `superset` / `subset`: its source digests (`sources[].xxh3`) contain all of
    SET's, or all of its files are part of SET. An overlapping snapshot of the
    same files is no baseline; partial overlap (rolling snapshots share most
@@ -934,10 +935,14 @@ rejected, with `reason`:
 5. `tiny`: fewer than 1% of SET's entries; `span`: its span is more than 16x
    longer or shorter than SET's.
 
-Of the rest it prefers a set that ends before SET starts, then (when SET has a
-node) one of the same node over one without a node, then the span closest
-to SET's (`|log(h_a/h_b)|`, rounded to 0.1 so spans within about 10% count as
-equal), then the newest. When nothing is left the verdict is `no_baseline` and
+Of the rest it prefers (when SET has a node) one of the same node over one
+without a node, then (when SET has a cluster) one of the same cluster over one
+without, then a set that ends before SET starts, then the span closest to
+SET's (`|log(h_a/h_b)|`, rounded to 0.1 so spans within about 10% count as
+equal), then the newest. The node comes first because the node's previous
+capture usually overlaps SET (rolling log files), while an older set without
+labels may be another Jira's logs. A chosen set that lacks SET's node or
+cluster gets a warning: label it (`ragnalog label`) or pass `--baseline`. When nothing is left the verdict is `no_baseline` and
 `warnings` names every rejected set with its reason. An explicit `--baseline
 SET` is used as given, with a warning when it is stale, a superset/subset of
 SET's sources, or tiny (a set signed with another recipe still fails as in
