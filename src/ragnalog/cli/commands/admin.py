@@ -41,7 +41,7 @@ def formats_(*, sample: Path | None = None) -> None:
         sample: A log file to test every format against.
 
     """
-    doc = meta.formats(sample)
+    doc = ctx.remote_or("formats", formats_, locals(), lambda: meta.formats(sample))
     ctx.out().document(
         doc, columns=("name", "description", "confidence", "signature_spec"), title="formats"
     )
@@ -139,7 +139,9 @@ def remove(logset: str, /) -> None:
             manifest cannot be read).
 
     """
-    doc = service_ingest.remove(ctx.store(), logset, front="cli")
+    doc = ctx.remote_or(
+        "remove", remove, locals(), lambda: service_ingest.remove(ctx.store(), logset, front="cli")
+    )
     ctx.out().info(f"removed log set {doc['removed']}")
     ctx.out().document(doc, items=None)
 
@@ -243,7 +245,8 @@ def version() -> None:
 
     Exit codes: 0 ok.
     """
-    ctx.out().document(meta.version(), items=None, title="ragnalog")
+    doc = ctx.remote_or("version", version, locals(), meta.version)
+    ctx.out().document(doc, items=None, title="ragnalog")
 
 
 BATCH_REFUSED = frozenset({"batch", "parse", "serve"})

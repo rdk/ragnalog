@@ -37,6 +37,7 @@ Global options may appear before or after the command name.
 |---|---|---|
 | `--output table\|json\|jsonl` | `table` if stdout is a terminal, else `json` | Output mode. |
 | `--store DIR` | env `RAGNALOG_STORE` (a blank `--store` or variable is ignored), else `./.ragnalog` | The data directory, the folder that keeps the log sets (older text calls it the store); the option and variable that name it keep the name `--store` / `RAGNALOG_STORE`. The implicit default is not *created* inside a git work tree (a `.git` entry in the current directory or a parent): `ingest` and `serve` then fail with `store_error` (exit 3), because a data directory in a repository risks committing real logs. An existing `./.ragnalog` is used as before; an explicit `--store`/`RAGNALOG_STORE` is always used. |
+| `--server URL` | env `RAGNALOG_SERVER`, else none | Remote mode: commands that read or label sets ask the `/api` of the ragnalog web app at `URL` instead of a data directory, with the token in `RAGNALOG_TOKEN` (see [Remote mode](#remote-mode---server)). |
 | `--quiet` | off | Suppress progress and diagnostics on stderr (warnings and errors still shown). |
 | `--width N` | terminal width; on a pipe `$COLUMNS`, else 160 | Table width (minimum 40). |
 | `--color auto\|always\|never` | `auto` | Colour tables and `--raw` entries; `auto` = stdout is a terminal and `NO_COLOR` is not set. |
@@ -53,12 +54,47 @@ blank variable counts as unset. A number that does not parse is error
 | Variable | Default | Meaning |
 |---|---|---|
 | `RAGNALOG_STORE` | `./.ragnalog` | Data directory holding the log sets (`--store` wins). |
+| `RAGNALOG_SERVER` | none | Base URL of a ragnalog web app (`https://logs.example.org`): commands that read or label sets ask its `/api` instead of a data directory, with `RAGNALOG_TOKEN` (`--server` wins). |
 | `RAGNALOG_APP_PACKAGES` | none | Comma-separated package prefixes of application code for `frames` and the highlighting of raw entries (`com.acme.,org.example.`); default: every frame outside the library packages. |
 | `RAGNALOG_DEBUG` | off | Any value: an unexpected exception shows its traceback instead of `internal_error`. |
-| `RAGNALOG_TOKEN` | none | `serve`: API token (`--token` wins). |
+| `RAGNALOG_TOKEN` | none | `serve`: API token (`--token` wins); with `--server`, the token the CLI sends. |
 | `RAGNALOG_ALLOWED_HOSTS` | none | `serve`: comma-separated host names a loopback server also answers (`logs.example.org`, behind a reverse proxy that passes the public `Host` through; `--allowed-host` wins). |
 | `RAGNALOG_MAX_UPLOAD_MB` | 2048 | `serve`: largest upload in MiB (`--max-upload-mb` wins). |
 | `RAGNALOG_REPORT_CACHE` | 8 | `serve`: report payloads kept in memory. |
+
+### Remote mode (`--server`)
+
+With `--server URL` (or `RAGNALOG_SERVER`) the commands that read or label sets run against
+a ragnalog web app instead of a data directory: each sends the `/api` request it is paired
+with in the parity contract (`tests/contract/test_parity.py`) and prints the document the
+server returns, in the same output modes and with the same exit codes as a local run on
+the server's data directory. The token is `RAGNALOG_TOKEN` (sent as `Authorization: Bearer`);
+a missing or wrong one is `unauthorized` (exit 1). Nothing else is needed on the machine:
+no data directory, no copy of the logs.
+
+```sh
+export RAGNALOG_SERVER=https://logs.example.org RAGNALOG_TOKEN=...
+ragnalog sets --brief
+ragnalog triage prod-1030 --baseline prod-1029
+ragnalog query prod-1030 "select level_name, count(*) n from entries group by 1"
+printf '%s\n' '["groups","prod-1030","--brief"]' '["stats","prod-1030"]' | ragnalog batch
+```
+
+- Remote: `sets`, `set`, `captures`, `capture`, `groups`, `show`, `entries`, `context`,
+  `frames`, `query`, `stats`, `timeline`, `users`, `matrix`, `events`, `interactions`,
+  `diff`, `triage`, `label`, `remove`, `formats`, `version`, and `batch` line by line.
+- Refused with `usage` (exit 1): `ingest`, `regroup`, `upgrade` and `report` (they need a
+  data directory: upload files on the web app's start page, open its report page, or run
+  them where the data directory is), and the options the API does not have (`--raw` of
+  `show` and `entries`, `formats --sample`). `parse`, `schema`, `manifest` and `serve` run
+  locally as always; unset `RAGNALOG_SERVER` to run the others locally.
+- The server's limits apply: the page caps of the API (`HTTP_CAPS` in the parity test) and,
+  for `query`, at most 10,000 rows (`"truncated": true` beyond; page with `LIMIT`/`OFFSET`)
+  and 60 s per query. `frames` marks application frames by the server's
+  `RAGNALOG_APP_PACKAGES`.
+- A server error keeps its `reason`, mapped to the CLI's code (`set_not_found` is
+  `store_error`, exit 3) and carries `"server"` instead of `"store"`. An unreachable server
+  is `http` (exit 1); a server too old for a command answers that it lacks the route.
 
 ### Output modes
 

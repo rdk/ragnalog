@@ -9,10 +9,10 @@ from __future__ import annotations
 
 import dataclasses
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator, Mapping
 from contextlib import contextmanager
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from ragnalog.cli.output import OpError, Output, default_mode
 from ragnalog.config import Settings
@@ -21,7 +21,18 @@ if TYPE_CHECKING:
     from ragnalog.store.logset import LogSet
     from ragnalog.store.store import Store
 
-__all__ = ["STORE_ENV", "Context", "current", "open_logset", "out", "store", "use"]
+__all__ = [
+    "STORE_ENV",
+    "Context",
+    "current",
+    "local_only",
+    "open_logset",
+    "out",
+    "remote",
+    "remote_or",
+    "store",
+    "use",
+]
 
 STORE_ENV = "RAGNALOG_STORE"
 
@@ -124,3 +135,57 @@ def open_logset(ref: str) -> LogSet:
     from ragnalog.service.sets import open_set
 
     return open_set(store(), ref, front="cli")
+
+
+# --- remote mode (--server): commands ask a web app's /api (ragnalog.cli.remote)
+
+
+def remote() -> bool:
+    """Whether this invocation runs against a server (``--server``, ``RAGNALOG_SERVER``)."""
+    return bool(current().settings.server)
+
+
+def remote_or(
+    key: str,
+    func: Callable[..., Any],
+    args: Mapping[str, Any],
+    local: Callable[[], dict[str, Any]],
+) -> dict[str, Any]:
+    """Return the document of ``local()``, or in remote mode the server's for route ``key``.
+
+    ``func`` is the command and ``args`` its parameters (``locals()``): the request is
+    built from them (:func:`ragnalog.cli.remote.fetch`).
+    """
+    settings = current().settings
+    if not settings.server:
+        return local()
+    from ragnalog.cli import remote as remote_mode
+
+    return remote_mode.fetch(settings, key, func, args)
+
+
+def names_capture(ref: str) -> bool:
+    """Whether ``ref`` names a capture: in the store, or in remote mode on the server."""
+    settings = current().settings
+    if settings.server:
+        from ragnalog.cli import remote as remote_mode
+
+        return remote_mode.is_capture(settings, ref)
+    from ragnalog.service.capture_queries import names_capture as local_names_capture
+
+    return local_names_capture(store(), ref)
+
+
+def local_only(option: str) -> None:
+    """Refuse ``option`` in remote mode: it reads the data directory or local files directly.
+
+    Raises:
+        OpError: ``usage`` with --server.
+
+    """
+    if remote():
+        raise OpError(
+            "usage",
+            f"{option} is not available with --server: it reads the data directory directly",
+            hint="drop the option, or run the command where the data directory is",
+        )

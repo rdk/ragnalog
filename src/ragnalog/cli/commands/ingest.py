@@ -216,8 +216,13 @@ def label(
         capture: Capture (its id: sets with the same capture are viewed together).
 
     """
-    doc = service_ingest.label(
-        ctx.store(), logset, node=node, cluster=cluster, capture=capture, front="cli"
+    doc = ctx.remote_or(
+        "label",
+        label,
+        locals(),
+        lambda: service_ingest.label(
+            ctx.store(), logset, node=node, cluster=cluster, capture=capture, front="cli"
+        ),
     )
     ctx.out().document(doc, items=None, title=f"log set {doc['id']}")
 

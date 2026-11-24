@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Annotated, Any, Literal
 
-from fastapi import APIRouter, Depends, Query, Request, UploadFile
+from fastapi import APIRouter, Body, Depends, Query, Request, UploadFile
 from fastapi.concurrency import run_in_threadpool
 from starlette.responses import Response
 
@@ -548,6 +548,30 @@ def users(
     default 3) is how many of each user's largest groups are listed.
     """
     return queries.users(state, ref, q, Page(limit or None, offset), top=top, front="api")
+
+
+QUERY_MAX_ROWS = 10_000
+"""Rows ``POST /api/sets/{ref}/query`` returns at most (``truncated`` beyond)."""
+QUERY_TIMEOUT_S = 60.0
+"""Seconds after which ``POST /api/sets/{ref}/query`` stops a query (``sql_error``)."""
+
+
+@router.post("/sets/{ref}/query")
+def query(
+    ref: str,
+    state: StateDep,
+    sql: Annotated[str, Body(embed=True, max_length=100_000)],
+) -> dict[str, Any]:
+    """Run DuckDB SQL over a set (``query.v1``), as ``ragnalog query``; body ``{"sql": "..."}``.
+
+    Read only: the views ``entries``, ``groups`` (and ``merges``) of the set, with no access
+    to other files and a locked configuration. At most 10,000 rows (``truncated`` when
+    cut: use ``LIMIT``/``OFFSET``); a query running longer than 60 s is stopped
+    (``sql_error``).
+    """
+    return queries.query(
+        state, ref, sql, max_rows=QUERY_MAX_ROWS, timeout_s=QUERY_TIMEOUT_S, front="api"
+    )
 
 
 @router.get("/sets/{ref}/report")

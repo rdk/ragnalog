@@ -416,6 +416,7 @@
   "global_options": {
    "--output": "table|json|jsonl: Output mode",
    "--store": "str: Data directory holding the log",
+   "--server": "str: Base URL of a ragnalog web app",
    "--quiet": "flag: Suppress progress and",
    "--width": "int: Table width; default",
    "--color": "auto|always|never=auto: Colour tables and raw entries"
@@ -504,9 +505,10 @@
   },
   "env": {
    "RAGNALOG_STORE": "default of --store",
+   "RAGNALOG_SERVER": "default of --server (remote mode)",
    "RAGNALOG_APP_PACKAGES": "frames: application package prefixes",
    "RAGNALOG_DEBUG": "traceback of an internal_error",
-   "RAGNALOG_TOKEN": "default of serve --token",
+   "RAGNALOG_TOKEN": "serve --token; token sent with --server",
    "RAGNALOG_ALLOWED_HOSTS": "serve: extra Host names (a proxy)",
    "RAGNALOG_MAX_UPLOAD_MB": "default of serve --max-upload-mb",
    "RAGNALOG_REPORT_CACHE": "serve: reports kept in memory",

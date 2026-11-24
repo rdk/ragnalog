@@ -42,6 +42,15 @@ ENV_VARS: Final[tuple[EnvVar, ...]] = (
         "default of --store",
     ),
     EnvVar(
+        "RAGNALOG_SERVER",
+        "server",
+        "none",
+        "Base URL of a ragnalog web app (`https://logs.example.org`): commands that read or "
+        "label sets ask its `/api` instead of a data directory, with `RAGNALOG_TOKEN` "
+        "(`--server` wins).",
+        "default of --server (remote mode)",
+    ),
+    EnvVar(
         "RAGNALOG_APP_PACKAGES",
         "app_packages",
         "none",
@@ -61,8 +70,8 @@ ENV_VARS: Final[tuple[EnvVar, ...]] = (
         "RAGNALOG_TOKEN",
         "token",
         "none",
-        "`serve`: API token (`--token` wins).",
-        "default of serve --token",
+        "`serve`: API token (`--token` wins); with `--server`, the token the CLI sends.",
+        "serve --token; token sent with --server",
     ),
     EnvVar(
         "RAGNALOG_ALLOWED_HOSTS",
@@ -110,6 +119,8 @@ class Settings:
 
     Attributes:
         store: Store directory (``RAGNALOG_STORE``).
+        server: Base URL of a ragnalog web app (``RAGNALOG_SERVER``): the CLI's remote mode,
+            which asks its ``/api`` instead of opening ``store``; ``None`` = local.
         token: When set, every ``/api`` request must send ``Authorization: Bearer <token>``
             or ``X-Ragnalog-Token: <token>`` (``RAGNALOG_TOKEN``); ``None`` = no auth.
         max_upload_mb: Upper bound of one ingest upload in MiB (``RAGNALOG_MAX_UPLOAD_MB``).
@@ -127,6 +138,7 @@ class Settings:
     """
 
     store: Path = DEFAULT_STORE
+    server: str | None = None
     token: str | None = None
     max_upload_mb: int = 2048
     report_cache: int = 8
@@ -204,6 +216,7 @@ class Settings:
         """
         return {
             "RAGNALOG_STORE": str(self.store),
+            "RAGNALOG_SERVER": self.server or "",
             "RAGNALOG_APP_PACKAGES": ",".join(self.app_packages or ()),
             "RAGNALOG_DEBUG": "1" if self.debug else "",
             "RAGNALOG_TOKEN": self.token or "",

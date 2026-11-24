@@ -89,7 +89,7 @@ def test_manifest_presets_globals_documents_env(cli: Invoke) -> None:
     }
     options = doc["global_options"]
     assert isinstance(options, dict)
-    assert set(options) == {"--output", "--store", "--quiet", "--width", "--color"}
+    assert set(options) == {"--output", "--store", "--server", "--quiet", "--width", "--color"}
     assert options["--output"].startswith("table|json|jsonl: ")
     assert doc["documents"]["names"] == sorted(DOCUMENTS)  # type: ignore[index]
     assert "ragnalog schema NAME" in doc["documents"]["get"]  # type: ignore[index]

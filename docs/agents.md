@@ -45,6 +45,10 @@ printf '%s\n' '["groups", "today", "--brief", "--limit", "5"]' '["show", "today"
 
 - Set `RAGNALOG_STORE` (or pass `--store DIR`) to a data directory (the folder that keeps the log sets) outside any
   repository; the implicit `./.ragnalog` is refused inside a git work tree.
+- No data directory here? Point the CLI at a ragnalog web app instead:
+  `RAGNALOG_SERVER=https://logs.example.org RAGNALOG_TOKEN=...` and the same commands
+  (reads, `query`, `triage`, `batch`, ...) print the same documents from the server's sets
+  (`cli.md`, "Remote mode").
 - Output is JSON whenever stdout is not a terminal; force it with
   `--output json` (one document) or `--output jsonl` (one row per line).
 - Every document has `"schema": "<name>.v1"`; listings put rows in `"items"`.

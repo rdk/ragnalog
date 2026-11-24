@@ -6,8 +6,10 @@ only its own module. Each is a thin adapter: it parses its options into the requ
 models of :mod:`ragnalog.service.params`, calls a builder of
 :mod:`ragnalog.service` and renders the document
 (:mod:`ragnalog.cli.output`, :mod:`ragnalog.cli.render`).
-Global options (``--output``, ``--store``, ``--quiet``) are parsed by the meta app
-and may appear anywhere on the line; errors are reported here (:func:`dispatch`).
+Global options (``--output``, ``--store``, ``--server``, ``--quiet``) are parsed by the meta
+app and may appear anywhere on the line; errors are reported here (:func:`dispatch`). With
+``--server`` the commands that read or label sets ask a web app's ``/api``
+(:mod:`ragnalog.cli.remote`).
 """
 
 from __future__ import annotations
@@ -114,6 +116,7 @@ def _meta(
     *tokens: Annotated[str, Parameter(show=False, allow_leading_hyphen=True)],
     output: Annotated[OutputMode | None, Parameter(group=GLOBAL)] = None,
     store: Annotated[str | None, Parameter(group=GLOBAL)] = None,
+    server: Annotated[str | None, Parameter(group=GLOBAL)] = None,
     quiet: Annotated[bool, Parameter(group=GLOBAL, negative="")] = False,
     width: Annotated[int | None, Parameter(group=GLOBAL)] = None,
     color: Annotated[ColorMode, Parameter(group=GLOBAL)] = "auto",
@@ -125,6 +128,10 @@ def _meta(
         output: Output mode. Default: table when stdout is a terminal, json otherwise.
         store: Data directory holding the log sets (env RAGNALOG_STORE, ignored when empty;
             default ./.ragnalog, which ingest/serve do not create inside a git work tree).
+        server: Base URL of a ragnalog web app (env RAGNALOG_SERVER): commands that read or
+            label sets ask its /api instead of a data directory, with the token in
+            RAGNALOG_TOKEN; same output and exit codes. ingest, regroup, upgrade and report
+            need a data directory and refuse it.
         quiet: Suppress progress and diagnostics on stderr (warnings and errors still shown).
         width: Table width; default: the terminal width, else $COLUMNS, else 160.
         color: Colour tables and raw entries: auto (terminal and no $NO_COLOR), always, never.
@@ -135,7 +142,7 @@ def _meta(
             OpError("invalid_value", "--width must be >= 40")
         )
     try:
-        settings = Settings.load({"store": store}, os.environ)
+        settings = Settings.load({"store": store, "server": server}, os.environ)
     except ValueError as exc:  # an RAGNALOG_* variable that does not parse
         return Output(output or default_mode()).error(OpError("invalid_value", str(exc)))
     out = Output(
@@ -166,6 +173,10 @@ def dispatch(
     (``batch`` keeps going).
     """
     out = here.output
+    if here.settings.server:
+        refused = _refused_remotely(tokens)
+        if refused is not None:
+            return out.error(refused)
     try:
         result = app(tokens, exit_on_error=False, print_error=False, result_action="return_value")
     except CycloptsError as exc:
@@ -176,10 +187,25 @@ def dispatch(
             if unexpected is None:
                 raise
             err = unexpected(exc)
-        if err.reason == "set_not_found":
+        if err.reason == "set_not_found" and not here.settings.server:
             err.extra.setdefault("store", here.store.as_posix())
         return out.error(err)
     return int(result) if isinstance(result, int) else 0
+
+
+def _refused_remotely(tokens: Sequence[str]) -> OpError | None:
+    """Return the error for a command that needs a data directory, run with ``--server``."""
+    from ragnalog.cli.remote import LOCAL_ONLY
+
+    command = next((t for t in tokens if not t.startswith("-")), None)
+    why = LOCAL_ONLY.get(command or "")
+    if not why:
+        return None
+    return OpError(
+        "usage",
+        f"`{command}` needs a data directory and does not run with --server",
+        hint=f"{why} (unset RAGNALOG_SERVER to run it locally)",
+    )
 
 
 # --- entry points

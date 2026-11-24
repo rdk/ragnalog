@@ -69,7 +69,12 @@ def capture(
         triage: Verdict per node vs its own previous set (triage).
 
     """
-    doc = cq.capture(ctx.store(), ref, w, triage=triage, front="cli")
+    doc = ctx.remote_or(
+        "capture",
+        capture,
+        locals(),
+        lambda: cq.capture(ctx.store(), ref, w, triage=triage, front="cli"),
+    )
     out = ctx.out()
     out.document(doc, items=None, table=lambda console: render.capture(console, doc))
 
@@ -127,8 +132,8 @@ def timeline(
             level already).
 
     """
-    store, out = ctx.store(), ctx.out()
-    if by_node or cq.names_capture(store, ref):
+    out = ctx.out()
+    if by_node or ctx.names_capture(ref):
         if by_level:
             raise OpError(
                 "usage",
@@ -136,7 +141,12 @@ def timeline(
                 hint="drop --by-level, or pass a log set without --by-node",
             )
         w = CaptureWindow(window=window or "overlap", since=q.since, until=q.until)
-        doc = cq.timeline(store, ref, w, bucket=bucket, q=q, front="cli")
+        doc = ctx.remote_or(
+            "timeline-capture",
+            timeline,
+            locals(),
+            lambda: cq.timeline(ctx.store(), ref, w, bucket=bucket, q=q, front="cli"),
+        )
         out.document(doc, items=None, table=lambda console: render.cluster_timeline(console, doc))
         return
     if window is not None:
@@ -147,7 +157,14 @@ def timeline(
         )
     from ragnalog.service import queries
 
-    doc = queries.timeline(store, ref, q, bucket=bucket, by_level=by_level, front="cli")
+    doc = ctx.remote_or(
+        "timeline",
+        timeline,
+        locals(),
+        lambda: queries.timeline(
+            ctx.store(), ref, q, bucket=bucket, by_level=by_level, front="cli"
+        ),
+    )
     if by_level:
         out.document(doc, table=lambda console: render.timeline_levels(console, doc))
         return
@@ -209,18 +226,23 @@ def matrix(
 
     """
     page = Page.parse(limit, offset, front="cli")
-    doc = cq.matrix(
-        ctx.store(),
-        ref,
-        q,
-        page,
-        window=window,
-        node=node,
-        spread=spread,
-        sort=sort,
-        skew_min=skew_min,
-        signature=signature,
-        front="cli",
+    doc = ctx.remote_or(
+        "matrix",
+        matrix,
+        locals(),
+        lambda: cq.matrix(
+            ctx.store(),
+            ref,
+            q,
+            page,
+            window=window,
+            node=node,
+            spread=spread,
+            sort=sort,
+            skew_min=skew_min,
+            signature=signature,
+            front="cli",
+        ),
     )
     out = ctx.out()
     out.document(doc, table=lambda console: render.matrix(console, doc, color=out.color))
@@ -260,7 +282,9 @@ def events(
         kind: Only these kinds (comma-separated and/or repeated).
 
     """
-    doc = cq.events(ctx.store(), ref, w, kinds=kind, front="cli")
+    doc = ctx.remote_or(
+        "events", events, locals(), lambda: cq.events(ctx.store(), ref, w, kinds=kind, front="cli")
+    )
     ctx.out().document(doc, table=lambda console: render.events(console, doc))
 
 
@@ -298,5 +322,10 @@ def interactions(
         delta: Co-burst window in seconds (b bursts at most this long after a).
 
     """
-    doc = cq.interactions(ctx.store(), ref, w, delta_s=delta, front="cli")
+    doc = ctx.remote_or(
+        "interactions",
+        interactions,
+        locals(),
+        lambda: cq.interactions(ctx.store(), ref, w, delta_s=delta, front="cli"),
+    )
     ctx.out().document(doc, items=None, table=lambda console: render.interactions(console, doc))

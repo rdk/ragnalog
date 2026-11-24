@@ -144,6 +144,7 @@ set is the CLI's `store_error` but the API's `not_found`), both carry the same
 | `GET /api/sets` | `brief` (as `sets --brief`: `id, name, first_ts, last_ts, entry_count, group_count, summary, stale, node, capture`) | `sets.v1`; items are manifests plus `summary {errors, warnings, error_groups}` |
 | `GET /api/sets/{ref}` | | `logset.v1` plus `summary` (as `ragnalog set SET`) |
 | `DELETE /api/sets/{ref}` | | `remove.v1` |
+| `POST /api/sets/{ref}/query` | JSON body `{"sql": "..."}`: DuckDB SQL over the set's views `entries`, `groups` (and `merges`), read only and without access to other files | `query.v1` (as `ragnalog query`): at most 10,000 rows (`"truncated": true` beyond), a query running longer than 60 s is stopped (`sql_error`) |
 | `POST /api/sets/{ref}/label` | `node`, `cluster`, `capture` as query or form fields; one not sent keeps its value, an empty one clears it (as `ragnalog label`) | `logset.v1` |
 | `GET /api/captures` | `brief` (only `node`, `id`, `name` per node, as `captures --brief`) | `captures.v1`: the sets that share a capture id, newest first |
 | `GET /api/captures/{ref}` | `window` (`overlap`, `union`), `since`, `until`, `triage` (default true: each node against its own previous set) | `capture.v1` (as `ragnalog capture`) |

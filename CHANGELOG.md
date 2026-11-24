@@ -17,6 +17,13 @@ needed).
 
 ### Added
 
+- Remote mode: `--server URL` (or `RAGNALOG_SERVER`) runs the commands that read or label
+  sets against a ragnalog web app's `/api` instead of a data directory, with the token in
+  `RAGNALOG_TOKEN`: the same documents, output modes and exit codes as a local run (every
+  parity case is tested both ways). `ingest`, `regroup`, `upgrade` and `report` need a data
+  directory and refuse it.
+- `POST /api/sets/{ref}/query` (body `{"sql": "..."}`): `ragnalog query` over HTTP, in the
+  same read-only sandbox, at most 10,000 rows and 60 s per query.
 - Set report: zoom the top chart into the time window (*Zoom in* or `+`; a drag on the
   zoomed chart zooms further, `−` zooms out, `[`/`]` move it) with finer bins, and pick the
   bin size (*Bins*: automatic, or from 1 s to 7 d, finer than the automatic one down to

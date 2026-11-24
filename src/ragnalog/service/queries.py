@@ -560,11 +560,21 @@ def sql_hint(message: str, views: list[str]) -> str | None:
     return None
 
 
-def query(sets: Sets, ref: str, sql: str, *, front: Front) -> Doc:
-    """``query.v1``: the rows of DuckDB ``sql`` over the set's views (never truncated).
+def query(
+    sets: Sets,
+    ref: str,
+    sql: str,
+    *,
+    front: Front,
+    max_rows: int | None = None,
+    timeout_s: float | None = None,
+) -> Doc:
+    """``query.v1``: the rows of DuckDB ``sql`` over the set's views.
 
-    A rejected query is ``sql_error``; its hint lists candidate columns, the views'
-    columns or the available views.
+    The CLI passes no limits (the result is never cut); the API cuts it at ``max_rows``
+    (``truncated``) and stops a query after ``timeout_s``. A rejected or stopped query is
+    ``sql_error``; a rejected one's hint lists candidate columns, the views' columns or
+    the available views.
     """
     import duckdb
     import polars as pl
@@ -581,13 +591,22 @@ def query(sets: Sets, ref: str, sql: str, *, front: Front) -> Doc:
         )
     ls = open_set(sets, ref, front=front)
     try:
-        df = ls.sql(sql)
+        df = ls.sql(sql, max_rows=None if max_rows is None else max_rows + 1, timeout_s=timeout_s)
+    except duckdb.InterruptException as exc:
+        raise OpError(
+            "sql_error",
+            f"the query ran longer than {timeout_s:g} s and was stopped",
+            hint="narrow it (WHERE, LIMIT, fewer columns), or run it where the data directory is",
+        ) from exc
     except (duckdb.Error, pl.exceptions.PolarsError) as exc:
         if damaged_file(exc):  # a damaged set file, not the SQL: store_error
             raise
         message = str(exc).strip()
         views = [v for v in view_fields() if v != "merges" or ls.merges_path.exists()]
         raise OpError("sql_error", message, hint=sql_hint(message, views)) from exc
+    truncated = False
+    if max_rows is not None and df.height > max_rows:
+        df, truncated = df.head(max_rows), True
     items = _records(df)
     return {
         "schema": "query.v1",
@@ -595,6 +614,6 @@ def query(sets: Sets, ref: str, sql: str, *, front: Front) -> Doc:
         "columns": list(df.columns),
         "count": len(items),
         "total": len(items),
-        "truncated": False,
+        "truncated": truncated,
         "items": items,
     }

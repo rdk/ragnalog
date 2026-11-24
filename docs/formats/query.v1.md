@@ -10,6 +10,6 @@ Generated from `ragnalog.service.documents` by `docs/formats/generate.py`; JSON 
 | `logset` | `string` | yes | Set id. |
 | `columns` | `list<string>` | yes | Result columns, in order. |
 | `count` | `integer` | yes | Rows in items. |
-| `total` | `integer` | yes | Equals count (never truncated). |
-| `truncated` | `boolean` | yes | Always false. |
+| `total` | `integer` | yes | Equals count. |
+| `truncated` | `boolean` | yes | True when the API cut the result at its row cap (more rows follow); CLI: never. |
 | `items` | `list<object>` | yes | One object per result row. |

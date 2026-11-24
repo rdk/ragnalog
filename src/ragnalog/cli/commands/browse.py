@@ -6,7 +6,7 @@ the set's capture (:mod:`ragnalog.service.capture_queries`).
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from cyclopts import Parameter
 
@@ -69,6 +69,10 @@ def sets(*, brief: bool = False) -> None:
             node, capture.
 
     """
+    if ctx.remote():
+        doc = ctx.remote_or("sets", sets, locals(), dict)
+        ctx.out().document(doc, columns=render.SET_COLUMNS, title="log sets")
+        return
     store = ctx.store()
     doc = queries.sets_doc(
         store,
@@ -109,7 +113,9 @@ def captures(*, brief: bool = False) -> None:
     """
     from ragnalog.service.captures import captures_doc
 
-    doc = captures_doc(ctx.store(), brief=brief)
+    doc = ctx.remote_or(
+        "captures", captures, locals(), lambda: captures_doc(ctx.store(), brief=brief)
+    )
     out = ctx.out()
     out.document(doc, table=lambda console: render.captures(console, doc, color=out.color))
 
@@ -130,7 +136,9 @@ def set_(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    doc = queries.set_doc(ctx.store(), logset, front="cli")
+    doc = ctx.remote_or(
+        "set", set_, locals(), lambda: queries.set_doc(ctx.store(), logset, front="cli")
+    )
     ctx.out().document(doc, items=None, title=f"log set {doc['id']}")
 
 
@@ -195,7 +203,14 @@ def groups(
     """
     page = Page.parse(limit, offset, front="cli")
     sel = Select(columns=columns, brief=brief)
-    doc = queries.groups(ctx.store(), logset, q, page, sel, sort=sort, coarse=coarse, front="cli")
+    doc = ctx.remote_or(
+        "groups",
+        groups,
+        locals(),
+        lambda: queries.groups(
+            ctx.store(), logset, q, page, sel, sort=sort, coarse=coarse, front="cli"
+        ),
+    )
     valid = (*GROUP_FIELDS, "signatures") if coarse else GROUP_FIELDS
     shown = sel.resolve(valid, GROUP_BRIEF, front="cli") or render.GROUP_COLUMNS
     ctx.out().document(doc, columns=shown, title=f"groups of {doc['logset']}")
@@ -261,13 +276,19 @@ def show(
     shown = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front="cli")
     out = ctx.out()
     if raw:
+        ctx.local_only("--raw")
         pairs = queries.show_raw(
             ctx.store(), logset, signature, limit=page.limit, cap=cap, front="cli"
         )
         out.raw_entries(pairs)
         return 0
-    doc = queries.show(
-        ctx.store(), logset, signature, limit=page.limit, sel=sel, cap=cap, front="cli"
+    doc = ctx.remote_or(
+        "show",
+        show,
+        locals(),
+        lambda: queries.show(
+            ctx.store(), logset, signature, limit=page.limit, sel=sel, cap=cap, front="cli"
+        ),
     )
     out.document(
         doc,
@@ -352,12 +373,17 @@ def entries(
         window: overlap or union (a capture only; default overlap, unless --since/--until).
 
     """
-    from ragnalog.service.capture_queries import names_capture
-
     page = Page.parse(limit, offset, front="cli")
     sel = Select(columns=columns, brief=brief)
     cap = params.cap(max_raw, text=raw)
-    if names_capture(ctx.store(), logset):
+    if raw:
+        ctx.local_only("--raw")
+    if ctx.names_capture(logset):
+        if ctx.remote():
+            shown = sel.resolve((*ENTRY_FIELDS, *_capture_node_columns()), ENTRY_BRIEF, front="cli")
+            doc = ctx.remote_or("entries-capture", entries, locals(), dict)
+            ctx.out().document(doc, columns=shown or render.NODE_ENTRY_COLUMNS, title="entries")
+            return
         _capture_entries(logset, q, page, sel, cap, raw=raw, window=window or "overlap")
         return
     shown = sel.resolve(ENTRY_FIELDS, ENTRY_BRIEF, front="cli")
@@ -370,7 +396,12 @@ def entries(
     if raw:
         ctx.out().raw_entries(queries.raw_entries(ctx.store(), logset, q, page, cap, front="cli"))
         return
-    doc = queries.entries(ctx.store(), logset, q, page, sel, cap, front="cli")
+    doc = ctx.remote_or(
+        "entries",
+        entries,
+        locals(),
+        lambda: queries.entries(ctx.store(), logset, q, page, sel, cap, front="cli"),
+    )
     ctx.out().document(
         doc, columns=shown or render.ENTRY_COLUMNS, title=f"entries of {doc['logset']}"
     )
@@ -473,9 +504,13 @@ def context(
 
         valid = (*ENTRY_FIELDS, *capture_queries.NODE_COLUMNS)
         shown = sel.resolve(valid, DETAIL_BRIEF, front="cli")
-        doc, at = capture_queries.context(
-            ctx.store(), logset, entry_id, window_s=window, sel=sel, cap=cap, front="cli"
-        )
+        if ctx.remote():
+            doc = ctx.remote_or("context", context, locals(), dict)
+            at = _anchor(doc, entry_id)
+        else:
+            doc, at = capture_queries.context(
+                ctx.store(), logset, entry_id, window_s=window, sel=sel, cap=cap, front="cli"
+            )
         cols = [*shown, "node"] if shown and "node" not in shown else shown
         out.document(
             doc,
@@ -488,17 +523,21 @@ def context(
         )
         return 0
     shown = sel.resolve(ENTRY_FIELDS, DETAIL_BRIEF, front="cli")
-    doc, at = queries.context(
-        ctx.store(),
-        logset,
-        entry_id,
-        before=before,
-        after=after,
-        any_thread=any_thread,
-        sel=sel,
-        cap=cap,
-        front="cli",
-    )
+    if ctx.remote():
+        doc = ctx.remote_or("context", context, locals(), dict)
+        at = _anchor(doc, entry_id)
+    else:
+        doc, at = queries.context(
+            ctx.store(),
+            logset,
+            entry_id,
+            before=before,
+            after=after,
+            any_thread=any_thread,
+            sel=sel,
+            cap=cap,
+            front="cli",
+        )
     out.document(
         doc,
         jsonl_rows=[{**r, "anchor": True} if i == at else r for i, r in enumerate(doc["items"])],
@@ -558,14 +597,19 @@ def frames(
 
     """
     page = Page.parse(limit, front="cli")
-    doc = queries.frames(
-        ctx.store(),
-        logset,
-        ref,
-        limit=page.limit,
-        all_frames=all_,
-        app_packages=ctx.current().settings.app_packages,
-        front="cli",
+    doc = ctx.remote_or(
+        "frames",
+        frames,
+        locals(),
+        lambda: queries.frames(
+            ctx.store(),
+            logset,
+            ref,
+            limit=page.limit,
+            all_frames=all_,
+            app_packages=ctx.current().settings.app_packages,
+            front="cli",
+        ),
     )
     out = ctx.out()
     if not doc["items"]:
@@ -616,7 +660,9 @@ def query(logset: str, sql: str, /) -> None:
         sql: The SQL query (quote it as one argument).
 
     """
-    doc = queries.query(ctx.store(), logset, sql, front="cli")
+    doc = ctx.remote_or(
+        "query", query, locals(), lambda: queries.query(ctx.store(), logset, sql, front="cli")
+    )
     ctx.out().document(doc, title="query result")
 
 
@@ -636,7 +682,9 @@ def stats(logset: str, /) -> None:
         logset: Log set id, unique id prefix or name.
 
     """
-    doc = queries.stats(ctx.store(), logset, front="cli")
+    doc = ctx.remote_or(
+        "stats", stats, locals(), lambda: queries.stats(ctx.store(), logset, front="cli")
+    )
     out = ctx.out()
     out.document(
         doc,
@@ -685,9 +733,28 @@ def users(
 
     """
     page = Page.parse(limit, offset, front="cli")
-    doc = queries.users(ctx.store(), logset, q, page, top=top, front="cli")
+    doc = ctx.remote_or(
+        "users",
+        users,
+        locals(),
+        lambda: queries.users(ctx.store(), logset, q, page, top=top, front="cli"),
+    )
     out = ctx.out()
     out.document(doc, table=lambda console: render.users(console, doc))
+
+
+def _anchor(doc: dict[str, Any], entry_id: str) -> int:
+    """Row index of a context document's anchor (remote mode: the API names it, not its row)."""
+    anchor = str(doc.get("anchor") or entry_id)
+    return next(
+        (i for i, r in enumerate(doc.get("items") or []) if str(r.get("id", "")) == anchor), -1
+    )
+
+
+def _capture_node_columns() -> tuple[str, ...]:
+    from ragnalog.service.capture_queries import NODE_COLUMNS
+
+    return tuple(NODE_COLUMNS)
 
 
 MERGE_FIELDS: tuple[str, ...] = tuple(MERGES_SCHEMA.names)

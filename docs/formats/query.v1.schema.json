@@ -26,11 +26,11 @@
       "type": "integer"
     },
     "total": {
-      "description": "Equals count (never truncated).",
+      "description": "Equals count.",
       "type": "integer"
     },
     "truncated": {
-      "description": "Always false.",
+      "description": "True when the API cut the result at its row cap (more rows follow); CLI: never.",
       "type": "boolean"
     },
     "items": {

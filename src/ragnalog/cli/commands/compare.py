@@ -79,16 +79,21 @@ def diff(
         if blank(min_level) is not None:
             raise OpError("usage", "give --min-level or its alias --level, not both")
         min_level = params.level(level, "level")
-    doc = service_compare.diff(
-        ctx.store(),
-        set_a,
-        set_b,
-        min_level=min_level,
-        coarse=coarse,
-        force=force,
-        limit=params.limit(limit),
-        rate=rate,
-        front="cli",
+    doc = ctx.remote_or(
+        "diff",
+        diff,
+        locals(),
+        lambda: service_compare.diff(
+            ctx.store(),
+            set_a,
+            set_b,
+            min_level=min_level,
+            coarse=coarse,
+            force=force,
+            limit=params.limit(limit),
+            rate=rate,
+            front="cli",
+        ),
     )
     out = ctx.out()
     if out.mode != "json":
@@ -184,14 +189,19 @@ def triage(
         limit: Maximum rows per list; 0 = all.
 
     """
-    doc = service_compare.triage(
-        ctx.store(),
-        logset,
-        baseline=baseline,
-        min_level=min_level,
-        grow=grow,
-        limit=params.limit(limit),
-        front="cli",
+    doc = ctx.remote_or(
+        "triage",
+        triage,
+        locals(),
+        lambda: service_compare.triage(
+            ctx.store(),
+            logset,
+            baseline=baseline,
+            min_level=min_level,
+            grow=grow,
+            limit=params.limit(limit),
+            front="cli",
+        ),
     )
     out = ctx.out()
     if out.mode == "table":

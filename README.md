@@ -145,6 +145,8 @@ ragnalog capture cluster:jira-prod                             # the nodes side 
 ragnalog query prod-1030 "select level_name, count(*) from entries group by 1"
 ```
 
+Against a ragnalog web app instead of a local data directory: set `RAGNALOG_SERVER` (and
+`RAGNALOG_TOKEN`) and the same commands ask its `/api` ([remote mode](docs/cli.md#remote-mode---server)).
 Refer to a set by name, ID or unique ID prefix. Sets live in the data directory:
 `--store DIR`, else `$RAGNALOG_STORE`, else `./.ragnalog`, which is never created inside a
 git work tree, so real logs stay out of repositories. Reference: [`docs/cli.md`](docs/cli.md).

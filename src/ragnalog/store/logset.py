@@ -12,6 +12,7 @@ Directory layout::
 from __future__ import annotations
 
 import re
+import threading
 from bisect import bisect_right
 from collections.abc import Callable, Iterator, Sequence
 from datetime import UTC, datetime, timedelta
@@ -738,7 +739,9 @@ class LogSet:
             "sources": [s.to_dict() for s in m.sources],
         }
 
-    def sql(self, query: str, *, max_rows: int | None = None) -> pl.DataFrame:
+    def sql(
+        self, query: str, *, max_rows: int | None = None, timeout_s: float | None = None
+    ) -> pl.DataFrame:
         """Run DuckDB SQL with views ``entries`` and ``groups`` (and ``merges`` when present).
 
         The connection is an in-memory database meant for reading: after the views
@@ -753,14 +756,22 @@ class LogSet:
         Args:
             query: SQL text; the last statement's result is returned.
             max_rows: Return at most this many rows (``None`` = all).
+            timeout_s: Interrupt the query after this many seconds (``None`` = no limit);
+                an interrupted query raises ``duckdb.InterruptException``.
 
         Raises:
-            duckdb.Error: The query is invalid or tries to access other files.
+            duckdb.Error: The query is invalid, tries to access other files, or ran out
+                of ``timeout_s``.
 
         """
         import duckdb  # only this method needs it; keeps it out of every other command
 
         con = duckdb.connect(":memory:")
+        timer: threading.Timer | None = None
+        if timeout_s is not None:
+            timer = threading.Timer(timeout_s, con.interrupt)
+            timer.daemon = True
+            timer.start()
         try:
             views = {"entries": self.entries_path, "groups": self.groups_path}
             if self.merges_path.exists():
@@ -803,6 +814,8 @@ class LogSet:
                 raise duckdb.ConversionException(f"cannot return this result: {exc}") from exc
             return result
         finally:
+            if timer is not None:
+                timer.cancel()
             con.close()
 
 
